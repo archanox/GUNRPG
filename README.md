@@ -210,13 +210,13 @@ Explicitly out of scope:
 - [x] Movement system (distance-based)
 - [x] Health/stamina regeneration
 - [x] Basic AI
-- [x] Unit tests for all core systems
+- [x] Unit tests for all core systems (38 tests)
 - [x] Interactive demo
+- [x] Virtual pet/rest system
+- [x] Fatigue mechanics
 
 ### Planned
 
-- [ ] Virtual pet/rest system
-- [ ] Fatigue mechanics
 - [ ] Cover system
 - [ ] Multiple opponents
 - [ ] Campaign mode
