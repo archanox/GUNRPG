@@ -140,7 +140,7 @@ dotnet run
 dotnet test
 ```
 
-All tests should pass (28 tests covering core systems).
+All tests should pass (38 tests covering core systems).
 
 ## Usage Example
 

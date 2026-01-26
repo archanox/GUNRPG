@@ -152,16 +152,17 @@ public class Operator
         if (RecoilRecoveryStartMs.HasValue && currentTimeMs >= RecoilRecoveryStartMs.Value)
         {
             float recoveryAmount = RecoilRecoveryRate * deltaSeconds;
-            
-            if (CurrentRecoilX > 0)
-                CurrentRecoilX = Math.Max(0, CurrentRecoilX - recoveryAmount);
-            else if (CurrentRecoilX < 0)
-                CurrentRecoilX = Math.Min(0, CurrentRecoilX + recoveryAmount);
-                
-            if (CurrentRecoilY > 0)
-                CurrentRecoilY = Math.Max(0, CurrentRecoilY - recoveryAmount);
-            else if (CurrentRecoilY < 0)
-                CurrentRecoilY = Math.Min(0, CurrentRecoilY + recoveryAmount);
+            CurrentRecoilX = RecoverRecoilAxis(CurrentRecoilX, recoveryAmount);
+            CurrentRecoilY = RecoverRecoilAxis(CurrentRecoilY, recoveryAmount);
         }
+    }
+
+    private static float RecoverRecoilAxis(float recoilValue, float recoveryAmount)
+    {
+        if (recoilValue > 0)
+            return Math.Max(0, recoilValue - recoveryAmount);
+        if (recoilValue < 0)
+            return Math.Min(0, recoilValue + recoveryAmount);
+        return recoilValue;
     }
 }
