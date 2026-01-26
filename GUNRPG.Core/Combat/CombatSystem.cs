@@ -209,14 +209,15 @@ public class CombatSystem
 
     private void ProcessFireIntent(Operator shooter, FireWeaponIntent intent)
     {
-        if (shooter.EquippedWeapon == null || shooter.CurrentAmmo <= 0)
+        var weapon = shooter.EquippedWeapon;
+        if (weapon == null || shooter.CurrentAmmo <= 0)
             return;
 
         // Handle sprint-to-fire delay
         long fireTime = _time.CurrentTimeMs;
         if (shooter.MovementState == MovementState.Sprinting)
         {
-            fireTime += (long)shooter.EquippedWeapon.SprintToFireTimeMs;
+            fireTime += (long)weapon.SprintToFireTimeMs;
             shooter.MovementState = MovementState.Idle;
         }
 
@@ -228,10 +229,10 @@ public class CombatSystem
 
     private void ScheduleNextEventForIntent(Operator op, Intent intent)
     {
-        if (intent.Type == IntentType.FireWeapon && op.CurrentAmmo > 0 && op.WeaponState == WeaponState.Ready)
+        if (intent.Type == IntentType.FireWeapon && op.CurrentAmmo > 0 && op.WeaponState == WeaponState.Ready && op.EquippedWeapon != null)
         {
             var target = (op == Player) ? Enemy : Player;
-            long nextShotTime = _time.CurrentTimeMs + (long)op.EquippedWeapon!.GetTimeBetweenShotsMs();
+            long nextShotTime = _time.CurrentTimeMs + (long)op.EquippedWeapon.GetTimeBetweenShotsMs();
             var shotEvent = new ShotFiredEvent(nextShotTime, op, target, _eventQueue.GetNextSequenceNumber(), _random);
             _eventQueue.Schedule(shotEvent);
         }
@@ -252,7 +253,7 @@ public class CombatSystem
         switch (intent.Type)
         {
             case IntentType.FireWeapon:
-                return op.CurrentAmmo > 0 && op.WeaponState == WeaponState.Ready;
+                return op.CurrentAmmo > 0 && op.WeaponState == WeaponState.Ready && op.EquippedWeapon != null;
             
             case IntentType.WalkToward:
             case IntentType.WalkAway:

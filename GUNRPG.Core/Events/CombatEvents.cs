@@ -75,13 +75,14 @@ public class ShotFiredEvent : ISimulationEvent
 
     private bool CalculateHit()
     {
-        if (_shooter.EquippedWeapon == null)
+        var weapon = _shooter.EquippedWeapon;
+        if (weapon == null)
             return false;
 
         // Get spread based on aim state
         float spreadDegrees = _shooter.AimState == AimState.ADS 
-            ? _shooter.EquippedWeapon.ADSSpreadDegrees 
-            : _shooter.EquippedWeapon.HipfireSpreadDegrees;
+            ? weapon.ADSSpreadDegrees 
+            : weapon.HipfireSpreadDegrees;
 
         // Add recoil to spread
         float totalSpread = spreadDegrees + Math.Abs(_shooter.CurrentRecoilX) + Math.Abs(_shooter.CurrentRecoilY);
