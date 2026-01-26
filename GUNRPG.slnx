@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="GUNRPG.Core/GUNRPG.Core.csproj" />
+  <Project Path="GUNRPG.Tests/GUNRPG.Tests.csproj" />
+</Solution>
