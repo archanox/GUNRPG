@@ -47,7 +47,8 @@ while (combat.Phase != CombatPhase.Ended)
     
     // Show current operator status
     float playerADS = player.GetADSProgress(combat.CurrentTimeMs);
-    Console.WriteLine($"Player Status: HP {player.Health:F0}/{player.MaxHealth:F0}, Ammo {player.CurrentAmmo}/{player.EquippedWeapon?.MagazineSize}, " +
+    int magazineSize = player.EquippedWeapon?.MagazineSize ?? 0;
+    Console.WriteLine($"Player Status: HP {player.Health:F0}/{player.MaxHealth:F0}, Ammo {player.CurrentAmmo}/{magazineSize}, " +
                       $"Stamina {player.Stamina:F0}, ADS {playerADS*100:F0}%, Distance {player.DistanceToOpponent:F1}m");
     Console.WriteLine();
     
