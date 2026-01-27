@@ -15,6 +15,9 @@ public class CombatSystemV2
     private readonly EventQueue _eventQueue;
     private readonly Random _random;
 
+    // Prevent double-scheduling shots at the same timestamp for a single operator.
+    private readonly Dictionary<Guid, long> _nextScheduledShotTimeMs = new();
+
     public Operator Player { get; }
     public Operator Enemy { get; }
     public CombatPhase Phase { get; private set; }
@@ -22,13 +25,9 @@ public class CombatSystemV2
     private SimultaneousIntents? _playerIntents;
     private SimultaneousIntents? _enemyIntents;
 
-    // Reaction window configuration (much shorter now)
-    private const int MICRO_REACTION_INTERVAL_MS = 75; // 75ms micro-reactions
     private const int MOVEMENT_UPDATE_INTERVAL_MS = 100; // Update distance every 100ms
     private const int DISABLE_MOVEMENT_REACTIONS = 10; // High threshold to effectively disable movement-based reactions
     
-    // Track last reaction time for scheduling
-    private long _lastReactionTimeMs = 0;
 
     public CombatSystemV2(Operator player, Operator enemy, int? seed = null)
     {
@@ -72,6 +71,12 @@ public class CombatSystemV2
         if (Phase != CombatPhase.Planning)
             return;
 
+        // A reaction window ends the previous execution slice but leaves already-scheduled
+        // events in the queue. Starting a new planning->execution cycle should honor ONLY
+        // newly submitted intents.
+        _eventQueue.Clear();
+        _nextScheduledShotTimeMs.Clear();
+
         Phase = CombatPhase.Executing;
 
         // Process both operators' intents to schedule initial events
@@ -80,9 +85,6 @@ public class CombatSystemV2
         
         if (_enemyIntents != null && _enemyIntents.HasAnyAction())
             ProcessSimultaneousIntents(Enemy, _enemyIntents);
-
-        // Schedule first micro-reaction window
-        ScheduleNextMicroReaction();
 
         Console.WriteLine($"\n=== EXECUTION PHASE STARTED at {_time.CurrentTimeMs}ms ===\n");
     }
@@ -130,7 +132,6 @@ public class CombatSystemV2
             if (triggersReactionWindow)
             {
                 Phase = CombatPhase.Planning;
-                _lastReactionTimeMs = _time.CurrentTimeMs;
                 
                 Console.WriteLine($"\n=== REACTION WINDOW at {_time.CurrentTimeMs}ms ===");
                 
@@ -178,7 +179,7 @@ public class CombatSystemV2
         }
 
         // Process movement
-        if (intents.Movement != MovementAction.None)
+        if (intents.Movement != MovementAction.Stand)
         {
             ProcessMovementAction(op, intents.Movement);
         }
@@ -298,10 +299,7 @@ public class CombatSystemV2
             op.MovementState = MovementState.Walking; // Transition from sprint to walk when firing
         }
 
-        // Schedule first shot
-        var target = (op == Player) ? Enemy : Player;
-        var shotEvent = new ShotFiredEvent(fireTime, op, target, _eventQueue.GetNextSequenceNumber(), _random);
-        _eventQueue.Schedule(shotEvent);
+        ScheduleShotIfNeeded(op, fireTime);
     }
 
     private void ProcessReloadAction(Operator op)
@@ -353,15 +351,6 @@ public class CombatSystemV2
         _eventQueue.Schedule(moveEvent);
     }
 
-    private void ScheduleNextMicroReaction()
-    {
-        long nextReactionTime = _lastReactionTimeMs + MICRO_REACTION_INTERVAL_MS;
-        
-        // Schedule for both operators
-        var playerReactionEvent = new MicroReactionEvent(nextReactionTime, Player.Id, _eventQueue.GetNextSequenceNumber());
-        _eventQueue.Schedule(playerReactionEvent);
-    }
-
     private void ContinueActiveIntents()
     {
         // Continue player intents
@@ -386,10 +375,8 @@ public class CombatSystemV2
             op.EquippedWeapon != null &&
             op.IsActivelyFiring)
         {
-            var target = (op == Player) ? Enemy : Player;
             long nextShotTime = _time.CurrentTimeMs + (long)op.EquippedWeapon.GetTimeBetweenShotsMs();
-            var shotEvent = new ShotFiredEvent(nextShotTime, op, target, _eventQueue.GetNextSequenceNumber(), _random);
-            _eventQueue.Schedule(shotEvent);
+            ScheduleShotIfNeeded(op, nextShotTime);
         }
         else if (intents.Primary == PrimaryAction.Fire)
         {
@@ -398,7 +385,7 @@ public class CombatSystemV2
         }
 
         // Continue movement
-        if (intents.Movement != MovementAction.None && 
+        if (intents.Movement != MovementAction.Stand && 
             intents.Movement != MovementAction.SlideToward && 
             intents.Movement != MovementAction.SlideAway)
         {
@@ -421,4 +408,19 @@ public class CombatSystemV2
     }
 
     public long CurrentTimeMs => _time.CurrentTimeMs;
+
+    private void ScheduleShotIfNeeded(Operator op, long shotTime)
+    {
+        if (op.EquippedWeapon == null || op.CurrentAmmo <= 0 || op.WeaponState != WeaponState.Ready)
+            return;
+
+        if (_nextScheduledShotTimeMs.TryGetValue(op.Id, out long existingTime) && shotTime <= existingTime)
+            return;
+
+        _nextScheduledShotTimeMs[op.Id] = shotTime;
+
+        var target = (op == Player) ? Enemy : Player;
+        var shotEvent = new ShotFiredEvent(shotTime, op, target, _eventQueue.GetNextSequenceNumber(), _random, _eventQueue);
+        _eventQueue.Schedule(shotEvent);
+    }
 }

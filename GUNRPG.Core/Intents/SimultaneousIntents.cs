@@ -17,7 +17,7 @@ public enum PrimaryAction
 /// </summary>
 public enum MovementAction
 {
-    None,
+    Stand,
     WalkToward,
     WalkAway,
     SprintToward,
@@ -51,7 +51,7 @@ public class SimultaneousIntents
     {
         OperatorId = operatorId;
         Primary = PrimaryAction.None;
-        Movement = MovementAction.None;
+        Movement = MovementAction.Stand;
         Stance = StanceAction.None;
     }
 
@@ -184,7 +184,7 @@ public class SimultaneousIntents
     public bool HasAnyAction()
     {
         return Primary != PrimaryAction.None ||
-               Movement != MovementAction.None ||
+               Movement != MovementAction.Stand ||
                Stance != StanceAction.None;
     }
 

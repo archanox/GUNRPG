@@ -15,8 +15,9 @@ public class ShotFiredEvent : ISimulationEvent
     private readonly Operator _shooter;
     private readonly Operator _target;
     private readonly Random _random;
+    private readonly EventQueue? _eventQueue;
 
-    public ShotFiredEvent(long eventTimeMs, Operator shooter, Operator target, int sequenceNumber, Random random)
+    public ShotFiredEvent(long eventTimeMs, Operator shooter, Operator target, int sequenceNumber, Random random, EventQueue? eventQueue = null)
     {
         EventTimeMs = eventTimeMs;
         OperatorId = shooter.Id;
@@ -24,6 +25,7 @@ public class ShotFiredEvent : ISimulationEvent
         _shooter = shooter;
         _target = target;
         _random = random;
+        _eventQueue = eventQueue;
     }
 
     public bool Execute()
@@ -41,10 +43,26 @@ public class ShotFiredEvent : ISimulationEvent
         if (isHit)
         {
             bool isHeadshot = CalculateHeadshot();
-            float damage = _shooter.EquippedWeapon!.GetDamageAtDistance(_shooter.DistanceToOpponent, isHeadshot);
-            _target.TakeDamage(damage, EventTimeMs);
-            
-            Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} hit {_target.Name} for {damage:F1} damage{(isHeadshot ? " (HEADSHOT)" : "")}");
+            var weapon = _shooter.EquippedWeapon!;
+            var bodyPart = isHeadshot ? Weapons.BodyPart.Head : Weapons.BodyPart.LowerTorso;
+            float damage = weapon.GetDamageAtDistance(_shooter.DistanceToOpponent, bodyPart);
+
+            long damageTime = EventTimeMs + CalculateTravelTimeMs();
+            if (_eventQueue != null)
+            {
+                _eventQueue.Schedule(new DamageAppliedEvent(
+                    damageTime,
+                    _shooter,
+                    _target,
+                    damage,
+                    bodyPart,
+                    _eventQueue.GetNextSequenceNumber()));
+            }
+            else
+            {
+                _target.TakeDamage(damage, damageTime);
+                Console.WriteLine($"[{damageTime}ms] {_shooter.Name} hit {_target.Name} for {damage:F1} damage ({bodyPart})");
+            }
         }
         else
         {
@@ -73,6 +91,16 @@ public class ShotFiredEvent : ISimulationEvent
         return false;
     }
 
+    private long CalculateTravelTimeMs()
+    {
+        var weapon = _shooter.EquippedWeapon;
+        if (weapon == null || weapon.BulletVelocityMetersPerSecond <= 0)
+            return 0;
+
+        double travelSeconds = _shooter.DistanceToOpponent / weapon.BulletVelocityMetersPerSecond;
+        return (long)Math.Round(travelSeconds * 1000d, MidpointRounding.AwayFromZero);
+    }
+
     private bool CalculateHit()
     {
         var weapon = _shooter.EquippedWeapon;
@@ -96,6 +124,39 @@ public class ShotFiredEvent : ISimulationEvent
         
         return _random.NextDouble() < hitChance;
     }
+
+/// <summary>
+/// Event fired when a hit's damage is applied to the target (after bullet travel time).
+/// </summary>
+public sealed class DamageAppliedEvent : ISimulationEvent
+{
+    public long EventTimeMs { get; }
+    public Guid OperatorId { get; }
+    public int SequenceNumber { get; }
+
+    private readonly Operator _shooter;
+    private readonly Operator _target;
+    private readonly float _damage;
+    private readonly Weapons.BodyPart _bodyPart;
+
+    public DamageAppliedEvent(long eventTimeMs, Operator shooter, Operator target, float damage, Weapons.BodyPart bodyPart, int sequenceNumber)
+    {
+        EventTimeMs = eventTimeMs;
+        OperatorId = shooter.Id;
+        SequenceNumber = sequenceNumber;
+        _shooter = shooter;
+        _target = target;
+        _damage = damage;
+        _bodyPart = bodyPart;
+    }
+
+    public bool Execute()
+    {
+        _target.TakeDamage(_damage, EventTimeMs);
+        Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} hit {_target.Name} for {_damage:F1} damage ({_bodyPart})");
+        return false;
+    }
+}
 
     private bool CalculateHeadshot()
     {
