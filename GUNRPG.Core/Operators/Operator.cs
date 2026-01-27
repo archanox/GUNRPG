@@ -60,6 +60,11 @@ public class Operator
     public int BulletsFiredSinceLastReaction { get; set; }
     public float MetersMovedSinceLastReaction { get; set; }
 
+    // ADS Transition tracking
+    public long? ADSTransitionStartMs { get; set; }
+    public float ADSTransitionDurationMs { get; set; }
+    public bool IsActivelyFiring { get; set; } // Track if currently in firing burst
+
     public Operator(string name)
     {
         Id = Guid.NewGuid();
@@ -164,5 +169,50 @@ public class Operator
         if (recoilValue < 0)
             return Math.Min(0, recoilValue + recoveryAmount);
         return recoilValue;
+    }
+
+    /// <summary>
+    /// Gets the ADS transition progress (0.0 = hip, 1.0 = full ADS).
+    /// </summary>
+    public float GetADSProgress(long currentTimeMs)
+    {
+        if (AimState == AimState.Hip)
+            return 0f;
+        
+        if (AimState == AimState.ADS)
+            return 1f;
+
+        if (AimState == AimState.TransitioningToADS && ADSTransitionStartMs.HasValue)
+        {
+            float elapsed = currentTimeMs - ADSTransitionStartMs.Value;
+            float progress = Math.Clamp(elapsed / ADSTransitionDurationMs, 0f, 1f);
+            return progress;
+        }
+
+        if (AimState == AimState.TransitioningToHip && ADSTransitionStartMs.HasValue)
+        {
+            float elapsed = currentTimeMs - ADSTransitionStartMs.Value;
+            float progress = 1f - Math.Clamp(elapsed / ADSTransitionDurationMs, 0f, 1f);
+            return progress;
+        }
+
+        return 0f;
+    }
+
+    /// <summary>
+    /// Gets the current weapon spread based on ADS progress.
+    /// Interpolates between hipfire and ADS spread.
+    /// </summary>
+    public float GetCurrentSpread(long currentTimeMs)
+    {
+        if (EquippedWeapon == null)
+            return 10f; // Default high spread if no weapon
+
+        float adsProgress = GetADSProgress(currentTimeMs);
+        float hipSpread = EquippedWeapon.HipfireSpreadDegrees;
+        float adsSpread = EquippedWeapon.ADSSpreadDegrees;
+
+        // Linear interpolation between hip and ADS spread
+        return hipSpread + (adsSpread - hipSpread) * adsProgress;
     }
 }

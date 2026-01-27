@@ -79,10 +79,8 @@ public class ShotFiredEvent : ISimulationEvent
         if (weapon == null)
             return false;
 
-        // Get spread based on aim state
-        float spreadDegrees = _shooter.AimState == AimState.ADS 
-            ? weapon.ADSSpreadDegrees 
-            : weapon.HipfireSpreadDegrees;
+        // Get current spread based on ADS progress (interpolated)
+        float spreadDegrees = _shooter.GetCurrentSpread(EventTimeMs);
 
         // Add recoil to spread
         float totalSpread = spreadDegrees + Math.Abs(_shooter.CurrentRecoilX) + Math.Abs(_shooter.CurrentRecoilY);
@@ -230,5 +228,77 @@ public class SlideCompleteEvent : ISimulationEvent
         _operator.MovementState = MovementState.Idle;
         Console.WriteLine($"[{EventTimeMs}ms] {_operator.Name} finished sliding");
         return true; // Trigger reaction window
+    }
+}
+
+/// <summary>
+/// Micro-reaction event that triggers frequent reaction windows.
+/// Allows for quick responses and tactical adjustments.
+/// </summary>
+public class MicroReactionEvent : ISimulationEvent
+{
+    public long EventTimeMs { get; }
+    public Guid OperatorId { get; }
+    public int SequenceNumber { get; }
+
+    public MicroReactionEvent(long eventTimeMs, Guid operatorId, int sequenceNumber)
+    {
+        EventTimeMs = eventTimeMs;
+        OperatorId = operatorId;
+        SequenceNumber = sequenceNumber;
+    }
+
+    public bool Execute()
+    {
+        // This event simply triggers a reaction window
+        // No state changes
+        return true; // Always trigger reaction window
+    }
+}
+
+/// <summary>
+/// Event fired when ADS transition updates.
+/// Tracks continuous ADS progress.
+/// </summary>
+public class ADSTransitionUpdateEvent : ISimulationEvent
+{
+    public long EventTimeMs { get; }
+    public Guid OperatorId { get; }
+    public int SequenceNumber { get; }
+    
+    private readonly Operator _operator;
+
+    public ADSTransitionUpdateEvent(long eventTimeMs, Operator op, int sequenceNumber)
+    {
+        EventTimeMs = eventTimeMs;
+        OperatorId = op.Id;
+        SequenceNumber = sequenceNumber;
+        _operator = op;
+    }
+
+    public bool Execute()
+    {
+        // Update ADS state based on progress
+        if (_operator.AimState == AimState.TransitioningToADS && _operator.ADSTransitionStartMs.HasValue)
+        {
+            float elapsed = EventTimeMs - _operator.ADSTransitionStartMs.Value;
+            if (elapsed >= _operator.ADSTransitionDurationMs)
+            {
+                _operator.AimState = AimState.ADS;
+                Console.WriteLine($"[{EventTimeMs}ms] {_operator.Name} completed ADS transition");
+            }
+        }
+        else if (_operator.AimState == AimState.TransitioningToHip && _operator.ADSTransitionStartMs.HasValue)
+        {
+            float elapsed = EventTimeMs - _operator.ADSTransitionStartMs.Value;
+            if (elapsed >= _operator.ADSTransitionDurationMs)
+            {
+                _operator.AimState = AimState.Hip;
+                _operator.ADSTransitionStartMs = null;
+                Console.WriteLine($"[{EventTimeMs}ms] {_operator.Name} exited ADS");
+            }
+        }
+
+        return false; // Don't trigger reaction window for ADS updates
     }
 }
