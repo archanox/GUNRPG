@@ -17,6 +17,9 @@ public class CombatSystemV2
 
     // Prevent double-scheduling shots at the same timestamp for a single operator.
     private readonly Dictionary<Guid, long> _nextScheduledShotTimeMs = new();
+    
+    // Prevent double-scheduling movement updates at the same timestamp for a single operator.
+    private readonly Dictionary<Guid, long> _nextScheduledMovementTimeMs = new();
 
     public Operator Player { get; }
     public Operator Enemy { get; }
@@ -76,6 +79,7 @@ public class CombatSystemV2
         // newly submitted intents.
         _eventQueue.Clear();
         _nextScheduledShotTimeMs.Clear();
+        _nextScheduledMovementTimeMs.Clear();
 
         Phase = CombatPhase.Executing;
 
@@ -145,8 +149,18 @@ public class CombatSystemV2
                 return true;
             }
 
-            // Continue existing continuous intents
-            ContinueActiveIntents();
+            // Continue existing continuous intents only for repeating action events (shots, movement)
+            // Only continue for the operator whose event just executed
+            if (evt is ShotFiredEvent || evt is MovementIntervalEvent)
+            {
+                Operator eventOp = evt.OperatorId == Player.Id ? Player : Enemy;
+                SimultaneousIntents? intents = evt.OperatorId == Player.Id ? _playerIntents : _enemyIntents;
+                
+                if (intents != null)
+                {
+                    ContinueOperatorIntents(eventOp, intents);
+                }
+            }
         }
 
         // No more events and no reaction window
@@ -338,6 +352,15 @@ public class CombatSystemV2
 
     private void ScheduleMovementUpdate(Operator op, bool towardOpponent, float speed)
     {
+        long nextUpdateTime = _time.CurrentTimeMs + MOVEMENT_UPDATE_INTERVAL_MS;
+        
+        // Check if we've already scheduled a movement for this operator at this time
+        if (_nextScheduledMovementTimeMs.TryGetValue(op.Id, out long scheduledTime) && scheduledTime >= nextUpdateTime)
+        {
+            // Already have a movement scheduled at or after this time, don't double-schedule
+            return;
+        }
+        
         // Calculate distance moved in this interval
         float intervalSeconds = MOVEMENT_UPDATE_INTERVAL_MS / 1000f;
         float distanceMoved = speed * intervalSeconds;
@@ -345,10 +368,12 @@ public class CombatSystemV2
         // Negative if toward, positive if away
         float signedDistance = distanceMoved * (towardOpponent ? -1 : 1);
         
-        long nextUpdateTime = _time.CurrentTimeMs + MOVEMENT_UPDATE_INTERVAL_MS;
         var moveEvent = new MovementIntervalEvent(nextUpdateTime, op, signedDistance, 
             _eventQueue.GetNextSequenceNumber(), metersPerCommitmentUnit: DISABLE_MOVEMENT_REACTIONS);
         _eventQueue.Schedule(moveEvent);
+        
+        // Track that we've scheduled this movement
+        _nextScheduledMovementTimeMs[op.Id] = nextUpdateTime;
     }
 
     private void ContinueActiveIntents()
