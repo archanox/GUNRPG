@@ -103,13 +103,13 @@ while (combat.Phase != CombatPhase.Ended)
         Console.WriteLine("   (Slide actions disabled: cannot slide while reloading)");
     }
     
-    Console.Write($"Choose movement action (1-7): ");
+    Console.Write($"Choose movement action: ");
     var movementKey = Console.ReadKey();
     Console.WriteLine();
     
     // Map key to action using the available options
     var selectedMovement = movementOptions.FirstOrDefault(o => o.key == movementKey.KeyChar.ToString());
-    playerIntents.Movement = selectedMovement.action != default ? selectedMovement.action : MovementAction.None;
+    playerIntents.Movement = selectedMovement != default ? selectedMovement.action : MovementAction.None;
     
     // Ask for Stance Action (adapt to current ADS state and filter incompatible options)
     Console.WriteLine();
@@ -154,14 +154,14 @@ while (combat.Phase != CombatPhase.Ended)
         Console.WriteLine("   (ADS disabled: cannot ADS while sliding)");
     }
     
-    Console.Write($"Choose stance action (1-{stanceOptions.Count}): ");
+    Console.Write($"Choose stance action: ");
     var stanceKey = Console.ReadKey();
     Console.WriteLine();
     Console.WriteLine();
     
     // Map key to action using the available options
     var selectedStance = stanceOptions.FirstOrDefault(o => o.key == stanceKey.KeyChar.ToString());
-    playerIntents.Stance = selectedStance.action != default ? selectedStance.action : StanceAction.None;
+    playerIntents.Stance = selectedStance != default ? selectedStance.action : StanceAction.None;
     
     // Display chosen intents
     Console.WriteLine($"Selected: Primary={playerIntents.Primary}, Movement={playerIntents.Movement}, Stance={playerIntents.Stance}");
