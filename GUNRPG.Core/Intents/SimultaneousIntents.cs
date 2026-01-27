@@ -170,7 +170,7 @@ public class SimultaneousIntents
         }
 
         // Cannot reload while sliding
-        if (Primary == PrimaryAction.Reload && Movement == MovementAction.SlideToward || Movement == MovementAction.SlideAway)
+        if (Primary == PrimaryAction.Reload && (Movement == MovementAction.SlideToward || Movement == MovementAction.SlideAway))
         {
             return (false, "Cannot reload while sliding");
         }

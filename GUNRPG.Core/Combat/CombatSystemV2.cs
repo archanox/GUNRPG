@@ -25,6 +25,7 @@ public class CombatSystemV2
     // Reaction window configuration (much shorter now)
     private const int MICRO_REACTION_INTERVAL_MS = 75; // 75ms micro-reactions
     private const int MOVEMENT_UPDATE_INTERVAL_MS = 100; // Update distance every 100ms
+    private const int DISABLE_MOVEMENT_REACTIONS = 10; // High threshold to effectively disable movement-based reactions
     
     // Track last reaction time for scheduling
     private long _lastReactionTimeMs = 0;
@@ -294,7 +295,7 @@ public class CombatSystemV2
         if (op.MovementState == MovementState.Sprinting)
         {
             fireTime += (long)weapon.SprintToFireTimeMs;
-            op.MovementState = MovementState.Walking; // Reduce to walk
+            op.MovementState = MovementState.Walking; // Transition from sprint to walk when firing
         }
 
         // Schedule first shot
@@ -348,7 +349,7 @@ public class CombatSystemV2
         
         long nextUpdateTime = _time.CurrentTimeMs + MOVEMENT_UPDATE_INTERVAL_MS;
         var moveEvent = new MovementIntervalEvent(nextUpdateTime, op, signedDistance, 
-            _eventQueue.GetNextSequenceNumber(), metersPerCommitmentUnit: 10); // Disable movement-based reactions
+            _eventQueue.GetNextSequenceNumber(), metersPerCommitmentUnit: DISABLE_MOVEMENT_REACTIONS);
         _eventQueue.Schedule(moveEvent);
     }
 
