@@ -12,6 +12,11 @@ public class SimpleAIV2
 {
     private readonly Random _random;
 
+    // AI decision constants
+    private const int LOW_AMMO_THRESHOLD = 5;
+    private const int LOW_HEALTH_THRESHOLD = 30;
+    private const int REGEN_WAIT_HEALTH_THRESHOLD = 40;
+
     public SimpleAIV2(int? seed = null)
     {
         _random = seed.HasValue ? new Random(seed.Value) : new Random();
@@ -45,7 +50,7 @@ public class SimpleAIV2
         }
 
         // Priority 2: Reload if low on ammo and opponent is far or reloading
-        if (self.CurrentAmmo < 5 && self.WeaponState == WeaponState.Ready)
+        if (self.CurrentAmmo < LOW_AMMO_THRESHOLD && self.WeaponState == WeaponState.Ready)
         {
             if (self.DistanceToOpponent > 15 || opponent.WeaponState == WeaponState.Reloading)
             {
@@ -72,7 +77,7 @@ public class SimpleAIV2
         float currentDistance = self.DistanceToOpponent;
 
         // Priority 1: Survive - if low health and not regenerating, create distance
-        if (self.Health < 30 && !self.CanRegenerateHealth(combat.CurrentTimeMs))
+        if (self.Health < LOW_HEALTH_THRESHOLD && !self.CanRegenerateHealth(combat.CurrentTimeMs))
         {
             if (self.Stamina > 50)
                 return MovementAction.SprintAway;
@@ -81,7 +86,7 @@ public class SimpleAIV2
         }
 
         // Priority 2: If health is low and can regenerate, stop and wait
-        if (self.Health < 40 && self.CanRegenerateHealth(combat.CurrentTimeMs))
+        if (self.Health < REGEN_WAIT_HEALTH_THRESHOLD && self.CanRegenerateHealth(combat.CurrentTimeMs))
         {
             return MovementAction.None;
         }
