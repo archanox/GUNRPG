@@ -31,8 +31,8 @@ Console.WriteLine($"Starting distance:    {player.DistanceToOpponent:F1} meters"
 Console.WriteLine();
 
 // Create combat system
-var combat = new CombatSystem(player, enemy, seed: 42); // Fixed seed for determinism
-var ai = new SimpleAI(seed: 42);
+var combat = new CombatSystemV2(player, enemy, seed: 42); // Fixed seed for determinism
+var ai = new SimpleAIV2(seed: 42);
 
 Console.WriteLine("Combat initialized. Press any key to start...");
 Console.ReadKey(true);
@@ -45,59 +45,71 @@ while (combat.Phase != CombatPhase.Ended)
     Console.WriteLine($"═══ ROUND {roundNumber} - PLANNING PHASE ═══");
     Console.WriteLine();
     
-    // Player chooses intent
-    Console.WriteLine("Choose your action:");
-    Console.WriteLine("1. Fire weapon");
-    Console.WriteLine("2. Reload");
-    Console.WriteLine("3. Enter ADS");
-    Console.WriteLine("4. Walk toward");
-    Console.WriteLine("5. Walk away");
-    Console.WriteLine("6. Sprint toward");
-    Console.WriteLine("7. Sprint away");
-    Console.WriteLine("8. Stop/Wait");
-    Console.Write("\nYour choice (1-8): ");
+    // Player chooses intent (now with simultaneous intents)
+    Console.WriteLine("Choose your actions:");
+    Console.WriteLine("Primary Actions:");
+    Console.WriteLine("  1. Fire weapon");
+    Console.WriteLine("  2. Reload");
+    Console.WriteLine("  3. None (no primary action)");
+    Console.WriteLine("Movement Actions:");
+    Console.WriteLine("  4. Walk toward");
+    Console.WriteLine("  5. Walk away");
+    Console.WriteLine("  6. Sprint toward");
+    Console.WriteLine("  7. Sprint away");
+    Console.WriteLine("  8. None (no movement)");
+    Console.WriteLine("Stance Actions:");
+    Console.WriteLine("  9. Enter ADS");
+    Console.WriteLine("  0. Exit ADS");
+    Console.WriteLine();
+    Console.WriteLine("For simplicity, choose primary action (1-3): ");
     
     var key = Console.ReadKey();
     Console.WriteLine();
     Console.WriteLine();
     
-    Intent? playerIntent = key.KeyChar switch
+    // Create simultaneous intents
+    var playerIntents = new SimultaneousIntents(player.Id);
+    
+    // Map key to primary action
+    playerIntents.Primary = key.KeyChar switch
     {
-        '1' => new FireWeaponIntent(player.Id),
-        '2' => new ReloadIntent(player.Id),
-        '3' => new EnterADSIntent(player.Id),
-        '4' => new WalkIntent(player.Id, towardOpponent: true),
-        '5' => new WalkIntent(player.Id, towardOpponent: false),
-        '6' => new SprintIntent(player.Id, towardOpponent: true),
-        '7' => new SprintIntent(player.Id, towardOpponent: false),
-        '8' => new StopIntent(player.Id),
-        _ => new StopIntent(player.Id)
+        '1' => PrimaryAction.Fire,
+        '2' => PrimaryAction.Reload,
+        '3' => PrimaryAction.None,
+        _ => PrimaryAction.None
     };
     
-    // Submit player intent
-    var playerResult = combat.SubmitIntent(player, playerIntent);
+    // For demo purposes, add some automatic decisions
+    // Auto-enter ADS if firing and not already in ADS
+    if (playerIntents.Primary == PrimaryAction.Fire && player.AimState != AimState.ADS)
+    {
+        playerIntents.Stance = StanceAction.EnterADS;
+    }
+    
+    // Submit player intents
+    var playerResult = combat.SubmitIntents(player, playerIntents);
     if (!playerResult.success)
     {
         Console.WriteLine($"❌ Player intent rejected: {playerResult.errorMessage}");
         Console.WriteLine("Defaulting to Stop.");
-        combat.SubmitIntent(player, new StopIntent(player.Id));
+        combat.SubmitIntents(player, SimultaneousIntents.CreateStop(player.Id));
     }
     else
     {
-        Console.WriteLine($"✓ Player intent: {playerIntent.Type}");
+        Console.WriteLine($"✓ Player intents: Primary={playerIntents.Primary}, Movement={playerIntents.Movement}, Stance={playerIntents.Stance}");
     }
     
-    // AI chooses intent
-    var enemyIntent = ai.DecideIntent(enemy, player, combat);
-    var enemyResult = combat.SubmitIntent(enemy, enemyIntent);
+    // AI chooses intents
+    var enemyIntents = ai.DecideIntents(enemy, player, combat);
+    var enemyResult = combat.SubmitIntents(enemy, enemyIntents);
     if (!enemyResult.success)
     {
         Console.WriteLine($"❌ Enemy intent rejected: {enemyResult.errorMessage}");
-        combat.SubmitIntent(enemy, new StopIntent(enemy.Id));
+        combat.SubmitIntents(enemy, SimultaneousIntents.CreateStop(enemy.Id));
     }
     else
     {
-        Console.WriteLine($"✓ Enemy intent: {enemyIntent.Type}");
+        Console.WriteLine($"✓ Enemy intents: Primary={enemyIntents.Primary}, Movement={enemyIntents.Movement}, Stance={enemyIntents.Stance}");
     }
     
     Console.WriteLine();
@@ -116,10 +128,10 @@ while (combat.Phase != CombatPhase.Ended)
     }
     
     // Reaction window - AI decides if it wants to react
-    if (ai.ShouldReact(enemy, player, combat, out var newEnemyIntent) && newEnemyIntent != null)
+    if (ai.ShouldReact(enemy, player, combat, out var newEnemyIntents) && newEnemyIntents != null)
     {
-        Console.WriteLine($"Enemy reacts! New intent: {newEnemyIntent.Type}");
-        combat.CancelIntent(enemy);
+        Console.WriteLine($"Enemy reacts! New intents: Primary={newEnemyIntents.Primary}, Movement={newEnemyIntents.Movement}");
+        combat.CancelIntents(enemy);
     }
     else
     {
