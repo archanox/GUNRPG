@@ -72,50 +72,96 @@ while (combat.Phase != CombatPhase.Ended)
         _ => PrimaryAction.None
     };
     
-    // Ask for Movement Action
+    // Ask for Movement Action (filter out incompatible options)
     Console.WriteLine();
     Console.WriteLine("═══ MOVEMENT ACTION ═══");
-    Console.WriteLine("1. Walk toward");
-    Console.WriteLine("2. Walk away");
-    Console.WriteLine("3. Sprint toward");
-    Console.WriteLine("4. Sprint away");
-    Console.WriteLine("5. Slide toward");
-    Console.WriteLine("6. Slide away");
-    Console.WriteLine("7. None");
-    Console.Write("Choose movement action (1-7): ");
+    
+    bool canSlide = playerIntents.Primary != PrimaryAction.Reload;
+    var movementOptions = new List<(string key, string label, MovementAction action)>
+    {
+        ("1", "Walk toward", MovementAction.WalkToward),
+        ("2", "Walk away", MovementAction.WalkAway),
+        ("3", "Sprint toward", MovementAction.SprintToward),
+        ("4", "Sprint away", MovementAction.SprintAway),
+    };
+    
+    if (canSlide)
+    {
+        movementOptions.Add(("5", "Slide toward", MovementAction.SlideToward));
+        movementOptions.Add(("6", "Slide away", MovementAction.SlideAway));
+    }
+    
+    movementOptions.Add(("7", "None", MovementAction.None));
+    
+    foreach (var option in movementOptions)
+    {
+        Console.WriteLine($"{option.key}. {option.label}");
+    }
+    
+    if (!canSlide)
+    {
+        Console.WriteLine("   (Slide actions disabled: cannot slide while reloading)");
+    }
+    
+    Console.Write($"Choose movement action (1-7): ");
     var movementKey = Console.ReadKey();
     Console.WriteLine();
     
-    playerIntents.Movement = movementKey.KeyChar switch
-    {
-        '1' => MovementAction.WalkToward,
-        '2' => MovementAction.WalkAway,
-        '3' => MovementAction.SprintToward,
-        '4' => MovementAction.SprintAway,
-        '5' => MovementAction.SlideToward,
-        '6' => MovementAction.SlideAway,
-        '7' => MovementAction.None,
-        _ => MovementAction.None
-    };
+    // Map key to action using the available options
+    var selectedMovement = movementOptions.FirstOrDefault(o => o.key == movementKey.KeyChar.ToString());
+    playerIntents.Movement = selectedMovement.action != default ? selectedMovement.action : MovementAction.None;
     
-    // Ask for Stance Action
+    // Ask for Stance Action (adapt to current ADS state and filter incompatible options)
     Console.WriteLine();
     Console.WriteLine("═══ STANCE ACTION ═══");
-    Console.WriteLine("1. Enter ADS");
-    Console.WriteLine("2. Exit ADS");
-    Console.WriteLine("3. None");
-    Console.Write("Choose stance action (1-3): ");
+    
+    bool isInADS = player.AimState == AimState.ADS;
+    bool isTransitioningToADS = player.AimState == AimState.TransitioningToADS;
+    bool canADS = playerIntents.Movement != MovementAction.SlideToward && 
+                  playerIntents.Movement != MovementAction.SlideAway;
+    
+    var stanceOptions = new List<(string key, string label, StanceAction action)>();
+    
+    if (isInADS)
+    {
+        // Already fully in ADS
+        stanceOptions.Add(("1", "Maintain ADS (stay in ADS)", StanceAction.None));
+        stanceOptions.Add(("2", "Exit ADS (return to hip-fire)", StanceAction.ExitADS));
+    }
+    else if (isTransitioningToADS)
+    {
+        // Currently transitioning to ADS
+        stanceOptions.Add(("1", "Continue ADS transition (keep transitioning)", StanceAction.None));
+        stanceOptions.Add(("2", "Cancel ADS (return to hip-fire)", StanceAction.ExitADS));
+    }
+    else
+    {
+        // Currently in hip-fire
+        if (canADS)
+        {
+            stanceOptions.Add(("1", "Enter ADS (aim down sights)", StanceAction.EnterADS));
+        }
+        stanceOptions.Add(("2", "Stay in hip-fire", StanceAction.None));
+    }
+    
+    foreach (var option in stanceOptions)
+    {
+        Console.WriteLine($"{option.key}. {option.label}");
+    }
+    
+    if (!canADS && !isInADS && !isTransitioningToADS)
+    {
+        Console.WriteLine("   (ADS disabled: cannot ADS while sliding)");
+    }
+    
+    Console.Write($"Choose stance action (1-{stanceOptions.Count}): ");
     var stanceKey = Console.ReadKey();
     Console.WriteLine();
     Console.WriteLine();
     
-    playerIntents.Stance = stanceKey.KeyChar switch
-    {
-        '1' => StanceAction.EnterADS,
-        '2' => StanceAction.ExitADS,
-        '3' => StanceAction.None,
-        _ => StanceAction.None
-    };
+    // Map key to action using the available options
+    var selectedStance = stanceOptions.FirstOrDefault(o => o.key == stanceKey.KeyChar.ToString());
+    playerIntents.Stance = selectedStance.action != default ? selectedStance.action : StanceAction.None;
     
     // Display chosen intents
     Console.WriteLine($"Selected: Primary={playerIntents.Primary}, Movement={playerIntents.Movement}, Stance={playerIntents.Stance}");
@@ -162,25 +208,32 @@ while (combat.Phase != CombatPhase.Ended)
     Console.ReadKey(true);
     Console.WriteLine();
     
-    // Execute
+    // Execute until combat ends or round completes
     combat.BeginExecution();
-    bool hasReactionWindow = combat.ExecuteUntilReactionWindow();
     
-    if (!hasReactionWindow)
+    // Execute all events until combat ends or no more events
+    // This removes the "reaction window extra turn" concept
+    while (combat.Phase == CombatPhase.Executing)
+    {
+        bool hasMoreEvents = combat.ExecuteUntilReactionWindow();
+        if (!hasMoreEvents || combat.Phase == CombatPhase.Ended)
+        {
+            break;
+        }
+        
+        // Reaction windows now just expedite round end
+        // No "extra turn" for AI - just continue to next planning phase
+        if (combat.Phase == CombatPhase.Planning)
+        {
+            // Round completed, proceed to next planning phase
+            break;
+        }
+    }
+    
+    if (combat.Phase == CombatPhase.Ended)
     {
         // Combat ended
         break;
-    }
-    
-    // Reaction window - AI decides if it wants to react
-    if (ai.ShouldReact(enemy, player, combat, out var newEnemyIntents) && newEnemyIntents != null)
-    {
-        Console.WriteLine($"Enemy reacts! New intents: Primary={newEnemyIntents.Primary}, Movement={newEnemyIntents.Movement}");
-        combat.CancelIntents(enemy);
-    }
-    else
-    {
-        Console.WriteLine("Enemy continues current action.");
     }
     
     Console.WriteLine();
