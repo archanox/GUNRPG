@@ -13,7 +13,7 @@ Console.WriteLine();
 // Create operators
 var player = new Operator("Player")
 {
-    EquippedWeapon = WeaponFactory.CreateM4A1(),
+    EquippedWeapon = WeaponFactory.CreateRK9(),
     DistanceToOpponent = 15f
 };
 player.CurrentAmmo = player.EquippedWeapon!.MagazineSize;
@@ -91,7 +91,7 @@ while (combat.Phase != CombatPhase.Ended)
         movementOptions.Add(("6", "Slide away", MovementAction.SlideAway));
     }
     
-    movementOptions.Add(("7", "None", MovementAction.None));
+    movementOptions.Add(("7", "Stand", MovementAction.Stand));
     
     foreach (var option in movementOptions)
     {
@@ -109,7 +109,7 @@ while (combat.Phase != CombatPhase.Ended)
     
     // Map key to action using the available options
     var selectedMovement = movementOptions.FirstOrDefault(o => o.key == movementKey.KeyChar.ToString());
-    playerIntents.Movement = selectedMovement != default ? selectedMovement.action : MovementAction.None;
+    playerIntents.Movement = selectedMovement != default ? selectedMovement.action : MovementAction.Stand;
     
     // Ask for Stance Action (adapt to current ADS state and filter incompatible options)
     Console.WriteLine();

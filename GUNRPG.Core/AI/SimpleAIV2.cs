@@ -88,7 +88,7 @@ public class SimpleAIV2
         // Priority 2: If health is low and can regenerate, stop and wait
         if (self.Health < REGEN_WAIT_HEALTH_THRESHOLD && self.CanRegenerateHealth(combat.CurrentTimeMs))
         {
-            return MovementAction.None;
+            return MovementAction.Stand;
         }
 
         // Priority 3: Adjust position based on optimal range
@@ -111,7 +111,7 @@ public class SimpleAIV2
         }
 
         // At optimal range, no movement needed
-        return MovementAction.None;
+        return MovementAction.Stand;
     }
 
     private StanceAction DecideStance(Operator self, Operator opponent, CombatSystemV2 combat)
