@@ -74,10 +74,10 @@ public class CombatSystemV2
         if (Phase != CombatPhase.Planning)
             return;
 
-        // A reaction window ends the previous execution slice but leaves already-scheduled
-        // events in the queue. Starting a new planning->execution cycle should honor ONLY
-        // newly submitted intents.
-        _eventQueue.Clear();
+        // A reaction window ends the previous execution slice. Starting a new planning->execution
+        // cycle should honor ONLY newly submitted intents, but we preserve in-flight bullets
+        // (DamageAppliedEvent, ShotMissedEvent) so they can land even across planning phases.
+        _eventQueue.ClearExceptInFlightBullets();
         _nextScheduledShotTimeMs.Clear();
         _nextScheduledMovementTimeMs.Clear();
 
