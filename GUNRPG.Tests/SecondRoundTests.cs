@@ -51,8 +51,6 @@ public class SecondRoundTests
         combat.SubmitIntents(enemy, enemyIntents1);
         combat.BeginExecution();
         
-        long timeAfterRound1 = combat.CurrentTimeMs;
-        
         // Execute round 1 until reaction window
         bool hadReaction = combat.ExecuteUntilReactionWindow();
         Assert.True(hadReaction);
@@ -75,8 +73,6 @@ public class SecondRoundTests
         combat.SubmitIntents(player, playerIntents2);
         combat.SubmitIntents(enemy, enemyIntents2);
         combat.BeginExecution();
-        
-        long timeAfterBeginExecution2 = combat.CurrentTimeMs;
         
         // Execute round 2
         bool hadReaction2 = combat.ExecuteUntilReactionWindow();
@@ -128,8 +124,6 @@ public class SecondRoundTests
             combat.SubmitIntents(player, playerIntents);
             combat.SubmitIntents(enemy, enemyIntents);
             combat.BeginExecution();
-            
-            long timeAfterBegin = combat.CurrentTimeMs;
             
             combat.ExecuteUntilReactionWindow();
             
