@@ -98,17 +98,7 @@ public class ShotFiredEvent : ISimulationEvent
             _shooter.RecoilRecoveryStartMs = EventTimeMs + (long)_shooter.EquippedWeapon.RecoilRecoveryTimeMs;
         }
 
-        // Track commitment units
-        _shooter.BulletsFiredSinceLastReaction++;
-
-        // Check if this triggers a reaction window
-        if (_shooter.EquippedWeapon != null && 
-            _shooter.BulletsFiredSinceLastReaction >= _shooter.EquippedWeapon.BulletsPerCommitmentUnit)
-        {
-            _shooter.BulletsFiredSinceLastReaction = 0;
-            return true; // Trigger reaction window
-        }
-
+        // No longer trigger reaction windows - rounds execute completely
         return false;
     }
 
