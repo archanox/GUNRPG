@@ -59,7 +59,8 @@ public class ShotFiredEvent : ISimulationEvent
                     _target,
                     damage,
                     bodyPart,
-                    _eventQueue.GetNextSequenceNumber()));
+                    _eventQueue.GetNextSequenceNumber(),
+                    weaponName));
             }
             else
             {
@@ -141,8 +142,9 @@ public sealed class DamageAppliedEvent : ISimulationEvent
     private readonly Operator _target;
     private readonly float _damage;
     private readonly Weapons.BodyPart _bodyPart;
+    private readonly string _weaponName;
 
-    public DamageAppliedEvent(long eventTimeMs, Operator shooter, Operator target, float damage, Weapons.BodyPart bodyPart, int sequenceNumber)
+    public DamageAppliedEvent(long eventTimeMs, Operator shooter, Operator target, float damage, Weapons.BodyPart bodyPart, int sequenceNumber, string weaponName)
     {
         EventTimeMs = eventTimeMs;
         OperatorId = shooter.Id;
@@ -151,13 +153,13 @@ public sealed class DamageAppliedEvent : ISimulationEvent
         _target = target;
         _damage = damage;
         _bodyPart = bodyPart;
+        _weaponName = weaponName;
     }
 
     public bool Execute()
     {
         _target.TakeDamage(_damage, EventTimeMs);
-        string weaponName = _shooter.EquippedWeapon?.Name ?? "unknown weapon";
-        Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} fired {weaponName} and hit {_target.Name} for {_damage:F1} damage ({_bodyPart})");
+        Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} fired {_weaponName} and hit {_target.Name} for {_damage:F1} damage ({_bodyPart})");
         return false;
     }
 }
