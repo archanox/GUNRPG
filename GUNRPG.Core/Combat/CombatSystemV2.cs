@@ -21,6 +21,9 @@ public class CombatSystemV2
     // Prevent double-scheduling movement updates at the same timestamp for a single operator.
     private readonly Dictionary<Guid, long> _nextScheduledMovementTimeMs = new();
 
+    // Track if we're processing initial intents at the start of a round (to add minimal delay)
+    private bool _processingInitialIntents = false;
+
     public Operator Player { get; }
     public Operator Enemy { get; }
     public CombatPhase Phase { get; private set; }
@@ -83,12 +86,18 @@ public class CombatSystemV2
 
         Phase = CombatPhase.Executing;
 
+        // Mark that we're processing initial intents to add minimal delay to shots
+        _processingInitialIntents = true;
+
         // Process both operators' intents to schedule initial events
         if (_playerIntents != null && _playerIntents.HasAnyAction())
             ProcessSimultaneousIntents(Player, _playerIntents);
         
         if (_enemyIntents != null && _enemyIntents.HasAnyAction())
             ProcessSimultaneousIntents(Enemy, _enemyIntents);
+
+        // Done processing initial intents
+        _processingInitialIntents = false;
 
         Console.WriteLine($"\n=== EXECUTION PHASE STARTED at {_time.CurrentTimeMs}ms ===\n");
     }
@@ -309,6 +318,13 @@ public class CombatSystemV2
         {
             fireTime += (long)weapon.SprintToFireTimeMs;
             op.MovementState = MovementState.Walking; // Transition from sprint to walk when firing
+        }
+
+        // Add minimal delay for initial shots to prevent "instant" rounds
+        // where shots execute with no time for results to show
+        if (_processingInitialIntents && _time.CurrentTimeMs > 0)
+        {
+            fireTime = Math.Max(fireTime, _time.CurrentTimeMs + 1);
         }
 
         ScheduleShotIfNeeded(op, fireTime);
