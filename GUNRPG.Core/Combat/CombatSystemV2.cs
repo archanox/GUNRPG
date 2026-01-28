@@ -21,9 +21,6 @@ public class CombatSystemV2
     // Prevent double-scheduling movement updates at the same timestamp for a single operator.
     private readonly Dictionary<Guid, long> _nextScheduledMovementTimeMs = new();
 
-    // Track if we're processing initial intents at the start of a round (to add minimal delay)
-    private bool _processingInitialIntents = false;
-
     public Operator Player { get; }
     public Operator Enemy { get; }
     public CombatPhase Phase { get; private set; }
@@ -86,9 +83,6 @@ public class CombatSystemV2
 
         Phase = CombatPhase.Executing;
 
-        // Mark that we're processing initial intents to add minimal delay to shots
-        _processingInitialIntents = true;
-
         // Process both operators' intents to schedule initial events
         if (_playerIntents != null && _playerIntents.HasAnyAction())
             ProcessSimultaneousIntents(Player, _playerIntents);
@@ -96,14 +90,11 @@ public class CombatSystemV2
         if (_enemyIntents != null && _enemyIntents.HasAnyAction())
             ProcessSimultaneousIntents(Enemy, _enemyIntents);
 
-        // Done processing initial intents
-        _processingInitialIntents = false;
-
         Console.WriteLine($"\n=== EXECUTION PHASE STARTED at {_time.CurrentTimeMs}ms ===\n");
     }
 
     /// <summary>
-    /// Executes events until a reaction window is triggered or no events remain.
+    /// Executes all events in the queue until the round is complete.
     /// </summary>
     public bool ExecuteUntilReactionWindow()
     {
@@ -124,8 +115,8 @@ public class CombatSystemV2
                 _time.Advance(deltaMs);
             }
 
-            // Execute event
-            bool triggersReactionWindow = evt.Execute();
+            // Execute event (ignore reaction window triggers)
+            evt.Execute();
 
             // Check for death
             if (!Player.IsAlive || !Enemy.IsAlive)
@@ -139,23 +130,6 @@ public class CombatSystemV2
                     Console.WriteLine($"{Enemy.Name} was defeated!");
                     
                 return false;
-            }
-
-            // Check if reaction window triggered
-            if (triggersReactionWindow)
-            {
-                Phase = CombatPhase.Planning;
-                
-                Console.WriteLine($"\n=== REACTION WINDOW at {_time.CurrentTimeMs}ms ===");
-                
-                // Show detailed status with ADS progress
-                float playerADS = Player.GetADSProgress(_time.CurrentTimeMs);
-                float enemyADS = Enemy.GetADSProgress(_time.CurrentTimeMs);
-                
-                Console.WriteLine($"Player: HP {Player.Health:F0}/{Player.MaxHealth:F0}, Ammo {Player.CurrentAmmo}, Distance {Player.DistanceToOpponent:F1}m, ADS {playerADS*100:F0}%");
-                Console.WriteLine($"Enemy:  HP {Enemy.Health:F0}/{Enemy.MaxHealth:F0}, Ammo {Enemy.CurrentAmmo}, Distance {Enemy.DistanceToOpponent:F1}m, ADS {enemyADS*100:F0}%");
-                Console.WriteLine();
-                return true;
             }
 
             // Continue existing continuous intents only for repeating action events (shots, movement)
@@ -172,8 +146,17 @@ public class CombatSystemV2
             }
         }
 
-        // No more events and no reaction window
+        // All events processed, round complete
         Phase = CombatPhase.Planning;
+        
+        // Show round summary
+        Console.WriteLine($"\n=== ROUND COMPLETE at {_time.CurrentTimeMs}ms ===");
+        float playerADS = Player.GetADSProgress(_time.CurrentTimeMs);
+        float enemyADS = Enemy.GetADSProgress(_time.CurrentTimeMs);
+        Console.WriteLine($"Player: HP {Player.Health:F0}/{Player.MaxHealth:F0}, Ammo {Player.CurrentAmmo}, Distance {Player.DistanceToOpponent:F1}m, ADS {playerADS*100:F0}%");
+        Console.WriteLine($"Enemy:  HP {Enemy.Health:F0}/{Enemy.MaxHealth:F0}, Ammo {Enemy.CurrentAmmo}, Distance {Enemy.DistanceToOpponent:F1}m, ADS {enemyADS*100:F0}%");
+        Console.WriteLine();
+        
         return true;
     }
 
@@ -318,13 +301,6 @@ public class CombatSystemV2
         {
             fireTime += (long)weapon.SprintToFireTimeMs;
             op.MovementState = MovementState.Walking; // Transition from sprint to walk when firing
-        }
-
-        // Add minimal delay for initial shots to prevent "instant" rounds
-        // where shots execute with no time for results to show
-        if (_processingInitialIntents && _time.CurrentTimeMs > 0)
-        {
-            fireTime = Math.Max(fireTime, _time.CurrentTimeMs + 1);
         }
 
         ScheduleShotIfNeeded(op, fireTime);
