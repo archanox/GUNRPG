@@ -174,7 +174,9 @@ public sealed class DamageAppliedEvent : ISimulationEvent
     {
         _target.TakeDamage(_damage, EventTimeMs);
         Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name}'s {_weaponName} hit {_target.Name} for {_damage:F1} damage ({_bodyPart})");
-        return false;
+        
+        // End round when a hit occurs
+        return true;
     }
 }
 

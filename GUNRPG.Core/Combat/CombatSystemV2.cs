@@ -21,6 +21,9 @@ public class CombatSystemV2
     // Prevent double-scheduling movement updates at the same timestamp for a single operator.
     private readonly Dictionary<Guid, long> _nextScheduledMovementTimeMs = new();
 
+    // Track misses in current round to end when both miss
+    private readonly HashSet<Guid> _missedInCurrentRound = new();
+
     public Operator Player { get; }
     public Operator Enemy { get; }
     public CombatPhase Phase { get; private set; }
@@ -80,6 +83,7 @@ public class CombatSystemV2
         _eventQueue.ClearExceptInFlightBullets();
         _nextScheduledShotTimeMs.Clear();
         _nextScheduledMovementTimeMs.Clear();
+        _missedInCurrentRound.Clear();
 
         Phase = CombatPhase.Executing;
 
@@ -94,7 +98,9 @@ public class CombatSystemV2
     }
 
     /// <summary>
-    /// Executes all events in the queue until the round is complete.
+    /// Executes events until round end conditions are met:
+    /// - Either player or enemy is hit, OR
+    /// - Both players miss their shots
     /// </summary>
     public bool ExecuteUntilReactionWindow()
     {
@@ -115,8 +121,8 @@ public class CombatSystemV2
                 _time.Advance(deltaMs);
             }
 
-            // Execute event (ignore reaction window triggers)
-            evt.Execute();
+            // Execute event - check if it signals round end
+            bool shouldEndRound = evt.Execute();
 
             // Check for death
             if (!Player.IsAlive || !Enemy.IsAlive)
@@ -130,6 +136,33 @@ public class CombatSystemV2
                     Console.WriteLine($"{Enemy.Name} was defeated!");
                     
                 return false;
+            }
+
+            // Track misses for "both miss" round end condition
+            if (evt is ShotMissedEvent)
+            {
+                _missedInCurrentRound.Add(evt.OperatorId);
+                
+                // If both operators have missed, end the round
+                if (_missedInCurrentRound.Contains(Player.Id) && _missedInCurrentRound.Contains(Enemy.Id))
+                {
+                    shouldEndRound = true;
+                }
+            }
+
+            // Check if round should end (hit occurred or both missed)
+            if (shouldEndRound)
+            {
+                Phase = CombatPhase.Planning;
+                
+                Console.WriteLine($"\n=== ROUND COMPLETE at {_time.CurrentTimeMs}ms ===");
+                float plADS = Player.GetADSProgress(_time.CurrentTimeMs);
+                float enADS = Enemy.GetADSProgress(_time.CurrentTimeMs);
+                Console.WriteLine($"Player: HP {Player.Health:F0}/{Player.MaxHealth:F0}, Ammo {Player.CurrentAmmo}, Distance {Player.DistanceToOpponent:F1}m, ADS {plADS*100:F0}%");
+                Console.WriteLine($"Enemy:  HP {Enemy.Health:F0}/{Enemy.MaxHealth:F0}, Ammo {Enemy.CurrentAmmo}, Distance {Enemy.DistanceToOpponent:F1}m, ADS {enADS*100:F0}%");
+                Console.WriteLine();
+                
+                return true;
             }
 
             // Continue existing continuous intents only for repeating action events (shots, movement)
