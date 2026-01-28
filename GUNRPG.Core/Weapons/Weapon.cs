@@ -30,7 +30,7 @@ public class Weapon
         if (DamageRanges.Count > 0)
         {
             var range = DamageRanges.FirstOrDefault(r => distance >= r.MinMeters && distance < r.MaxMeters)
-                        ?? DamageRanges.Where(r => r.MaxMeters == float.PositiveInfinity)
+                        ?? DamageRanges.Where(r => float.IsPositiveInfinity(r.MaxMeters))
                             .OrderByDescending(r => r.MinMeters)
                             .FirstOrDefault();
 
@@ -125,7 +125,7 @@ public class Weapon
             var range = DamageRanges.FirstOrDefault(r => distance >= r.MinMeters && distance < r.MaxMeters);
             if (range == null)
             {
-                range = DamageRanges.Where(r => r.MaxMeters == float.PositiveInfinity)
+                range = DamageRanges.Where(r => float.IsPositiveInfinity(r.MaxMeters))
                     .OrderByDescending(r => r.MinMeters)
                     .FirstOrDefault();
             }

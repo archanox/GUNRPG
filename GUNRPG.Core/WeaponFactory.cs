@@ -111,7 +111,7 @@ public static class WeaponFactory
         {
             // Fire rate
             RoundsPerMinute = 833, // ~72ms per shot
-            BulletVelocityMetersPerSecond = 0f,
+            BulletVelocityMetersPerSecond = 880.0f,
             
             // Magazine
             MagazineSize = 30,
@@ -156,7 +156,7 @@ public static class WeaponFactory
         return new Weapon("AK-47")
         {
             RoundsPerMinute = 600, // ~100ms per shot
-            BulletVelocityMetersPerSecond = 0f,
+            BulletVelocityMetersPerSecond = 715.0f,
             
             MagazineSize = 30,
             ReloadTimeMs = 2400,
@@ -193,7 +193,7 @@ public static class WeaponFactory
         return new Weapon("MP5")
         {
             RoundsPerMinute = 857, // ~70ms per shot
-            BulletVelocityMetersPerSecond = 0f,
+            BulletVelocityMetersPerSecond = 400f,
             
             MagazineSize = 30,
             ReloadTimeMs = 1800,

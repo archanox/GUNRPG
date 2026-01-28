@@ -31,10 +31,9 @@ public class SimpleAI
         // Priority 2: Survive - if low health and not regenerating, create distance
         if (self.Health < 30 && !self.CanRegenerateHealth(combat.CurrentTimeMs))
         {
-            if (self.Stamina > 50)
-                return new SprintIntent(self.Id, towardOpponent: false);
-            else
-                return new WalkIntent(self.Id, towardOpponent: false);
+            return self.Stamina > 50
+                ? new SprintIntent(self.Id, towardOpponent: false)
+                : new WalkIntent(self.Id, towardOpponent: false);
         }
 
         // Priority 3: If health is low and can regenerate, stop and wait
@@ -44,12 +43,11 @@ public class SimpleAI
         }
 
         // Priority 4: Reload if low on ammo and opponent is far or reloading
-        if (self.CurrentAmmo < 5 && self.WeaponState == WeaponState.Ready)
+        if (self.CurrentAmmo < 5 &&
+            self.WeaponState == WeaponState.Ready &&
+            (self.DistanceToOpponent > 15 || opponent.WeaponState == WeaponState.Reloading))
         {
-            if (self.DistanceToOpponent > 15 || opponent.WeaponState == WeaponState.Reloading)
-            {
-                return new ReloadIntent(self.Id);
-            }
+            return new ReloadIntent(self.Id);
         }
 
         // Priority 5: Engage if in good range and have ammo
@@ -123,15 +121,13 @@ public class SimpleAI
         }
 
         // React if opponent finished reloading (opportunity to push)
-        if (opponent.WeaponState == WeaponState.Ready && 
-            self.DistanceToOpponent > 10)
+        if (opponent.WeaponState == WeaponState.Ready &&
+            self.DistanceToOpponent > 10 &&
+            _random.NextDouble() < 0.3)
         {
             // Small chance to push aggressively
-            if (_random.NextDouble() < 0.3)
-            {
-                newIntent = new SprintIntent(self.Id, towardOpponent: true);
-                return true;
-            }
+            newIntent = new SprintIntent(self.Id, towardOpponent: true);
+            return true;
         }
 
         // Otherwise, continue current intent

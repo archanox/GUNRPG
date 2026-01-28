@@ -185,14 +185,16 @@ public class Operator
         if (AimState == AimState.TransitioningToADS && ADSTransitionStartMs.HasValue)
         {
             float elapsed = currentTimeMs - ADSTransitionStartMs.Value;
-            float progress = Math.Clamp(elapsed / ADSTransitionDurationMs, 0f, 1f);
+            float duration = ADSTransitionDurationMs <= 0f ? 1f : ADSTransitionDurationMs;
+            float progress = Math.Clamp(elapsed / duration, 0f, 1f);
             return progress;
         }
 
         if (AimState == AimState.TransitioningToHip && ADSTransitionStartMs.HasValue)
         {
             float elapsed = currentTimeMs - ADSTransitionStartMs.Value;
-            float progress = 1f - Math.Clamp(elapsed / ADSTransitionDurationMs, 0f, 1f);
+            float duration = ADSTransitionDurationMs <= 0f ? 1f : ADSTransitionDurationMs;
+            float progress = 1f - Math.Clamp(elapsed / duration, 0f, 1f);
             return progress;
         }
 
