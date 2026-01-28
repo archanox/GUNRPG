@@ -40,8 +40,13 @@ public class ShotFiredEvent : ISimulationEvent
         // Get weapon name for logging
         string weaponName = _shooter.EquippedWeapon?.Name ?? "unknown weapon";
 
+        // Always log when the shot is fired
+        Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} fired {weaponName}");
+
         // Calculate hit
         bool isHit = CalculateHit();
+        long travelTime = CalculateTravelTimeMs();
+        long impactTime = EventTimeMs + travelTime;
         
         if (isHit)
         {
@@ -50,11 +55,10 @@ public class ShotFiredEvent : ISimulationEvent
             var bodyPart = isHeadshot ? Weapons.BodyPart.Head : Weapons.BodyPart.LowerTorso;
             float damage = weapon.GetDamageAtDistance(_shooter.DistanceToOpponent, bodyPart);
 
-            long damageTime = EventTimeMs + CalculateTravelTimeMs();
             if (_eventQueue != null)
             {
                 _eventQueue.Schedule(new DamageAppliedEvent(
-                    damageTime,
+                    impactTime,
                     _shooter,
                     _target,
                     damage,
@@ -64,13 +68,26 @@ public class ShotFiredEvent : ISimulationEvent
             }
             else
             {
-                _target.TakeDamage(damage, damageTime);
-                Console.WriteLine($"[{damageTime}ms] {_shooter.Name} fired {weaponName} and hit {_target.Name} for {damage:F1} damage ({bodyPart})");
+                _target.TakeDamage(damage, impactTime);
+                Console.WriteLine($"[{impactTime}ms] {_shooter.Name}'s {weaponName} hit {_target.Name} for {damage:F1} damage ({bodyPart})");
             }
         }
         else
         {
-            Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} fired {weaponName} and missed {_target.Name}");
+            // Schedule miss event at impact time (when bullet passes target)
+            if (_eventQueue != null && travelTime > 0)
+            {
+                _eventQueue.Schedule(new ShotMissedEvent(
+                    impactTime,
+                    _shooter,
+                    _target,
+                    _eventQueue.GetNextSequenceNumber(),
+                    weaponName));
+            }
+            else
+            {
+                Console.WriteLine($"[{impactTime}ms] {_shooter.Name}'s {weaponName} missed {_target.Name}");
+            }
         }
 
         // Apply recoil
@@ -159,7 +176,37 @@ public sealed class DamageAppliedEvent : ISimulationEvent
     public bool Execute()
     {
         _target.TakeDamage(_damage, EventTimeMs);
-        Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} fired {_weaponName} and hit {_target.Name} for {_damage:F1} damage ({_bodyPart})");
+        Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name}'s {_weaponName} hit {_target.Name} for {_damage:F1} damage ({_bodyPart})");
+        return false;
+    }
+}
+
+/// <summary>
+/// Event fired when a shot misses (after bullet travel time).
+/// </summary>
+public sealed class ShotMissedEvent : ISimulationEvent
+{
+    public long EventTimeMs { get; }
+    public Guid OperatorId { get; }
+    public int SequenceNumber { get; }
+
+    private readonly Operator _shooter;
+    private readonly Operator _target;
+    private readonly string _weaponName;
+
+    public ShotMissedEvent(long eventTimeMs, Operator shooter, Operator target, int sequenceNumber, string weaponName)
+    {
+        EventTimeMs = eventTimeMs;
+        OperatorId = shooter.Id;
+        SequenceNumber = sequenceNumber;
+        _shooter = shooter;
+        _target = target;
+        _weaponName = weaponName;
+    }
+
+    public bool Execute()
+    {
+        Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name}'s {_weaponName} missed {_target.Name}");
         return false;
     }
 }
