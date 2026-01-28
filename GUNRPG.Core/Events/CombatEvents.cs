@@ -75,7 +75,7 @@ public class ShotFiredEvent : ISimulationEvent
         else
         {
             // Schedule miss event at impact time (when bullet passes target)
-            if (_eventQueue != null && travelTime > 0)
+            if (_eventQueue != null)
             {
                 _eventQueue.Schedule(new ShotMissedEvent(
                     impactTime,
@@ -146,6 +146,13 @@ public class ShotFiredEvent : ISimulationEvent
         return _random.NextDouble() < hitChance;
     }
 
+    private bool CalculateHeadshot()
+    {
+        // 10% headshot chance on hit (simplified)
+        return _random.NextDouble() < 0.1;
+    }
+}
+
 /// <summary>
 /// Event fired when a hit's damage is applied to the target (after bullet travel time).
 /// </summary>
@@ -208,13 +215,6 @@ public sealed class ShotMissedEvent : ISimulationEvent
     {
         Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name}'s {_weaponName} missed {_target.Name}");
         return false;
-    }
-}
-
-    private bool CalculateHeadshot()
-    {
-        // 10% headshot chance on hit (simplified)
-        return _random.NextDouble() < 0.1;
     }
 }
 
