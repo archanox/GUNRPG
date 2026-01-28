@@ -20,7 +20,7 @@ player.CurrentAmmo = player.EquippedWeapon!.MagazineSize;
 
 var enemy = new Operator("Enemy")
 {
-    EquippedWeapon = WeaponFactory.CreateAK47(),
+    EquippedWeapon = WeaponFactory.CreateRK9(),
     DistanceToOpponent = 15f
 };
 enemy.CurrentAmmo = enemy.EquippedWeapon!.MagazineSize;
