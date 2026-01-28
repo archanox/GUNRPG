@@ -67,6 +67,26 @@ public class EventQueue
     }
 
     /// <summary>
+    /// Clears all events except for damage/miss events (bullets in flight).
+    /// Used when starting a new planning phase to preserve in-flight projectiles.
+    /// </summary>
+    public void ClearExceptInFlightBullets()
+    {
+        var inFlightEvents = _events
+            .Where(e => e is DamageAppliedEvent || e is ShotMissedEvent)
+            .ToList();
+        
+        _events.Clear();
+        
+        foreach (var evt in inFlightEvents)
+        {
+            _events.Add(evt);
+        }
+        
+        // Don't reset sequence number - keep continuity
+    }
+
+    /// <summary>
     /// Gets the next sequence number for deterministic ordering.
     /// </summary>
     public int GetNextSequenceNumber()
