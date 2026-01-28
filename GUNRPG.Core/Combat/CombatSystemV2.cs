@@ -74,7 +74,7 @@ public class CombatSystemV2
         if (Phase != CombatPhase.Planning)
             return;
 
-        // A reaction window ends the previous execution slice. Starting a new planning->execution
+        // Round execution ends when all events are processed. Starting a new planning->execution
         // cycle should honor ONLY newly submitted intents, but we preserve in-flight bullets
         // (DamageAppliedEvent, ShotMissedEvent) so they can land even across planning phases.
         _eventQueue.ClearExceptInFlightBullets();
