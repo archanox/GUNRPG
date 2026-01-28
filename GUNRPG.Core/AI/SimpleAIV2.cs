@@ -50,22 +50,20 @@ public class SimpleAIV2
         }
 
         // Priority 2: Reload if low on ammo and opponent is far or reloading
-        if (self.CurrentAmmo < LOW_AMMO_THRESHOLD && self.WeaponState == WeaponState.Ready)
+        if (self.CurrentAmmo < LOW_AMMO_THRESHOLD &&
+            self.WeaponState == WeaponState.Ready &&
+            (self.DistanceToOpponent > 15 || opponent.WeaponState == WeaponState.Reloading))
         {
-            if (self.DistanceToOpponent > 15 || opponent.WeaponState == WeaponState.Reloading)
-            {
-                return PrimaryAction.Reload;
-            }
+            return PrimaryAction.Reload;
         }
 
         // Priority 3: Fire if in range and have ammo
-        if (self.CurrentAmmo > 0 && self.WeaponState == WeaponState.Ready)
+        if (self.CurrentAmmo > 0 &&
+            self.WeaponState == WeaponState.Ready &&
+            self.DistanceToOpponent < 30)
         {
             // Fire if opponent is visible and in reasonable range
-            if (self.DistanceToOpponent < 30)
-            {
-                return PrimaryAction.Fire;
-            }
+            return PrimaryAction.Fire;
         }
 
         return PrimaryAction.None;
@@ -79,10 +77,7 @@ public class SimpleAIV2
         // Priority 1: Survive - if low health and not regenerating, create distance
         if (self.Health < LOW_HEALTH_THRESHOLD && !self.CanRegenerateHealth(combat.CurrentTimeMs))
         {
-            if (self.Stamina > 50)
-                return MovementAction.SprintAway;
-            else
-                return MovementAction.WalkAway;
+            return self.Stamina > 50 ? MovementAction.SprintAway : MovementAction.WalkAway;
         }
 
         // Priority 2: If health is low and can regenerate, stop and wait
@@ -95,14 +90,9 @@ public class SimpleAIV2
         if (currentDistance > optimalRange + 5)
         {
             // Too far, move closer
-            if (self.Stamina > 30 && opponent.Health > 50)
-            {
-                return MovementAction.SprintToward;
-            }
-            else
-            {
-                return MovementAction.WalkToward;
-            }
+            return (self.Stamina > 30 && opponent.Health > 50)
+                ? MovementAction.SprintToward
+                : MovementAction.WalkToward;
         }
         else if (currentDistance < optimalRange - 5)
         {
@@ -169,19 +159,16 @@ public class SimpleAIV2
         }
 
         // React if opponent finished reloading (opportunity to push)
-        if (opponent.WeaponState == WeaponState.Ready && 
+        if (opponent.WeaponState == WeaponState.Ready &&
             self.DistanceToOpponent > 10 &&
-            self.Stamina > 50)
+            self.Stamina > 50 &&
+            _random.NextDouble() < 0.3)
         {
-            // Small chance to push aggressively
-            if (_random.NextDouble() < 0.3)
-            {
-                var intents = new SimultaneousIntents(self.Id);
-                intents.Movement = MovementAction.SprintToward;
-                intents.Primary = PrimaryAction.Fire;
-                newIntents = intents;
-                return true;
-            }
+            var intents = new SimultaneousIntents(self.Id);
+            intents.Movement = MovementAction.SprintToward;
+            intents.Primary = PrimaryAction.Fire;
+            newIntents = intents;
+            return true;
         }
 
         // Otherwise, continue current intent

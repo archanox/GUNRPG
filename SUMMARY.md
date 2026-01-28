@@ -9,7 +9,7 @@ A complete foundational system for a text-based tactical combat simulator implem
 - **Lines of Code**: ~2,250 (C#)
 - **Test Coverage**: 38 unit tests, 100% passing
 - **Modules**: 7 core systems
-- **Weapons**: 3 pre-configured (M4A1, AK-47, MP5)
+- **Weapons**: 4 pre-configured (RK-9, M4A1, AK-47, MP5)
 - **Build Time**: ~2 seconds
 - **Test Time**: ~60ms
 

@@ -99,6 +99,7 @@ Weapons use **real stats** from Call of Duty and other tactical shooters:
 
 ### Included Weapons
 
+- **RK-9**: Primary demo weapon (709 RPM, 32 damage, complete stats)
 - **M4A1**: Balanced assault rifle (833 RPM, 28 damage)
 - **AK-47**: High damage, slower fire (600 RPM, 35 damage)
 - **MP5**: High ROF SMG (857 RPM, 22 damage)

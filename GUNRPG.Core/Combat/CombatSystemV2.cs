@@ -243,14 +243,12 @@ public class CombatSystemV2
     private void ProcessMovementAction(Operator op, MovementAction movement)
     {
         // Sprinting auto-exits ADS
-        if (movement == MovementAction.SprintToward || movement == MovementAction.SprintAway)
+        if ((movement == MovementAction.SprintToward || movement == MovementAction.SprintAway) &&
+            (op.AimState == AimState.ADS || op.AimState == AimState.TransitioningToADS))
         {
-            if (op.AimState == AimState.ADS || op.AimState == AimState.TransitioningToADS)
-            {
-                op.AimState = AimState.Hip;
-                op.ADSTransitionStartMs = null;
-                Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} auto-exited ADS due to sprint");
-            }
+            op.AimState = AimState.Hip;
+            op.ADSTransitionStartMs = null;
+            Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} auto-exited ADS due to sprint");
         }
 
         switch (movement)
@@ -420,12 +418,10 @@ public class CombatSystemV2
                           intents.Movement == MovementAction.SprintAway) ? op.SprintSpeed : op.WalkSpeed;
             
             // Check if still valid
-            if (intents.Movement == MovementAction.SprintToward || intents.Movement == MovementAction.SprintAway)
+            if ((intents.Movement == MovementAction.SprintToward || intents.Movement == MovementAction.SprintAway) &&
+                (op.Stamina <= 0 || op.MovementState != MovementState.Sprinting))
             {
-                if (op.Stamina <= 0 || op.MovementState != MovementState.Sprinting)
-                {
-                    return; // Stop sprinting
-                }
+                return; // Stop sprinting
             }
 
             ScheduleMovementUpdate(op, towardOpponent, speed);
