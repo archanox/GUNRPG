@@ -171,4 +171,63 @@ public class RoundExecutionTests
         Assert.True(combat.CurrentTimeMs > 20, 
             "Round should execute long enough for bullet impacts");
     }
+    
+    [Fact]
+    public void Round_EndsWhenEitherPlayerIsHit()
+    {
+        // Arrange: Create combat where we expect a hit
+        var player = new Operator("Player") 
+        { 
+            EquippedWeapon = WeaponFactory.CreateRK9(),
+            CurrentAmmo = 30,
+            DistanceToOpponent = 15f,
+            Health = 100,
+            MaxHealth = 100
+        };
+        var enemy = new Operator("Enemy") 
+        { 
+            EquippedWeapon = WeaponFactory.CreateRK9(),
+            CurrentAmmo = 30,
+            DistanceToOpponent = 15f,
+            Health = 100,
+            MaxHealth = 100
+        };
+        
+        var combat = new CombatSystemV2(player, enemy, seed: 42);
+        
+        float initialPlayerHealth = player.Health;
+        float initialEnemyHealth = enemy.Health;
+        
+        // Act: Execute round with firing
+        var playerIntents = new SimultaneousIntents(player.Id)
+        { 
+            Primary = PrimaryAction.Fire, 
+            Movement = MovementAction.Stand 
+        };
+        var enemyIntents = new SimultaneousIntents(enemy.Id)
+        { 
+            Primary = PrimaryAction.Fire, 
+            Movement = MovementAction.Stand 
+        };
+        
+        combat.SubmitIntents(player, playerIntents);
+        combat.SubmitIntents(enemy, enemyIntents);
+        combat.BeginExecution();
+        
+        long timeBeforeExecution = combat.CurrentTimeMs;
+        combat.ExecuteUntilReactionWindow();
+        long timeAfterExecution = combat.CurrentTimeMs;
+        
+        // Assert: Round should end shortly after first hit
+        // With seed 42, the first hit occurs around 26ms
+        Assert.True(timeAfterExecution < 100, 
+            $"Round should end shortly after first hit. Time: {timeAfterExecution}ms");
+        
+        // At least one player should have taken damage
+        bool someoneTookDamage = player.Health < initialPlayerHealth || enemy.Health < initialEnemyHealth;
+        Assert.True(someoneTookDamage, "At least one player should have been hit");
+        
+        // Round should have completed (returned to Planning)
+        Assert.Equal(CombatPhase.Planning, combat.Phase);
+    }
 }
