@@ -6,6 +6,16 @@ using GUNRPG.Core.Time;
 namespace GUNRPG.Core.Combat;
 
 /// <summary>
+/// Combat phase state.
+/// </summary>
+public enum CombatPhase
+{
+    Planning,   // Time paused, accepting intents
+    Executing,  // Time running, events executing
+    Ended       // Combat complete
+}
+
+/// <summary>
 /// Main combat system orchestrator with support for simultaneous intents.
 /// Manages event queue, time, and operator state during combat.
 /// </summary>
@@ -121,8 +131,9 @@ public class CombatSystemV2
                 _time.Advance(deltaMs);
             }
 
-            // Execute event - check if it signals round end
-            bool shouldEndRound = evt.Execute();
+            // Execute event - round end is determined by specific event types
+            bool shouldEndRound = false;
+            evt.Execute();
 
             // Check for death
             if (!Player.IsAlive || !Enemy.IsAlive)
@@ -136,6 +147,12 @@ public class CombatSystemV2
                     Console.WriteLine($"{Enemy.Name} was defeated!");
                     
                 return false;
+            }
+
+            // A hit (damage applied) always ends the round
+            if (evt is DamageAppliedEvent)
+            {
+                shouldEndRound = true;
             }
 
             // Track misses for "both miss" round end condition

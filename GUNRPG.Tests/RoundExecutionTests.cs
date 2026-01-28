@@ -52,7 +52,7 @@ public class RoundExecutionTests
         long startTime = combat.CurrentTimeMs;
         
         // Execute round completely
-        bool continuesCombat = combat.ExecuteUntilReactionWindow();
+        _ = combat.ExecuteUntilReactionWindow();
         
         long endTime = combat.CurrentTimeMs;
         
@@ -163,13 +163,19 @@ public class RoundExecutionTests
         combat.BeginExecution();
         combat.ExecuteUntilReactionWindow();
         
-        // Assert: If hits occurred, health should change
-        // With seed 42, at least some shots should land eventually
-        bool healthChanged = player.Health != initialPlayerHealth || enemy.Health != initialEnemyHealth;
+        // Assert: Health should change when hits occur
+        // With seed 42, at least some shots should land
+        const float healthEpsilon = 0.001f;
+        bool healthChanged = Math.Abs(player.Health - initialPlayerHealth) > healthEpsilon
+            || Math.Abs(enemy.Health - initialEnemyHealth) > healthEpsilon;
         
         // Time should have advanced enough for bullets to travel and hit
         Assert.True(combat.CurrentTimeMs > 20, 
             "Round should execute long enough for bullet impacts");
+        
+        // At least one player should have taken damage (validates hit/miss logic)
+        Assert.True(healthChanged, 
+            "At least one player should have been hit with seed 42");
     }
     
     [Fact]
@@ -218,13 +224,19 @@ public class RoundExecutionTests
         combat.ExecuteUntilReactionWindow();
         long timeAfterExecution = combat.CurrentTimeMs;
         
-        // Assert: Round should end shortly after first hit
+        // Assert: Time should not go backwards and should advance during execution
+        Assert.True(timeAfterExecution >= timeBeforeExecution,
+            $"Combat time should advance during execution. Before: {timeBeforeExecution}ms, After: {timeAfterExecution}ms");
+        
+        // Round should end shortly after first hit
         // With seed 42, the first hit occurs around 26ms
         Assert.True(timeAfterExecution < 100, 
             $"Round should end shortly after first hit. Time: {timeAfterExecution}ms");
         
         // At least one player should have taken damage
-        bool someoneTookDamage = player.Health < initialPlayerHealth || enemy.Health < initialEnemyHealth;
+        const float healthEpsilon = 0.001f;
+        bool someoneTookDamage = (initialPlayerHealth - player.Health) > healthEpsilon 
+            || (initialEnemyHealth - enemy.Health) > healthEpsilon;
         Assert.True(someoneTookDamage, "At least one player should have been hit");
         
         // Round should have completed (returned to Planning)
