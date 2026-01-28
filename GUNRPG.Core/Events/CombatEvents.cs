@@ -36,6 +36,9 @@ public class ShotFiredEvent : ISimulationEvent
 
         // Consume ammo
         _shooter.CurrentAmmo--;
+        
+        // Get weapon name for logging
+        string weaponName = _shooter.EquippedWeapon?.Name ?? "unknown weapon";
 
         // Calculate hit
         bool isHit = CalculateHit();
@@ -61,12 +64,12 @@ public class ShotFiredEvent : ISimulationEvent
             else
             {
                 _target.TakeDamage(damage, damageTime);
-                Console.WriteLine($"[{damageTime}ms] {_shooter.Name} hit {_target.Name} for {damage:F1} damage ({bodyPart})");
+                Console.WriteLine($"[{damageTime}ms] {_shooter.Name} fired {weaponName} and hit {_target.Name} for {damage:F1} damage ({bodyPart})");
             }
         }
         else
         {
-            Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} missed {_target.Name}");
+            Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} fired {weaponName} and missed {_target.Name}");
         }
 
         // Apply recoil
@@ -153,7 +156,8 @@ public sealed class DamageAppliedEvent : ISimulationEvent
     public bool Execute()
     {
         _target.TakeDamage(_damage, EventTimeMs);
-        Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} hit {_target.Name} for {_damage:F1} damage ({_bodyPart})");
+        string weaponName = _shooter.EquippedWeapon?.Name ?? "unknown weapon";
+        Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} fired {weaponName} and hit {_target.Name} for {_damage:F1} damage ({_bodyPart})");
         return false;
     }
 }
