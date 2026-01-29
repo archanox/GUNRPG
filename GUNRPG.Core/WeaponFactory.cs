@@ -378,7 +378,7 @@ public static class WeaponFactory
     /// Creates an IRIDES ONE M15 MOD 0 assault rifle.
     /// Stats based on the provided in-game attachment screen.
     /// </summary>
-    public static Weapon CreateIridesOneM15()
+    public static Weapon CreateIridesOneM15Mod0()
     {
         return new Weapon("IRIDES ONE M15 MOD 0")
         {
@@ -433,10 +433,10 @@ public static class WeaponFactory
 
             // Commitment
             BulletsPerCommitmentUnit = 3
-        }.WithIridesOneM15DamageModel();
+        }.WithIridesOneM15Mod0DamageModel();
     }
 
-    private static Weapon WithIridesOneM15DamageModel(this Weapon weapon)
+    private static Weapon WithIridesOneM15Mod0DamageModel(this Weapon weapon)
     {
         weapon.DamageRanges.Clear();
         weapon.DamageRanges.Add(new DamageRange(0f, 36f, 21f));
