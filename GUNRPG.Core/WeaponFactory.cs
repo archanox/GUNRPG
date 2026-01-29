@@ -77,10 +77,6 @@ public static class WeaponFactory
         weapon.DamageRanges.Add(new DamageRange(51f, 71f, 31f));
         weapon.DamageRanges.Add(new DamageRange(71f, float.PositiveInfinity, 24f));
 
-        weapon.MinDamageRange = 0f;
-        weapon.MaxDamageRange = 0f;
-        weapon.MinDamageMultiplier = 1f;
-
         return weapon;
     }
 
@@ -154,10 +150,6 @@ public static class WeaponFactory
         weapon.DamageRanges.Add(new DamageRange(18f, 26f, 19f));
         weapon.DamageRanges.Add(new DamageRange(26f, float.PositiveInfinity, 16f));
 
-        weapon.MinDamageRange = 0f;
-        weapon.MaxDamageRange = 0f;
-        weapon.MinDamageMultiplier = 1f;
-
         return weapon;
     }
 
@@ -229,10 +221,6 @@ public static class WeaponFactory
         weapon.DamageRanges.Add(new DamageRange(0f, 36f, 21f));
         weapon.DamageRanges.Add(new DamageRange(36f, 55f, 18f));
         weapon.DamageRanges.Add(new DamageRange(55f, float.PositiveInfinity, 17f));
-
-        weapon.MinDamageRange = 0f;
-        weapon.MaxDamageRange = 0f;
-        weapon.MinDamageMultiplier = 1f;
 
         return weapon;
     }
