@@ -73,9 +73,48 @@ public static class WeaponFactory
     private static Weapon WithSokol545DamageModel(this Weapon weapon)
     {
         weapon.DamageRanges.Clear();
-        weapon.DamageRanges.Add(new DamageRange(0f, 51f, 32f));
-        weapon.DamageRanges.Add(new DamageRange(51f, 71f, 31f));
-        weapon.DamageRanges.Add(new DamageRange(71f, float.PositiveInfinity, 24f));
+        weapon.DamageRanges.Add(new DamageRange(0f, 51f, 32f)
+        {
+            BodyPartDamageOverrides = new Dictionary<BodyPart, float>
+            {
+                [BodyPart.Head] = 38f, // 38(x1.2) shown in image
+                [BodyPart.Neck] = 32f,
+                [BodyPart.UpperTorso] = 32f,
+                [BodyPart.LowerTorso] = 32f,
+                [BodyPart.UpperArm] = 32f,
+                [BodyPart.LowerArm] = 32f,
+                [BodyPart.UpperLeg] = 32f,
+                [BodyPart.LowerLeg] = 32f,
+            }
+        });
+        weapon.DamageRanges.Add(new DamageRange(51f, 71f, 31f)
+        {
+            BodyPartDamageOverrides = new Dictionary<BodyPart, float>
+            {
+                [BodyPart.Head] = 37f, // Approximate based on 1.2x multiplier
+                [BodyPart.Neck] = 31f,
+                [BodyPart.UpperTorso] = 31f,
+                [BodyPart.LowerTorso] = 31f,
+                [BodyPart.UpperArm] = 31f,
+                [BodyPart.LowerArm] = 31f,
+                [BodyPart.UpperLeg] = 31f,
+                [BodyPart.LowerLeg] = 31f,
+            }
+        });
+        weapon.DamageRanges.Add(new DamageRange(71f, float.PositiveInfinity, 24f)
+        {
+            BodyPartDamageOverrides = new Dictionary<BodyPart, float>
+            {
+                [BodyPart.Head] = 29f, // Approximate based on 1.2x multiplier
+                [BodyPart.Neck] = 24f,
+                [BodyPart.UpperTorso] = 24f,
+                [BodyPart.LowerTorso] = 24f,
+                [BodyPart.UpperArm] = 24f,
+                [BodyPart.LowerArm] = 24f,
+                [BodyPart.UpperLeg] = 24f,
+                [BodyPart.LowerLeg] = 24f,
+            }
+        });
 
         return weapon;
     }
@@ -145,10 +184,62 @@ public static class WeaponFactory
     private static Weapon WithSturmwolf45DamageModel(this Weapon weapon)
     {
         weapon.DamageRanges.Clear();
-        weapon.DamageRanges.Add(new DamageRange(0f, 11f, 30f));
-        weapon.DamageRanges.Add(new DamageRange(11f, 18f, 23f));
-        weapon.DamageRanges.Add(new DamageRange(18f, 26f, 19f));
-        weapon.DamageRanges.Add(new DamageRange(26f, float.PositiveInfinity, 16f));
+        weapon.DamageRanges.Add(new DamageRange(0f, 11f, 30f)
+        {
+            BodyPartDamageOverrides = new Dictionary<BodyPart, float>
+            {
+                [BodyPart.Head] = 37f, // 37(x1.2) shown in image
+                [BodyPart.Neck] = 30f,
+                [BodyPart.UpperTorso] = 30f,
+                [BodyPart.LowerTorso] = 30f,
+                [BodyPart.UpperArm] = 30f,
+                [BodyPart.LowerArm] = 30f,
+                [BodyPart.UpperLeg] = 30f,
+                [BodyPart.LowerLeg] = 30f,
+            }
+        });
+        weapon.DamageRanges.Add(new DamageRange(11f, 18f, 23f)
+        {
+            BodyPartDamageOverrides = new Dictionary<BodyPart, float>
+            {
+                [BodyPart.Head] = 28f, // Approximate based on 1.2x multiplier
+                [BodyPart.Neck] = 23f,
+                [BodyPart.UpperTorso] = 23f,
+                [BodyPart.LowerTorso] = 23f,
+                [BodyPart.UpperArm] = 23f,
+                [BodyPart.LowerArm] = 23f,
+                [BodyPart.UpperLeg] = 23f,
+                [BodyPart.LowerLeg] = 23f,
+            }
+        });
+        weapon.DamageRanges.Add(new DamageRange(18f, 26f, 19f)
+        {
+            BodyPartDamageOverrides = new Dictionary<BodyPart, float>
+            {
+                [BodyPart.Head] = 23f, // Approximate based on 1.2x multiplier
+                [BodyPart.Neck] = 19f,
+                [BodyPart.UpperTorso] = 19f,
+                [BodyPart.LowerTorso] = 19f,
+                [BodyPart.UpperArm] = 19f,
+                [BodyPart.LowerArm] = 19f,
+                [BodyPart.UpperLeg] = 19f,
+                [BodyPart.LowerLeg] = 19f,
+            }
+        });
+        weapon.DamageRanges.Add(new DamageRange(26f, float.PositiveInfinity, 16f)
+        {
+            BodyPartDamageOverrides = new Dictionary<BodyPart, float>
+            {
+                [BodyPart.Head] = 19f, // Approximate based on 1.2x multiplier
+                [BodyPart.Neck] = 16f,
+                [BodyPart.UpperTorso] = 16f,
+                [BodyPart.LowerTorso] = 16f,
+                [BodyPart.UpperArm] = 16f,
+                [BodyPart.LowerArm] = 16f,
+                [BodyPart.UpperLeg] = 16f,
+                [BodyPart.LowerLeg] = 16f,
+            }
+        });
 
         return weapon;
     }
@@ -218,9 +309,48 @@ public static class WeaponFactory
     private static Weapon WithM15Mod0DamageModel(this Weapon weapon)
     {
         weapon.DamageRanges.Clear();
-        weapon.DamageRanges.Add(new DamageRange(0f, 30.5f, 21f));
-        weapon.DamageRanges.Add(new DamageRange(30.5f, 46.4f, 18f));
-        weapon.DamageRanges.Add(new DamageRange(46.4f, float.PositiveInfinity, 17f));
+        weapon.DamageRanges.Add(new DamageRange(0f, 30.5f, 21f)
+        {
+            BodyPartDamageOverrides = new Dictionary<BodyPart, float>
+            {
+                [BodyPart.Head] = 27f,
+                [BodyPart.Neck] = 21f,
+                [BodyPart.UpperTorso] = 21f,
+                [BodyPart.LowerTorso] = 21f,
+                [BodyPart.UpperArm] = 21f,
+                [BodyPart.LowerArm] = 21f,
+                [BodyPart.UpperLeg] = 21f,
+                [BodyPart.LowerLeg] = 21f,
+            }
+        });
+        weapon.DamageRanges.Add(new DamageRange(30.5f, 46.4f, 18f)
+        {
+            BodyPartDamageOverrides = new Dictionary<BodyPart, float>
+            {
+                [BodyPart.Head] = 23f,
+                [BodyPart.Neck] = 18f,
+                [BodyPart.UpperTorso] = 18f,
+                [BodyPart.LowerTorso] = 18f,
+                [BodyPart.UpperArm] = 18f,
+                [BodyPart.LowerArm] = 18f,
+                [BodyPart.UpperLeg] = 18f,
+                [BodyPart.LowerLeg] = 18f,
+            }
+        });
+        weapon.DamageRanges.Add(new DamageRange(46.4f, float.PositiveInfinity, 17f)
+        {
+            BodyPartDamageOverrides = new Dictionary<BodyPart, float>
+            {
+                [BodyPart.Head] = 22f,
+                [BodyPart.Neck] = 17f,
+                [BodyPart.UpperTorso] = 17f,
+                [BodyPart.LowerTorso] = 17f,
+                [BodyPart.UpperArm] = 17f,
+                [BodyPart.LowerArm] = 17f,
+                [BodyPart.UpperLeg] = 17f,
+                [BodyPart.LowerLeg] = 17f,
+            }
+        });
 
         return weapon;
     }
