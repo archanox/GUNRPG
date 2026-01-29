@@ -18,13 +18,13 @@ public class RoundExecutionTests
         // Arrange: Create combat with deterministic seed
         var player = new Operator("Player") 
         { 
-            EquippedWeapon = WeaponFactory.CreateRK9(),
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f 
         };
         var enemy = new Operator("Enemy") 
         { 
-            EquippedWeapon = WeaponFactory.CreateRK9(),
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f 
         };
@@ -75,13 +75,13 @@ public class RoundExecutionTests
         // Arrange
         var player = new Operator("Player") 
         { 
-            EquippedWeapon = WeaponFactory.CreateRK9(),
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f 
         };
         var enemy = new Operator("Enemy") 
         { 
-            EquippedWeapon = WeaponFactory.CreateRK9(),
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f 
         };
@@ -126,7 +126,7 @@ public class RoundExecutionTests
         // Arrange: Create combat where we can verify hit/miss events occur
         var player = new Operator("Player") 
         { 
-            EquippedWeapon = WeaponFactory.CreateRK9(),
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
             Health = 100,
@@ -134,7 +134,7 @@ public class RoundExecutionTests
         };
         var enemy = new Operator("Enemy") 
         { 
-            EquippedWeapon = WeaponFactory.CreateRK9(),
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
             Health = 100,
@@ -184,7 +184,7 @@ public class RoundExecutionTests
         // Arrange: Create combat where we expect a hit
         var player = new Operator("Player") 
         { 
-            EquippedWeapon = WeaponFactory.CreateRK9(),
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
             Health = 100,
@@ -192,7 +192,7 @@ public class RoundExecutionTests
         };
         var enemy = new Operator("Enemy") 
         { 
-            EquippedWeapon = WeaponFactory.CreateRK9(),
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
             Health = 100,

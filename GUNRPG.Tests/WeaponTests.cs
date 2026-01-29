@@ -69,27 +69,6 @@ public class WeaponTests
     }
 
     [Fact]
-    public void WeaponFactory_CreatesM4A1()
-    {
-        var m4 = WeaponFactory.CreateM4A1();
-        
-        Assert.Equal("M4A1", m4.Name);
-        Assert.Equal(833, m4.RoundsPerMinute);
-        Assert.Equal(30, m4.MagazineSize);
-        Assert.True(m4.BaseDamage > 0);
-    }
-
-    [Fact]
-    public void WeaponFactory_CreatesAK47()
-    {
-        var ak = WeaponFactory.CreateAK47();
-        
-        Assert.Equal("AK-47", ak.Name);
-        Assert.Equal(600, ak.RoundsPerMinute);
-        Assert.True(ak.BaseDamage > WeaponFactory.CreateM4A1().BaseDamage); // AK should hit harder
-    }
-
-    [Fact]
     public void WeaponFactory_CreatesSokol545()
     {
         var sokol = WeaponFactory.CreateSokol545();

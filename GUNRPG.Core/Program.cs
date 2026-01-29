@@ -13,14 +13,14 @@ Console.WriteLine();
 // Create operators
 var player = new Operator("Player")
 {
-    EquippedWeapon = WeaponFactory.CreateRK9(),
+    EquippedWeapon = WeaponFactory.CreateSokol545(),
     DistanceToOpponent = 15f
 };
 player.CurrentAmmo = player.EquippedWeapon!.MagazineSize;
 
 var enemy = new Operator("Enemy")
 {
-    EquippedWeapon = WeaponFactory.CreateRK9(),
+    EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
     DistanceToOpponent = 15f
 };
 enemy.CurrentAmmo = enemy.EquippedWeapon!.MagazineSize;
