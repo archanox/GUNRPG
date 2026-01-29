@@ -28,6 +28,9 @@ public class Operator
     public Weapon? EquippedWeapon { get; set; }
     public int CurrentAmmo { get; set; }
 
+    // Operator Skills
+    public float Accuracy { get; set; } // 0.0 to 1.0, affects aim acquisition error
+
     // Position
     public float DistanceToOpponent { get; set; }
 
@@ -89,6 +92,9 @@ public class Operator
         SprintStaminaDrainRate = 10f; // 10 stamina per second
         SlideStaminaCost = 30f;
         RecoilRecoveryRate = 5f; // Arbitrary units per second
+        
+        // Operator skills
+        Accuracy = 0.7f; // Default 70% accuracy
         
         // Movement defaults
         WalkSpeed = 4f; // meters per second
