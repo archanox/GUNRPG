@@ -99,10 +99,6 @@ Weapons use **real stats** from Call of Duty and other tactical shooters:
 
 ### Included Weapons
 
-- **RK-9**: Primary demo weapon (709 RPM, 32 damage, complete stats)
-- **M4A1**: Balanced assault rifle (833 RPM, 28 damage)
-- **AK-47**: High damage, slower fire (600 RPM, 35 damage)
-- **MP5**: High ROF SMG (857 RPM, 22 damage)
 - **SOKOL 545**: Light machine gun (583 RPM, 32 damage, 102-round magazine)
 - **STURMWOLF 45**: Submachine gun (667 RPM, 30 damage)
 - **M15 MOD 0**: Assault rifle (769 RPM, 21 damage)
@@ -152,15 +148,15 @@ All tests should pass (38 tests covering core systems).
 // Create operators
 var player = new Operator("Player")
 {
-    EquippedWeapon = WeaponFactory.CreateM4A1(),
-    CurrentAmmo = 30,
+    EquippedWeapon = WeaponFactory.CreateSokol545(),
+    CurrentAmmo = 102,
     DistanceToOpponent = 15f
 };
 
 var enemy = new Operator("Enemy")
 {
-    EquippedWeapon = WeaponFactory.CreateAK47(),
-    CurrentAmmo = 30,
+    EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
+    CurrentAmmo = 32,
     DistanceToOpponent = 15f
 };
 
