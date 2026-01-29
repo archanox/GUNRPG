@@ -222,12 +222,12 @@ public static class WeaponFactory
     }
 
     /// <summary>
-    /// Creates a SOKOL S45 light machine gun.
+    /// Creates a SOKOL 545 light machine gun.
     /// Stats based on the provided in-game attachment screen.
     /// </summary>
-    public static Weapon CreateSokolS45()
+    public static Weapon CreateSokol545()
     {
-        return new Weapon("SOKOL S45")
+        return new Weapon("SOKOL 545")
         {
             // Firepower
             RoundsPerMinute = 583,
@@ -280,10 +280,10 @@ public static class WeaponFactory
 
             // Commitment
             BulletsPerCommitmentUnit = 3
-        }.WithSokolS45DamageModel();
+        }.WithSokol545DamageModel();
     }
 
-    private static Weapon WithSokolS45DamageModel(this Weapon weapon)
+    private static Weapon WithSokol545DamageModel(this Weapon weapon)
     {
         weapon.DamageRanges.Clear();
         weapon.DamageRanges.Add(new DamageRange(0f, 51f, 32f));
@@ -375,12 +375,12 @@ public static class WeaponFactory
     }
 
     /// <summary>
-    /// Creates an IRIDES ONE M15 MOD 0 assault rifle.
+    /// Creates a M15 MOD 0 assault rifle.
     /// Stats based on the provided in-game attachment screen.
     /// </summary>
-    public static Weapon CreateIridesOneM15Mod0()
+    public static Weapon CreateM15Mod0()
     {
-        return new Weapon("IRIDES ONE M15 MOD 0")
+        return new Weapon("M15 MOD 0")
         {
             // Firepower
             RoundsPerMinute = 769,
@@ -433,10 +433,10 @@ public static class WeaponFactory
 
             // Commitment
             BulletsPerCommitmentUnit = 3
-        }.WithIridesOneM15Mod0DamageModel();
+        }.WithM15Mod0DamageModel();
     }
 
-    private static Weapon WithIridesOneM15Mod0DamageModel(this Weapon weapon)
+    private static Weapon WithM15Mod0DamageModel(this Weapon weapon)
     {
         weapon.DamageRanges.Clear();
         weapon.DamageRanges.Add(new DamageRange(0f, 36f, 21f));

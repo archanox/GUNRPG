@@ -90,11 +90,11 @@ public class WeaponTests
     }
 
     [Fact]
-    public void WeaponFactory_CreatesSokolS45()
+    public void WeaponFactory_CreatesSokol545()
     {
-        var sokol = WeaponFactory.CreateSokolS45();
+        var sokol = WeaponFactory.CreateSokol545();
         
-        Assert.Equal("SOKOL S45", sokol.Name);
+        Assert.Equal("SOKOL 545", sokol.Name);
         Assert.Equal(583, sokol.RoundsPerMinute);
         Assert.Equal(102, sokol.MagazineSize); // LMG has large magazine
         Assert.Equal(7333, sokol.ReloadTimeMs); // LMG has slow reload
@@ -114,14 +114,14 @@ public class WeaponTests
     }
 
     [Fact]
-    public void WeaponFactory_CreatesIridesOneM15Mod0()
+    public void WeaponFactory_CreatesM15Mod0()
     {
-        var irides = WeaponFactory.CreateIridesOneM15Mod0();
+        var m15 = WeaponFactory.CreateM15Mod0();
         
-        Assert.Equal("IRIDES ONE M15 MOD 0", irides.Name);
-        Assert.Equal(769, irides.RoundsPerMinute);
-        Assert.Equal(30, irides.MagazineSize);
-        Assert.Equal(3000, irides.ReloadTimeMs);
-        Assert.True(irides.BaseDamage > 0);
+        Assert.Equal("M15 MOD 0", m15.Name);
+        Assert.Equal(769, m15.RoundsPerMinute);
+        Assert.Equal(30, m15.MagazineSize);
+        Assert.Equal(3000, m15.ReloadTimeMs);
+        Assert.True(m15.BaseDamage > 0);
     }
 }
