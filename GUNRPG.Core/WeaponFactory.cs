@@ -218,9 +218,9 @@ public static class WeaponFactory
     private static Weapon WithM15Mod0DamageModel(this Weapon weapon)
     {
         weapon.DamageRanges.Clear();
-        weapon.DamageRanges.Add(new DamageRange(0f, 36f, 21f));
-        weapon.DamageRanges.Add(new DamageRange(36f, 55f, 18f));
-        weapon.DamageRanges.Add(new DamageRange(55f, float.PositiveInfinity, 17f));
+        weapon.DamageRanges.Add(new DamageRange(0f, 30.5f, 21f));
+        weapon.DamageRanges.Add(new DamageRange(30.5f, 46.4f, 18f));
+        weapon.DamageRanges.Add(new DamageRange(46.4f, float.PositiveInfinity, 17f));
 
         return weapon;
     }
