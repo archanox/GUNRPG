@@ -108,7 +108,10 @@ public class Weapon
 
     /// <summary>
     /// Calculates damage at a given distance.
-    /// Uses DamageRanges to determine damage based on distance brackets.
+    /// When one or more <see cref="DamageRange"/> entries are configured, uses them to determine
+    /// damage based on distance brackets; otherwise falls back to <see cref="BaseDamage"/>.
+    /// The <see cref="HeadshotMultiplier"/> is applied on top of the chosen base damage when
+    /// <paramref name="isHeadshot"/> is <c>true</c>.
     /// </summary>
     public float GetDamageAtDistance(float distance, bool isHeadshot = false)
     {
