@@ -18,8 +18,7 @@ public class Weapon
     public float BaseDamage { get; set; }
     public float HeadshotMultiplier { get; set; }
 
-    // Optional advanced damage model: range steps + body part multipliers.
-    // If DamageRanges has entries, it is used instead of BaseDamage/MinDamageRange/MaxDamageRange.
+    // Advanced damage model: range steps + body part multipliers.
     public List<DamageRange> DamageRanges { get; } = new();
     public Dictionary<BodyPart, float> BodyPartDamageMultipliers { get; } = new();
 
@@ -47,11 +46,6 @@ public class Weapon
 
         return baseDamage;
     }
-    
-    // Damage Falloff (distance in meters -> damage multiplier)
-    public float MinDamageRange { get; set; } // Range where damage starts falling off
-    public float MaxDamageRange { get; set; } // Range where damage is at minimum
-    public float MinDamageMultiplier { get; set; } // Minimum damage multiplier at max range
     
     // Accuracy Stats
     public float HipfireSpreadDegrees { get; set; }
@@ -100,7 +94,6 @@ public class Weapon
         Name = name;
         // Set defaults
         HeadshotMultiplier = 1.5f;
-        MinDamageMultiplier = 0.7f;
         ADSMovementSpeedMultiplier = 0.6f;
         BulletsPerCommitmentUnit = 3; // Default: reaction every 3 bullets
     }
@@ -115,10 +108,11 @@ public class Weapon
 
     /// <summary>
     /// Calculates damage at a given distance.
+    /// Uses DamageRanges to determine damage based on distance brackets.
     /// </summary>
     public float GetDamageAtDistance(float distance, bool isHeadshot = false)
     {
-        float damage;
+        float damage = BaseDamage;
 
         if (DamageRanges.Count > 0)
         {
@@ -131,19 +125,6 @@ public class Weapon
             }
 
             damage = range?.Damage ?? BaseDamage;
-        }
-        else
-        {
-            damage = BaseDamage;
-
-            // Apply distance falloff
-            if (distance > MinDamageRange)
-            {
-                float falloffProgress = (distance - MinDamageRange) / (MaxDamageRange - MinDamageRange);
-                falloffProgress = Math.Clamp(falloffProgress, 0f, 1f);
-                float damageMultiplier = 1f - (falloffProgress * (1f - MinDamageMultiplier));
-                damage *= damageMultiplier;
-            }
         }
         
         // Apply headshot multiplier
