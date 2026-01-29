@@ -103,6 +103,9 @@ Weapons use **real stats** from Call of Duty and other tactical shooters:
 - **M4A1**: Balanced assault rifle (833 RPM, 28 damage)
 - **AK-47**: High damage, slower fire (600 RPM, 35 damage)
 - **MP5**: High ROF SMG (857 RPM, 22 damage)
+- **SOKOL S45**: Light machine gun (583 RPM, 32 damage, 102-round magazine)
+- **STURMWOLF 45**: Submachine gun (667 RPM, 30 damage)
+- **IRIDES ONE M15 MOD 0**: Assault rifle (769 RPM, 21 damage)
 
 ## Health & Regeneration
 
