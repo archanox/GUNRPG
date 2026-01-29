@@ -12,12 +12,13 @@ public class HitResolutionTests
         // Arrange
         var random = new Random(42);
         float distance = 10f;
-        float operatorAccuracy = 1.0f; // Perfect accuracy
+        float operatorAccuracy = 1.0f; // Perfect accuracy (aim error std dev = 0)
         float weaponVerticalRecoil = 0f; // No recoil
         float currentRecoilY = 0f;
         float recoilVariance = 0f;
 
         // Act - Aim at lower torso (center: 0.125°)
+        // With perfect accuracy and no recoil, shot should be deterministic
         var result = HitResolution.ResolveShot(
             distance,
             BodyPart.LowerTorso,
@@ -27,10 +28,9 @@ public class HitResolutionTests
             recoilVariance,
             random);
 
-        // Assert - With perfect accuracy and no recoil, should hit the target or very close
-        Assert.True(result.HitLocation == BodyPart.LowerTorso || 
-                    result.HitLocation == BodyPart.UpperTorso,
-                    $"Expected LowerTorso or UpperTorso, got {result.HitLocation}");
+        // Assert - With perfect accuracy and no recoil, should hit exactly the target
+        // Perfect accuracy means aim error standard deviation is 0, making the shot deterministic
+        Assert.Equal(BodyPart.LowerTorso, result.HitLocation);
     }
 
     [Fact]
