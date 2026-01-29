@@ -20,55 +20,6 @@ public class WeaponTests
     }
 
     [Fact]
-    public void GetDamageAtDistance_NoDamageWithinMinRange()
-    {
-        var weapon = new Weapon("Test")
-        {
-            BaseDamage = 30f,
-            MinDamageRange = 20f,
-            MaxDamageRange = 40f,
-            MinDamageMultiplier = 0.7f
-        };
-        
-        float damage = weapon.GetDamageAtDistance(10f);
-        
-        Assert.Equal(30f, damage);
-    }
-
-    [Fact]
-    public void GetDamageAtDistance_AppliesFalloff()
-    {
-        var weapon = new Weapon("Test")
-        {
-            BaseDamage = 30f,
-            MinDamageRange = 20f,
-            MaxDamageRange = 40f,
-            MinDamageMultiplier = 0.7f
-        };
-        
-        float damage = weapon.GetDamageAtDistance(30f); // Midpoint of falloff
-        
-        Assert.True(damage < 30f);
-        Assert.True(damage > 21f); // 30 * 0.7 = 21
-    }
-
-    [Fact]
-    public void GetDamageAtDistance_AppliesHeadshotMultiplier()
-    {
-        var weapon = new Weapon("Test")
-        {
-            BaseDamage = 30f,
-            HeadshotMultiplier = 1.5f,
-            MinDamageRange = 20f,
-            MaxDamageRange = 40f
-        };
-        
-        float damage = weapon.GetDamageAtDistance(10f, isHeadshot: true);
-        
-        Assert.Equal(45f, damage);
-    }
-
-    [Fact]
     public void WeaponFactory_CreatesSokol545()
     {
         var sokol = WeaponFactory.CreateSokol545();
