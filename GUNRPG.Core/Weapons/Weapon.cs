@@ -154,5 +154,6 @@ public enum BodyPart
     LowerTorso,
     UpperTorso,
     Neck,
-    Head
+    Head,
+    Miss  // Indicates shot missed entirely (overshoot or undershoot)
 }
