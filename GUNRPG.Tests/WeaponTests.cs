@@ -114,9 +114,9 @@ public class WeaponTests
     }
 
     [Fact]
-    public void WeaponFactory_CreatesIridesOneM15()
+    public void WeaponFactory_CreatesIridesOneM15Mod0()
     {
-        var irides = WeaponFactory.CreateIridesOneM15();
+        var irides = WeaponFactory.CreateIridesOneM15Mod0();
         
         Assert.Equal("IRIDES ONE M15 MOD 0", irides.Name);
         Assert.Equal(769, irides.RoundsPerMinute);
