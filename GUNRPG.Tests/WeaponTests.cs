@@ -88,4 +88,40 @@ public class WeaponTests
         Assert.Equal(600, ak.RoundsPerMinute);
         Assert.True(ak.BaseDamage > WeaponFactory.CreateM4A1().BaseDamage); // AK should hit harder
     }
+
+    [Fact]
+    public void WeaponFactory_CreatesSokolS45()
+    {
+        var sokol = WeaponFactory.CreateSokolS45();
+        
+        Assert.Equal("SOKOL S45", sokol.Name);
+        Assert.Equal(583, sokol.RoundsPerMinute);
+        Assert.Equal(102, sokol.MagazineSize); // LMG has large magazine
+        Assert.Equal(7333, sokol.ReloadTimeMs); // LMG has slow reload
+        Assert.True(sokol.BaseDamage > 0);
+    }
+
+    [Fact]
+    public void WeaponFactory_CreatesSturmwolf45()
+    {
+        var sturmwolf = WeaponFactory.CreateSturmwolf45();
+        
+        Assert.Equal("STURMWOLF 45", sturmwolf.Name);
+        Assert.Equal(667, sturmwolf.RoundsPerMinute);
+        Assert.Equal(32, sturmwolf.MagazineSize);
+        Assert.Equal(2730, sturmwolf.ReloadTimeMs);
+        Assert.True(sturmwolf.BaseDamage > 0);
+    }
+
+    [Fact]
+    public void WeaponFactory_CreatesIridesOneM15()
+    {
+        var irides = WeaponFactory.CreateIridesOneM15();
+        
+        Assert.Equal("IRIDES ONE M15 MOD 0", irides.Name);
+        Assert.Equal(769, irides.RoundsPerMinute);
+        Assert.Equal(30, irides.MagazineSize);
+        Assert.Equal(3000, irides.ReloadTimeMs);
+        Assert.True(irides.BaseDamage > 0);
+    }
 }
