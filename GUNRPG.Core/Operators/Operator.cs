@@ -29,7 +29,16 @@ public class Operator
     public int CurrentAmmo { get; set; }
 
     // Operator Skills
-    public float Accuracy { get; set; } // 0.0 to 1.0, affects aim acquisition error
+    private float _accuracy = 0.7f;
+    /// <summary>
+    /// Operator accuracy (0.0 to 1.0). Affects standard deviation of aim acquisition error.
+    /// Higher values = more accurate shooting. Values are clamped to [0.0, 1.0] range.
+    /// </summary>
+    public float Accuracy 
+    { 
+        get => _accuracy;
+        set => _accuracy = Math.Clamp(value, 0.0f, 1.0f);
+    }
 
     // Position
     public float DistanceToOpponent { get; set; }
@@ -93,7 +102,7 @@ public class Operator
         SlideStaminaCost = 30f;
         RecoilRecoveryRate = 5f; // Arbitrary units per second
         
-        // Operator skills
+        // Operator skills (using property setter for validation)
         Accuracy = 0.7f; // Default 70% accuracy
         
         // Movement defaults

@@ -115,21 +115,21 @@ public static class HitResolution
             return BodyPart.Miss;
 
         // Find the matching angular band
-        foreach (var band in AngularBands)
+        for (int i = 0; i < AngularBands.Length; i++)
         {
-            if (angleDegrees >= band.MinDegrees && angleDegrees < band.MaxDegrees)
+            var band = AngularBands[i];
+            // Use inclusive upper bound for the last band (Head) to handle exactly 1.0°
+            bool isLastBand = i == AngularBands.Length - 1;
+            bool inBand = angleDegrees >= band.MinDegrees && 
+                         (isLastBand ? angleDegrees <= band.MaxDegrees : angleDegrees < band.MaxDegrees);
+            
+            if (inBand)
             {
                 return band.BodyPart;
             }
         }
 
-        // Handle edge case: exactly at MaxAngle hits Head
-        if (Math.Abs(angleDegrees - MaxAngle) < 0.0001f)
-        {
-            return BodyPart.Head;
-        }
-
-        // Should not reach here, but return Miss as fallback
+        // Should not reach here due to range checks above, but return Miss as fallback
         return BodyPart.Miss;
     }
 

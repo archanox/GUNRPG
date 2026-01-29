@@ -100,7 +100,7 @@ public class HitResolutionIntegrationTests
                     EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
                     CurrentAmmo = 30,
                     DistanceToOpponent = 15f,
-                    Accuracy = 0f  // Enemy never hits (testing player only)
+                    Accuracy = 0f  // Minimum accuracy (0% = maximum aim error)
                 };
 
                 var combat = new CombatSystemV2(player, enemy, seed: 100 + i);
@@ -138,19 +138,20 @@ public class HitResolutionIntegrationTests
     public void RecoilAccumulates_AcrossMultipleShots()
     {
         // Arrange: Operator fires multiple shots
+        // Note: This test manually simulates recoil accumulation to test the isolated
+        // HitResolution behavior. The actual combat system handles recoil in CombatEvents.cs.
         var player = new Operator("Player")
         {
             EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 5,
             DistanceToOpponent = 15f,
-            Accuracy = 1.0f,  // Perfect accuracy to isolate recoil effect
+            Accuracy = 1.0f,  // Perfect accuracy to isolate recoil effect (aim error = 0)
             CurrentRecoilY = 0f
         };
 
         float weaponRecoil = player.EquippedWeapon.VerticalRecoil;
         _output.WriteLine($"Weapon vertical recoil: {weaponRecoil}");
 
-        // Simulate shooting pattern (recoil would accumulate in actual combat)
         var random = new Random(42);
         var initialRecoil = player.CurrentRecoilY;
 
@@ -176,10 +177,11 @@ public class HitResolutionIntegrationTests
         _output.WriteLine($"Shot 3 angle: {result3.FinalAngleDegrees:F4}° -> {result3.HitLocation}");
 
         // Assert: Accumulated recoil should affect shot placement
-        Assert.True(result2.FinalAngleDegrees >= result1.FinalAngleDegrees,
-            "Second shot should have equal or higher angle due to recoil");
-        Assert.True(result3.FinalAngleDegrees >= result2.FinalAngleDegrees,
-            "Third shot should have equal or higher angle due to accumulated recoil");
+        // With perfect accuracy (1.0), aim error is deterministic (0), so angles should strictly increase
+        Assert.True(result2.FinalAngleDegrees > result1.FinalAngleDegrees,
+            "Second shot should have higher angle due to recoil accumulation");
+        Assert.True(result3.FinalAngleDegrees > result2.FinalAngleDegrees,
+            "Third shot should have higher angle due to accumulated recoil");
     }
 
     [Fact]
