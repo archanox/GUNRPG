@@ -1,4 +1,6 @@
+using GUNRPG.Core.Combat;
 using GUNRPG.Core.Operators;
+using GUNRPG.Core.Weapons;
 
 namespace GUNRPG.Core.Events;
 
@@ -43,17 +45,36 @@ public class ShotFiredEvent : ISimulationEvent
         // Always log when the shot is fired
         Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} fired {weaponName}");
 
-        // Calculate hit
-        bool isHit = CalculateHit();
+        // Use new HitResolution system
+        var weapon = _shooter.EquippedWeapon;
+        if (weapon == null)
+        {
+            Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name} has no equipped weapon");
+            return false;
+        }
+
+        // Determine target body part based on aim state
+        // In ADS, aim for head/neck; in hipfire, aim for center mass
+        BodyPart targetBodyPart = _shooter.AimState == AimState.ADS 
+            ? BodyPart.Head 
+            : BodyPart.UpperTorso;
+
+        // Resolve shot using vertical body-part hit resolution model
+        var resolution = HitResolution.ResolveShot(
+            distance: _shooter.DistanceToOpponent,
+            targetBodyPart: targetBodyPart,
+            operatorAccuracy: _shooter.Accuracy,
+            weaponVerticalRecoil: weapon.VerticalRecoil,
+            currentRecoilY: _shooter.CurrentRecoilY,
+            recoilVariance: weapon.VerticalRecoil * 0.1f, // 10% variance
+            random: _random);
+
         long travelTime = CalculateTravelTimeMs();
         long impactTime = EventTimeMs + travelTime;
         
-        if (isHit)
+        if (resolution.HitLocation != BodyPart.Miss)
         {
-            bool isHeadshot = CalculateHeadshot();
-            var weapon = _shooter.EquippedWeapon!;
-            var bodyPart = isHeadshot ? Weapons.BodyPart.Head : Weapons.BodyPart.LowerTorso;
-            float damage = weapon.GetDamageAtDistance(_shooter.DistanceToOpponent, bodyPart);
+            float damage = weapon.GetDamageAtDistance(_shooter.DistanceToOpponent, resolution.HitLocation);
 
             if (_eventQueue != null)
             {
@@ -62,14 +83,14 @@ public class ShotFiredEvent : ISimulationEvent
                     _shooter,
                     _target,
                     damage,
-                    bodyPart,
+                    resolution.HitLocation,
                     _eventQueue.GetNextSequenceNumber(),
                     weaponName));
             }
             else
             {
                 _target.TakeDamage(damage, impactTime);
-                Console.WriteLine($"[{impactTime}ms] {_shooter.Name}'s {weaponName} hit {_target.Name} for {damage:F1} damage ({bodyPart})");
+                Console.WriteLine($"[{impactTime}ms] {_shooter.Name}'s {weaponName} hit {_target.Name} for {damage:F1} damage ({resolution.HitLocation})");
             }
         }
         else
@@ -90,13 +111,9 @@ public class ShotFiredEvent : ISimulationEvent
             }
         }
 
-        // Apply recoil
-        if (_shooter.EquippedWeapon != null)
-        {
-            _shooter.CurrentRecoilX += _shooter.EquippedWeapon.HorizontalRecoil;
-            _shooter.CurrentRecoilY += _shooter.EquippedWeapon.VerticalRecoil;
-            _shooter.RecoilRecoveryStartMs = EventTimeMs + (long)_shooter.EquippedWeapon.RecoilRecoveryTimeMs;
-        }
+        // Apply recoil - recoil now accumulates
+        _shooter.CurrentRecoilY += weapon.VerticalRecoil;
+        _shooter.RecoilRecoveryStartMs = EventTimeMs + (long)weapon.RecoilRecoveryTimeMs;
 
         // No longer trigger reaction windows - rounds execute completely
         return false;
@@ -110,36 +127,6 @@ public class ShotFiredEvent : ISimulationEvent
 
         double travelSeconds = _shooter.DistanceToOpponent / weapon.BulletVelocityMetersPerSecond;
         return (long)Math.Round(travelSeconds * 1000d, MidpointRounding.AwayFromZero);
-    }
-
-    private bool CalculateHit()
-    {
-        var weapon = _shooter.EquippedWeapon;
-        if (weapon == null)
-            return false;
-
-        // Get current spread based on ADS progress (interpolated)
-        float spreadDegrees = _shooter.GetCurrentSpread(EventTimeMs);
-
-        // Add recoil to spread
-        float totalSpread = spreadDegrees + Math.Abs(_shooter.CurrentRecoilX) + Math.Abs(_shooter.CurrentRecoilY);
-
-        // Simple hit calculation: lower spread = higher hit chance
-        // At point-blank with perfect accuracy, ~90% hit rate
-        // Hit chance decreases with distance and spread
-        float baseHitChance = 0.9f;
-        float spreadPenalty = totalSpread * 0.05f; // Each degree reduces hit chance
-        float distancePenalty = _shooter.DistanceToOpponent * 0.01f; // Each meter reduces hit chance
-        
-        float hitChance = Math.Max(0.1f, baseHitChance - spreadPenalty - distancePenalty);
-        
-        return _random.NextDouble() < hitChance;
-    }
-
-    private bool CalculateHeadshot()
-    {
-        // 10% headshot chance on hit (simplified)
-        return _random.NextDouble() < 0.1;
     }
 }
 
