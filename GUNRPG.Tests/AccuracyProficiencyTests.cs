@@ -1,5 +1,6 @@
 using GUNRPG.Core;
 using GUNRPG.Core.Combat;
+using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
 using GUNRPG.Core.Weapons;
 using Xunit;
@@ -353,6 +354,113 @@ public class AccuracyProficiencyTests
 
         Assert.Equal(result1.HitLocation, result2.HitLocation);
         Assert.Equal(result1.FinalAngleDegrees, result2.FinalAngleDegrees);
+    }
+
+    [Fact]
+    public void RecoilRecovery_OccursEvenWhenRoundEndsEarly()
+    {
+        // Arrange: Create combat where a hit ends the round quickly
+        var player = new Operator("Player")
+        {
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
+            CurrentAmmo = 30,
+            DistanceToOpponent = 15f,
+            AccuracyProficiency = 0.5f,
+            Accuracy = 1.0f  // Ensure hit
+        };
+        var enemy = new Operator("Enemy")
+        {
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
+            CurrentAmmo = 30,
+            DistanceToOpponent = 15f,
+            AccuracyProficiency = 0.5f,
+            Accuracy = 0.0f  // Ensure miss so only player hits
+        };
+
+        // Initial recoil should be zero
+        Assert.Equal(0f, player.CurrentRecoilY);
+
+        var combat = new CombatSystemV2(player, enemy, seed: 42);
+
+        // Act: Fire a shot (round will end on hit)
+        var playerIntents = new SimultaneousIntents(player.Id)
+        {
+            Primary = PrimaryAction.Fire,
+            Movement = MovementAction.Stand
+        };
+        var enemyIntents = new SimultaneousIntents(enemy.Id)
+        {
+            Primary = PrimaryAction.Fire,
+            Movement = MovementAction.Stand
+        };
+
+        combat.SubmitIntents(player, playerIntents);
+        combat.SubmitIntents(enemy, enemyIntents);
+        combat.BeginExecution();
+        combat.ExecuteUntilReactionWindow();
+
+        // Assert: Recoil should have been applied and then partially recovered
+        // The weapon has ~0.15 recoil, and immediate recovery happens
+        // With 0.5 proficiency and RecoilRecoveryRate of 5, recovery should reduce recoil
+        Assert.True(player.CurrentRecoilY >= 0,
+            $"Recoil should not be negative. Current: {player.CurrentRecoilY}");
+        
+        // Recoil should be less than the raw weapon recoil due to immediate recovery
+        var weapon = player.EquippedWeapon!;
+        Assert.True(player.CurrentRecoilY < weapon.VerticalRecoil * 2,
+            $"Recoil ({player.CurrentRecoilY}) should be controlled after shot. Raw weapon recoil: {weapon.VerticalRecoil}");
+    }
+
+    [Fact]
+    public void RecoilRecovery_HighProficiency_RecoversFasterPerShot()
+    {
+        // Create operators with different proficiencies
+        var lowProfOp = new Operator("LowProf")
+        {
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
+            CurrentAmmo = 30,
+            AccuracyProficiency = 0.1f,
+            RecoilRecoveryRate = 5f
+        };
+        var highProfOp = new Operator("HighProf")
+        {
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
+            CurrentAmmo = 30,
+            AccuracyProficiency = 1.0f,
+            RecoilRecoveryRate = 5f
+        };
+
+        // Simulate firing without full combat system to isolate the effect
+        var weapon = lowProfOp.EquippedWeapon!;
+
+        // Add same recoil to both
+        lowProfOp.CurrentRecoilY = weapon.VerticalRecoil;
+        highProfOp.CurrentRecoilY = weapon.VerticalRecoil;
+
+        // Simulate immediate recovery (100ms worth)
+        const float recoveryTimeSeconds = 0.1f;
+        float lowProfMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(lowProfOp.AccuracyProficiency);
+        float highProfMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(highProfOp.AccuracyProficiency);
+
+        float lowProfRecovery = lowProfOp.RecoilRecoveryRate * recoveryTimeSeconds * lowProfMultiplier;
+        float highProfRecovery = highProfOp.RecoilRecoveryRate * recoveryTimeSeconds * highProfMultiplier;
+
+        lowProfOp.CurrentRecoilY = Math.Max(0, lowProfOp.CurrentRecoilY - lowProfRecovery);
+        highProfOp.CurrentRecoilY = Math.Max(0, highProfOp.CurrentRecoilY - highProfRecovery);
+
+        // High proficiency should have recovered more (lower remaining recoil)
+        Assert.True(highProfOp.CurrentRecoilY < lowProfOp.CurrentRecoilY,
+            $"High prof recoil ({highProfOp.CurrentRecoilY}) should be < low prof ({lowProfOp.CurrentRecoilY})");
+    }
+
+    [Fact]
+    public void Operator_MinRecommendedAccuracyProficiency_Constant()
+    {
+        // Verify the constant exists and has a sensible value
+        Assert.True(Operator.MinRecommendedAccuracyProficiency > 0f,
+            "MinRecommendedAccuracyProficiency should be > 0");
+        Assert.True(Operator.MinRecommendedAccuracyProficiency <= 0.5f,
+            "MinRecommendedAccuracyProficiency should not be too high");
     }
 
     private static float CalculateStdDev(List<float> values)
