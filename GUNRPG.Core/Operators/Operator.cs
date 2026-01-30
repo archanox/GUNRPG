@@ -173,11 +173,11 @@ public class Operator
     /// <summary>
     /// Applies a flinch severity debuff that persists for a set number of shots.
     /// </summary>
-    public void ApplyFlinch(float severity, long currentTimeMs)
+    public void ApplyFlinch(float severity)
     {
         severity = Math.Clamp(severity, 0f, 1f);
         FlinchSeverity = Math.Clamp(Math.Max(FlinchSeverity, severity), 0f, 1f);
-        FlinchShotsRemaining = Math.Max(FlinchShotsRemaining, Math.Max(FlinchDurationShots, 1));
+        FlinchShotsRemaining = Math.Max(FlinchDurationShots, 1);
     }
 
     /// <summary>

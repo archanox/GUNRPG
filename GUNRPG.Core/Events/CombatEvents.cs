@@ -99,7 +99,7 @@ public class ShotFiredEvent : ISimulationEvent
                 var targetWeapon = _target.EquippedWeapon;
                 float flinchResistance = targetWeapon?.FlinchResistance ?? AccuracyModel.MinFlinchResistance;
                 float flinchSeverity = AccuracyModel.CalculateFlinchSeverity(damage, flinchResistance);
-                _target.ApplyFlinch(flinchSeverity, impactTime);
+                _target.ApplyFlinch(flinchSeverity);
                 Console.WriteLine($"[{impactTime}ms] {_shooter.Name}'s {weaponName} hit {_target.Name} for {damage:F1} damage ({resolution.HitLocation})");
             }
         }
@@ -183,6 +183,10 @@ public sealed class DamageAppliedEvent : ISimulationEvent
     public bool Execute()
     {
         _target.TakeDamage(_damage, EventTimeMs);
+        var targetWeapon = _target.EquippedWeapon;
+        float flinchResistance = targetWeapon?.FlinchResistance ?? AccuracyModel.MinFlinchResistance;
+        float flinchSeverity = AccuracyModel.CalculateFlinchSeverity(_damage, flinchResistance);
+        _target.ApplyFlinch(flinchSeverity);
         Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name}'s {_weaponName} hit {_target.Name} for {_damage:F1} damage ({_bodyPart})");
         
         // Round end is detected by CombatSystemV2 via event type checking
