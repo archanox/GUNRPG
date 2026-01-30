@@ -463,6 +463,31 @@ public class AccuracyProficiencyTests
             "MinRecommendedAccuracyProficiency should not be too high");
     }
 
+    [Fact]
+    public void Operator_HasLowAccuracyProficiency_DetectsLowValues()
+    {
+        var op = new Operator("Test");
+        
+        // Default proficiency (0.5) should not be low
+        Assert.False(op.HasLowAccuracyProficiency,
+            "Default proficiency should not be flagged as low");
+        
+        // Zero proficiency should be flagged as low
+        op.AccuracyProficiency = 0f;
+        Assert.True(op.HasLowAccuracyProficiency,
+            "Zero proficiency should be flagged as low");
+        
+        // Just below threshold should be flagged as low
+        op.AccuracyProficiency = Operator.MinRecommendedAccuracyProficiency - 0.01f;
+        Assert.True(op.HasLowAccuracyProficiency,
+            "Proficiency below threshold should be flagged as low");
+        
+        // At threshold should NOT be flagged as low
+        op.AccuracyProficiency = Operator.MinRecommendedAccuracyProficiency;
+        Assert.False(op.HasLowAccuracyProficiency,
+            "Proficiency at threshold should not be flagged as low");
+    }
+
     private static float CalculateStdDev(List<float> values)
     {
         if (values.Count == 0) return 0;
