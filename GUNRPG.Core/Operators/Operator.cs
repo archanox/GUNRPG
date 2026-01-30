@@ -105,6 +105,11 @@ public class Operator
     public long? RecoilRecoveryStartMs { get; set; }
     public float RecoilRecoveryRate { get; set; } // Per second
 
+    // Flinch tracking
+    public float FlinchSeverity { get; private set; }
+    public int FlinchShotsRemaining { get; private set; }
+    public int FlinchDurationShots { get; set; }
+
     // Commitment tracking for reaction windows
     public int BulletsFiredSinceLastReaction { get; set; }
     public float MetersMovedSinceLastReaction { get; set; }
@@ -138,6 +143,7 @@ public class Operator
         SprintStaminaDrainRate = 10f; // 10 stamina per second
         SlideStaminaCost = 30f;
         RecoilRecoveryRate = 5f; // Arbitrary units per second
+        FlinchDurationShots = 1; // Default: 1 round (one shot's worth of flinch)
         
         // Operator skills (using property setter for validation)
         Accuracy = 0.7f; // Default 70% accuracy
@@ -162,6 +168,30 @@ public class Operator
     {
         Health = Math.Max(0, Health - damage);
         LastDamageTimeMs = currentTimeMs;
+    }
+
+    /// <summary>
+    /// Applies a flinch severity debuff that persists for a set number of shots.
+    /// </summary>
+    public void ApplyFlinch(float severity, long currentTimeMs)
+    {
+        severity = Math.Clamp(severity, 0f, 1f);
+        FlinchSeverity = Math.Clamp(Math.Max(FlinchSeverity, severity), 0f, 1f);
+        FlinchShotsRemaining = Math.Max(FlinchShotsRemaining, Math.Max(FlinchDurationShots, 1));
+    }
+
+    /// <summary>
+    /// Consumes flinch duration for a shot, clearing when depleted.
+    /// </summary>
+    public void ConsumeFlinchShot()
+    {
+        if (FlinchShotsRemaining <= 0)
+            return;
+
+        FlinchShotsRemaining = Math.Max(FlinchShotsRemaining - 1, 0);
+
+        if (FlinchShotsRemaining == 0)
+            FlinchSeverity = 0f;
     }
 
     /// <summary>
