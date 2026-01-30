@@ -45,7 +45,6 @@ public static class HitResolution
     /// <summary>
     /// Resolves a shot to determine which body part (if any) is hit.
     /// </summary>
-    /// <param name="distance">Distance to target in meters</param>
     /// <param name="targetBodyPart">Intended target body part</param>
     /// <param name="operatorAccuracy">Operator accuracy stat (affects standard deviation of aim error)</param>
     /// <param name="weaponVerticalRecoil">Weapon's vertical recoil value</param>
@@ -54,7 +53,6 @@ public static class HitResolution
     /// <param name="random">Random number generator for deterministic-friendly operation</param>
     /// <returns>The resolved body part hit or Miss if shot overshoots/undershoots</returns>
     public static ShotResolutionResult ResolveShot(
-        float distance,
         BodyPart targetBodyPart,
         float operatorAccuracy,
         float weaponVerticalRecoil,

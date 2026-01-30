@@ -61,7 +61,6 @@ public class ShotFiredEvent : ISimulationEvent
 
         // Resolve shot using vertical body-part hit resolution model
         var resolution = HitResolution.ResolveShot(
-            distance: _shooter.DistanceToOpponent,
             targetBodyPart: targetBodyPart,
             operatorAccuracy: _shooter.Accuracy,
             weaponVerticalRecoil: weapon.VerticalRecoil,
