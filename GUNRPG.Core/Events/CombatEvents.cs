@@ -54,19 +54,24 @@ public class ShotFiredEvent : ISimulationEvent
         }
 
         // Determine target body part based on aim state
-        // In ADS, aim for head/neck; in hipfire, aim for center mass
-        BodyPart targetBodyPart = _shooter.AimState == AimState.ADS 
+        // In ADS or transitioning to ADS, aim for head; in hipfire, aim for center mass
+        BodyPart targetBodyPart = (_shooter.AimState == AimState.ADS || _shooter.AimState == AimState.TransitioningToADS)
             ? BodyPart.Head 
             : BodyPart.UpperTorso;
+
+        // Scale weapon recoil to fit within the angular band system (0-1 degree range)
+        // Original recoil values (0.4-0.6°) are tuned for a different system
+        // Scale down to ~0.05-0.10° per shot to allow multiple shots before overshooting
+        float scaledRecoil = weapon.VerticalRecoil * 0.2f;
 
         // Resolve shot using vertical body-part hit resolution model
         var resolution = HitResolution.ResolveShot(
             distance: _shooter.DistanceToOpponent,
             targetBodyPart: targetBodyPart,
             operatorAccuracy: _shooter.Accuracy,
-            weaponVerticalRecoil: weapon.VerticalRecoil,
-            currentRecoilY: _shooter.CurrentRecoilY,
-            recoilVariance: weapon.VerticalRecoil * 0.1f, // 10% variance
+            weaponVerticalRecoil: scaledRecoil,
+            currentRecoilY: _shooter.CurrentRecoilY * 0.2f,  // Also scale accumulated recoil
+            recoilVariance: scaledRecoil * 0.1f, // 10% variance
             random: _random);
 
         long travelTime = CalculateTravelTimeMs();
@@ -111,8 +116,8 @@ public class ShotFiredEvent : ISimulationEvent
             }
         }
 
-        // Apply recoil - recoil now accumulates
-        _shooter.CurrentRecoilY += weapon.VerticalRecoil;
+        // Apply recoil - recoil now accumulates (scaled to match angular band system)
+        _shooter.CurrentRecoilY += scaledRecoil;
         _shooter.RecoilRecoveryStartMs = EventTimeMs + (long)weapon.RecoilRecoveryTimeMs;
 
         // No longer trigger reaction windows - rounds execute completely
