@@ -12,6 +12,9 @@ namespace GUNRPG.Core.Combat;
 /// - Weapon recoil values remain faithful and unchanged
 /// - Operator proficiency determines how effectively recoil and gun kick are counteracted
 /// - Accuracy proficiency feels like "player skill", not a flat accuracy buff
+/// 
+/// Note: Deterministic calculation methods are static and don't require a Random instance.
+/// Only sampling methods that need randomness require instantiation with a Random.
 /// </summary>
 public class AccuracyModel
 {
@@ -52,6 +55,7 @@ public class AccuracyModel
 
     /// <summary>
     /// Initializes a new AccuracyModel with an injected random source for testability.
+    /// Only required when using sampling methods (SampleAimError, SampleGaussian).
     /// </summary>
     /// <param name="random">Random number generator for deterministic testing.</param>
     public AccuracyModel(Random random)
@@ -69,7 +73,7 @@ public class AccuracyModel
     /// <param name="operatorAccuracy">Operator accuracy stat (0.0-1.0)</param>
     /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
     /// <returns>The aim error standard deviation in degrees.</returns>
-    public float CalculateAimErrorStdDev(float operatorAccuracy, float accuracyProficiency)
+    public static float CalculateAimErrorStdDev(float operatorAccuracy, float accuracyProficiency)
     {
         operatorAccuracy = Math.Clamp(operatorAccuracy, 0f, 1f);
         accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
@@ -92,7 +96,7 @@ public class AccuracyModel
     /// </summary>
     /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
     /// <returns>The aim error standard deviation in degrees.</returns>
-    public float CalculateAimErrorStdDev(float accuracyProficiency)
+    public static float CalculateAimErrorStdDev(float accuracyProficiency)
     {
         accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
         
@@ -106,6 +110,7 @@ public class AccuracyModel
     /// <summary>
     /// Samples an aim acquisition error from a Gaussian distribution.
     /// This error is applied to the initial shot placement.
+    /// Requires an AccuracyModel instance with a Random for sampling.
     /// </summary>
     /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
     /// <returns>The aim error offset in degrees.</returns>
@@ -117,6 +122,7 @@ public class AccuracyModel
 
     /// <summary>
     /// Samples an aim acquisition error from a Gaussian distribution using both accuracy and proficiency.
+    /// Requires an AccuracyModel instance with a Random for sampling.
     /// </summary>
     /// <param name="operatorAccuracy">Operator accuracy stat (0.0-1.0)</param>
     /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
@@ -136,15 +142,41 @@ public class AccuracyModel
     /// <param name="weaponVerticalRecoil">The weapon's raw vertical recoil value (unchanged)</param>
     /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
     /// <returns>The effective vertical recoil after operator counteraction.</returns>
-    public float CalculateEffectiveRecoil(float weaponVerticalRecoil, float accuracyProficiency)
+    public static float CalculateEffectiveRecoil(float weaponVerticalRecoil, float accuracyProficiency)
     {
         accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
         
         // effectiveRecoil = weaponRecoil * (1 - proficiency * MaxRecoilControlFactor)
         // At proficiency 0: effectiveRecoil = weaponRecoil * 1.0 (no reduction)
         // At proficiency 1: effectiveRecoil = weaponRecoil * (1 - 0.6) = weaponRecoil * 0.4 (60% reduction)
-        float reductionFactor = 1f - accuracyProficiency * MaxRecoilControlFactor;
+        float reductionFactor = CalculateRecoilReductionFactor(accuracyProficiency);
         return weaponVerticalRecoil * reductionFactor;
+    }
+
+    /// <summary>
+    /// Calculates the recoil reduction factor based on proficiency.
+    /// At proficiency 0: returns 1.0 (no reduction)
+    /// At proficiency 1: returns 0.4 (60% reduction)
+    /// </summary>
+    /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
+    /// <returns>The recoil reduction factor to multiply against weapon recoil.</returns>
+    public static float CalculateRecoilReductionFactor(float accuracyProficiency)
+    {
+        accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
+        return 1f - accuracyProficiency * MaxRecoilControlFactor;
+    }
+
+    /// <summary>
+    /// Calculates the effective variance after proficiency reduction.
+    /// At proficiency 1: variance reduced by MaxVarianceReductionFactor (30%)
+    /// </summary>
+    /// <param name="baseVariance">The base variance before proficiency adjustment</param>
+    /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
+    /// <returns>The effective variance after proficiency reduction.</returns>
+    public static float CalculateEffectiveVariance(float baseVariance, float accuracyProficiency)
+    {
+        accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
+        return baseVariance * (1.0f - accuracyProficiency * MaxVarianceReductionFactor);
     }
 
     /// <summary>
@@ -153,7 +185,7 @@ public class AccuracyModel
     /// </summary>
     /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
     /// <returns>Multiplier to apply to base recoil recovery rate.</returns>
-    public float CalculateRecoveryRateMultiplier(float accuracyProficiency)
+    public static float CalculateRecoveryRateMultiplier(float accuracyProficiency)
     {
         accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
         
@@ -169,7 +201,7 @@ public class AccuracyModel
     /// <param name="baseRecoveryAmount">The base recovery amount before proficiency adjustment</param>
     /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
     /// <returns>The new recoil value after proficiency-enhanced recovery.</returns>
-    public float ApplyRecovery(float currentRecoilY, float baseRecoveryAmount, float accuracyProficiency)
+    public static float ApplyRecovery(float currentRecoilY, float baseRecoveryAmount, float accuracyProficiency)
     {
         float multiplier = CalculateRecoveryRateMultiplier(accuracyProficiency);
         float adjustedRecovery = baseRecoveryAmount * multiplier;
@@ -184,12 +216,32 @@ public class AccuracyModel
 
     /// <summary>
     /// Samples from a Gaussian (normal) distribution using the Box-Muller transform.
+    /// Requires an AccuracyModel instance with a Random for sampling.
     /// </summary>
-    private float SampleGaussian(float mean, float stdDev)
+    /// <param name="mean">The mean of the distribution</param>
+    /// <param name="stdDev">The standard deviation of the distribution</param>
+    /// <returns>A sample from the Gaussian distribution.</returns>
+    public float SampleGaussian(float mean, float stdDev)
     {
         // Box-Muller transform
         double u1 = 1.0 - _random.NextDouble(); // Uniform(0,1]
         double u2 = 1.0 - _random.NextDouble();
+        double randStdNormal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
+        return mean + stdDev * (float)randStdNormal;
+    }
+
+    /// <summary>
+    /// Static helper for sampling from a Gaussian distribution when you have your own Random instance.
+    /// </summary>
+    /// <param name="random">Random number generator</param>
+    /// <param name="mean">The mean of the distribution</param>
+    /// <param name="stdDev">The standard deviation of the distribution</param>
+    /// <returns>A sample from the Gaussian distribution.</returns>
+    public static float SampleGaussian(Random random, float mean, float stdDev)
+    {
+        // Box-Muller transform
+        double u1 = 1.0 - random.NextDouble(); // Uniform(0,1]
+        double u2 = 1.0 - random.NextDouble();
         double randStdNormal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
         return mean + stdDev * (float)randStdNormal;
     }

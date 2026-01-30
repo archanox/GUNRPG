@@ -92,7 +92,8 @@ public class HitResolutionIntegrationTests
                     EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
                     CurrentAmmo = 30,
                     DistanceToOpponent = 15f,
-                    Accuracy = accuracy
+                    Accuracy = accuracy,
+                    AccuracyProficiency = 1.0f  // Max proficiency to isolate accuracy stat effect
                 };
 
                 var enemy = new Operator("Enemy")
@@ -100,7 +101,8 @@ public class HitResolutionIntegrationTests
                     EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
                     CurrentAmmo = 30,
                     DistanceToOpponent = 15f,
-                    Accuracy = 0f  // Minimum accuracy (0% = maximum aim error)
+                    Accuracy = 0f,  // Minimum accuracy (0% = maximum aim error)
+                    AccuracyProficiency = 0f  // Min proficiency so enemy misses more
                 };
 
                 var combat = new CombatSystemV2(player, enemy, seed: 100 + i);

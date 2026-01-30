@@ -43,25 +43,9 @@ public static class HitResolution
     private const float MaxAngle = 1.00f;
 
     /// <summary>
-    /// Maximum recoil control factor (cap at 60% reduction for highly proficient operators).
-    /// </summary>
-    private const float MaxRecoilControlFactor = 0.6f;
-
-    /// <summary>
-    /// Maximum aim error reduction factor at full proficiency (50% reduction).
-    /// This represents how much proficiency can reduce the aim error standard deviation.
-    /// </summary>
-    private const float MaxAimErrorReductionFactor = 0.5f;
-
-    /// <summary>
-    /// Maximum variance reduction factor at full proficiency (30% reduction).
-    /// This represents how much proficiency reduces recoil variance for more consistent shots.
-    /// </summary>
-    private const float MaxVarianceReductionFactor = 0.3f;
-
-    /// <summary>
     /// Resolves a shot to determine which body part (if any) is hit.
     /// This overload includes AccuracyProficiency support for operator-driven recoil control.
+    /// Uses AccuracyModel for proficiency calculations to ensure consistency.
     /// </summary>
     /// <param name="targetBodyPart">Intended target body part</param>
     /// <param name="operatorAccuracy">Operator accuracy stat (affects standard deviation of aim error)</param>
@@ -86,27 +70,16 @@ public static class HitResolution
         // Get the center angle of the target body part
         float targetAngle = GetBodyPartCenterAngle(targetBodyPart);
 
-        // Apply initial aim acquisition error based on operator accuracy
-        // Proficiency improves aim stability by reducing error standard deviation
-        // Base formula: aimErrorStdDev = (1.0 - accuracy) * 0.15 * (1.0 - proficiency * MaxAimErrorReductionFactor)
-        // At proficiency 0: full aim error based on accuracy
-        // At proficiency 1: aim error reduced by MaxAimErrorReductionFactor (50%)
-        float baseAimErrorStdDev = (1.0f - operatorAccuracy) * 0.15f;
-        float proficiencyAimReduction = 1.0f - accuracyProficiency * MaxAimErrorReductionFactor;
-        float aimErrorStdDev = baseAimErrorStdDev * proficiencyAimReduction;
-        float aimError = SampleGaussian(random, 0f, aimErrorStdDev);
+        // Apply initial aim acquisition error using AccuracyModel
+        float aimErrorStdDev = AccuracyModel.CalculateAimErrorStdDev(operatorAccuracy, accuracyProficiency);
+        float aimError = AccuracyModel.SampleGaussian(random, 0f, aimErrorStdDev);
 
-        // Apply recoil counteraction based on proficiency
-        // Higher proficiency = more effective recoil counteraction
-        // effectiveRecoil = weaponRecoil * (1 - proficiency * MaxRecoilControlFactor)
-        // At proficiency 0: effectiveRecoil = weaponRecoil * 1.0 (no reduction)
-        // At proficiency 1: effectiveRecoil = weaponRecoil * 0.4 (60% reduction)
-        float recoilReductionFactor = 1.0f - accuracyProficiency * MaxRecoilControlFactor;
+        // Apply recoil counteraction using AccuracyModel
+        float recoilReductionFactor = AccuracyModel.CalculateRecoilReductionFactor(accuracyProficiency);
         float effectiveWeaponRecoil = weaponVerticalRecoil * recoilReductionFactor;
 
-        // Apply vertical recoil with variance (variance also reduced by proficiency for consistency)
-        // At proficiency 1: variance reduced by MaxVarianceReductionFactor (30%)
-        float effectiveVariance = recoilVariance * (1.0f - accuracyProficiency * MaxVarianceReductionFactor);
+        // Apply variance reduction using AccuracyModel
+        float effectiveVariance = AccuracyModel.CalculateEffectiveVariance(recoilVariance, accuracyProficiency);
         float recoilVariation = effectiveVariance > 0
             ? (float)(random.NextDouble() * 2.0 - 1.0) * effectiveVariance
             : 0f;
@@ -148,8 +121,8 @@ public static class HitResolution
 
         // Apply initial aim acquisition error based on operator accuracy
         // Lower accuracy = higher standard deviation = more error
-        float aimErrorStdDev = (1.0f - operatorAccuracy) * 0.15f; // Scale to reasonable range
-        float aimError = SampleGaussian(random, 0f, aimErrorStdDev);
+        float aimErrorStdDev = (1.0f - operatorAccuracy) * AccuracyModel.BaseAimErrorScale;
+        float aimError = AccuracyModel.SampleGaussian(random, 0f, aimErrorStdDev);
 
         // Apply vertical recoil with variance
         float recoilVariation = recoilVariance > 0
@@ -212,17 +185,5 @@ public static class HitResolution
 
         // Should not reach here due to range checks above, but return Miss as fallback
         return BodyPart.Miss;
-    }
-
-    /// <summary>
-    /// Samples from a Gaussian (normal) distribution using the Box-Muller transform.
-    /// </summary>
-    private static float SampleGaussian(Random random, float mean, float stdDev)
-    {
-        // Box-Muller transform
-        double u1 = 1.0 - random.NextDouble(); // Uniform(0,1] 
-        double u2 = 1.0 - random.NextDouble();
-        double randStdNormal = Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Sin(2.0 * Math.PI * u2);
-        return mean + stdDev * (float)randStdNormal;
     }
 }
