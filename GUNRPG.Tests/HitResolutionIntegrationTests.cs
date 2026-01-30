@@ -30,7 +30,8 @@ public class HitResolutionIntegrationTests
             EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
-            Accuracy = 0.9f  // High accuracy
+            Accuracy = 0.9f,  // High accuracy
+            AccuracyProficiency = 0.5f  // Explicit proficiency
         };
 
         var enemy = new Operator("Enemy")
@@ -38,7 +39,8 @@ public class HitResolutionIntegrationTests
             EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
-            Accuracy = 0.9f  // High accuracy
+            Accuracy = 0.9f,  // High accuracy
+            AccuracyProficiency = 0.5f  // Explicit proficiency
         };
 
         var combat = new CombatSystemV2(player, enemy, seed: 42);
@@ -148,6 +150,7 @@ public class HitResolutionIntegrationTests
             CurrentAmmo = 5,
             DistanceToOpponent = 15f,
             Accuracy = 1.0f,  // Perfect accuracy to isolate recoil effect (aim error = 0)
+            AccuracyProficiency = 0.5f,  // Explicit proficiency
             CurrentRecoilY = 0f
         };
 
@@ -194,7 +197,8 @@ public class HitResolutionIntegrationTests
             EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
-            Accuracy = 1.0f  // Perfect accuracy
+            Accuracy = 1.0f,  // Perfect accuracy
+            AccuracyProficiency = 0.5f  // Explicit proficiency
         };
 
         var weapon = player.EquippedWeapon;

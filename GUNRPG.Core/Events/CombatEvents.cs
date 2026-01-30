@@ -118,6 +118,18 @@ public class ShotFiredEvent : ISimulationEvent
         _shooter.CurrentRecoilY += weapon.VerticalRecoil;
         _shooter.RecoilRecoveryStartMs = EventTimeMs + (long)weapon.RecoilRecoveryTimeMs;
 
+        // Apply immediate partial recoil recovery based on proficiency
+        // This ensures recoil recovery happens at least once per shot, even if round ends early
+        // The recovery amount is based on a fixed time quantum (100ms worth of recovery)
+        const float immediateRecoveryTimeMs = 100f;
+        float immediateRecoverySeconds = immediateRecoveryTimeMs / 1000f;
+        float recoveryMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(_shooter.AccuracyProficiency);
+        float immediateRecovery = _shooter.RecoilRecoveryRate * immediateRecoverySeconds * recoveryMultiplier;
+        
+        // Apply immediate recovery to both axes
+        _shooter.CurrentRecoilY = Math.Max(0, _shooter.CurrentRecoilY - immediateRecovery);
+        _shooter.CurrentRecoilX = Math.Max(0, _shooter.CurrentRecoilX - immediateRecovery);
+
         // No longer trigger reaction windows - rounds execute completely
         return false;
     }

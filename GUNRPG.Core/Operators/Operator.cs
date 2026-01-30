@@ -43,10 +43,16 @@ public class Operator
 
     private float _accuracyProficiency;
     /// <summary>
+    /// Minimum recommended accuracy proficiency to ensure meaningful recoil control.
+    /// Values below this threshold will trigger a warning.
+    /// </summary>
+    public const float MinRecommendedAccuracyProficiency = 0.1f;
+
+    /// <summary>
     /// Operator accuracy proficiency (0.0 to 1.0). Determines how effectively the operator
     /// counteracts recoil and stabilizes aim. This is applied AFTER weapon recoil is calculated.
     /// 
-    /// - 0.0 = no recoil control, poor aim stabilization
+    /// - 0.0 = no recoil control, poor aim stabilization (not recommended, will log warning)
     /// - 1.0 = excellent recoil control and fast recovery (capped well below perfect)
     /// 
     /// Affects:
@@ -55,11 +61,21 @@ public class Operator
     /// 3. Gun kick recovery (faster recovery toward baseline aim)
     /// 
     /// Does NOT affect damage, fire rate, or body-part bands.
+    /// 
+    /// Note: A minimum proficiency of 0.1 is recommended. Zero proficiency results in
+    /// very poor recoil control and slow recovery.
     /// </summary>
     public float AccuracyProficiency
     {
         get => _accuracyProficiency;
-        set => _accuracyProficiency = Math.Clamp(value, 0.0f, 1.0f);
+        set
+        {
+            _accuracyProficiency = Math.Clamp(value, 0.0f, 1.0f);
+            if (_accuracyProficiency < MinRecommendedAccuracyProficiency)
+            {
+                Console.WriteLine($"[Warning] Operator '{Name}' has very low AccuracyProficiency ({_accuracyProficiency:F2}). Consider setting at least {MinRecommendedAccuracyProficiency}.");
+            }
+        }
     }
 
     // Position

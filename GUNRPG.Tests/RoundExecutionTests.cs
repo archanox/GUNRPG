@@ -20,13 +20,15 @@ public class RoundExecutionTests
         { 
             EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
-            DistanceToOpponent = 15f 
+            DistanceToOpponent = 15f,
+            AccuracyProficiency = 0.5f  // Explicit proficiency
         };
         var enemy = new Operator("Enemy") 
         { 
             EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
-            DistanceToOpponent = 15f 
+            DistanceToOpponent = 15f,
+            AccuracyProficiency = 0.5f  // Explicit proficiency
         };
         
         var combat = new CombatSystemV2(player, enemy, seed: 42);
@@ -78,14 +80,16 @@ public class RoundExecutionTests
             EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
-            Accuracy = 0.9f  // High accuracy to ensure hits
+            Accuracy = 0.9f,  // High accuracy to ensure hits
+            AccuracyProficiency = 0.5f  // Explicit proficiency
         };
         var enemy = new Operator("Enemy") 
         { 
             EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
-            Accuracy = 0.9f  // High accuracy to ensure hits
+            Accuracy = 0.9f,  // High accuracy to ensure hits
+            AccuracyProficiency = 0.5f  // Explicit proficiency
         };
         
         var combat = new CombatSystemV2(player, enemy, seed: 123);
@@ -133,7 +137,8 @@ public class RoundExecutionTests
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
             Health = 100,
-            MaxHealth = 100
+            MaxHealth = 100,
+            AccuracyProficiency = 0.5f  // Explicit proficiency
         };
         var enemy = new Operator("Enemy") 
         { 
@@ -141,7 +146,8 @@ public class RoundExecutionTests
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
             Health = 100,
-            MaxHealth = 100
+            MaxHealth = 100,
+            AccuracyProficiency = 0.5f  // Explicit proficiency
         };
         
         var combat = new CombatSystemV2(player, enemy, seed: 42);
@@ -191,7 +197,8 @@ public class RoundExecutionTests
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
             Health = 100,
-            MaxHealth = 100
+            MaxHealth = 100,
+            AccuracyProficiency = 0.5f  // Explicit proficiency
         };
         var enemy = new Operator("Enemy") 
         { 
@@ -199,7 +206,8 @@ public class RoundExecutionTests
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
             Health = 100,
-            MaxHealth = 100
+            MaxHealth = 100,
+            AccuracyProficiency = 0.5f  // Explicit proficiency
         };
         
         var combat = new CombatSystemV2(player, enemy, seed: 42);
