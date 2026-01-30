@@ -210,20 +210,25 @@ public class AccuracyModel
     }
 
     /// <summary>
-    /// Calculates flinch severity from incoming impulse and defender flinch resistance.
-    /// Formula: severity = Clamp01((incomingImpulse / flinchResistance) * flinchScale)
+    /// Calculates flinch severity from incoming damage (used as an impulse proxy) and defender flinch resistance.
+    /// Formula: severity = Clamp01((incomingDamage / flinchResistance) * flinchScale)
     /// </summary>
-    public static float CalculateFlinchSeverity(float incomingImpulse, float flinchResistance, float flinchScale = DefaultFlinchScale)
+    public static float CalculateFlinchSeverity(float incomingDamage, float flinchResistance, float flinchScale = DefaultFlinchScale)
     {
         float resistance = Math.Max(flinchResistance, MinFlinchResistance);
-        float effectiveImpulse = incomingImpulse / resistance;
+        float effectiveImpulse = incomingDamage / resistance;
         float severity = effectiveImpulse * flinchScale;
         return Math.Clamp(severity, 0f, 1f);
     }
 
     /// <summary>
     /// Calculates effective accuracy proficiency after applying flinch severity.
+    /// Formula: effective = baseAccuracyProficiency * max(1 - flinchSeverity, minProficiencyFactor)
     /// </summary>
+    /// <param name="baseAccuracyProficiency">Operator base proficiency (0.0-1.0).</param>
+    /// <param name="flinchSeverity">Flinch severity (0.0-1.0).</param>
+    /// <param name="minProficiencyFactor">Minimum factor of base proficiency to retain.</param>
+    /// <returns>Effective accuracy proficiency after flinch.</returns>
     public static float CalculateEffectiveAccuracyProficiency(
         float baseAccuracyProficiency,
         float flinchSeverity,
