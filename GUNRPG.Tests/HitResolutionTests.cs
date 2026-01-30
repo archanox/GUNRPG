@@ -11,7 +11,6 @@ public class HitResolutionTests
     {
         // Arrange
         var random = new Random(42);
-        float distance = 10f;
         float operatorAccuracy = 1.0f; // Perfect accuracy (aim error std dev = 0)
         float weaponVerticalRecoil = 0f; // No recoil
         float currentRecoilY = 0f;
@@ -20,7 +19,6 @@ public class HitResolutionTests
         // Act - Aim at lower torso (center: 0.125°)
         // With perfect accuracy and no recoil, shot should be deterministic
         var result = HitResolution.ResolveShot(
-            distance,
             BodyPart.LowerTorso,
             operatorAccuracy,
             weaponVerticalRecoil,
@@ -38,7 +36,6 @@ public class HitResolutionTests
     {
         // Arrange
         var random = new Random(42);
-        float distance = 10f;
         float operatorAccuracy = 1.0f; // Perfect accuracy
         float weaponVerticalRecoil = 0.3f; // Moderate upward recoil
         float currentRecoilY = 0f;
@@ -47,7 +44,6 @@ public class HitResolutionTests
         // Act - Aim at lower torso (center: 0.125°)
         // With 0.3° recoil, should hit upper torso or neck
         var result = HitResolution.ResolveShot(
-            distance,
             BodyPart.LowerTorso,
             operatorAccuracy,
             weaponVerticalRecoil,
@@ -67,7 +63,6 @@ public class HitResolutionTests
     {
         // Arrange
         var random = new Random(42);
-        float distance = 10f;
         float operatorAccuracy = 1.0f; // Perfect accuracy
         float weaponVerticalRecoil = 0.5f; // High recoil
         float currentRecoilY = 0.6f; // Accumulated recoil
@@ -75,7 +70,6 @@ public class HitResolutionTests
 
         // Act - Total recoil > 1.0°, should miss
         var result = HitResolution.ResolveShot(
-            distance,
             BodyPart.LowerTorso,
             operatorAccuracy,
             weaponVerticalRecoil,
@@ -92,8 +86,6 @@ public class HitResolutionTests
     public void ResolveShot_NegativeAngle_MissesUndershoot()
     {
         // Arrange
-        var random = new Random(123);
-        float distance = 10f;
         float operatorAccuracy = 0.0f; // Poor accuracy = high variance
         float weaponVerticalRecoil = -0.5f; // Downward (unusual but testing bounds)
         float currentRecoilY = 0f;
@@ -104,7 +96,6 @@ public class HitResolutionTests
         for (int i = 0; i < 100; i++)
         {
             var result = HitResolution.ResolveShot(
-                distance,
                 BodyPart.LowerTorso,
                 operatorAccuracy,
                 weaponVerticalRecoil,
@@ -127,8 +118,6 @@ public class HitResolutionTests
     public void ResolveShot_LowerAccuracy_HigherAimError()
     {
         // Arrange
-        var random = new Random(42);
-        float distance = 10f;
         float weaponVerticalRecoil = 0f;
         float currentRecoilY = 0f;
         float recoilVariance = 0f;
@@ -139,13 +128,11 @@ public class HitResolutionTests
 
         for (int i = 0; i < 50; i++)
         {
-            var highResult = HitResolution.ResolveShot(
-                distance, BodyPart.LowerTorso, 0.9f, weaponVerticalRecoil, 
+            var highResult = HitResolution.ResolveShot( BodyPart.LowerTorso, 0.9f, weaponVerticalRecoil, 
                 currentRecoilY, recoilVariance, new Random(i));
             resultsHighAccuracy.Add(Math.Abs(highResult.FinalAngleDegrees - 0.125f));
 
-            var lowResult = HitResolution.ResolveShot(
-                distance, BodyPart.LowerTorso, 0.1f, weaponVerticalRecoil, 
+            var lowResult = HitResolution.ResolveShot( BodyPart.LowerTorso, 0.1f, weaponVerticalRecoil, 
                 currentRecoilY, recoilVariance, new Random(i));
             resultsLowAccuracy.Add(Math.Abs(lowResult.FinalAngleDegrees - 0.125f));
         }
@@ -162,19 +149,16 @@ public class HitResolutionTests
     public void ResolveShot_WithRecoilVariance_ProducesDifferentResults()
     {
         // Arrange
-        var random = new Random(42);
-        float distance = 10f;
         float operatorAccuracy = 0.8f;
         float weaponVerticalRecoil = 0.2f;
         float currentRecoilY = 0f;
         float recoilVariance = 0.1f; // 10% variance
 
-        // Act - Multiple shots with same seed but variance should still produce variation
+        // Act - Multiple shots with different seeds produce variation from both RNG and recoil variance
         var results = new List<float>();
         for (int i = 0; i < 20; i++)
         {
             var result = HitResolution.ResolveShot(
-                distance,
                 BodyPart.LowerTorso,
                 operatorAccuracy,
                 weaponVerticalRecoil,
@@ -194,7 +178,6 @@ public class HitResolutionTests
     {
         // Arrange
         var random = new Random(42);
-        float distance = 10f;
         float operatorAccuracy = 1.0f; // Perfect accuracy
         float weaponVerticalRecoil = 0f;
         float currentRecoilY = 0f;
@@ -202,7 +185,6 @@ public class HitResolutionTests
 
         // Act - Aim at head
         var result = HitResolution.ResolveShot(
-            distance,
             BodyPart.Head,
             operatorAccuracy,
             weaponVerticalRecoil,
@@ -237,7 +219,7 @@ public class HitResolutionTests
         foreach (var (targetPart, minAngle, maxAngle) in testCases)
         {
             var result = HitResolution.ResolveShot(
-                10f, targetPart, operatorAccuracy, weaponVerticalRecoil,
+                targetPart, operatorAccuracy, weaponVerticalRecoil,
                 currentRecoilY, recoilVariance, random);
 
             // With perfect accuracy and no recoil, should hit within or very close to target band
@@ -251,19 +233,16 @@ public class HitResolutionTests
     public void ResolveShot_Deterministic_SameSeedSameResult()
     {
         // Arrange
-        float distance = 15f;
         float operatorAccuracy = 0.7f;
         float weaponVerticalRecoil = 0.15f;
         float currentRecoilY = 0.05f;
         float recoilVariance = 0.05f;
 
         // Act - Run twice with same seed
-        var result1 = HitResolution.ResolveShot(
-            distance, BodyPart.UpperTorso, operatorAccuracy, weaponVerticalRecoil,
+        var result1 = HitResolution.ResolveShot( BodyPart.UpperTorso, operatorAccuracy, weaponVerticalRecoil,
             currentRecoilY, recoilVariance, new Random(999));
 
-        var result2 = HitResolution.ResolveShot(
-            distance, BodyPart.UpperTorso, operatorAccuracy, weaponVerticalRecoil,
+        var result2 = HitResolution.ResolveShot( BodyPart.UpperTorso, operatorAccuracy, weaponVerticalRecoil,
             currentRecoilY, recoilVariance, new Random(999));
 
         // Assert - Should be identical

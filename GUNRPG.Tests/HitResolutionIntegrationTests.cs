@@ -153,23 +153,22 @@ public class HitResolutionIntegrationTests
         _output.WriteLine($"Weapon vertical recoil: {weaponRecoil}");
 
         var random = new Random(42);
-        var initialRecoil = player.CurrentRecoilY;
 
         // Shot 1
         var result1 = HitResolution.ResolveShot(
-            15f, BodyPart.UpperTorso, player.Accuracy, weaponRecoil,
+            BodyPart.UpperTorso, player.Accuracy, weaponRecoil,
             player.CurrentRecoilY, 0f, random);
         player.CurrentRecoilY += weaponRecoil;
 
         // Shot 2 - should have more recoil
         var result2 = HitResolution.ResolveShot(
-            15f, BodyPart.UpperTorso, player.Accuracy, weaponRecoil,
+            BodyPart.UpperTorso, player.Accuracy, weaponRecoil,
             player.CurrentRecoilY, 0f, random);
         player.CurrentRecoilY += weaponRecoil;
 
         // Shot 3 - even more recoil
         var result3 = HitResolution.ResolveShot(
-            15f, BodyPart.UpperTorso, player.Accuracy, weaponRecoil,
+            BodyPart.UpperTorso, player.Accuracy, weaponRecoil,
             player.CurrentRecoilY, 0f, random);
 
         _output.WriteLine($"Shot 1 angle: {result1.FinalAngleDegrees:F4}° -> {result1.HitLocation}");
@@ -194,14 +193,6 @@ public class HitResolutionIntegrationTests
             CurrentAmmo = 30,
             DistanceToOpponent = 15f,
             Accuracy = 1.0f  // Perfect accuracy
-        };
-
-        var enemy = new Operator("Enemy")
-        {
-            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
-            CurrentAmmo = 30,
-            DistanceToOpponent = 15f,
-            Accuracy = 0f  // Enemy doesn't hit
         };
 
         var weapon = player.EquippedWeapon;
