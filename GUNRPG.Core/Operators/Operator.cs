@@ -40,6 +40,27 @@ public class Operator
         set => _accuracy = Math.Clamp(value, 0.0f, 1.0f);
     }
 
+    private float _accuracyProficiency = 0.5f;
+    /// <summary>
+    /// Operator accuracy proficiency (0.0 to 1.0). Determines how effectively the operator
+    /// counteracts recoil and stabilizes aim. This is applied AFTER weapon recoil is calculated.
+    /// 
+    /// - 0.0 = no recoil control, poor aim stabilization
+    /// - 1.0 = excellent recoil control and fast recovery (capped well below perfect)
+    /// 
+    /// Affects:
+    /// 1. Initial aim acquisition error (higher proficiency = tighter distribution)
+    /// 2. Recoil counteraction (reduces effective vertical recoil per shot)
+    /// 3. Gun kick recovery (faster recovery toward baseline aim)
+    /// 
+    /// Does NOT affect damage, fire rate, or body-part bands.
+    /// </summary>
+    public float AccuracyProficiency
+    {
+        get => _accuracyProficiency;
+        set => _accuracyProficiency = Math.Clamp(value, 0.0f, 1.0f);
+    }
+
     // Position
     public float DistanceToOpponent { get; set; }
 
@@ -104,6 +125,7 @@ public class Operator
         
         // Operator skills (using property setter for validation)
         Accuracy = 0.7f; // Default 70% accuracy
+        AccuracyProficiency = 0.5f; // Default 50% proficiency (mid-range skill)
         
         // Movement defaults
         WalkSpeed = 4f; // meters per second
@@ -168,10 +190,14 @@ public class Operator
             }
         }
 
-        // Recoil recovery
+        // Recoil recovery (affected by AccuracyProficiency)
         if (RecoilRecoveryStartMs.HasValue && currentTimeMs >= RecoilRecoveryStartMs.Value)
         {
-            float recoveryAmount = RecoilRecoveryRate * deltaSeconds;
+            // AccuracyProficiency affects gun kick recovery rate
+            // At proficiency 0.0: recovery multiplier = 0.5 (slower recovery)
+            // At proficiency 1.0: recovery multiplier = 2.0 (faster recovery)
+            float recoveryMultiplier = 0.5f + 1.5f * AccuracyProficiency;
+            float recoveryAmount = RecoilRecoveryRate * deltaSeconds * recoveryMultiplier;
             CurrentRecoilX = RecoverRecoilAxis(CurrentRecoilX, recoveryAmount);
             CurrentRecoilY = RecoverRecoilAxis(CurrentRecoilY, recoveryAmount);
         }

@@ -43,6 +43,76 @@ public static class HitResolution
     private const float MaxAngle = 1.00f;
 
     /// <summary>
+    /// Maximum recoil control factor (cap at 60% reduction for highly proficient operators).
+    /// </summary>
+    private const float MaxRecoilControlFactor = 0.6f;
+
+    /// <summary>
+    /// Resolves a shot to determine which body part (if any) is hit.
+    /// This overload includes AccuracyProficiency support for operator-driven recoil control.
+    /// </summary>
+    /// <param name="targetBodyPart">Intended target body part</param>
+    /// <param name="operatorAccuracy">Operator accuracy stat (affects standard deviation of aim error)</param>
+    /// <param name="accuracyProficiency">Operator proficiency stat (0.0-1.0) that affects recoil counteraction</param>
+    /// <param name="weaponVerticalRecoil">Weapon's vertical recoil value (unchanged)</param>
+    /// <param name="currentRecoilY">Current accumulated vertical recoil state</param>
+    /// <param name="recoilVariance">Optional variance in recoil application</param>
+    /// <param name="random">Random number generator for deterministic-friendly operation</param>
+    /// <returns>The resolved body part hit or Miss if shot overshoots/undershoots</returns>
+    public static ShotResolutionResult ResolveShotWithProficiency(
+        BodyPart targetBodyPart,
+        float operatorAccuracy,
+        float accuracyProficiency,
+        float weaponVerticalRecoil,
+        float currentRecoilY,
+        float recoilVariance,
+        Random random)
+    {
+        // Clamp proficiency to valid range
+        accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
+        
+        // Get the center angle of the target body part
+        float targetAngle = GetBodyPartCenterAngle(targetBodyPart);
+
+        // Apply initial aim acquisition error based on operator accuracy
+        // Proficiency improves aim stability by reducing error standard deviation
+        // Base formula: aimErrorStdDev = (1.0 - accuracy) * 0.15 * (1.0 - proficiency * 0.5)
+        // At proficiency 0: full aim error based on accuracy
+        // At proficiency 1: aim error reduced by 50%
+        float baseAimErrorStdDev = (1.0f - operatorAccuracy) * 0.15f;
+        float proficiencyAimReduction = 1.0f - accuracyProficiency * 0.5f;
+        float aimErrorStdDev = baseAimErrorStdDev * proficiencyAimReduction;
+        float aimError = SampleGaussian(random, 0f, aimErrorStdDev);
+
+        // Apply recoil counteraction based on proficiency
+        // Higher proficiency = more effective recoil counteraction
+        // effectiveRecoil = weaponRecoil * (1 - proficiency * maxRecoilControlFactor)
+        // At proficiency 0: effectiveRecoil = weaponRecoil * 1.0 (no reduction)
+        // At proficiency 1: effectiveRecoil = weaponRecoil * 0.4 (60% reduction)
+        float recoilReductionFactor = 1.0f - accuracyProficiency * MaxRecoilControlFactor;
+        float effectiveWeaponRecoil = weaponVerticalRecoil * recoilReductionFactor;
+
+        // Apply vertical recoil with variance (variance also reduced by proficiency)
+        float effectiveVariance = recoilVariance * (1.0f - accuracyProficiency * 0.3f);
+        float recoilVariation = effectiveVariance > 0
+            ? (float)(random.NextDouble() * 2.0 - 1.0) * effectiveVariance
+            : 0f;
+
+        // Apply proficiency-based counteraction to accumulated recoil as well
+        float effectiveCurrentRecoil = currentRecoilY * recoilReductionFactor;
+        
+        float totalVerticalRecoil = effectiveCurrentRecoil + effectiveWeaponRecoil + recoilVariation;
+
+        // Calculate final vertical angle
+        float finalAngle = targetAngle + aimError + totalVerticalRecoil;
+
+        // Convert final angle to body part hit
+        BodyPart hitLocation = ConvertAngleToBodyPart(finalAngle);
+
+        return new ShotResolutionResult(hitLocation, finalAngle);
+    }
+
+    /// <summary>
     /// Resolves a shot to determine which body part (if any) is hit.
     /// </summary>
     /// <param name="targetBodyPart">Intended target body part</param>
