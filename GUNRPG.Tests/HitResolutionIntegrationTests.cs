@@ -75,7 +75,7 @@ public class HitResolutionIntegrationTests
         // Test multiple rounds with different accuracy levels
         var testCases = new[]
         {
-            (accuracy: 0.95f, expectedMinHitRate: 0.45f, label: "High accuracy"),
+            (accuracy: 0.95f, expectedMinHitRate: 0.5f, label: "High accuracy"),
             (accuracy: 0.5f, expectedMinHitRate: 0.2f, label: "Medium accuracy"),
             (accuracy: 0.2f, expectedMinHitRate: 0.0f, label: "Low accuracy")
         };

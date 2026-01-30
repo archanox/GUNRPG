@@ -163,8 +163,17 @@ while (combat.Phase != CombatPhase.Ended)
     var selectedStance = stanceOptions.FirstOrDefault(o => o.key == stanceKey.KeyChar.ToString());
     playerIntents.Stance = selectedStance != default ? selectedStance.action : StanceAction.None;
     
-    // Display chosen intents
-    Console.WriteLine($"Selected: Primary={playerIntents.Primary}, Movement={playerIntents.Movement}, Stance={playerIntents.Stance}");
+    // Display chosen intents with current AIM state context
+    string stanceDisplay = playerIntents.Stance switch
+    {
+        StanceAction.EnterADS => "EnterADS",
+        StanceAction.ExitADS => "ExitADS",
+        StanceAction.None when player.AimState == AimState.TransitioningToADS => "ContinueADS",
+        StanceAction.None when player.AimState == AimState.ADS => "MaintainADS",
+        StanceAction.None => "None",
+        _ => playerIntents.Stance.ToString()
+    };
+    Console.WriteLine($"Selected: Primary={playerIntents.Primary}, Movement={playerIntents.Movement}, Stance={stanceDisplay}");
     
     // Submit player intents
     var playerResult = combat.SubmitIntents(player, playerIntents);
