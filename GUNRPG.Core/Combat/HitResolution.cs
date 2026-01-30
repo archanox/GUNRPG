@@ -48,6 +48,18 @@ public static class HitResolution
     private const float MaxRecoilControlFactor = 0.6f;
 
     /// <summary>
+    /// Maximum aim error reduction factor at full proficiency (50% reduction).
+    /// This represents how much proficiency can reduce the aim error standard deviation.
+    /// </summary>
+    private const float MaxAimErrorReductionFactor = 0.5f;
+
+    /// <summary>
+    /// Maximum variance reduction factor at full proficiency (30% reduction).
+    /// This represents how much proficiency reduces recoil variance for more consistent shots.
+    /// </summary>
+    private const float MaxVarianceReductionFactor = 0.3f;
+
+    /// <summary>
     /// Resolves a shot to determine which body part (if any) is hit.
     /// This overload includes AccuracyProficiency support for operator-driven recoil control.
     /// </summary>
@@ -76,24 +88,25 @@ public static class HitResolution
 
         // Apply initial aim acquisition error based on operator accuracy
         // Proficiency improves aim stability by reducing error standard deviation
-        // Base formula: aimErrorStdDev = (1.0 - accuracy) * 0.15 * (1.0 - proficiency * 0.5)
+        // Base formula: aimErrorStdDev = (1.0 - accuracy) * 0.15 * (1.0 - proficiency * MaxAimErrorReductionFactor)
         // At proficiency 0: full aim error based on accuracy
-        // At proficiency 1: aim error reduced by 50%
+        // At proficiency 1: aim error reduced by MaxAimErrorReductionFactor (50%)
         float baseAimErrorStdDev = (1.0f - operatorAccuracy) * 0.15f;
-        float proficiencyAimReduction = 1.0f - accuracyProficiency * 0.5f;
+        float proficiencyAimReduction = 1.0f - accuracyProficiency * MaxAimErrorReductionFactor;
         float aimErrorStdDev = baseAimErrorStdDev * proficiencyAimReduction;
         float aimError = SampleGaussian(random, 0f, aimErrorStdDev);
 
         // Apply recoil counteraction based on proficiency
         // Higher proficiency = more effective recoil counteraction
-        // effectiveRecoil = weaponRecoil * (1 - proficiency * maxRecoilControlFactor)
+        // effectiveRecoil = weaponRecoil * (1 - proficiency * MaxRecoilControlFactor)
         // At proficiency 0: effectiveRecoil = weaponRecoil * 1.0 (no reduction)
         // At proficiency 1: effectiveRecoil = weaponRecoil * 0.4 (60% reduction)
         float recoilReductionFactor = 1.0f - accuracyProficiency * MaxRecoilControlFactor;
         float effectiveWeaponRecoil = weaponVerticalRecoil * recoilReductionFactor;
 
-        // Apply vertical recoil with variance (variance also reduced by proficiency)
-        float effectiveVariance = recoilVariance * (1.0f - accuracyProficiency * 0.3f);
+        // Apply vertical recoil with variance (variance also reduced by proficiency for consistency)
+        // At proficiency 1: variance reduced by MaxVarianceReductionFactor (30%)
+        float effectiveVariance = recoilVariance * (1.0f - accuracyProficiency * MaxVarianceReductionFactor);
         float recoilVariation = effectiveVariance > 0
             ? (float)(random.NextDouble() * 2.0 - 1.0) * effectiveVariance
             : 0f;
