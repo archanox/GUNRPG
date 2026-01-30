@@ -126,9 +126,8 @@ public class ShotFiredEvent : ISimulationEvent
         float recoveryMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(_shooter.AccuracyProficiency);
         float immediateRecovery = _shooter.RecoilRecoveryRate * immediateRecoverySeconds * recoveryMultiplier;
         
-        // Apply immediate recovery to both axes
+        // Apply immediate recovery to vertical axis only (no horizontal recoil is implemented)
         _shooter.CurrentRecoilY = Math.Max(0, _shooter.CurrentRecoilY - immediateRecovery);
-        _shooter.CurrentRecoilX = Math.Max(0, _shooter.CurrentRecoilX - immediateRecovery);
 
         // No longer trigger reaction windows - rounds execute completely
         return false;
