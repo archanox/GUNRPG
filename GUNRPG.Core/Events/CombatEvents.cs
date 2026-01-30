@@ -59,10 +59,14 @@ public class ShotFiredEvent : ISimulationEvent
             ? BodyPart.Head 
             : BodyPart.UpperTorso;
 
-        // Resolve shot using vertical body-part hit resolution model
-        var resolution = HitResolution.ResolveShot(
+        // Resolve shot using vertical body-part hit resolution model with proficiency effects
+        // AccuracyProficiency is applied AFTER weapon recoil is calculated:
+        // - Reduces effective vertical recoil (recoil counteraction)
+        // - Tightens aim error distribution (aim stability)
+        var resolution = HitResolution.ResolveShotWithProficiency(
             targetBodyPart: targetBodyPart,
             operatorAccuracy: _shooter.Accuracy,
+            accuracyProficiency: _shooter.AccuracyProficiency,
             weaponVerticalRecoil: weapon.VerticalRecoil,
             currentRecoilY: _shooter.CurrentRecoilY,
             recoilVariance: weapon.VerticalRecoil * 0.1f, // 10% variance
