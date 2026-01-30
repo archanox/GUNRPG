@@ -39,16 +39,35 @@ public class AccuracyProficiencyTests
     {
         var model = new AccuracyModel(new Random(42));
         
-        // At proficiency 0: full aim error (0.15)
+        // At proficiency 0: full aim error (BaseAimErrorScale = 0.15)
         float lowProfError = model.CalculateAimErrorStdDev(0f);
         
-        // At proficiency 1: reduced aim error (0.01 minimum)
+        // At proficiency 1: reduced aim error by MaxAimErrorReductionFactor (50%)
+        // 0.15 * (1 - 0.5) = 0.075
         float highProfError = model.CalculateAimErrorStdDev(1f);
         
         Assert.True(lowProfError > highProfError, 
             $"Low proficiency error ({lowProfError}) should be greater than high proficiency error ({highProfError})");
         Assert.Equal(0.15f, lowProfError, 3);
-        Assert.Equal(0.01f, highProfError, 3);
+        Assert.Equal(0.075f, highProfError, 3);
+    }
+
+    [Fact]
+    public void AccuracyModel_CalculateAimErrorStdDev_WithAccuracyAndProficiency()
+    {
+        var model = new AccuracyModel(new Random(42));
+        
+        // Low accuracy (0.5), low proficiency (0): (1 - 0.5) * 0.15 * 1.0 = 0.075
+        float lowLow = model.CalculateAimErrorStdDev(0.5f, 0f);
+        Assert.Equal(0.075f, lowLow, 3);
+        
+        // Low accuracy (0.5), high proficiency (1): (1 - 0.5) * 0.15 * 0.5 = 0.0375
+        float lowHigh = model.CalculateAimErrorStdDev(0.5f, 1f);
+        Assert.Equal(0.0375f, lowHigh, 3);
+        
+        // High accuracy (1.0), any proficiency: (1 - 1.0) * 0.15 * anything = 0
+        float highAny = model.CalculateAimErrorStdDev(1.0f, 0.5f);
+        Assert.Equal(0f, highAny, 3);
     }
 
     [Fact]

@@ -5,6 +5,9 @@ namespace GUNRPG.Core.Combat;
 /// Proficiency affects how effectively the operator counteracts recoil and stabilizes aim,
 /// without modifying the weapon's base stats.
 /// 
+/// This class provides testable, isolated logic for proficiency calculations that are used
+/// by HitResolution.ResolveShotWithProficiency and Operator.UpdateRegeneration.
+/// 
 /// Design goals:
 /// - Weapon recoil values remain faithful and unchanged
 /// - Operator proficiency determines how effectively recoil and gun kick are counteracted
@@ -15,29 +18,35 @@ public class AccuracyModel
     /// <summary>
     /// Maximum recoil control factor (cap at 60% reduction for highly proficient operators).
     /// </summary>
-    private const float MaxRecoilControlFactor = 0.6f;
+    public const float MaxRecoilControlFactor = 0.6f;
 
     /// <summary>
-    /// Base aim error standard deviation for a completely unskilled operator (proficiency = 0).
-    /// This value scales down as proficiency increases.
+    /// Maximum aim error reduction factor at full proficiency (50% reduction).
+    /// This represents how much proficiency can reduce the aim error standard deviation.
     /// </summary>
-    private const float BaseAimErrorStdDev = 0.15f;
+    public const float MaxAimErrorReductionFactor = 0.5f;
 
     /// <summary>
-    /// Minimum aim error standard deviation (even at proficiency = 1.0, there's some inherent variance).
+    /// Maximum variance reduction factor at full proficiency (30% reduction).
+    /// This represents how much proficiency reduces recoil variance for more consistent shots.
     /// </summary>
-    private const float MinAimErrorStdDev = 0.01f;
+    public const float MaxVarianceReductionFactor = 0.3f;
+
+    /// <summary>
+    /// Base aim error scale factor that converts (1 - accuracy) to standard deviation.
+    /// </summary>
+    public const float BaseAimErrorScale = 0.15f;
 
     /// <summary>
     /// Base recovery rate multiplier for a completely unskilled operator (proficiency = 0).
     /// Higher proficiency = faster recoil recovery.
     /// </summary>
-    private const float BaseRecoveryRateMultiplier = 0.5f;
+    public const float BaseRecoveryRateMultiplier = 0.5f;
 
     /// <summary>
     /// Maximum recovery rate multiplier (at proficiency = 1.0).
     /// </summary>
-    private const float MaxRecoveryRateMultiplier = 2.0f;
+    public const float MaxRecoveryRateMultiplier = 2.0f;
 
     private readonly Random _random;
 
@@ -51,8 +60,35 @@ public class AccuracyModel
     }
 
     /// <summary>
-    /// Calculates the aim error standard deviation based on operator accuracy proficiency.
-    /// Higher proficiency results in tighter aim distribution.
+    /// Calculates the aim error standard deviation based on operator accuracy and proficiency.
+    /// Formula: (1 - accuracy) * BaseAimErrorScale * (1 - proficiency * MaxAimErrorReductionFactor)
+    /// 
+    /// Higher accuracy = lower base error
+    /// Higher proficiency = further reduction in error (up to 50% at max proficiency)
+    /// </summary>
+    /// <param name="operatorAccuracy">Operator accuracy stat (0.0-1.0)</param>
+    /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
+    /// <returns>The aim error standard deviation in degrees.</returns>
+    public float CalculateAimErrorStdDev(float operatorAccuracy, float accuracyProficiency)
+    {
+        operatorAccuracy = Math.Clamp(operatorAccuracy, 0f, 1f);
+        accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
+        
+        // Base error from accuracy
+        float baseError = (1.0f - operatorAccuracy) * BaseAimErrorScale;
+        
+        // Proficiency reduces error by up to MaxAimErrorReductionFactor (50%)
+        float proficiencyReduction = 1.0f - accuracyProficiency * MaxAimErrorReductionFactor;
+        
+        return baseError * proficiencyReduction;
+    }
+
+    /// <summary>
+    /// Calculates the aim error standard deviation based on proficiency only.
+    /// This simplified version uses a linear interpolation from BaseAimErrorScale to a minimum value.
+    /// 
+    /// Note: For production use with both accuracy and proficiency, use the overload that
+    /// accepts both parameters.
     /// </summary>
     /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
     /// <returns>The aim error standard deviation in degrees.</returns>
@@ -60,8 +96,10 @@ public class AccuracyModel
     {
         accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
         
-        // Linear interpolation from BaseAimErrorStdDev (at 0) to MinAimErrorStdDev (at 1)
-        float stdDev = BaseAimErrorStdDev - (BaseAimErrorStdDev - MinAimErrorStdDev) * accuracyProficiency;
+        // Linear interpolation from BaseAimErrorScale (at 0) to minimum (at 1)
+        // Minimum error at max proficiency is BaseAimErrorScale * (1 - MaxAimErrorReductionFactor) = 0.075
+        float minError = BaseAimErrorScale * (1.0f - MaxAimErrorReductionFactor);
+        float stdDev = BaseAimErrorScale - (BaseAimErrorScale - minError) * accuracyProficiency;
         return stdDev;
     }
 
@@ -78,10 +116,22 @@ public class AccuracyModel
     }
 
     /// <summary>
+    /// Samples an aim acquisition error from a Gaussian distribution using both accuracy and proficiency.
+    /// </summary>
+    /// <param name="operatorAccuracy">Operator accuracy stat (0.0-1.0)</param>
+    /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
+    /// <returns>The aim error offset in degrees.</returns>
+    public float SampleAimError(float operatorAccuracy, float accuracyProficiency)
+    {
+        float stdDev = CalculateAimErrorStdDev(operatorAccuracy, accuracyProficiency);
+        return SampleGaussian(0f, stdDev);
+    }
+
+    /// <summary>
     /// Calculates the effective vertical recoil after operator counteraction.
     /// Higher proficiency = more effective recoil counteraction.
     /// 
-    /// Formula: effectiveRecoil = weaponRecoil * (1 - proficiency * recoilControlFactor)
+    /// Formula: effectiveRecoil = weaponRecoil * (1 - proficiency * MaxRecoilControlFactor)
     /// </summary>
     /// <param name="weaponVerticalRecoil">The weapon's raw vertical recoil value (unchanged)</param>
     /// <param name="accuracyProficiency">Operator accuracy proficiency (0.0-1.0)</param>
@@ -90,7 +140,7 @@ public class AccuracyModel
     {
         accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
         
-        // effectiveRecoil = weaponRecoil * (1 - proficiency * maxRecoilControlFactor)
+        // effectiveRecoil = weaponRecoil * (1 - proficiency * MaxRecoilControlFactor)
         // At proficiency 0: effectiveRecoil = weaponRecoil * 1.0 (no reduction)
         // At proficiency 1: effectiveRecoil = weaponRecoil * (1 - 0.6) = weaponRecoil * 0.4 (60% reduction)
         float reductionFactor = 1f - accuracyProficiency * MaxRecoilControlFactor;

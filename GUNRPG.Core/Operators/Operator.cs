@@ -1,3 +1,4 @@
+using GUNRPG.Core.Combat;
 using GUNRPG.Core.Weapons;
 
 namespace GUNRPG.Core.Operators;
@@ -193,10 +194,11 @@ public class Operator
         // Recoil recovery (affected by AccuracyProficiency)
         if (RecoilRecoveryStartMs.HasValue && currentTimeMs >= RecoilRecoveryStartMs.Value)
         {
-            // AccuracyProficiency affects gun kick recovery rate
-            // At proficiency 0.0: recovery multiplier = 0.5 (slower recovery)
-            // At proficiency 1.0: recovery multiplier = 2.0 (faster recovery)
-            float recoveryMultiplier = 0.5f + 1.5f * AccuracyProficiency;
+            // AccuracyProficiency affects gun kick recovery rate using constants from AccuracyModel
+            // At proficiency 0.0: recovery multiplier = BaseRecoveryRateMultiplier (0.5 = slower recovery)
+            // At proficiency 1.0: recovery multiplier = MaxRecoveryRateMultiplier (2.0 = faster recovery)
+            float recoveryMultiplier = AccuracyModel.BaseRecoveryRateMultiplier + 
+                (AccuracyModel.MaxRecoveryRateMultiplier - AccuracyModel.BaseRecoveryRateMultiplier) * AccuracyProficiency;
             float recoveryAmount = RecoilRecoveryRate * deltaSeconds * recoveryMultiplier;
             CurrentRecoilX = RecoverRecoilAxis(CurrentRecoilX, recoveryAmount);
             CurrentRecoilY = RecoverRecoilAxis(CurrentRecoilY, recoveryAmount);
