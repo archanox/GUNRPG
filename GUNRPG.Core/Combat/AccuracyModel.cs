@@ -51,6 +51,22 @@ public class AccuracyModel
     /// </summary>
     public const float MaxRecoveryRateMultiplier = 2.0f;
 
+    /// <summary>
+    /// Default scale applied when converting impulse to flinch severity.
+    /// </summary>
+    public const float DefaultFlinchScale = 0.08f;
+
+    /// <summary>
+    /// Minimum factor of base proficiency that flinch can reduce to.
+    /// Ensures accuracy proficiency never drops below 35% of its base value.
+    /// </summary>
+    public const float FlinchProficiencyFloorFactor = 0.35f;
+
+    /// <summary>
+    /// Minimum flinch resistance to avoid divide-by-zero when calculating severity.
+    /// </summary>
+    public const float MinFlinchResistance = 0.01f;
+
     private readonly Random _random;
 
     /// <summary>
@@ -191,6 +207,32 @@ public class AccuracyModel
         
         // Linear interpolation from BaseRecoveryRateMultiplier (at 0) to MaxRecoveryRateMultiplier (at 1)
         return BaseRecoveryRateMultiplier + (MaxRecoveryRateMultiplier - BaseRecoveryRateMultiplier) * accuracyProficiency;
+    }
+
+    /// <summary>
+    /// Calculates flinch severity from incoming impulse and defender flinch resistance.
+    /// Formula: severity = Clamp01((incomingImpulse / flinchResistance) * flinchScale)
+    /// </summary>
+    public static float CalculateFlinchSeverity(float incomingImpulse, float flinchResistance, float flinchScale = DefaultFlinchScale)
+    {
+        float resistance = Math.Max(flinchResistance, MinFlinchResistance);
+        float effectiveImpulse = incomingImpulse / resistance;
+        float severity = effectiveImpulse * flinchScale;
+        return Math.Clamp(severity, 0f, 1f);
+    }
+
+    /// <summary>
+    /// Calculates effective accuracy proficiency after applying flinch severity.
+    /// </summary>
+    public static float CalculateEffectiveAccuracyProficiency(
+        float baseAccuracyProficiency,
+        float flinchSeverity,
+        float minProficiencyFactor = FlinchProficiencyFloorFactor)
+    {
+        baseAccuracyProficiency = Math.Clamp(baseAccuracyProficiency, 0f, 1f);
+        float severityFactor = 1f - Math.Clamp(flinchSeverity, 0f, 1f);
+        float clampedFactor = Math.Max(severityFactor, Math.Clamp(minProficiencyFactor, 0f, 1f));
+        return Math.Clamp(baseAccuracyProficiency * clampedFactor, 0f, 1f);
     }
 
     /// <summary>

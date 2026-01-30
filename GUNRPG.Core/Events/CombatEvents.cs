@@ -63,10 +63,13 @@ public class ShotFiredEvent : ISimulationEvent
         // AccuracyProficiency is applied AFTER weapon recoil is calculated:
         // - Reduces effective vertical recoil (recoil counteraction)
         // - Tightens aim error distribution (aim stability)
+        float effectiveProficiency = AccuracyModel.CalculateEffectiveAccuracyProficiency(
+            _shooter.AccuracyProficiency,
+            _shooter.FlinchSeverity);
         var resolution = HitResolution.ResolveShotWithProficiency(
             targetBodyPart: targetBodyPart,
             operatorAccuracy: _shooter.Accuracy,
-            accuracyProficiency: _shooter.AccuracyProficiency,
+            accuracyProficiency: effectiveProficiency,
             weaponVerticalRecoil: weapon.VerticalRecoil,
             currentRecoilY: _shooter.CurrentRecoilY,
             recoilVariance: weapon.VerticalRecoil * 0.1f, // 10% variance
@@ -93,6 +96,10 @@ public class ShotFiredEvent : ISimulationEvent
             else
             {
                 _target.TakeDamage(damage, impactTime);
+                var targetWeapon = _target.EquippedWeapon;
+                float flinchResistance = targetWeapon?.FlinchResistance ?? AccuracyModel.MinFlinchResistance;
+                float flinchSeverity = AccuracyModel.CalculateFlinchSeverity(damage, flinchResistance);
+                _target.ApplyFlinch(flinchSeverity, impactTime);
                 Console.WriteLine($"[{impactTime}ms] {_shooter.Name}'s {weaponName} hit {_target.Name} for {damage:F1} damage ({resolution.HitLocation})");
             }
         }
@@ -117,6 +124,8 @@ public class ShotFiredEvent : ISimulationEvent
         // Apply recoil - recoil now accumulates
         _shooter.CurrentRecoilY += weapon.VerticalRecoil;
         _shooter.RecoilRecoveryStartMs = EventTimeMs + (long)weapon.RecoilRecoveryTimeMs;
+
+        _shooter.ConsumeFlinchShot();
 
         // Apply immediate partial recoil recovery based on proficiency
         // This ensures recoil recovery happens at least once per shot, even if round ends early
