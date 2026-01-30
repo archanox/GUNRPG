@@ -30,7 +30,7 @@ public class Operator
     public int CurrentAmmo { get; set; }
 
     // Operator Skills
-    private float _accuracy = 0.7f;
+    private float _accuracy;
     /// <summary>
     /// Operator accuracy (0.0 to 1.0). Affects standard deviation of aim acquisition error.
     /// Higher values = more accurate shooting. Values are clamped to [0.0, 1.0] range.
@@ -41,7 +41,7 @@ public class Operator
         set => _accuracy = Math.Clamp(value, 0.0f, 1.0f);
     }
 
-    private float _accuracyProficiency = 0.5f;
+    private float _accuracyProficiency;
     /// <summary>
     /// Operator accuracy proficiency (0.0 to 1.0). Determines how effectively the operator
     /// counteracts recoil and stabilizes aim. This is applied AFTER weapon recoil is calculated.
@@ -194,11 +194,8 @@ public class Operator
         // Recoil recovery (affected by AccuracyProficiency)
         if (RecoilRecoveryStartMs.HasValue && currentTimeMs >= RecoilRecoveryStartMs.Value)
         {
-            // AccuracyProficiency affects gun kick recovery rate using constants from AccuracyModel
-            // At proficiency 0.0: recovery multiplier = BaseRecoveryRateMultiplier (0.5 = slower recovery)
-            // At proficiency 1.0: recovery multiplier = MaxRecoveryRateMultiplier (2.0 = faster recovery)
-            float recoveryMultiplier = AccuracyModel.BaseRecoveryRateMultiplier + 
-                (AccuracyModel.MaxRecoveryRateMultiplier - AccuracyModel.BaseRecoveryRateMultiplier) * AccuracyProficiency;
+            // Use AccuracyModel.CalculateRecoveryRateMultiplier for consistency
+            float recoveryMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(AccuracyProficiency);
             float recoveryAmount = RecoilRecoveryRate * deltaSeconds * recoveryMultiplier;
             CurrentRecoilX = RecoverRecoilAxis(CurrentRecoilX, recoveryAmount);
             CurrentRecoilY = RecoverRecoilAxis(CurrentRecoilY, recoveryAmount);

@@ -37,14 +37,12 @@ public class AccuracyProficiencyTests
     [Fact]
     public void AccuracyModel_CalculateAimErrorStdDev_ScalesWithProficiency()
     {
-        var model = new AccuracyModel(new Random(42));
-        
         // At proficiency 0: full aim error (BaseAimErrorScale = 0.15)
-        float lowProfError = model.CalculateAimErrorStdDev(0f);
+        float lowProfError = AccuracyModel.CalculateAimErrorStdDev(0f);
         
         // At proficiency 1: reduced aim error by MaxAimErrorReductionFactor (50%)
         // 0.15 * (1 - 0.5) = 0.075
-        float highProfError = model.CalculateAimErrorStdDev(1f);
+        float highProfError = AccuracyModel.CalculateAimErrorStdDev(1f);
         
         Assert.True(lowProfError > highProfError, 
             $"Low proficiency error ({lowProfError}) should be greater than high proficiency error ({highProfError})");
@@ -55,71 +53,65 @@ public class AccuracyProficiencyTests
     [Fact]
     public void AccuracyModel_CalculateAimErrorStdDev_WithAccuracyAndProficiency()
     {
-        var model = new AccuracyModel(new Random(42));
-        
         // Low accuracy (0.5), low proficiency (0): (1 - 0.5) * 0.15 * 1.0 = 0.075
-        float lowLow = model.CalculateAimErrorStdDev(0.5f, 0f);
+        float lowLow = AccuracyModel.CalculateAimErrorStdDev(0.5f, 0f);
         Assert.Equal(0.075f, lowLow, 3);
         
         // Low accuracy (0.5), high proficiency (1): (1 - 0.5) * 0.15 * 0.5 = 0.0375
-        float lowHigh = model.CalculateAimErrorStdDev(0.5f, 1f);
+        float lowHigh = AccuracyModel.CalculateAimErrorStdDev(0.5f, 1f);
         Assert.Equal(0.0375f, lowHigh, 3);
         
         // High accuracy (1.0), any proficiency: (1 - 1.0) * 0.15 * anything = 0
-        float highAny = model.CalculateAimErrorStdDev(1.0f, 0.5f);
+        float highAny = AccuracyModel.CalculateAimErrorStdDev(1.0f, 0.5f);
         Assert.Equal(0f, highAny, 3);
     }
 
     [Fact]
     public void AccuracyModel_CalculateEffectiveRecoil_ReducesWithProficiency()
     {
-        var model = new AccuracyModel(new Random(42));
         float weaponRecoil = 0.5f;
         
         // At proficiency 0: no reduction (1.0 * weaponRecoil)
-        float noReduction = model.CalculateEffectiveRecoil(weaponRecoil, 0f);
+        float noReduction = AccuracyModel.CalculateEffectiveRecoil(weaponRecoil, 0f);
         Assert.Equal(weaponRecoil, noReduction, 3);
         
         // At proficiency 1: 60% reduction (0.4 * weaponRecoil)
-        float maxReduction = model.CalculateEffectiveRecoil(weaponRecoil, 1f);
+        float maxReduction = AccuracyModel.CalculateEffectiveRecoil(weaponRecoil, 1f);
         Assert.Equal(weaponRecoil * 0.4f, maxReduction, 3);
         
         // At proficiency 0.5: 30% reduction (0.7 * weaponRecoil)
-        float midReduction = model.CalculateEffectiveRecoil(weaponRecoil, 0.5f);
+        float midReduction = AccuracyModel.CalculateEffectiveRecoil(weaponRecoil, 0.5f);
         Assert.Equal(weaponRecoil * 0.7f, midReduction, 3);
     }
 
     [Fact]
     public void AccuracyModel_CalculateRecoveryRateMultiplier_IncreasesWithProficiency()
     {
-        var model = new AccuracyModel(new Random(42));
-        
         // At proficiency 0: 0.5x recovery rate
-        float lowMultiplier = model.CalculateRecoveryRateMultiplier(0f);
+        float lowMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(0f);
         Assert.Equal(0.5f, lowMultiplier, 3);
         
         // At proficiency 1: 2.0x recovery rate
-        float highMultiplier = model.CalculateRecoveryRateMultiplier(1f);
+        float highMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(1f);
         Assert.Equal(2.0f, highMultiplier, 3);
         
         // At proficiency 0.5: 1.25x recovery rate
-        float midMultiplier = model.CalculateRecoveryRateMultiplier(0.5f);
+        float midMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(0.5f);
         Assert.Equal(1.25f, midMultiplier, 3);
     }
 
     [Fact]
     public void AccuracyModel_ApplyRecovery_RecoversFasterWithHighProficiency()
     {
-        var model = new AccuracyModel(new Random(42));
         float currentRecoil = 1.0f;
         float baseRecovery = 0.2f;
         
         // At proficiency 0: 0.5x recovery rate -> 0.1 recovered
-        float lowProfRecoil = model.ApplyRecovery(currentRecoil, baseRecovery, 0f);
+        float lowProfRecoil = AccuracyModel.ApplyRecovery(currentRecoil, baseRecovery, 0f);
         Assert.Equal(0.9f, lowProfRecoil, 3);
         
         // At proficiency 1: 2.0x recovery rate -> 0.4 recovered
-        float highProfRecoil = model.ApplyRecovery(currentRecoil, baseRecovery, 1f);
+        float highProfRecoil = AccuracyModel.ApplyRecovery(currentRecoil, baseRecovery, 1f);
         Assert.Equal(0.6f, highProfRecoil, 3);
     }
 
