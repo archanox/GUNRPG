@@ -50,7 +50,7 @@ public class CombatSystemV2
     private const int DISABLE_MOVEMENT_REACTIONS = 10; // High threshold to effectively disable movement-based reactions
     
 
-    public CombatDebugOptions DebugOptions { get; } = new();
+    public CombatDebugOptions DebugOptions { get; } = new() { VerboseShotLogs = true };
 
     public CombatSystemV2(Operator player, Operator enemy, int? seed = null, CombatDebugOptions? debugOptions = null)
     {
