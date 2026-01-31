@@ -1,7 +1,6 @@
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Operators;
 using GUNRPG.Core.Weapons;
-using System.Collections.Concurrent;
 
 namespace GUNRPG.Core.Events;
 
@@ -20,8 +19,6 @@ public class ShotFiredEvent : ISimulationEvent
     private readonly Random _random;
     private readonly EventQueue? _eventQueue;
     private readonly CombatDebugOptions? _debugOptions;
-    private readonly ConcurrentDictionary<Guid, int> _shotCounts = new();
-
     private sealed class ShotTelemetry
     {
         public int ShotNumber { get; set; }
@@ -73,10 +70,6 @@ public class ShotFiredEvent : ISimulationEvent
         }
     }
 
-    private int GetNextShotNumber(Guid operatorId)
-    {
-        return _shotCounts.AddOrUpdate(operatorId, 1, (_, count) => count + 1);
-    }
 
     public ShotFiredEvent(
         long eventTimeMs,
@@ -210,9 +203,9 @@ public class ShotFiredEvent : ISimulationEvent
         _shooter.CurrentRecoilY = Math.Max(0, _shooter.CurrentRecoilY - immediateRecovery);
         float recoilRecovered = recoilBeforeRecovery - _shooter.CurrentRecoilY;
 
+        int shotNumber = _shooter.IncrementShotsFired();
         if (_debugOptions?.VerboseShotLogs == true)
         {
-            int shotNumber = GetNextShotNumber(_shooter.Id);
             string stance = _shooter.AimState == AimState.ADS ? "ADS" : "Hip";
 
             var telemetry = new ShotTelemetry

@@ -110,6 +110,9 @@ public class Operator
     public int FlinchShotsRemaining { get; private set; }
     public int FlinchDurationShots { get; set; }
 
+    // Shot telemetry tracking
+    public int ShotsFiredCount { get; private set; }
+
     // Commitment tracking for reaction windows
     public int BulletsFiredSinceLastReaction { get; set; }
     public float MetersMovedSinceLastReaction { get; set; }
@@ -192,6 +195,12 @@ public class Operator
 
         if (FlinchShotsRemaining == 0)
             FlinchSeverity = 0f;
+    }
+
+    public int IncrementShotsFired()
+    {
+        ShotsFiredCount++;
+        return ShotsFiredCount;
     }
 
     /// <summary>
