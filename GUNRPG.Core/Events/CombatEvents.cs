@@ -259,6 +259,8 @@ public sealed class DamageAppliedEvent : ISimulationEvent
     public const int DefaultDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
+    public Guid TargetId { get; }
+    public string TargetName { get; }
     public int SequenceNumber { get; }
 
     private readonly Operator _shooter;
@@ -271,6 +273,8 @@ public sealed class DamageAppliedEvent : ISimulationEvent
     {
         EventTimeMs = eventTimeMs;
         OperatorId = shooter.Id;
+        TargetId = target.Id;
+        TargetName = target.Name;
         SequenceNumber = sequenceNumber;
         _shooter = shooter;
         _target = target;

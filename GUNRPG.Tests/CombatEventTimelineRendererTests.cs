@@ -21,14 +21,21 @@ public class CombatEventTimelineRendererTests
             new MicroReactionEvent(5, player.Id, 2, actionDurationMs: 0)
         };
 
-        var entries = renderer.BuildTimelineEntries(events, player, enemy);
+        var entries = renderer.BuildTimelineEntries(
+            events,
+            player,
+            enemy,
+            new List<CombatEventTimelineEntry> { new("ADS", 1, 3, "Player", "Complete") });
 
-        Assert.Equal(3, entries.Count);
-        Assert.Equal(5, entries[0].StartTimeMs);
-        Assert.Equal("MicroReaction", entries[0].EventType);
+        Assert.Equal(4, entries.Count);
+        Assert.Equal(1, entries[0].StartTimeMs);
+        Assert.Equal("ADS", entries[0].EventType);
         Assert.Equal("Player", entries[0].ActorName);
-        Assert.Equal("Enemy", entries[1].ActorName);
-        Assert.Equal("Player", entries[2].ActorName);
+        Assert.Equal(5, entries[1].StartTimeMs);
+        Assert.Equal("MicroReaction", entries[1].EventType);
+        Assert.Equal("Player", entries[1].ActorName);
+        Assert.Equal("Enemy", entries[2].ActorName);
+        Assert.Equal("Player", entries[3].ActorName);
     }
 
     [Fact]

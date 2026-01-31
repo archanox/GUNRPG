@@ -2,6 +2,7 @@ using GUNRPG.Core.Events;
 using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
 using GUNRPG.Core.Time;
+using GUNRPG.Core.Rendering;
 
 namespace GUNRPG.Core.Combat;
 
@@ -33,6 +34,8 @@ public class CombatSystemV2
     private readonly EventQueue _eventQueue;
     private readonly Random _random;
     private readonly List<ISimulationEvent> _executedEvents = new();
+    private readonly List<CombatEventTimelineEntry> _timelineEntries = new();
+    private readonly Dictionary<Guid, long> _activeAdsStarts = new();
 
     // Prevent double-scheduling shots at the same timestamp for a single operator.
     private readonly Dictionary<Guid, long> _nextScheduledShotTimeMs = new();
@@ -47,6 +50,7 @@ public class CombatSystemV2
     public Operator Enemy { get; }
     public CombatPhase Phase { get; private set; }
     public IReadOnlyList<ISimulationEvent> ExecutedEvents => _executedEvents;
+    public IReadOnlyList<CombatEventTimelineEntry> TimelineEntries => _timelineEntries;
 
     private SimultaneousIntents? _playerIntents;
     private SimultaneousIntents? _enemyIntents;
@@ -108,6 +112,7 @@ public class CombatSystemV2
         _nextScheduledShotTimeMs.Clear();
         _nextScheduledMovementTimeMs.Clear();
         _missedInCurrentRound.Clear();
+        _activeAdsStarts.Clear();
 
         Phase = CombatPhase.Executing;
 
@@ -182,6 +187,21 @@ public class CombatSystemV2
                 }
             }
 
+            if (evt is DamageAppliedEvent damageEvent)
+            {
+                var target = damageEvent.TargetId == Player.Id ? Player : Enemy;
+                if (target.FlinchShotsRemaining > 0)
+                {
+                    var flinchEnd = damageEvent.EventTimeMs + (long)(target.EquippedWeapon?.GetTimeBetweenShotsMs() ?? 0f);
+                    _timelineEntries.Add(new CombatEventTimelineEntry(
+                        "Flinch",
+                        (int)damageEvent.EventTimeMs,
+                        (int)flinchEnd,
+                        target.Name,
+                        $"Severity {target.FlinchSeverity:0.00}"));
+                }
+            }
+
             // Check if round should end (hit occurred or both missed)
             if (shouldEndRound)
             {
@@ -208,6 +228,18 @@ public class CombatSystemV2
                 {
                     ContinueOperatorIntents(eventOp, intents);
                 }
+            }
+
+            if (evt is ADSTransitionUpdateEvent && _activeAdsStarts.TryGetValue(evt.OperatorId, out long adsStart))
+            {
+                var eventOp = evt.OperatorId == Player.Id ? Player : Enemy;
+                _timelineEntries.Add(new CombatEventTimelineEntry(
+                    "ADS",
+                    (int)adsStart,
+                    (int)_time.CurrentTimeMs,
+                    eventOp.Name,
+                    "Complete"));
+                _activeAdsStarts.Remove(evt.OperatorId);
             }
         }
 
@@ -280,6 +312,7 @@ public class CombatSystemV2
                 op.AimState = AimState.TransitioningToADS;
                 op.ADSTransitionStartMs = _time.CurrentTimeMs;
                 op.ADSTransitionDurationMs = op.EquippedWeapon.ADSTimeMs;
+                _activeAdsStarts[op.Id] = _time.CurrentTimeMs;
                 
                 // Schedule completion event
                 long completionTime = _time.CurrentTimeMs + (long)op.ADSTransitionDurationMs;
@@ -289,11 +322,27 @@ public class CombatSystemV2
                     _eventQueue.GetNextSequenceNumber(),
                     actionDurationMs: (int)op.ADSTransitionDurationMs);
                 _eventQueue.Schedule(adsEvent);
+                _timelineEntries.Add(new CombatEventTimelineEntry(
+                    "ADS",
+                    (int)_time.CurrentTimeMs,
+                    (int)completionTime,
+                    op.Name));
                 
                 Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} started entering ADS (will complete at {completionTime}ms)");
                 break;
 
             case StanceAction.ExitADS:
+                if (_activeAdsStarts.TryGetValue(op.Id, out long adsStart))
+                {
+                    _timelineEntries.Add(new CombatEventTimelineEntry(
+                        "ADS",
+                        (int)adsStart,
+                        (int)_time.CurrentTimeMs,
+                        op.Name,
+                        "ExitADS"));
+                    _activeAdsStarts.Remove(op.Id);
+                }
+
                 op.AimState = AimState.Hip;
                 op.ADSTransitionStartMs = null;
                 Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} exited ADS");
