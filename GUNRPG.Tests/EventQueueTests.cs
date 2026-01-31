@@ -124,8 +124,8 @@ public class EventQueueTests
     public void EventQueue_OrdersEventsByTimeThenOperator()
     {
         var queue = new EventQueue();
-        var op1 = Guid.NewGuid();
-        var op2 = Guid.NewGuid();
+        var op1 = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var op2 = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
         queue.Schedule(new TestEventWithOperator(50, op2, 1));
         queue.Schedule(new TestEventWithOperator(50, op1, 0));
