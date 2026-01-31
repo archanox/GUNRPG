@@ -123,3 +123,5 @@ public class EventQueueTests
         Assert.Contains(second.OperatorId, new[] { op1, op2 });
         Assert.Contains(third.OperatorId, new[] { op1, op2 });
         Assert.NotEqual(second.OperatorId, third.OperatorId);
+    }
+}

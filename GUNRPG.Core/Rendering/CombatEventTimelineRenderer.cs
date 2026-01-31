@@ -15,13 +15,23 @@ public sealed class CombatEventTimelineRenderer
     public IReadOnlyList<CombatEventTimelineEntry> BuildTimelineEntries(
         IReadOnlyList<ISimulationEvent> events,
         Operator player,
-        Operator enemy)
+        Operator enemy,
+        IReadOnlyList<CombatEventTimelineEntry>? additionalEntries = null)
     {
         var entries = events
             .Select(evt => ToTimelineEntry(evt, player, enemy))
             .OrderBy(entry => entry.StartTimeMs)
             .ThenBy(entry => entry.ActorName, StringComparer.Ordinal)
             .ToList();
+
+        if (additionalEntries != null && additionalEntries.Count > 0)
+        {
+            entries.AddRange(additionalEntries);
+            entries = entries
+                .OrderBy(entry => entry.StartTimeMs)
+                .ThenBy(entry => entry.ActorName, StringComparer.Ordinal)
+                .ToList();
+        }
 
         return entries;
     }
@@ -220,7 +230,9 @@ public sealed class CombatEventTimelineRenderer
         {
             int duration = entry.DurationMs <= 0 ? MinEventDurationMs : entry.DurationMs;
             string actorLabel = string.IsNullOrWhiteSpace(entry.ActorName) ? "Unknown" : entry.ActorName!;
-            string label = FormattableString.Invariant($"{entry.StartTimeMs}ms | {actorLabel} | {entry.EventType}");
+            string label = entry.Detail == null
+                ? FormattableString.Invariant($"{entry.StartTimeMs}ms | {actorLabel} | {entry.EventType}")
+                : FormattableString.Invariant($"{entry.StartTimeMs}ms | {actorLabel} | {entry.EventType} ({entry.Detail})");
 
             labels.Add(label);
             durations.Add(duration);

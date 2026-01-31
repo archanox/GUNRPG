@@ -283,7 +283,7 @@ Console.WriteLine();
 
 try
 {
-    var timelineEntries = timelineRenderer.BuildTimelineEntries(combat.ExecutedEvents, player, enemy);
+    var timelineEntries = timelineRenderer.BuildTimelineEntries(combat.ExecutedEvents, player, enemy, combat.TimelineEntries);
     var timelinePath = Path.Combine(Environment.CurrentDirectory, "combat-timeline.png");
     timelineRenderer.RenderTimeline(timelineEntries, timelinePath);
     Console.WriteLine($"Combat timeline saved to: {timelinePath}");
