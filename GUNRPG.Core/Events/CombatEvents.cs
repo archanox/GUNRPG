@@ -163,8 +163,8 @@ public class ShotFiredEvent : ISimulationEvent
                 _target.TakeDamage(damage, impactTime);
                 var targetWeapon = _target.EquippedWeapon;
                 float flinchResistance = targetWeapon?.FlinchResistance ?? AccuracyModel.MinFlinchResistance;
-                float targetFlinchSeverity = AccuracyModel.CalculateFlinchSeverity(damage, flinchResistance);
-                _target.ApplyFlinch(targetFlinchSeverity);
+                float appliedFlinchSeverity = AccuracyModel.CalculateFlinchSeverity(damage, flinchResistance);
+                _target.ApplyFlinch(appliedFlinchSeverity);
                 Console.WriteLine($"[{impactTime}ms] {_shooter.Name}'s {weaponName} hit {_target.Name} for {damage:F1} damage ({resolution.HitLocation})");
             }
         }
