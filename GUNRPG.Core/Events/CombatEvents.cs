@@ -1,6 +1,7 @@
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Operators;
 using GUNRPG.Core.Weapons;
+using System.Collections.Concurrent;
 
 namespace GUNRPG.Core.Events;
 
@@ -19,7 +20,7 @@ public class ShotFiredEvent : ISimulationEvent
     private readonly Random _random;
     private readonly EventQueue? _eventQueue;
     private readonly CombatDebugOptions? _debugOptions;
-    private static readonly Dictionary<Guid, int> ShotCounts = new();
+    private static readonly ConcurrentDictionary<Guid, int> ShotCounts = new();
 
     private sealed class ShotTelemetry
     {
@@ -74,14 +75,7 @@ public class ShotFiredEvent : ISimulationEvent
 
     private static int GetNextShotNumber(Guid operatorId)
     {
-        if (!ShotCounts.TryGetValue(operatorId, out int count))
-        {
-            count = 0;
-        }
-
-        count++;
-        ShotCounts[operatorId] = count;
-        return count;
+        return ShotCounts.AddOrUpdate(operatorId, 1, (_, count) => count + 1);
     }
 
     public ShotFiredEvent(
@@ -176,8 +170,8 @@ public class ShotFiredEvent : ISimulationEvent
                 _target.TakeDamage(damage, impactTime);
                 var targetWeapon = _target.EquippedWeapon;
                 float flinchResistance = targetWeapon?.FlinchResistance ?? AccuracyModel.MinFlinchResistance;
-                float appliedFlinchSeverity = AccuracyModel.CalculateFlinchSeverity(damage, flinchResistance);
-                _target.ApplyFlinch(appliedFlinchSeverity);
+                float targetFlinchSeverity = AccuracyModel.CalculateFlinchSeverity(damage, flinchResistance);
+                _target.ApplyFlinch(targetFlinchSeverity);
                 Console.WriteLine($"[{impactTime}ms] {_shooter.Name}'s {weaponName} hit {_target.Name} for {damage:F1} damage ({resolution.HitLocation})");
             }
         }
@@ -210,8 +204,7 @@ public class ShotFiredEvent : ISimulationEvent
         float immediateRecoverySeconds = immediateRecoveryTimeMs / 1000f;
         float recoveryMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(baseProficiency);
         float immediateRecovery = _shooter.RecoilRecoveryRate * immediateRecoverySeconds * recoveryMultiplier;
-        float recoilBeforeRecovery = _shooter.CurrentRecoilY;
-        float recoilRecovered = Math.Min(recoilBeforeRecovery, immediateRecovery);
+        float recoilRecovered = Math.Min(_shooter.CurrentRecoilY, immediateRecovery);
         
         // Apply immediate recovery to vertical axis only (no horizontal recoil is implemented)
         _shooter.CurrentRecoilY = Math.Max(0, _shooter.CurrentRecoilY - immediateRecovery);
