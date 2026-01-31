@@ -18,8 +18,80 @@ public class ShotFiredEvent : ISimulationEvent
     private readonly Operator _target;
     private readonly Random _random;
     private readonly EventQueue? _eventQueue;
+    private readonly CombatDebugOptions? _debugOptions;
+    private static readonly Dictionary<Guid, int> ShotCounts = new();
 
-    public ShotFiredEvent(long eventTimeMs, Operator shooter, Operator target, int sequenceNumber, Random random, EventQueue? eventQueue = null)
+    private sealed class ShotTelemetry
+    {
+        public int ShotNumber { get; set; }
+        public string Stance { get; set; } = string.Empty;
+        public BodyPart IntendedBodyPart { get; set; }
+        public float DistanceMeters { get; set; }
+        public float BaseAimAngle { get; set; }
+        public float AimError { get; set; }
+        public float RecoilAdded { get; set; }
+        public float RecoilRecovered { get; set; }
+        public float FinalAimAngle { get; set; }
+        public float BaseAccuracyProficiency { get; set; }
+        public float FlinchSeverity { get; set; }
+        public float EffectiveAccuracyProficiency { get; set; }
+        public BodyPart ResolvedBodyPart { get; set; }
+        public float Damage { get; set; }
+        public bool FlinchApplied { get; set; }
+
+        public string ToLogString()
+        {
+            string[] lines =
+            {
+                $"── Shot {ShotNumber} ─────────────────────────────",
+                $"Intent: Fire ({Stance})",
+                $"Target Band: {IntendedBodyPart}",
+                $"Distance: {DistanceMeters:F2}m",
+                string.Empty,
+                "Aim:",
+                $"  Base Aim Angle:   {BaseAimAngle:F2}°",
+                $"  Aim Error:       {AimError:+0.00;-0.00}°",
+                $"  Recoil Added:    {RecoilAdded:+0.00;-0.00}°",
+                $"  Recoil Recovered:{RecoilRecovered:+0.00;-0.00}°",
+                $"  Final Aim Angle: {FinalAimAngle:F2}°",
+                string.Empty,
+                "Accuracy:",
+                $"  Base Proficiency:      {BaseAccuracyProficiency:0.00}",
+                $"  Flinch Severity:       {FlinchSeverity:0.00}",
+                $"  Effective Proficiency: {EffectiveAccuracyProficiency:0.00}",
+                string.Empty,
+                "Resolution:",
+                $"  Hit Band: {ResolvedBodyPart}",
+                $"  Damage: {Damage:F1}",
+                $"  Flinch Applied: {(FlinchApplied ? "Yes" : "No")}",
+                string.Empty,
+                "───────────────────────────────────────────────"
+            };
+
+            return string.Join(Environment.NewLine, lines);
+        }
+    }
+
+    private static int GetNextShotNumber(Guid operatorId)
+    {
+        if (!ShotCounts.TryGetValue(operatorId, out int count))
+        {
+            count = 0;
+        }
+
+        count++;
+        ShotCounts[operatorId] = count;
+        return count;
+    }
+
+    public ShotFiredEvent(
+        long eventTimeMs,
+        Operator shooter,
+        Operator target,
+        int sequenceNumber,
+        Random random,
+        EventQueue? eventQueue = null,
+        CombatDebugOptions? debugOptions = null)
     {
         EventTimeMs = eventTimeMs;
         OperatorId = shooter.Id;
@@ -28,6 +100,7 @@ public class ShotFiredEvent : ISimulationEvent
         _target = target;
         _random = random;
         _eventQueue = eventQueue;
+        _debugOptions = debugOptions;
     }
 
     public bool Execute()
@@ -63,9 +136,12 @@ public class ShotFiredEvent : ISimulationEvent
         // AccuracyProficiency is applied AFTER weapon recoil is calculated:
         // - Reduces effective vertical recoil (recoil counteraction)
         // - Tightens aim error distribution (aim stability)
+        float baseProficiency = _shooter.AccuracyProficiency;
+        float flinchSeverity = _shooter.FlinchSeverity;
         float effectiveProficiency = AccuracyModel.CalculateEffectiveAccuracyProficiency(
-            _shooter.AccuracyProficiency,
-            _shooter.FlinchSeverity);
+            baseProficiency,
+            flinchSeverity);
+        var details = new ShotResolutionDetails();
         var resolution = HitResolution.ResolveShotWithProficiency(
             targetBodyPart: targetBodyPart,
             operatorAccuracy: _shooter.Accuracy,
@@ -73,15 +149,17 @@ public class ShotFiredEvent : ISimulationEvent
             weaponVerticalRecoil: weapon.VerticalRecoil,
             currentRecoilY: _shooter.CurrentRecoilY,
             recoilVariance: weapon.VerticalRecoil * 0.1f, // 10% variance
-            random: _random);
+            random: _random,
+            details: details);
 
         long travelTime = CalculateTravelTimeMs();
         long impactTime = EventTimeMs + travelTime;
         
+        bool isHit = resolution.HitLocation != BodyPart.Miss;
+        float damage = isHit ? weapon.GetDamageAtDistance(_shooter.DistanceToOpponent, resolution.HitLocation) : 0f;
+
         if (resolution.HitLocation != BodyPart.Miss)
         {
-            float damage = weapon.GetDamageAtDistance(_shooter.DistanceToOpponent, resolution.HitLocation);
-
             if (_eventQueue != null)
             {
                 _eventQueue.Schedule(new DamageAppliedEvent(
@@ -98,8 +176,8 @@ public class ShotFiredEvent : ISimulationEvent
                 _target.TakeDamage(damage, impactTime);
                 var targetWeapon = _target.EquippedWeapon;
                 float flinchResistance = targetWeapon?.FlinchResistance ?? AccuracyModel.MinFlinchResistance;
-                float flinchSeverity = AccuracyModel.CalculateFlinchSeverity(damage, flinchResistance);
-                _target.ApplyFlinch(flinchSeverity);
+                float appliedFlinchSeverity = AccuracyModel.CalculateFlinchSeverity(damage, flinchResistance);
+                _target.ApplyFlinch(appliedFlinchSeverity);
                 Console.WriteLine($"[{impactTime}ms] {_shooter.Name}'s {weaponName} hit {_target.Name} for {damage:F1} damage ({resolution.HitLocation})");
             }
         }
@@ -125,18 +203,47 @@ public class ShotFiredEvent : ISimulationEvent
         _shooter.CurrentRecoilY += weapon.VerticalRecoil;
         _shooter.RecoilRecoveryStartMs = EventTimeMs + (long)weapon.RecoilRecoveryTimeMs;
 
-        _shooter.ConsumeFlinchShot();
-
         // Apply immediate partial recoil recovery based on proficiency
         // This ensures recoil recovery happens at least once per shot, even if round ends early
         // The recovery amount is based on a fixed time quantum (100ms worth of recovery)
         const float immediateRecoveryTimeMs = 100f;
         float immediateRecoverySeconds = immediateRecoveryTimeMs / 1000f;
-        float recoveryMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(_shooter.AccuracyProficiency);
+        float recoveryMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(baseProficiency);
         float immediateRecovery = _shooter.RecoilRecoveryRate * immediateRecoverySeconds * recoveryMultiplier;
+        float recoilBeforeRecovery = _shooter.CurrentRecoilY;
+        float recoilRecovered = Math.Min(recoilBeforeRecovery, immediateRecovery);
         
         // Apply immediate recovery to vertical axis only (no horizontal recoil is implemented)
         _shooter.CurrentRecoilY = Math.Max(0, _shooter.CurrentRecoilY - immediateRecovery);
+
+        if (_debugOptions?.VerboseShotLogs == true)
+        {
+            int shotNumber = GetNextShotNumber(_shooter.Id);
+            string stance = _shooter.AimState == AimState.ADS ? "ADS" : "Hip";
+
+            var telemetry = new ShotTelemetry
+            {
+                ShotNumber = shotNumber,
+                Stance = stance,
+                IntendedBodyPart = targetBodyPart,
+                DistanceMeters = _shooter.DistanceToOpponent,
+                BaseAimAngle = details.BaseAimAngle,
+                AimError = details.AimError,
+                RecoilAdded = details.RecoilAdded,
+                RecoilRecovered = recoilRecovered,
+                FinalAimAngle = details.FinalAimAngle,
+                BaseAccuracyProficiency = baseProficiency,
+                FlinchSeverity = flinchSeverity,
+                EffectiveAccuracyProficiency = effectiveProficiency,
+                ResolvedBodyPart = resolution.HitLocation,
+                Damage = damage,
+                FlinchApplied = isHit
+            };
+
+            Console.WriteLine(telemetry.ToLogString());
+        }
+
+        _shooter.ConsumeFlinchShot();
 
         // No longer trigger reaction windows - rounds execute completely
         return false;
