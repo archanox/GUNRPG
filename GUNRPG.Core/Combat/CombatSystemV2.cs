@@ -192,7 +192,8 @@ public class CombatSystemV2
                 var target = damageEvent.TargetId == Player.Id ? Player : Enemy;
                 if (target.FlinchShotsRemaining > 0)
                 {
-                    var flinchEnd = damageEvent.EventTimeMs + (long)(target.EquippedWeapon?.GetTimeBetweenShotsMs() ?? 0f);
+                    float flinchWindowMs = target.EquippedWeapon?.GetTimeBetweenShotsMs() ?? 100f;
+                    var flinchEnd = damageEvent.EventTimeMs + (long)flinchWindowMs;
                     _timelineEntries.Add(new CombatEventTimelineEntry(
                         "Flinch",
                         (int)damageEvent.EventTimeMs,
