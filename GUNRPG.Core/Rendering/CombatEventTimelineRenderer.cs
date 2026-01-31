@@ -20,18 +20,17 @@ public sealed class CombatEventTimelineRenderer
     {
         var entries = events
             .Select(evt => ToTimelineEntry(evt, player, enemy))
-            .OrderBy(entry => entry.StartTimeMs)
-            .ThenBy(entry => entry.ActorName, StringComparer.Ordinal)
             .ToList();
 
         if (additionalEntries != null && additionalEntries.Count > 0)
         {
             entries.AddRange(additionalEntries);
-            entries = entries
-                .OrderBy(entry => entry.StartTimeMs)
-                .ThenBy(entry => entry.ActorName, StringComparer.Ordinal)
-                .ToList();
         }
+
+        entries = entries
+            .OrderBy(entry => entry.StartTimeMs)
+            .ThenBy(entry => entry.ActorName, StringComparer.Ordinal)
+            .ToList();
 
         return entries;
     }
