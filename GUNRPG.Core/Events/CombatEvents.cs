@@ -19,6 +19,7 @@ public class ShotFiredEvent : ISimulationEvent
     private readonly Random _random;
     private readonly EventQueue? _eventQueue;
     private readonly CombatDebugOptions? _debugOptions;
+    private long? _resolvedTravelTimeMs;
     private sealed class ShotTelemetry
     {
         public int ShotNumber { get; set; }
@@ -140,6 +141,7 @@ public class ShotFiredEvent : ISimulationEvent
             details: details);
 
         long travelTime = CalculateTravelTimeMs();
+        _resolvedTravelTimeMs = travelTime;
         long impactTime = EventTimeMs + travelTime;
         
         bool isHit = resolution.HitLocation != BodyPart.Miss;
@@ -245,6 +247,8 @@ public class ShotFiredEvent : ISimulationEvent
         double travelSeconds = _shooter.DistanceToOpponent / weapon.BulletVelocityMetersPerSecond;
         return (long)Math.Round(travelSeconds * 1000d, MidpointRounding.AwayFromZero);
     }
+
+    public long TravelTimeMs => _resolvedTravelTimeMs ?? CalculateTravelTimeMs();
 }
 
 /// <summary>
@@ -252,6 +256,7 @@ public class ShotFiredEvent : ISimulationEvent
 /// </summary>
 public sealed class DamageAppliedEvent : ISimulationEvent
 {
+    public const int DefaultDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
@@ -286,6 +291,8 @@ public sealed class DamageAppliedEvent : ISimulationEvent
         // Round end is detected by CombatSystemV2 via event type checking
         return false;
     }
+
+    public int ActionDurationMs => DefaultDurationMs;
 }
 
 /// <summary>
@@ -293,6 +300,7 @@ public sealed class DamageAppliedEvent : ISimulationEvent
 /// </summary>
 public sealed class ShotMissedEvent : ISimulationEvent
 {
+    public const int DefaultDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
@@ -316,6 +324,8 @@ public sealed class ShotMissedEvent : ISimulationEvent
         Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name}'s {_weaponName} missed {_target.Name}");
         return false;
     }
+
+    public int ActionDurationMs => DefaultDurationMs;
 }
 
 /// <summary>
@@ -323,18 +333,21 @@ public sealed class ShotMissedEvent : ISimulationEvent
 /// </summary>
 public class ReloadCompleteEvent : ISimulationEvent
 {
+    public const int DefaultDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
     
     private readonly Operator _operator;
+    private readonly int _actionDurationMs;
 
-    public ReloadCompleteEvent(long eventTimeMs, Operator op, int sequenceNumber)
+    public ReloadCompleteEvent(long eventTimeMs, Operator op, int sequenceNumber, int actionDurationMs = DefaultDurationMs)
     {
         EventTimeMs = eventTimeMs;
         OperatorId = op.Id;
         SequenceNumber = sequenceNumber;
         _operator = op;
+        _actionDurationMs = actionDurationMs;
     }
 
     public bool Execute()
@@ -348,6 +361,8 @@ public class ReloadCompleteEvent : ISimulationEvent
         }
         return false;
     }
+
+    public int ActionDurationMs => _actionDurationMs;
 }
 
 /// <summary>
@@ -355,18 +370,21 @@ public class ReloadCompleteEvent : ISimulationEvent
 /// </summary>
 public class ADSCompleteEvent : ISimulationEvent
 {
+    public const int DefaultDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
     
     private readonly Operator _operator;
+    private readonly int _actionDurationMs;
 
-    public ADSCompleteEvent(long eventTimeMs, Operator op, int sequenceNumber)
+    public ADSCompleteEvent(long eventTimeMs, Operator op, int sequenceNumber, int actionDurationMs = DefaultDurationMs)
     {
         EventTimeMs = eventTimeMs;
         OperatorId = op.Id;
         SequenceNumber = sequenceNumber;
         _operator = op;
+        _actionDurationMs = actionDurationMs;
     }
 
     public bool Execute()
@@ -375,6 +393,8 @@ public class ADSCompleteEvent : ISimulationEvent
         Console.WriteLine($"[{EventTimeMs}ms] {_operator.Name} entered ADS");
         return true; // Trigger reaction window
     }
+
+    public int ActionDurationMs => _actionDurationMs;
 }
 
 /// <summary>
@@ -382,6 +402,7 @@ public class ADSCompleteEvent : ISimulationEvent
 /// </summary>
 public class MovementIntervalEvent : ISimulationEvent
 {
+    public const int DefaultIntervalMs = 100;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
@@ -389,14 +410,16 @@ public class MovementIntervalEvent : ISimulationEvent
     private readonly Operator _mover;
     private readonly float _distance;
     private readonly int _metersPerCommitmentUnit;
+    private readonly int _intervalDurationMs;
 
-    public MovementIntervalEvent(long eventTimeMs, Operator mover, float distance, int sequenceNumber, int metersPerCommitmentUnit = 2)
+    public MovementIntervalEvent(long eventTimeMs, Operator mover, float distance, int sequenceNumber, int intervalDurationMs = DefaultIntervalMs, int metersPerCommitmentUnit = 2)
     {
         EventTimeMs = eventTimeMs;
         OperatorId = mover.Id;
         SequenceNumber = sequenceNumber;
         _mover = mover;
         _distance = distance;
+        _intervalDurationMs = intervalDurationMs;
         _metersPerCommitmentUnit = metersPerCommitmentUnit;
     }
 
@@ -416,6 +439,8 @@ public class MovementIntervalEvent : ISimulationEvent
 
         return false;
     }
+
+    public int IntervalDurationMs => _intervalDurationMs;
 }
 
 /// <summary>
@@ -423,18 +448,21 @@ public class MovementIntervalEvent : ISimulationEvent
 /// </summary>
 public class SlideCompleteEvent : ISimulationEvent
 {
+    public const int DefaultDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
     
     private readonly Operator _operator;
+    private readonly int _actionDurationMs;
 
-    public SlideCompleteEvent(long eventTimeMs, Operator op, int sequenceNumber)
+    public SlideCompleteEvent(long eventTimeMs, Operator op, int sequenceNumber, int actionDurationMs = DefaultDurationMs)
     {
         EventTimeMs = eventTimeMs;
         OperatorId = op.Id;
         SequenceNumber = sequenceNumber;
         _operator = op;
+        _actionDurationMs = actionDurationMs;
     }
 
     public bool Execute()
@@ -443,6 +471,8 @@ public class SlideCompleteEvent : ISimulationEvent
         Console.WriteLine($"[{EventTimeMs}ms] {_operator.Name} finished sliding");
         return true; // Trigger reaction window
     }
+
+    public int ActionDurationMs => _actionDurationMs;
 }
 
 /// <summary>
@@ -451,15 +481,18 @@ public class SlideCompleteEvent : ISimulationEvent
 /// </summary>
 public class MicroReactionEvent : ISimulationEvent
 {
+    public const int DefaultDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
+    private readonly int _actionDurationMs;
 
-    public MicroReactionEvent(long eventTimeMs, Guid operatorId, int sequenceNumber)
+    public MicroReactionEvent(long eventTimeMs, Guid operatorId, int sequenceNumber, int actionDurationMs = DefaultDurationMs)
     {
         EventTimeMs = eventTimeMs;
         OperatorId = operatorId;
         SequenceNumber = sequenceNumber;
+        _actionDurationMs = actionDurationMs;
     }
 
     public bool Execute()
@@ -468,6 +501,8 @@ public class MicroReactionEvent : ISimulationEvent
         // No state changes
         return true; // Always trigger reaction window
     }
+
+    public int ActionDurationMs => _actionDurationMs;
 }
 
 /// <summary>
@@ -476,18 +511,21 @@ public class MicroReactionEvent : ISimulationEvent
 /// </summary>
 public class ADSTransitionUpdateEvent : ISimulationEvent
 {
+    public const int DefaultDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
     
     private readonly Operator _operator;
+    private readonly int _actionDurationMs;
 
-    public ADSTransitionUpdateEvent(long eventTimeMs, Operator op, int sequenceNumber)
+    public ADSTransitionUpdateEvent(long eventTimeMs, Operator op, int sequenceNumber, int actionDurationMs = DefaultDurationMs)
     {
         EventTimeMs = eventTimeMs;
         OperatorId = op.Id;
         SequenceNumber = sequenceNumber;
         _operator = op;
+        _actionDurationMs = actionDurationMs;
     }
 
     public bool Execute()
@@ -515,4 +553,6 @@ public class ADSTransitionUpdateEvent : ISimulationEvent
 
         return false; // Don't trigger reaction window for ADS updates
     }
+
+    public int ActionDurationMs => _actionDurationMs;
 }

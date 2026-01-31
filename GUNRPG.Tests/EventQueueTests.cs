@@ -27,6 +27,7 @@ public class EventQueueTests
         }
     }
 
+
     [Fact]
     public void EventQueue_StartsEmpty()
     {
@@ -100,4 +101,5 @@ public class EventQueueTests
         
         Assert.Equal(0, queue.Count);
     }
+
 }
