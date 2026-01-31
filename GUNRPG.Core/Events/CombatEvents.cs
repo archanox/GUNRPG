@@ -20,7 +20,7 @@ public class ShotFiredEvent : ISimulationEvent
     private readonly Random _random;
     private readonly EventQueue? _eventQueue;
     private readonly CombatDebugOptions? _debugOptions;
-    private static readonly ConcurrentDictionary<Guid, int> ShotCounts = new();
+    private readonly ConcurrentDictionary<Guid, int> _shotCounts = new();
 
     private sealed class ShotTelemetry
     {
@@ -73,9 +73,9 @@ public class ShotFiredEvent : ISimulationEvent
         }
     }
 
-    private static int GetNextShotNumber(Guid operatorId)
+    private int GetNextShotNumber(Guid operatorId)
     {
-        return ShotCounts.AddOrUpdate(operatorId, 1, (_, count) => count + 1);
+        return _shotCounts.AddOrUpdate(operatorId, 1, (_, count) => count + 1);
     }
 
     public ShotFiredEvent(
@@ -204,10 +204,11 @@ public class ShotFiredEvent : ISimulationEvent
         float immediateRecoverySeconds = immediateRecoveryTimeMs / 1000f;
         float recoveryMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(baseProficiency);
         float immediateRecovery = _shooter.RecoilRecoveryRate * immediateRecoverySeconds * recoveryMultiplier;
-        float recoilRecovered = Math.Min(_shooter.CurrentRecoilY, immediateRecovery);
+        float recoilBeforeRecovery = _shooter.CurrentRecoilY;
         
         // Apply immediate recovery to vertical axis only (no horizontal recoil is implemented)
         _shooter.CurrentRecoilY = Math.Max(0, _shooter.CurrentRecoilY - immediateRecovery);
+        float recoilRecovered = recoilBeforeRecovery - _shooter.CurrentRecoilY;
 
         if (_debugOptions?.VerboseShotLogs == true)
         {
