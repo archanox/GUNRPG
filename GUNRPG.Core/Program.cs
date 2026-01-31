@@ -3,6 +3,7 @@ using GUNRPG.Core.AI;
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
+using GUNRPG.Core.Rendering;
 
 Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
 Console.WriteLine("║          GUNRPG - Text-Based Tactical Combat Simulator       ║");
@@ -33,6 +34,7 @@ Console.WriteLine();
 // Create combat system
 var combat = new CombatSystemV2(player, enemy, seed: 42); // Fixed seed for determinism
 var ai = new SimpleAIV2(seed: 42);
+var timelineRenderer = new CombatEventTimelineRenderer();
 
 Console.WriteLine("Combat initialized. Press any key to start...");
 Console.ReadKey(true);
@@ -277,6 +279,12 @@ Console.WriteLine($"Final Stats:");
 Console.WriteLine($"  Player: {player.Health:F0}/{player.MaxHealth:F0} HP");
 Console.WriteLine($"  Enemy:  {enemy.Health:F0}/{enemy.MaxHealth:F0} HP");
 Console.WriteLine($"  Duration: {combat.CurrentTimeMs}ms ({combat.CurrentTimeMs/1000.0:F1}s)");
+Console.WriteLine();
+
+var timelineEntries = timelineRenderer.BuildTimelineEntries(combat.ExecutedEvents, player, enemy);
+var timelinePath = Path.Combine(Environment.CurrentDirectory, "combat-timeline.png");
+timelineRenderer.RenderTimeline(timelineEntries, timelinePath);
+Console.WriteLine($"Combat timeline saved to: {timelinePath}");
 Console.WriteLine();
 Console.WriteLine("Press any key to exit...");
 Console.ReadKey();

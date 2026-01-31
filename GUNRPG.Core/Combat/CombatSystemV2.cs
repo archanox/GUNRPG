@@ -32,6 +32,7 @@ public class CombatSystemV2
     private readonly SimulationTime _time;
     private readonly EventQueue _eventQueue;
     private readonly Random _random;
+    private readonly List<ISimulationEvent> _executedEvents = new();
 
     // Prevent double-scheduling shots at the same timestamp for a single operator.
     private readonly Dictionary<Guid, long> _nextScheduledShotTimeMs = new();
@@ -45,6 +46,7 @@ public class CombatSystemV2
     public Operator Player { get; }
     public Operator Enemy { get; }
     public CombatPhase Phase { get; private set; }
+    public IReadOnlyList<ISimulationEvent> ExecutedEvents => _executedEvents;
 
     private SimultaneousIntents? _playerIntents;
     private SimultaneousIntents? _enemyIntents;
@@ -60,6 +62,7 @@ public class CombatSystemV2
         _time = new SimulationTime();
         _eventQueue = new EventQueue();
         _random = seed.HasValue ? new Random(seed.Value) : new Random();
+        _executedEvents.Clear();
         
         Player = player;
         Enemy = enemy;
@@ -146,6 +149,7 @@ public class CombatSystemV2
             // Execute event - round end is determined by specific event types
             bool shouldEndRound = false;
             evt.Execute();
+            _executedEvents.Add(evt);
 
             // Check for death
             if (!Player.IsAlive || !Enemy.IsAlive)
@@ -280,7 +284,11 @@ public class CombatSystemV2
                 
                 // Schedule completion event
                 long completionTime = _time.CurrentTimeMs + (long)op.ADSTransitionDurationMs;
-                var adsEvent = new ADSTransitionUpdateEvent(completionTime, op, _eventQueue.GetNextSequenceNumber());
+                var adsEvent = new ADSTransitionUpdateEvent(
+                    completionTime,
+                    op,
+                    _eventQueue.GetNextSequenceNumber(),
+                    actionDurationMs: (int)op.ADSTransitionDurationMs);
                 _eventQueue.Schedule(adsEvent);
                 
                 Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} started entering ADS (will complete at {completionTime}ms)");
@@ -375,7 +383,11 @@ public class CombatSystemV2
 
         op.WeaponState = WeaponState.Reloading;
         long completionTime = _time.CurrentTimeMs + op.EquippedWeapon.ReloadTimeMs;
-        var reloadEvent = new ReloadCompleteEvent(completionTime, op, _eventQueue.GetNextSequenceNumber());
+        var reloadEvent = new ReloadCompleteEvent(
+            completionTime,
+            op,
+            _eventQueue.GetNextSequenceNumber(),
+            actionDurationMs: op.EquippedWeapon.ReloadTimeMs);
         _eventQueue.Schedule(reloadEvent);
         
         Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} started reloading (will complete at {completionTime}ms)");
@@ -393,7 +405,11 @@ public class CombatSystemV2
         
         // Schedule slide completion
         long completionTime = _time.CurrentTimeMs + (long)op.SlideDurationMs;
-        var slideEvent = new SlideCompleteEvent(completionTime, op, _eventQueue.GetNextSequenceNumber());
+        var slideEvent = new SlideCompleteEvent(
+            completionTime,
+            op,
+            _eventQueue.GetNextSequenceNumber(),
+            actionDurationMs: (int)op.SlideDurationMs);
         _eventQueue.Schedule(slideEvent);
         
         // Immediately apply distance change
@@ -420,8 +436,13 @@ public class CombatSystemV2
         // Negative if toward, positive if away
         float signedDistance = distanceMoved * (towardOpponent ? -1 : 1);
         
-        var moveEvent = new MovementIntervalEvent(nextUpdateTime, op, signedDistance, 
-            _eventQueue.GetNextSequenceNumber(), metersPerCommitmentUnit: DISABLE_MOVEMENT_REACTIONS);
+        var moveEvent = new MovementIntervalEvent(
+            nextUpdateTime,
+            op,
+            signedDistance,
+            _eventQueue.GetNextSequenceNumber(),
+            intervalDurationMs: MOVEMENT_UPDATE_INTERVAL_MS,
+            metersPerCommitmentUnit: DISABLE_MOVEMENT_REACTIONS);
         _eventQueue.Schedule(moveEvent);
         
         // Track that we've scheduled this movement
