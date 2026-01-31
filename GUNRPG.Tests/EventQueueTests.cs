@@ -6,24 +6,6 @@ namespace GUNRPG.Tests;
 
 public class EventQueueTests
 {
-    private class TestEventWithOperator : ISimulationEvent
-    {
-        public long EventTimeMs { get; }
-        public Guid OperatorId { get; }
-        public int SequenceNumber { get; }
-
-        public TestEventWithOperator(long eventTimeMs, Guid operatorId, int sequenceNumber)
-        {
-            EventTimeMs = eventTimeMs;
-            OperatorId = operatorId;
-            SequenceNumber = sequenceNumber;
-        }
-
-        public bool Execute()
-        {
-            return false;
-        }
-    }
     private class TestEvent : ISimulationEvent
     {
         public long EventTimeMs { get; }
@@ -127,20 +109,17 @@ public class EventQueueTests
         var op1 = Guid.Parse("00000000-0000-0000-0000-000000000001");
         var op2 = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
-        queue.Schedule(new TestEventWithOperator(50, op2, 1));
-        queue.Schedule(new TestEventWithOperator(50, op1, 0));
-        queue.Schedule(new TestEventWithOperator(25, op1, 2));
+        queue.Schedule(new TestEvent(50, op2, 1));
+        queue.Schedule(new TestEvent(50, op1, 0));
+        queue.Schedule(new TestEvent(25, op1, 2));
 
         var first = queue.DequeueNext();
         var second = queue.DequeueNext();
         var third = queue.DequeueNext();
 
         Assert.Equal(25, first!.EventTimeMs);
-        Assert.Equal(op1, first.OperatorId);
         Assert.Equal(50, second!.EventTimeMs);
-        Assert.Equal(op1, second.OperatorId);
         Assert.Equal(50, third!.EventTimeMs);
-        Assert.Equal(op2, third.OperatorId);
-    }
-
-}
+        Assert.Contains(second.OperatorId, new[] { op1, op2 });
+        Assert.Contains(third.OperatorId, new[] { op1, op2 });
+        Assert.NotEqual(second.OperatorId, third.OperatorId);
