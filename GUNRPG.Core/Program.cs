@@ -293,7 +293,6 @@ catch (Exception ex)
 {
     Console.WriteLine("Warning: Failed to render combat timeline. The application will continue without timeline output.");
     Console.WriteLine($"  Details: {ex.Message}");
-    Console.WriteLine("  Hint: Check file permissions and ensure Plotly.NET dependencies are available.");
     Console.WriteLine();
 }
 Console.WriteLine("Press any key to exit...");

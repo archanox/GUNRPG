@@ -6,13 +6,13 @@ namespace GUNRPG.Tests;
 
 public class EventQueueTests
 {
-    private class TestTimelineEvent : ISimulationEvent
+    private class TestEventWithOperator : ISimulationEvent
     {
         public long EventTimeMs { get; }
         public Guid OperatorId { get; }
         public int SequenceNumber { get; }
 
-        public TestTimelineEvent(long eventTimeMs, Guid operatorId, int sequenceNumber)
+        public TestEventWithOperator(long eventTimeMs, Guid operatorId, int sequenceNumber)
         {
             EventTimeMs = eventTimeMs;
             OperatorId = operatorId;
@@ -127,9 +127,9 @@ public class EventQueueTests
         var op1 = Guid.NewGuid();
         var op2 = Guid.NewGuid();
 
-        queue.Schedule(new TestTimelineEvent(50, op2, 1));
-        queue.Schedule(new TestTimelineEvent(50, op1, 0));
-        queue.Schedule(new TestTimelineEvent(25, op1, 2));
+        queue.Schedule(new TestEventWithOperator(50, op2, 1));
+        queue.Schedule(new TestEventWithOperator(50, op1, 0));
+        queue.Schedule(new TestEventWithOperator(25, op1, 2));
 
         var first = queue.DequeueNext();
         var second = queue.DequeueNext();
