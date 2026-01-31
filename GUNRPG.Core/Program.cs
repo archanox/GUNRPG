@@ -281,10 +281,19 @@ Console.WriteLine($"  Enemy:  {enemy.Health:F0}/{enemy.MaxHealth:F0} HP");
 Console.WriteLine($"  Duration: {combat.CurrentTimeMs}ms ({combat.CurrentTimeMs/1000.0:F1}s)");
 Console.WriteLine();
 
-var timelineEntries = timelineRenderer.BuildTimelineEntries(combat.ExecutedEvents, player, enemy);
-var timelinePath = Path.Combine(Environment.CurrentDirectory, "combat-timeline.png");
-timelineRenderer.RenderTimeline(timelineEntries, timelinePath);
-Console.WriteLine($"Combat timeline saved to: {timelinePath}");
-Console.WriteLine();
+try
+{
+    var timelineEntries = timelineRenderer.BuildTimelineEntries(combat.ExecutedEvents, player, enemy);
+    var timelinePath = Path.Combine(Environment.CurrentDirectory, "combat-timeline.png");
+    timelineRenderer.RenderTimeline(timelineEntries, timelinePath);
+    Console.WriteLine($"Combat timeline saved to: {timelinePath}");
+    Console.WriteLine();
+}
+catch (Exception ex)
+{
+    Console.WriteLine("Warning: Failed to render combat timeline. The application will continue without timeline output.");
+    Console.WriteLine($"  Details: {ex.Message}");
+    Console.WriteLine();
+}
 Console.WriteLine("Press any key to exit...");
 Console.ReadKey();

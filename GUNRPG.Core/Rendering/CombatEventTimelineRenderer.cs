@@ -37,12 +37,20 @@ public sealed class CombatEventTimelineRenderer
         }
 
         var (labels, durations, bases) = BuildChartSeries(entries);
+        var traces = new List<GenericChart>(entries.Count);
 
-        var chart = Plotly.NET.CSharp.Chart.Bar<double, string, string>(
-            durations,
-            Keys: labels,
-            Base: 0.0,
-            Width: 0.6);
+        for (int i = 0; i < labels.Count; i++)
+        {
+            var trace = Plotly.NET.CSharp.Chart.Bar<double, string, string>(
+                new[] { durations[i] },
+                Keys: new[] { labels[i] },
+                Base: bases[i],
+                Width: 0.6,
+                ShowLegend: false);
+            traces.Add(trace);
+        }
+
+        var chart = Plotly.NET.Chart.Combine(traces);
 
         var orientation = Trace2DStyle.Bar<double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, Trace>(
             Orientation: FSharpOption<StyleParam.Orientation>.Some(StyleParam.Orientation.Horizontal));
@@ -53,7 +61,9 @@ public sealed class CombatEventTimelineRenderer
             TitleText: "Simulated Time (ms)");
         chart = Plotly.NET.CSharp.GenericChartExtensions.WithYAxisStyle<double, double, string>(
             chart,
-            TitleText: "Combat Events");
+            TitleText: "Combat Events",
+            CategoryOrder: StyleParam.CategoryOrder.Array,
+            CategoryArray: labels);
 
         var title = Plotly.NET.Title.init(FSharpOption<string>.Some("Combat Event Timeline"));
         var margin = Margin.init<int, int, int, int, int, bool>(
@@ -78,15 +88,31 @@ public sealed class CombatEventTimelineRenderer
         var extension = Path.GetExtension(outputPath);
         if (string.Equals(extension, ".png", StringComparison.OrdinalIgnoreCase))
         {
-            chart.SavePNG(
-                outputPath,
-                EngineType: FSharpOption<ExportEngine>.Some(ExportEngine.PuppeteerSharp),
-                Width: FSharpOption<int>.Some(1600),
-                Height: FSharpOption<int>.Some(900));
-            return;
+            try
+            {
+                chart.SavePNG(
+                    outputPath,
+                    EngineType: FSharpOption<ExportEngine>.Some(ExportEngine.PuppeteerSharp),
+                    Width: FSharpOption<int>.Some(1600),
+                    Height: FSharpOption<int>.Some(900));
+                return;
+            }
+            catch (Exception ex)
+            {
+                var fallbackPath = Path.ChangeExtension(outputPath, ".html");
+                Plotly.NET.GenericChartExtensions.SaveHtml(
+                    chart,
+                    fallbackPath,
+                    FSharpOption<bool>.Some(true));
+                Console.WriteLine($"Timeline PNG export failed ({ex.Message}). Saved HTML to: {fallbackPath}");
+                return;
+            }
         }
 
-        Plotly.NET.GenericChartExtensions.SaveHtml(chart, outputPath);
+        Plotly.NET.GenericChartExtensions.SaveHtml(
+            chart,
+            outputPath,
+            FSharpOption<bool>.Some(true));
     }
 
     private static CombatEventTimelineEntry ToTimelineEntry(
@@ -104,7 +130,7 @@ public sealed class CombatEventTimelineRenderer
     {
         return evt switch
         {
-            ShotFiredEvent shot => Math.Max((int)Math.Round(shot.TravelTimeMs, MidpointRounding.AwayFromZero), MinEventDurationMs),
+            ShotFiredEvent shot => Math.Max((int)Math.Round((double)shot.TravelTimeMs, MidpointRounding.AwayFromZero), MinEventDurationMs),
             DamageAppliedEvent => MinEventDurationMs,
             ShotMissedEvent => MinEventDurationMs,
             ReloadCompleteEvent reload => Math.Max(reload.ActionDurationMs, MinEventDurationMs),
@@ -112,7 +138,7 @@ public sealed class CombatEventTimelineRenderer
             ADSTransitionUpdateEvent adsUpdate => Math.Max(adsUpdate.ActionDurationMs, MinEventDurationMs),
             MovementIntervalEvent movement => Math.Max(movement.IntervalDurationMs, MinEventDurationMs),
             SlideCompleteEvent slide => Math.Max(slide.ActionDurationMs, MinEventDurationMs),
-            MicroReactionEvent => MinEventDurationMs,
+            MicroReactionEvent microReaction => Math.Max(microReaction.ActionDurationMs, MinEventDurationMs),
             _ => MinEventDurationMs
         };
     }
