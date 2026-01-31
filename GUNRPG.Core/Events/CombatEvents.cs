@@ -50,7 +50,7 @@ public class ShotFiredEvent : ISimulationEvent
                 $"  Base Aim Angle:   {BaseAimAngle:F2}°",
                 $"  Aim Error:       {AimError:+0.00;-0.00}°",
                 $"  Recoil Added:    {RecoilAdded:+0.00;-0.00}°",
-                $"  Recoil Recovered:{RecoilRecovered:+0.00;-0.00}°",
+                $"  Recoil Recovered: {RecoilRecovered:+0.00;-0.00}°",
                 $"  Final Aim Angle: {FinalAimAngle:F2}°",
                 string.Empty,
                 "Accuracy:",
@@ -197,7 +197,8 @@ public class ShotFiredEvent : ISimulationEvent
         float immediateRecoverySeconds = immediateRecoveryTimeMs / 1000f;
         float recoveryMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(baseProficiency);
         float immediateRecovery = _shooter.RecoilRecoveryRate * immediateRecoverySeconds * recoveryMultiplier;
-        float recoilRecovered = Math.Min(immediateRecovery, _shooter.CurrentRecoilY);
+        float recoilBeforeRecovery = _shooter.CurrentRecoilY;
+        float recoilRecovered = Math.Min(immediateRecovery, recoilBeforeRecovery);
         
         // Apply immediate recovery to vertical axis only (no horizontal recoil is implemented)
         _shooter.CurrentRecoilY = Math.Max(0, _shooter.CurrentRecoilY - immediateRecovery);
