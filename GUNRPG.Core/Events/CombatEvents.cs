@@ -198,10 +198,10 @@ public class ShotFiredEvent : ISimulationEvent
         float recoveryMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(baseProficiency);
         float immediateRecovery = _shooter.RecoilRecoveryRate * immediateRecoverySeconds * recoveryMultiplier;
         float recoilBeforeRecovery = _shooter.CurrentRecoilY;
-        float recoilRecovered = Math.Min(immediateRecovery, recoilBeforeRecovery);
         
         // Apply immediate recovery to vertical axis only (no horizontal recoil is implemented)
         _shooter.CurrentRecoilY = Math.Max(0, _shooter.CurrentRecoilY - immediateRecovery);
+        float recoilRecovered = Math.Max(0f, recoilBeforeRecovery - _shooter.CurrentRecoilY);
 
         int shotNumber = _shooter.IncrementShotsFired();
         if (_debugOptions?.VerboseShotLogs == true)
