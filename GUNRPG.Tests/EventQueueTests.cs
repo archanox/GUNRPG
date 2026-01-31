@@ -6,6 +6,24 @@ namespace GUNRPG.Tests;
 
 public class EventQueueTests
 {
+    private class TimelineEvent : ISimulationEvent
+    {
+        public long EventTimeMs { get; }
+        public Guid OperatorId { get; }
+        public int SequenceNumber { get; }
+
+        public TimelineEvent(long eventTimeMs, Guid operatorId, int sequenceNumber)
+        {
+            EventTimeMs = eventTimeMs;
+            OperatorId = operatorId;
+            SequenceNumber = sequenceNumber;
+        }
+
+        public bool Execute()
+        {
+            return false;
+        }
+    }
     private class TestEvent : ISimulationEvent
     {
         public long EventTimeMs { get; }
@@ -100,6 +118,29 @@ public class EventQueueTests
         queue.Clear();
         
         Assert.Equal(0, queue.Count);
+    }
+
+    [Fact]
+    public void EventQueue_OrdersEventsByTimeThenOperator()
+    {
+        var queue = new EventQueue();
+        var op1 = Guid.NewGuid();
+        var op2 = Guid.NewGuid();
+
+        queue.Schedule(new TimelineEvent(50, op2, 1));
+        queue.Schedule(new TimelineEvent(50, op1, 0));
+        queue.Schedule(new TimelineEvent(25, op1, 2));
+
+        var first = queue.DequeueNext();
+        var second = queue.DequeueNext();
+        var third = queue.DequeueNext();
+
+        Assert.Equal(25, first!.EventTimeMs);
+        Assert.Equal(op1, first.OperatorId);
+        Assert.Equal(50, second!.EventTimeMs);
+        Assert.Equal(op1, second.OperatorId);
+        Assert.Equal(50, third!.EventTimeMs);
+        Assert.Equal(op2, third.OperatorId);
     }
 
 }

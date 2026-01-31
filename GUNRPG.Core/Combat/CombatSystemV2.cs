@@ -62,7 +62,6 @@ public class CombatSystemV2
         _time = new SimulationTime();
         _eventQueue = new EventQueue();
         _random = seed.HasValue ? new Random(seed.Value) : new Random();
-        _executedEvents.Clear();
         
         Player = player;
         Enemy = enemy;
