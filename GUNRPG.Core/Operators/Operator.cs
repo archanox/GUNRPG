@@ -179,8 +179,15 @@ public class Operator
     public void ApplyFlinch(float severity)
     {
         severity = Math.Clamp(severity, 0f, 1f);
+        if (FlinchDurationShots <= 0)
+        {
+            FlinchSeverity = 0f;
+            FlinchShotsRemaining = 0;
+            return;
+        }
+
         FlinchSeverity = Math.Clamp(Math.Max(FlinchSeverity, severity), 0f, 1f);
-        FlinchShotsRemaining = Math.Max(FlinchDurationShots, 1);
+        FlinchShotsRemaining = FlinchDurationShots;
     }
 
     /// <summary>

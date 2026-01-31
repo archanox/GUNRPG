@@ -50,7 +50,7 @@ public class ShotFiredEvent : ISimulationEvent
                 $"  Base Aim Angle:   {BaseAimAngle:F2}°",
                 $"  Aim Error:       {AimError:+0.00;-0.00}°",
                 $"  Recoil Added:    {RecoilAdded:+0.00;-0.00}°",
-                $"  Recoil Recovered: {RecoilRecovered:+0.00;-0.00}°",
+                $"  Recoil Recovered:{RecoilRecovered:+0.00;-0.00}°",
                 $"  Final Aim Angle: {FinalAimAngle:F2}°",
                 string.Empty,
                 "Accuracy:",
@@ -61,7 +61,7 @@ public class ShotFiredEvent : ISimulationEvent
                 "Resolution:",
                 $"  Hit Band: {ResolvedBodyPart}",
                 $"  Damage: {Damage:F1}",
-                $"  Flinch Applied: {(WasHit ? "Yes" : "No")}",
+                $"  Target Will Flinch: {(WasHit ? "Yes" : "No")}",
                 string.Empty,
                 "───────────────────────────────────────────────"
             };
@@ -163,8 +163,8 @@ public class ShotFiredEvent : ISimulationEvent
                 _target.TakeDamage(damage, impactTime);
                 var targetWeapon = _target.EquippedWeapon;
                 float flinchResistance = targetWeapon?.FlinchResistance ?? AccuracyModel.MinFlinchResistance;
-                float appliedFlinchSeverity = AccuracyModel.CalculateFlinchSeverity(damage, flinchResistance);
-                _target.ApplyFlinch(appliedFlinchSeverity);
+                float targetFlinchSeverity = AccuracyModel.CalculateFlinchSeverity(damage, flinchResistance);
+                _target.ApplyFlinch(targetFlinchSeverity);
                 Console.WriteLine($"[{impactTime}ms] {_shooter.Name}'s {weaponName} hit {_target.Name} for {damage:F1} damage ({resolution.HitLocation})");
             }
         }
@@ -197,11 +197,10 @@ public class ShotFiredEvent : ISimulationEvent
         float immediateRecoverySeconds = immediateRecoveryTimeMs / 1000f;
         float recoveryMultiplier = AccuracyModel.CalculateRecoveryRateMultiplier(baseProficiency);
         float immediateRecovery = _shooter.RecoilRecoveryRate * immediateRecoverySeconds * recoveryMultiplier;
-        float recoilBeforeRecovery = _shooter.CurrentRecoilY;
+        float recoilRecovered = Math.Min(immediateRecovery, _shooter.CurrentRecoilY);
         
         // Apply immediate recovery to vertical axis only (no horizontal recoil is implemented)
         _shooter.CurrentRecoilY = Math.Max(0, _shooter.CurrentRecoilY - immediateRecovery);
-        float recoilRecovered = Math.Min(immediateRecovery, recoilBeforeRecovery);
 
         int shotNumber = _shooter.IncrementShotsFired();
         if (_debugOptions?.VerboseShotLogs == true)
