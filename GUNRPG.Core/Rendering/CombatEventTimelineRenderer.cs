@@ -37,7 +37,7 @@ public sealed class CombatEventTimelineRenderer
         }
 
         var (labels, durations, bases) = BuildChartSeries(entries);
-        var barCharts = new List<GenericChart>(entries.Count);
+        var barTraces = new List<GenericChart>(entries.Count);
 
         for (int i = 0; i < labels.Count; i++)
         {
@@ -47,10 +47,10 @@ public sealed class CombatEventTimelineRenderer
                 Base: bases[i],
                 Width: 0.6,
                 ShowLegend: false);
-            barCharts.Add(trace);
+            barTraces.Add(trace);
         }
 
-        var chart = Plotly.NET.Chart.Combine(barCharts);
+        var chart = Plotly.NET.Chart.Combine(barTraces);
 
         var orientation = Trace2DStyle.Bar<double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, Trace>(
             Orientation: FSharpOption<StyleParam.Orientation>.Some(StyleParam.Orientation.Horizontal));
@@ -104,7 +104,7 @@ public sealed class CombatEventTimelineRenderer
                     chart,
                     fallbackPath,
                     FSharpOption<bool>.Some(true));
-                Console.WriteLine($"PNG export unavailable ({ex.Message}); saved HTML instead: {fallbackPath}");
+                Console.WriteLine($"PNG export unavailable ({ex.Message}); saved HTML instead: {fallbackPath}. Ensure PuppeteerSharp dependencies are available.");
                 return;
             }
         }
