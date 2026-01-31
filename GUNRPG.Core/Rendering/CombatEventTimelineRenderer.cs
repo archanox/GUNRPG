@@ -41,7 +41,7 @@ public sealed class CombatEventTimelineRenderer
         var chart = Plotly.NET.CSharp.Chart.Bar<double, string, string>(
             durations,
             Keys: labels,
-            Base: bases,
+            Base: 0.0,
             Width: 0.6);
 
         var orientation = Trace2DStyle.Bar<double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, Trace>(
@@ -86,7 +86,7 @@ public sealed class CombatEventTimelineRenderer
             return;
         }
 
-        chart.SaveHtml(outputPath);
+        Plotly.NET.GenericChartExtensions.SaveHtml(chart, outputPath);
     }
 
     private static CombatEventTimelineEntry ToTimelineEntry(
@@ -104,7 +104,7 @@ public sealed class CombatEventTimelineRenderer
     {
         return evt switch
         {
-            ShotFiredEvent shot => Math.Max((int)Math.Round(shot.TravelTimeMs), MinEventDurationMs),
+            ShotFiredEvent shot => Math.Max((int)Math.Round(shot.TravelTimeMs, MidpointRounding.AwayFromZero), MinEventDurationMs),
             DamageAppliedEvent => MinEventDurationMs,
             ShotMissedEvent => MinEventDurationMs,
             ReloadCompleteEvent reload => Math.Max(reload.ActionDurationMs, MinEventDurationMs),
