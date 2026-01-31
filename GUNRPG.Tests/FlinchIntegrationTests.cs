@@ -63,7 +63,8 @@ public class FlinchIntegrationTests
             target: target,
             sequenceNumber: 0,
             random: new Random(1),
-            eventQueue: null);
+            eventQueue: null,
+            debugOptions: null);
 
         evt.Execute();
 

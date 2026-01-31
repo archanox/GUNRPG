@@ -9,6 +9,17 @@ namespace GUNRPG.Core.Combat;
 public sealed record ShotResolutionResult(BodyPart HitLocation, float FinalAngleDegrees);
 
 /// <summary>
+/// Captures intermediate values used when resolving a shot.
+/// </summary>
+public sealed class ShotResolutionDetails
+{
+    public float BaseAimAngle { get; set; }
+    public float AimError { get; set; }
+    public float RecoilAdded { get; set; }
+    public float FinalAimAngle { get; set; }
+}
+
+/// <summary>
 /// Implements vertical body-part hit resolution based on angular bands.
 /// Assumptions:
 /// - NO horizontal recoil
@@ -62,7 +73,8 @@ public static class HitResolution
         float weaponVerticalRecoil,
         float currentRecoilY,
         float recoilVariance,
-        Random random)
+        Random random,
+        ShotResolutionDetails? details = null)
     {
         // Clamp proficiency to valid range
         accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
@@ -91,6 +103,14 @@ public static class HitResolution
 
         // Calculate final vertical angle
         float finalAngle = targetAngle + aimError + totalVerticalRecoil;
+
+        if (details != null)
+        {
+            details.BaseAimAngle = targetAngle;
+            details.AimError = aimError;
+            details.RecoilAdded = totalVerticalRecoil;
+            details.FinalAimAngle = finalAngle;
+        }
 
         // Convert final angle to body part hit
         BodyPart hitLocation = ConvertAngleToBodyPart(finalAngle);
@@ -142,7 +162,7 @@ public static class HitResolution
     /// <summary>
     /// Gets the center angle of a body part's angular band.
     /// </summary>
-    private static float GetBodyPartCenterAngle(BodyPart bodyPart)
+    public static float GetBodyPartCenterAngle(BodyPart bodyPart)
     {
         var band = Array.Find(AngularBands, b => b.BodyPart == bodyPart);
         if (band != null)

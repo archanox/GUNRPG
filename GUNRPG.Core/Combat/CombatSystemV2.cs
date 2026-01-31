@@ -15,6 +15,11 @@ public enum CombatPhase
     Ended       // Combat complete
 }
 
+public sealed class CombatDebugOptions
+{
+    public bool VerboseShotLogs { get; set; }
+}
+
 /// <summary>
 /// Main combat system orchestrator with support for simultaneous intents.
 /// Manages event queue, time, and operator state during combat.
@@ -45,7 +50,9 @@ public class CombatSystemV2
     private const int DISABLE_MOVEMENT_REACTIONS = 10; // High threshold to effectively disable movement-based reactions
     
 
-    public CombatSystemV2(Operator player, Operator enemy, int? seed = null)
+    public CombatDebugOptions DebugOptions { get; } = new();
+
+    public CombatSystemV2(Operator player, Operator enemy, int? seed = null, CombatDebugOptions? debugOptions = null)
     {
         _time = new SimulationTime();
         _eventQueue = new EventQueue();
@@ -53,6 +60,8 @@ public class CombatSystemV2
         
         Player = player;
         Enemy = enemy;
+        if (debugOptions != null)
+            DebugOptions = debugOptions;
         Phase = CombatPhase.Planning;
     }
 
@@ -483,7 +492,7 @@ public class CombatSystemV2
         _nextScheduledShotTimeMs[op.Id] = shotTime;
 
         var target = (op == Player) ? Enemy : Player;
-        var shotEvent = new ShotFiredEvent(shotTime, op, target, _eventQueue.GetNextSequenceNumber(), _random, _eventQueue);
+        var shotEvent = new ShotFiredEvent(shotTime, op, target, _eventQueue.GetNextSequenceNumber(), _random, _eventQueue, DebugOptions);
         _eventQueue.Schedule(shotEvent);
     }
 }
