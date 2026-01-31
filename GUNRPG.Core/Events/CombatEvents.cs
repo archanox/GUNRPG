@@ -35,7 +35,7 @@ public class ShotFiredEvent : ISimulationEvent
         public float EffectiveAccuracyProficiency { get; set; }
         public BodyPart ResolvedBodyPart { get; set; }
         public float Damage { get; set; }
-        public bool FlinchApplied { get; set; }
+        public bool WasHit { get; set; }
 
         public string ToLogString()
         {
@@ -61,7 +61,7 @@ public class ShotFiredEvent : ISimulationEvent
                 "Resolution:",
                 $"  Hit Band: {ResolvedBodyPart}",
                 $"  Damage: {Damage:F1}",
-                $"  Flinch Applied: {(FlinchApplied ? "Yes" : "No")}",
+                $"  Flinch Applied: {(WasHit ? "Yes" : "No")}",
                 string.Empty,
                 "───────────────────────────────────────────────"
             };
@@ -201,7 +201,7 @@ public class ShotFiredEvent : ISimulationEvent
         
         // Apply immediate recovery to vertical axis only (no horizontal recoil is implemented)
         _shooter.CurrentRecoilY = Math.Max(0, _shooter.CurrentRecoilY - immediateRecovery);
-        float recoilRecovered = recoilBeforeRecovery - _shooter.CurrentRecoilY;
+        float recoilRecovered = Math.Min(immediateRecovery, recoilBeforeRecovery);
 
         int shotNumber = _shooter.IncrementShotsFired();
         if (_debugOptions?.VerboseShotLogs == true)
@@ -224,7 +224,7 @@ public class ShotFiredEvent : ISimulationEvent
                 EffectiveAccuracyProficiency = effectiveProficiency,
                 ResolvedBodyPart = resolution.HitLocation,
                 Damage = damage,
-                FlinchApplied = isHit
+                WasHit = isHit
             };
 
             Console.WriteLine(telemetry.ToLogString());
