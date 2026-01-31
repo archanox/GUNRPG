@@ -104,7 +104,7 @@ public sealed class CombatEventTimelineRenderer
                     chart,
                     fallbackPath,
                     FSharpOption<bool>.Some(true));
-                Console.WriteLine("PNG export unavailable. Saved HTML instead:");
+                Console.WriteLine("PNG export failed. Saved HTML fallback instead:");
                 Console.WriteLine($"  {fallbackPath}");
                 Console.WriteLine($"  Details: {ex.GetType().Name} - {ex.Message}");
                 Console.WriteLine("  Hint: Ensure PuppeteerSharp dependencies are available.");
