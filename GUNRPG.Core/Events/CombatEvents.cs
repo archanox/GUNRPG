@@ -50,7 +50,7 @@ public class ShotFiredEvent : ISimulationEvent
                 $"  Base Aim Angle:   {BaseAimAngle:F2}°",
                 $"  Aim Error:       {AimError:+0.00;-0.00}°",
                 $"  Recoil Added:    {RecoilAdded:+0.00;-0.00}°",
-                $"  Recoil Recovered:{RecoilRecovered:+0.00;-0.00}°",
+                $"  Recoil Recovered: {RecoilRecovered:+0.00;-0.00}°",
                 $"  Final Aim Angle: {FinalAimAngle:F2}°",
                 string.Empty,
                 "Accuracy:",
