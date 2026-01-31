@@ -104,7 +104,7 @@ public sealed class CombatEventTimelineRenderer
                     chart,
                     fallbackPath,
                     FSharpOption<bool>.Some(true));
-                Console.WriteLine($"Timeline PNG export failed ({ex.Message}). Saved HTML to: {fallbackPath}");
+                Console.WriteLine($"Timeline PNG export failed ({ex.Message}), automatically saved HTML to: {fallbackPath}");
                 return;
             }
         }

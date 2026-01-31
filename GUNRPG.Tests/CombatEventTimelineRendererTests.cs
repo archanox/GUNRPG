@@ -26,6 +26,7 @@ public class CombatEventTimelineRendererTests
         Assert.Equal(3, entries.Count);
         Assert.Equal(5, entries[0].StartTimeMs);
         Assert.Equal("MicroReaction", entries[0].EventType);
+        Assert.Equal("Player", entries[0].ActorName);
         Assert.Equal("Enemy", entries[1].ActorName);
         Assert.Equal("Player", entries[2].ActorName);
     }
