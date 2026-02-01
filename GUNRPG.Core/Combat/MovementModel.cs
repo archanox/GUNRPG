@@ -32,6 +32,12 @@ public static class MovementModel
     public const float CrouchingSuppressionReduction = 0.2f; // 20% reduction
     public const float CrouchingSuppressionDecayMultiplier = 1.4f; // 40% faster decay
 
+    // Directional Movement Modifiers (applied based on movement direction)
+    public const float AdvancingSuppressionBuildupMultiplier = 1.2f; // Moving toward = more exposed
+    public const float RetreatingSuppressionBuildupMultiplier = 0.85f; // Moving away = less exposed
+    public const float AdvancingHitProbabilityMultiplier = 1.15f; // Moving toward = easier to hit
+    public const float RetreatingHitProbabilityMultiplier = 0.9f; // Moving away = harder to hit
+
     // Cover Modifiers
     public const float PartialCoverHitProbabilityMultiplier = 0.7f; // 30% reduction in hit chance
     public const float FullCoverHitProbabilityMultiplier = 0.0f; // Blocks all hits when not peeking
@@ -148,5 +154,35 @@ public static class MovementModel
         return movement == MovementState.Stationary 
             || movement == MovementState.Idle 
             || movement == MovementState.Crouching;
+    }
+
+    /// <summary>
+    /// Gets the suppression buildup multiplier for movement direction.
+    /// Advancing = more exposed to suppression, Retreating = less exposed.
+    /// </summary>
+    public static float GetDirectionalSuppressionMultiplier(MovementDirection direction)
+    {
+        return direction switch
+        {
+            MovementDirection.Advancing => AdvancingSuppressionBuildupMultiplier,
+            MovementDirection.Retreating => RetreatingSuppressionBuildupMultiplier,
+            MovementDirection.Holding => 1.0f,
+            _ => 1.0f
+        };
+    }
+
+    /// <summary>
+    /// Gets the hit probability multiplier for movement direction.
+    /// Advancing = easier to hit, Retreating = harder to hit.
+    /// </summary>
+    public static float GetDirectionalHitProbabilityMultiplier(MovementDirection direction)
+    {
+        return direction switch
+        {
+            MovementDirection.Advancing => AdvancingHitProbabilityMultiplier,
+            MovementDirection.Retreating => RetreatingHitProbabilityMultiplier,
+            MovementDirection.Holding => 1.0f,
+            _ => 1.0f
+        };
     }
 }
