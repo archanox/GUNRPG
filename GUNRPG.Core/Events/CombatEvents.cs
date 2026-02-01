@@ -211,7 +211,8 @@ public class ShotFiredEvent : ISimulationEvent
                         weapon.RoundsPerMinute,
                         _shooter.DistanceToOpponent,
                         angularDeviation,
-                        _target.CurrentMovement);
+                        _target.CurrentMovement,
+                        _target.CurrentPosture);
                     _target.ApplySuppression(suppressionSeverity, impactTime);
                 }
             }
@@ -411,7 +412,8 @@ public sealed class ShotMissedEvent : ISimulationEvent
                 weapon.RoundsPerMinute,
                 _shooter.DistanceToOpponent,
                 _angularDeviation,
-                _target.CurrentMovement);
+                _target.CurrentMovement,
+                _target.CurrentPosture);
 
             if (suppressionSeverity > 0f)
             {
