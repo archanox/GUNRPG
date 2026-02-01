@@ -188,8 +188,7 @@ public class SimultaneousIntents
             
             // Can only enter cover when stationary or crouching
             if ((Cover == CoverAction.EnterPartial || Cover == CoverAction.EnterFull) && 
-                !Combat.MovementModel.CanEnterCover(op.CurrentMovement) &&
-                Movement != MovementAction.Stand && Movement != MovementAction.Crouch)
+                !Combat.MovementModel.CanEnterCover(op.CurrentMovement))
                 return (false, "Can only enter cover when stationary or crouching");
         }
 
