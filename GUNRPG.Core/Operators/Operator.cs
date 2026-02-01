@@ -28,6 +28,7 @@ public class Operator
     // Movement System
     public MovementState CurrentMovement { get; set; }
     public CoverState CurrentCover { get; set; }
+    public TacticalPosture CurrentPosture { get; set; }
     public long? MovementEndTimeMs { get; set; }
     public bool IsMoving => MovementEndTimeMs.HasValue;
 
@@ -176,6 +177,7 @@ public class Operator
         // Initialize movement system
         CurrentMovement = MovementState.Stationary;
         CurrentCover = CoverState.None;
+        CurrentPosture = TacticalPosture.Hold;
         MovementEndTimeMs = null;
         
         // Default regeneration values (Call of Duty style)

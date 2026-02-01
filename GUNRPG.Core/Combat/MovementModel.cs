@@ -32,6 +32,12 @@ public static class MovementModel
     public const float CrouchingSuppressionReduction = 0.2f; // 20% reduction
     public const float CrouchingSuppressionDecayMultiplier = 1.4f; // 40% faster decay
 
+    // Tactical Posture Modifiers
+    public const float AdvanceSuppressionBuildupMultiplier = 1.2f; // Advancing = more exposed
+    public const float RetreatSuppressionBuildupMultiplier = 0.85f; // Retreating = less exposed
+    public const float AdvanceHitProbabilityMultiplier = 1.15f; // Advancing = easier to hit
+    public const float RetreatHitProbabilityMultiplier = 0.9f; // Retreating = harder to hit
+
     // Cover Modifiers
     public const float PartialCoverHitProbabilityMultiplier = 0.7f; // 30% reduction in hit chance
     public const float FullCoverHitProbabilityMultiplier = 0.0f; // Blocks all hits when not peeking
@@ -148,5 +154,35 @@ public static class MovementModel
         return movement == MovementState.Stationary 
             || movement == MovementState.Idle 
             || movement == MovementState.Crouching;
+    }
+
+    /// <summary>
+    /// Gets the suppression buildup multiplier for tactical posture.
+    /// Advancing = more exposed to suppression, Retreating = less exposed.
+    /// </summary>
+    public static float GetTacticalPostureSuppressionMultiplier(TacticalPosture posture)
+    {
+        return posture switch
+        {
+            TacticalPosture.Advance => AdvanceSuppressionBuildupMultiplier,
+            TacticalPosture.Retreat => RetreatSuppressionBuildupMultiplier,
+            TacticalPosture.Hold => 1.0f,
+            _ => 1.0f
+        };
+    }
+
+    /// <summary>
+    /// Gets the hit probability multiplier for tactical posture.
+    /// Advancing = easier to hit, Retreating = harder to hit.
+    /// </summary>
+    public static float GetTacticalPostureHitProbabilityMultiplier(TacticalPosture posture)
+    {
+        return posture switch
+        {
+            TacticalPosture.Advance => AdvanceHitProbabilityMultiplier,
+            TacticalPosture.Retreat => RetreatHitProbabilityMultiplier,
+            TacticalPosture.Hold => 1.0f,
+            _ => 1.0f
+        };
     }
 }

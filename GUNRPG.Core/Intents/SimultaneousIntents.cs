@@ -18,10 +18,17 @@ public enum PrimaryAction
 public enum MovementAction
 {
     Stand,
+    
+    // Legacy directional movement (deprecated - use tactical posture instead)
+    [Obsolete("Use tactical posture (Advance/Hold/Retreat) with movement state instead")]
     WalkToward,
+    [Obsolete("Use tactical posture (Advance/Hold/Retreat) with movement state instead")]
     WalkAway,
+    [Obsolete("Use tactical posture (Advance/Hold/Retreat) with movement state instead")]
     SprintToward,
+    [Obsolete("Use tactical posture (Advance/Hold/Retreat) with movement state instead")]
     SprintAway,
+    
     SlideToward,
     SlideAway,
     
@@ -53,6 +60,17 @@ public enum StanceAction
 }
 
 /// <summary>
+/// Tactical posture actions (intent modifiers).
+/// </summary>
+public enum PostureAction
+{
+    None,
+    Hold,
+    Advance,
+    Retreat
+}
+
+/// <summary>
 /// Container for simultaneous intents that can be active at the same time.
 /// </summary>
 public class SimultaneousIntents
@@ -61,6 +79,7 @@ public class SimultaneousIntents
     public PrimaryAction Primary { get; set; }
     public MovementAction Movement { get; set; }
     public StanceAction Stance { get; set; }
+    public PostureAction Posture { get; set; }
     public CoverAction Cover { get; set; }
     public bool CancelMovement { get; set; }
     public long SubmittedAtMs { get; set; }
@@ -71,6 +90,7 @@ public class SimultaneousIntents
         Primary = PrimaryAction.None;
         Movement = MovementAction.Stand;
         Stance = StanceAction.None;
+        Posture = PostureAction.None;
         Cover = CoverAction.None;
         CancelMovement = false;
     }
@@ -226,6 +246,7 @@ public class SimultaneousIntents
         return Primary != PrimaryAction.None ||
                Movement != MovementAction.Stand ||
                Stance != StanceAction.None ||
+               Posture != PostureAction.None ||
                Cover != CoverAction.None ||
                CancelMovement;
     }
