@@ -283,8 +283,8 @@ public class Operator
         bool isUnderFire = LastSuppressionApplicationMs.HasValue &&
             (currentTimeMs - LastSuppressionApplicationMs.Value) < SuppressionModel.ContinuedFireWindowMs;
 
-        // Apply decay
-        SuppressionLevel = SuppressionModel.ApplyDecay(SuppressionLevel, deltaMs, isUnderFire);
+        // Apply decay with movement state modifier
+        SuppressionLevel = SuppressionModel.ApplyDecay(SuppressionLevel, deltaMs, isUnderFire, CurrentMovement);
 
         // Check if suppression ended
         if (wasSuppressed && !IsSuppressed)

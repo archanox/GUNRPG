@@ -65,6 +65,8 @@ public static class HitResolution
     /// <param name="currentRecoilY">Current accumulated vertical recoil state</param>
     /// <param name="recoilVariance">Optional variance in recoil application</param>
     /// <param name="random">Random number generator for deterministic-friendly operation</param>
+    /// <param name="details">Optional details object to capture intermediate values</param>
+    /// <param name="movementState">Optional movement state to apply movement modifiers</param>
     /// <returns>The resolved body part hit or Miss if shot overshoots/undershoots</returns>
     public static ShotResolutionResult ResolveShotWithProficiency(
         BodyPart targetBodyPart,
@@ -74,17 +76,33 @@ public static class HitResolution
         float currentRecoilY,
         float recoilVariance,
         Random random,
-        ShotResolutionDetails? details = null)
+        ShotResolutionDetails? details = null,
+        MovementState? movementState = null)
     {
         // Clamp proficiency to valid range
         accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
+        
+        // Apply movement accuracy modifier
+        float effectiveAccuracy = operatorAccuracy;
+        float weaponSway = 0f;
+        if (movementState.HasValue)
+        {
+            float accuracyMultiplier = MovementModel.GetAccuracyMultiplier(movementState.Value);
+            effectiveAccuracy = operatorAccuracy * accuracyMultiplier;
+            weaponSway = MovementModel.GetWeaponSwayDegrees(movementState.Value);
+        }
         
         // Get the center angle of the target body part
         float targetAngle = GetBodyPartCenterAngle(targetBodyPart);
 
         // Apply initial aim acquisition error using AccuracyModel
-        float aimErrorStdDev = AccuracyModel.CalculateAimErrorStdDev(operatorAccuracy, accuracyProficiency);
+        float aimErrorStdDev = AccuracyModel.CalculateAimErrorStdDev(effectiveAccuracy, accuracyProficiency);
         float aimError = AccuracyModel.SampleGaussian(random, 0f, aimErrorStdDev);
+
+        // Apply weapon sway as additional angular noise
+        float swayNoise = weaponSway > 0f 
+            ? AccuracyModel.SampleGaussian(random, 0f, weaponSway)
+            : 0f;
 
         // Apply recoil counteraction using AccuracyModel
         float recoilReductionFactor = AccuracyModel.CalculateRecoilReductionFactor(accuracyProficiency);
@@ -101,13 +119,13 @@ public static class HitResolution
         
         float totalVerticalRecoil = effectiveCurrentRecoil + effectiveWeaponRecoil + recoilVariation;
 
-        // Calculate final vertical angle
-        float finalAngle = targetAngle + aimError + totalVerticalRecoil;
+        // Calculate final vertical angle (including sway)
+        float finalAngle = targetAngle + aimError + swayNoise + totalVerticalRecoil;
 
         if (details != null)
         {
             details.BaseAimAngle = targetAngle;
-            details.AimError = aimError;
+            details.AimError = aimError + swayNoise; // Include sway in aim error for reporting
             details.RecoilAdded = totalVerticalRecoil;
             details.FinalAimAngle = finalAngle;
         }

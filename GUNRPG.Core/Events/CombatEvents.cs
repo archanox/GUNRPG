@@ -148,7 +148,8 @@ public class ShotFiredEvent : ISimulationEvent
             currentRecoilY: _shooter.CurrentRecoilY,
             recoilVariance: weapon.VerticalRecoil * 0.1f, // 10% variance
             random: _random,
-            details: details);
+            details: details,
+            movementState: _shooter.CurrentMovement);
 
         long travelTime = CalculateTravelTimeMs();
         _resolvedTravelTimeMs = travelTime;
@@ -209,7 +210,8 @@ public class ShotFiredEvent : ISimulationEvent
                         weapon.SuppressionFactor,
                         weapon.RoundsPerMinute,
                         _shooter.DistanceToOpponent,
-                        angularDeviation);
+                        angularDeviation,
+                        _target.CurrentMovement);
                     _target.ApplySuppression(suppressionSeverity, impactTime);
                 }
             }
@@ -408,7 +410,8 @@ public sealed class ShotMissedEvent : ISimulationEvent
                 weapon.SuppressionFactor,
                 weapon.RoundsPerMinute,
                 _shooter.DistanceToOpponent,
-                _angularDeviation);
+                _angularDeviation,
+                _target.CurrentMovement);
 
             if (suppressionSeverity > 0f)
             {
