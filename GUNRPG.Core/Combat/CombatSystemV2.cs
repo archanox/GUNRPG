@@ -293,12 +293,6 @@ public class CombatSystemV2
             ProcessStanceAction(op, intents.Stance);
         }
 
-        // Process tactical posture
-        if (intents.Posture != PostureAction.None)
-        {
-            ProcessPostureAction(op, intents.Posture);
-        }
-
         // Process movement
         if (intents.Movement != MovementAction.Stand)
         {
@@ -315,23 +309,6 @@ public class CombatSystemV2
         if (intents.Primary != PrimaryAction.None)
         {
             ProcessPrimaryAction(op, intents.Primary);
-        }
-    }
-
-    private void ProcessPostureAction(Operator op, PostureAction posture)
-    {
-        var newPosture = posture switch
-        {
-            PostureAction.Hold => TacticalPosture.Hold,
-            PostureAction.Advance => TacticalPosture.Advance,
-            PostureAction.Retreat => TacticalPosture.Retreat,
-            _ => TacticalPosture.Hold
-        };
-
-        if (op.CurrentPosture != newPosture)
-        {
-            op.CurrentPosture = newPosture;
-            Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} changed posture to {newPosture}");
         }
     }
 
@@ -531,8 +508,8 @@ public class CombatSystemV2
         // Consume stamina
         op.Stamina -= op.SlideStaminaCost;
         
-        // Slide direction for tactical posture (but doesn't change distance)
-        string direction = towardOpponent ? "toward" : "away from";
+        // Calculate slide distance
+        float slideDistance = op.SlideDistance * (towardOpponent ? -1 : 1);
         
         op.MovementState = MovementState.Sliding;
         
@@ -545,8 +522,10 @@ public class CombatSystemV2
             actionDurationMs: (int)op.SlideDurationMs);
         _eventQueue.Schedule(slideEvent);
         
-        // Slide no longer changes distance - it's a tactical maneuver affecting combat modifiers
-        Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} slid {direction} opponent (distance unchanged: {op.DistanceToOpponent:F1}m)");
+        // Immediately apply distance change
+        op.DistanceToOpponent += slideDistance;
+        
+        Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} slid {slideDistance:F1}m (distance now: {op.DistanceToOpponent:F1}m)");
     }
 
     private void ScheduleMovementUpdate(Operator op, bool towardOpponent, float speed)

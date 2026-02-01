@@ -211,8 +211,7 @@ public class ShotFiredEvent : ISimulationEvent
                         weapon.RoundsPerMinute,
                         _shooter.DistanceToOpponent,
                         angularDeviation,
-                        _target.CurrentMovement,
-                        _target.CurrentPosture);
+                        _target.CurrentMovement);
                     _target.ApplySuppression(suppressionSeverity, impactTime);
                 }
             }
@@ -412,8 +411,7 @@ public sealed class ShotMissedEvent : ISimulationEvent
                 weapon.RoundsPerMinute,
                 _shooter.DistanceToOpponent,
                 _angularDeviation,
-                _target.CurrentMovement,
-                _target.CurrentPosture);
+                _target.CurrentMovement);
 
             if (suppressionSeverity > 0f)
             {
@@ -551,12 +549,10 @@ public class MovementIntervalEvent : ISimulationEvent
 
     public bool Execute()
     {
-        // Movement no longer changes distance - it only affects combat modifiers
-        // Distance is now static unless explicitly changed by player actions
+        _mover.DistanceToOpponent += _distance; // Positive = away, negative = toward
         _mover.MetersMovedSinceLastReaction += Math.Abs(_distance);
         
-        // Tactical commitment affects reaction windows, not spatial position
-        Console.WriteLine($"[{EventTimeMs}ms] {_mover.Name} committed {_distance:F1}m of tactical movement (position unchanged: {_mover.DistanceToOpponent:F1}m)");
+        Console.WriteLine($"[{EventTimeMs}ms] {_mover.Name} moved {_distance:F1}m (distance now: {_mover.DistanceToOpponent:F1}m)");
 
         // Check if this triggers a reaction window
         if (_mover.MetersMovedSinceLastReaction >= _metersPerCommitmentUnit)

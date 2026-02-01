@@ -89,15 +89,13 @@ public static class SuppressionModel
     /// <param name="distanceMeters">Distance between shooter and target</param>
     /// <param name="angularDeviationDegrees">How close the shot came to hitting (degrees)</param>
     /// <param name="targetMovementState">Optional movement state of the target to apply modifiers</param>
-    /// <param name="targetPosture">Optional tactical posture of the target to apply modifiers</param>
     /// <returns>Suppression severity to apply (0.0 - 1.0)</returns>
     public static float CalculateSuppressionSeverity(
         float weaponSuppressionFactor,
         float weaponFireRateRPM,
         float distanceMeters,
         float angularDeviationDegrees,
-        Operators.MovementState? targetMovementState = null,
-        Operators.TacticalPosture? targetPosture = null)
+        Operators.MovementState? targetMovementState = null)
     {
         // No suppression if shot was too far off
         if (Math.Abs(angularDeviationDegrees) > SuppressionAngleThresholdDegrees)
@@ -124,13 +122,6 @@ public static class SuppressionModel
         {
             float movementMultiplier = MovementModel.GetSuppressionBuildupMultiplier(targetMovementState.Value);
             severity *= movementMultiplier;
-        }
-
-        // Apply tactical posture modifier for target
-        if (targetPosture.HasValue)
-        {
-            float postureMultiplier = MovementModel.GetTacticalPostureSuppressionMultiplier(targetPosture.Value);
-            severity *= postureMultiplier;
         }
 
         return Math.Clamp(severity, 0f, MaxSuppressionLevel);
