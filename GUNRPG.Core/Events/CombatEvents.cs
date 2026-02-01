@@ -172,6 +172,10 @@ public class ShotFiredEvent : ISimulationEvent
         }
         else
         {
+            // Calculate angular deviation from target body band for suppression calculation
+            // Deviation is how far the shot was from the valid hit zone (0-1 degrees)
+            float angularDeviation = CalculateAngularDeviation(resolution.FinalAngleDegrees);
+
             // Schedule miss event at impact time (when bullet passes target)
             if (_eventQueue != null)
             {
@@ -180,11 +184,24 @@ public class ShotFiredEvent : ISimulationEvent
                     _shooter,
                     _target,
                     _eventQueue.GetNextSequenceNumber(),
-                    weaponName));
+                    weaponName,
+                    angularDeviation,
+                    _eventQueue));
             }
             else
             {
                 Console.WriteLine($"[{impactTime}ms] {_shooter.Name}'s {weaponName} missed {_target.Name}");
+                
+                // Apply suppression directly when no event queue
+                if (SuppressionModel.ShouldApplySuppression(angularDeviation))
+                {
+                    float suppressionSeverity = SuppressionModel.CalculateSuppressionSeverity(
+                        weapon.SuppressionFactor,
+                        weapon.RoundsPerMinute,
+                        _shooter.DistanceToOpponent,
+                        angularDeviation);
+                    _target.ApplySuppression(suppressionSeverity, impactTime);
+                }
             }
         }
 
@@ -248,6 +265,31 @@ public class ShotFiredEvent : ISimulationEvent
         return (long)Math.Round(travelSeconds * 1000d, MidpointRounding.AwayFromZero);
     }
 
+    /// <summary>
+    /// Calculates how far the shot deviated from the valid hit zone (0-1 degrees).
+    /// Used for suppression calculation - closer misses are more suppressive.
+    /// </summary>
+    private static float CalculateAngularDeviation(float finalAngleDegrees)
+    {
+        // Valid hit zone is 0.0 - 1.0 degrees
+        const float minValidAngle = 0.0f;
+        const float maxValidAngle = 1.0f;
+
+        if (finalAngleDegrees < minValidAngle)
+        {
+            // Undershoot - deviation is distance below min
+            return minValidAngle - finalAngleDegrees;
+        }
+        else if (finalAngleDegrees > maxValidAngle)
+        {
+            // Overshoot - deviation is distance above max
+            return finalAngleDegrees - maxValidAngle;
+        }
+        
+        // Shot was within valid range (shouldn't happen for a miss, but return 0)
+        return 0f;
+    }
+
     public long TravelTimeMs => _resolvedTravelTimeMs ?? CalculateTravelTimeMs();
 }
 
@@ -301,6 +343,7 @@ public sealed class DamageAppliedEvent : ISimulationEvent
 
 /// <summary>
 /// Event fired when a shot misses (after bullet travel time).
+/// Applies suppression to the target based on how close the shot came.
 /// </summary>
 public sealed class ShotMissedEvent : ISimulationEvent
 {
@@ -312,8 +355,22 @@ public sealed class ShotMissedEvent : ISimulationEvent
     private readonly Operator _shooter;
     private readonly Operator _target;
     private readonly string _weaponName;
+    private readonly float _angularDeviation;
+    private readonly EventQueue? _eventQueue;
 
-    public ShotMissedEvent(long eventTimeMs, Operator shooter, Operator target, int sequenceNumber, string weaponName)
+    /// <summary>
+    /// Angular deviation from target in degrees. Used to calculate suppression severity.
+    /// </summary>
+    public float AngularDeviation => _angularDeviation;
+
+    public ShotMissedEvent(
+        long eventTimeMs,
+        Operator shooter,
+        Operator target,
+        int sequenceNumber,
+        string weaponName,
+        float angularDeviation = 0f,
+        EventQueue? eventQueue = null)
     {
         EventTimeMs = eventTimeMs;
         OperatorId = shooter.Id;
@@ -321,11 +378,57 @@ public sealed class ShotMissedEvent : ISimulationEvent
         _shooter = shooter;
         _target = target;
         _weaponName = weaponName;
+        _angularDeviation = angularDeviation;
+        _eventQueue = eventQueue;
     }
 
     public bool Execute()
     {
         Console.WriteLine($"[{EventTimeMs}ms] {_shooter.Name}'s {_weaponName} missed {_target.Name}");
+
+        // Apply suppression if the shot was close enough to be threatening
+        var weapon = _shooter.EquippedWeapon;
+        if (weapon != null && SuppressionModel.ShouldApplySuppression(_angularDeviation))
+        {
+            float suppressionSeverity = SuppressionModel.CalculateSuppressionSeverity(
+                weapon.SuppressionFactor,
+                weapon.RoundsPerMinute,
+                _shooter.DistanceToOpponent,
+                _angularDeviation);
+
+            if (suppressionSeverity > 0f)
+            {
+                float previousLevel = _target.SuppressionLevel;
+                bool becameSuppressed = _target.ApplySuppression(suppressionSeverity, EventTimeMs);
+
+                // Emit appropriate suppression event
+                if (_eventQueue != null)
+                {
+                    if (becameSuppressed)
+                    {
+                        _eventQueue.Schedule(new SuppressionStartedEvent(
+                            EventTimeMs,
+                            _target,
+                            _shooter,
+                            _target.SuppressionLevel,
+                            _eventQueue.GetNextSequenceNumber(),
+                            _weaponName));
+                    }
+                    else if (previousLevel > 0f)
+                    {
+                        _eventQueue.Schedule(new SuppressionUpdatedEvent(
+                            EventTimeMs,
+                            _target,
+                            _shooter,
+                            previousLevel,
+                            _target.SuppressionLevel,
+                            _eventQueue.GetNextSequenceNumber(),
+                            _weaponName));
+                    }
+                }
+            }
+        }
+
         return false;
     }
 

@@ -146,6 +146,10 @@ public class CombatSystemV2
                 // Update regeneration for both operators
                 Player.UpdateRegeneration(deltaMs, evt.EventTimeMs);
                 Enemy.UpdateRegeneration(deltaMs, evt.EventTimeMs);
+
+                // Update suppression decay for both operators
+                UpdateSuppressionDecay(Player, deltaMs, evt.EventTimeMs);
+                UpdateSuppressionDecay(Enemy, deltaMs, evt.EventTimeMs);
                 
                 _time.Advance(deltaMs);
             }
@@ -567,5 +571,63 @@ public class CombatSystemV2
         var target = (op == Player) ? Enemy : Player;
         var shotEvent = new ShotFiredEvent(shotTime, op, target, _eventQueue.GetNextSequenceNumber(), _random, _eventQueue, DebugOptions);
         _eventQueue.Schedule(shotEvent);
+    }
+
+    // Suppression tracking
+    private readonly Dictionary<Guid, long> _suppressionStartTimes = new();
+    private readonly Dictionary<Guid, float> _peakSuppressionLevels = new();
+
+    /// <summary>
+    /// Updates suppression decay and emits suppression ended events when appropriate.
+    /// </summary>
+    private void UpdateSuppressionDecay(Operator op, long deltaMs, long currentTimeMs)
+    {
+        if (op.SuppressionLevel <= 0f)
+            return;
+
+        // Track suppression start time for timeline
+        if (!_suppressionStartTimes.ContainsKey(op.Id))
+        {
+            _suppressionStartTimes[op.Id] = currentTimeMs - deltaMs;
+            _peakSuppressionLevels[op.Id] = op.SuppressionLevel;
+        }
+        else
+        {
+            // Track peak suppression
+            if (op.SuppressionLevel > _peakSuppressionLevels[op.Id])
+            {
+                _peakSuppressionLevels[op.Id] = op.SuppressionLevel;
+            }
+        }
+
+        bool suppressionEnded = op.UpdateSuppressionDecay(deltaMs, currentTimeMs);
+
+        if (suppressionEnded)
+        {
+            // Emit suppression ended event
+            if (_suppressionStartTimes.TryGetValue(op.Id, out long startTime))
+            {
+                long duration = currentTimeMs - startTime;
+                float peakSeverity = _peakSuppressionLevels.GetValueOrDefault(op.Id, 0f);
+
+                _eventQueue.Schedule(new SuppressionEndedEvent(
+                    currentTimeMs,
+                    op,
+                    duration,
+                    peakSeverity,
+                    _eventQueue.GetNextSequenceNumber()));
+
+                // Add timeline entry for suppression period
+                _timelineEntries.Add(new CombatEventTimelineEntry(
+                    "Suppression",
+                    (int)startTime,
+                    (int)currentTimeMs,
+                    op.Name,
+                    $"Peak {peakSeverity:0.00}"));
+
+                _suppressionStartTimes.Remove(op.Id);
+                _peakSuppressionLevels.Remove(op.Id);
+            }
+        }
     }
 }

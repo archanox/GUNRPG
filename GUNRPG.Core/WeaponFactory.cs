@@ -66,7 +66,10 @@ public static class WeaponFactory
             JumpSprintToFireTimeMs = 329f,
 
             // Commitment
-            BulletsPerCommitmentUnit = 3
+            BulletsPerCommitmentUnit = 3,
+
+            // Suppression - LMGs are highly suppressive
+            SuppressionFactor = 1.5f
         }.WithSokol545DamageModel();
     }
 
@@ -177,7 +180,10 @@ public static class WeaponFactory
             JumpSprintToFireTimeMs = 210f,
 
             // Commitment
-            BulletsPerCommitmentUnit = 4
+            BulletsPerCommitmentUnit = 4,
+
+            // Suppression - SMGs are less suppressive
+            SuppressionFactor = 0.8f
         }.WithSturmwolf45DamageModel();
     }
 
@@ -302,7 +308,10 @@ public static class WeaponFactory
             JumpSprintToFireTimeMs = 385f,
 
             // Commitment
-            BulletsPerCommitmentUnit = 3
+            BulletsPerCommitmentUnit = 3,
+
+            // Suppression - ARs have standard suppression
+            SuppressionFactor = 1.0f
         }.WithM15Mod0DamageModel();
     }
 
