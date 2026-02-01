@@ -604,32 +604,36 @@ public class CombatSystemV2
 
         bool suppressionEnded = op.UpdateSuppressionDecay(deltaMs, currentTimeMs);
 
-        if (suppressionEnded)
+        if (suppressionEnded && _suppressionStartTimes.TryGetValue(op.Id, out long startTime))
         {
             // Emit suppression ended event
-            if (_suppressionStartTimes.TryGetValue(op.Id, out long startTime))
-            {
-                long duration = currentTimeMs - startTime;
-                float peakSeverity = _peakSuppressionLevels.GetValueOrDefault(op.Id, 0f);
+            long duration = currentTimeMs - startTime;
+            float peakSeverity = _peakSuppressionLevels.GetValueOrDefault(op.Id, 0f);
 
-                _eventQueue.Schedule(new SuppressionEndedEvent(
-                    currentTimeMs,
-                    op,
-                    duration,
-                    peakSeverity,
-                    _eventQueue.GetNextSequenceNumber()));
+            _eventQueue.Schedule(new SuppressionEndedEvent(
+                currentTimeMs,
+                op,
+                duration,
+                peakSeverity,
+                _eventQueue.GetNextSequenceNumber()));
 
-                // Add timeline entry for suppression period
-                _timelineEntries.Add(new CombatEventTimelineEntry(
-                    "Suppression",
-                    (int)startTime,
-                    (int)currentTimeMs,
-                    op.Name,
-                    $"Peak {peakSeverity:0.00}"));
+            // Add timeline entry for suppression period
+            _timelineEntries.Add(new CombatEventTimelineEntry(
+                "Suppression",
+                (int)startTime,
+                (int)currentTimeMs,
+                op.Name,
+                $"Peak {peakSeverity:0.00}"));
 
-                _suppressionStartTimes.Remove(op.Id);
-                _peakSuppressionLevels.Remove(op.Id);
-            }
+            _suppressionStartTimes.Remove(op.Id);
+            _peakSuppressionLevels.Remove(op.Id);
+        }
+        else if (op.SuppressionLevel <= 0f)
+        {
+            // Suppression fully decayed without ever crossing the suppression threshold.
+            // Clean up tracking dictionaries without emitting an event or timeline entry.
+            _suppressionStartTimes.Remove(op.Id);
+            _peakSuppressionLevels.Remove(op.Id);
         }
     }
 }
