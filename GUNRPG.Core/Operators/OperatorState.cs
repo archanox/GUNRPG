@@ -43,27 +43,3 @@ public enum CoverState
     Partial,
     Full
 }
-
-/// <summary>
-/// Tactical posture of an operator - represents intent, not spatial movement.
-/// Affects suppression, hit probability, and combat pressure.
-/// </summary>
-public enum TacticalPosture
-{
-    /// <summary>
-    /// Default posture - holding position without tactical pressure.
-    /// </summary>
-    Hold,
-    
-    /// <summary>
-    /// Aggressive posture - advancing toward opponent, increasing pressure.
-    /// Increases risk but applies more pressure to opponent.
-    /// </summary>
-    Advance,
-    
-    /// <summary>
-    /// Defensive posture - retreating from opponent, reducing pressure.
-    /// Decreases risk but applies less pressure to opponent.
-    /// </summary>
-    Retreat
-}
