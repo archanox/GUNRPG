@@ -35,6 +35,9 @@ public class SimpleAIV2
         // Decide movement
         intents.Movement = DecideMovement(self, opponent, combat);
 
+        // Decide tactical posture
+        intents.Posture = DecidePosture(self, opponent, combat);
+
         // Decide stance
         intents.Stance = DecideStance(self, opponent, combat);
 
@@ -71,13 +74,10 @@ public class SimpleAIV2
 
     private MovementAction DecideMovement(Operator self, Operator opponent, CombatSystemV2 combat)
     {
-        float optimalRange = 15f;
-        float currentDistance = self.DistanceToOpponent;
-
         // Priority 1: Survive - if low health and not regenerating, create distance
         if (self.Health < LOW_HEALTH_THRESHOLD && !self.CanRegenerateHealth(combat.CurrentTimeMs))
         {
-            return self.Stamina > 50 ? MovementAction.SprintAway : MovementAction.WalkAway;
+            return self.Stamina > 50 ? MovementAction.Sprint : MovementAction.Walk;
         }
 
         // Priority 2: If health is low and can regenerate, stop and wait
@@ -86,22 +86,54 @@ public class SimpleAIV2
             return MovementAction.Stand;
         }
 
-        // Priority 3: Adjust position based on optimal range
+        // Priority 3: Movement based on tactical situation
+        // Use stamina for aggressive pushes if opponent is weak
+        if (opponent.Health < LOW_HEALTH_THRESHOLD && self.Stamina > 30)
+        {
+            return MovementAction.Sprint;
+        }
+
+        // Default: walk for mobility without exhausting stamina
+        if (_random.NextDouble() < 0.3)
+        {
+            return MovementAction.Walk;
+        }
+
+        // Otherwise stand
+        return MovementAction.Stand;
+    }
+
+    private PostureAction DecidePosture(Operator self, Operator opponent, CombatSystemV2 combat)
+    {
+        float currentDistance = self.DistanceToOpponent;
+        float optimalRange = 15f;
+
+        // Priority 1: Retreat if low health
+        if (self.Health < LOW_HEALTH_THRESHOLD)
+        {
+            return PostureAction.Retreat;
+        }
+
+        // Priority 2: Advance if opponent is weak and we're healthy
+        if (opponent.Health < LOW_HEALTH_THRESHOLD && self.Health > 60)
+        {
+            return PostureAction.Advance;
+        }
+
+        // Priority 3: Adjust posture based on distance to optimal range
         if (currentDistance > optimalRange + 5)
         {
-            // Too far, move closer
-            return (self.Stamina > 30 && opponent.Health > 50)
-                ? MovementAction.SprintToward
-                : MovementAction.WalkToward;
+            // Too far, advance posture
+            return PostureAction.Advance;
         }
         else if (currentDistance < optimalRange - 5)
         {
-            // Too close, back up
-            return MovementAction.WalkAway;
+            // Too close, retreat posture
+            return PostureAction.Retreat;
         }
 
-        // At optimal range, no movement needed
-        return MovementAction.Stand;
+        // At optimal range, hold
+        return PostureAction.Hold;
     }
 
     private StanceAction DecideStance(Operator self, Operator opponent, CombatSystemV2 combat)
@@ -165,7 +197,8 @@ public class SimpleAIV2
             _random.NextDouble() < 0.3)
         {
             var intents = new SimultaneousIntents(self.Id);
-            intents.Movement = MovementAction.SprintToward;
+            intents.Movement = MovementAction.Sprint;
+            intents.Posture = PostureAction.Advance;
             intents.Primary = PrimaryAction.Fire;
             newIntents = intents;
             return true;

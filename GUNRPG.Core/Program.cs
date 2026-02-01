@@ -121,16 +121,10 @@ while (combat.Phase != CombatPhase.Ended)
         movementOptions.Add(("0", "Cancel current movement", MovementAction.Stand));
     }
     
-    // Add new state-based movement options
+    // State-based movement options (affects accuracy, suppression, etc.)
     movementOptions.Add(("1", "Walk", MovementAction.Walk));
     movementOptions.Add(("2", "Sprint", MovementAction.Sprint));
     movementOptions.Add(("3", "Crouch", MovementAction.Crouch));
-    
-    // Legacy directional movement (still supported)
-    movementOptions.Add(("4", "Walk toward", MovementAction.WalkToward));
-    movementOptions.Add(("5", "Walk away", MovementAction.WalkAway));
-    movementOptions.Add(("6", "Sprint toward", MovementAction.SprintToward));
-    movementOptions.Add(("7", "Sprint away", MovementAction.SprintAway));
     
     if (canSlide)
     {
@@ -166,6 +160,31 @@ while (combat.Phase != CombatPhase.Ended)
         var selectedMovement = movementOptions.FirstOrDefault(o => o.key == movementKey.KeyChar.ToString());
         playerIntents.Movement = selectedMovement != default ? selectedMovement.action : MovementAction.Stand;
     }
+    
+    // Ask for Tactical Posture (separate from movement)
+    Console.WriteLine();
+    Console.WriteLine("═══ TACTICAL POSTURE ═══");
+    Console.WriteLine("(Affects suppression and hit probability, NOT spatial distance)");
+    
+    var postureOptions = new List<(string key, string label, PostureAction action)>
+    {
+        ("1", "Hold (neutral posture)", PostureAction.Hold),
+        ("2", "Advance (aggressive, more exposed)", PostureAction.Advance),
+        ("3", "Retreat (defensive, less exposed)", PostureAction.Retreat)
+    };
+    
+    foreach (var option in postureOptions)
+    {
+        Console.WriteLine($"{option.key}. {option.label}");
+    }
+    
+    Console.Write($"Choose tactical posture: ");
+    var postureKey = Console.ReadKey();
+    Console.WriteLine();
+    
+    // Map key to action using the available options
+    var selectedPosture = postureOptions.FirstOrDefault(o => o.key == postureKey.KeyChar.ToString());
+    playerIntents.Posture = selectedPosture != default ? selectedPosture.action : PostureAction.Hold;
     
     // Ask for Stance Action (adapt to current ADS state and filter incompatible options)
     Console.WriteLine();
@@ -289,7 +308,7 @@ while (combat.Phase != CombatPhase.Ended)
         Console.WriteLine($"✓ Player intents accepted");
         
         // Show warnings about auto-adjustments
-        if ((playerIntents.Movement == MovementAction.SprintToward || playerIntents.Movement == MovementAction.SprintAway) &&
+        if ((playerIntents.Movement == MovementAction.Sprint) &&
             playerIntents.Stance == StanceAction.EnterADS)
         {
             Console.WriteLine("  ℹ Note: Sprinting will prevent ADS or exit it if already in ADS");
@@ -306,7 +325,7 @@ while (combat.Phase != CombatPhase.Ended)
     }
     else
     {
-        Console.WriteLine($"✓ Enemy intents: Primary={enemyIntents.Primary}, Movement={enemyIntents.Movement}, Stance={enemyIntents.Stance}");
+        Console.WriteLine($"✓ Enemy intents: Primary={enemyIntents.Primary}, Movement={enemyIntents.Movement}, Posture={enemyIntents.Posture}, Stance={enemyIntents.Stance}");
     }
     
     Console.WriteLine();
