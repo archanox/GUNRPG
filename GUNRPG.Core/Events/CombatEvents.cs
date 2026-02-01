@@ -549,10 +549,12 @@ public class MovementIntervalEvent : ISimulationEvent
 
     public bool Execute()
     {
-        _mover.DistanceToOpponent += _distance; // Positive = away, negative = toward
+        // Movement no longer changes distance - it only affects combat modifiers
+        // Distance is now static unless explicitly changed by player actions
         _mover.MetersMovedSinceLastReaction += Math.Abs(_distance);
         
-        Console.WriteLine($"[{EventTimeMs}ms] {_mover.Name} moved {_distance:F1}m (distance now: {_mover.DistanceToOpponent:F1}m)");
+        // Movement state affects accuracy, suppression, etc. but not position
+        Console.WriteLine($"[{EventTimeMs}ms] {_mover.Name} moved {_distance:F1}m worth of commitment (distance unchanged: {_mover.DistanceToOpponent:F1}m)");
 
         // Check if this triggers a reaction window
         if (_mover.MetersMovedSinceLastReaction >= _metersPerCommitmentUnit)
