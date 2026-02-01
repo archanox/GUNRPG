@@ -7,7 +7,10 @@ namespace GUNRPG.Core.Events;
 /// </summary>
 public sealed class MovementStartedEvent : ISimulationEvent
 {
-    public const int DefaultDurationMs = 2;
+    /// <summary>
+    /// Minimum event duration for timeline rendering (milliseconds).
+    /// </summary>
+    public const int MinEventDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
@@ -59,7 +62,10 @@ public sealed class MovementStartedEvent : ISimulationEvent
 /// </summary>
 public sealed class MovementCancelledEvent : ISimulationEvent
 {
-    public const int DefaultDurationMs = 2;
+    /// <summary>
+    /// Minimum event duration for timeline rendering (milliseconds).
+    /// </summary>
+    public const int MinEventDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
@@ -106,7 +112,10 @@ public sealed class MovementCancelledEvent : ISimulationEvent
 /// </summary>
 public sealed class MovementEndedEvent : ISimulationEvent
 {
-    public const int DefaultDurationMs = 2;
+    /// <summary>
+    /// Minimum event duration for timeline rendering (milliseconds).
+    /// </summary>
+    public const int MinEventDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
@@ -148,7 +157,10 @@ public sealed class MovementEndedEvent : ISimulationEvent
 /// </summary>
 public sealed class CoverEnteredEvent : ISimulationEvent
 {
-    public const int DefaultDurationMs = 2;
+    /// <summary>
+    /// Minimum event duration for timeline rendering (milliseconds).
+    /// </summary>
+    public const int MinEventDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
@@ -189,7 +201,10 @@ public sealed class CoverEnteredEvent : ISimulationEvent
 /// </summary>
 public sealed class CoverExitedEvent : ISimulationEvent
 {
-    public const int DefaultDurationMs = 2;
+    /// <summary>
+    /// Minimum event duration for timeline rendering (milliseconds).
+    /// </summary>
+    public const int MinEventDurationMs = 2;
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }

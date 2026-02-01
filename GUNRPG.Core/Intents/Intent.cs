@@ -283,9 +283,9 @@ public class CrouchIntent : Intent
 {
     public long DurationMs { get; set; }
 
-    public CrouchIntent(Guid operatorId, long durationMs = -1) : base(operatorId, IntentType.Crouch)
+    public CrouchIntent(Guid operatorId, long durationMs = 5000) : base(operatorId, IntentType.Crouch)
     {
-        DurationMs = durationMs; // -1 means indefinite
+        DurationMs = durationMs;
     }
 
     public override (bool isValid, string? errorMessage) Validate(Operators.Operator op)

@@ -77,7 +77,13 @@ while (combat.Phase != CombatPhase.Ended)
     
     Console.WriteLine("╔═══════════════════════════════════════════════════════════════════╗");
     Console.WriteLine($"║ HP: {player.Health,5:F0}/{player.MaxHealth:F0}  │ Ammo: {player.CurrentAmmo,3}/{magazineSize}  │ Stamina: {player.Stamina,5:F0}  │ Distance: {player.DistanceToOpponent,5:F1}m ║");
-    Console.WriteLine($"║ Movement: {movementDisplay,-18} │ Cover: {coverDisplay,-12} │ ADS: {playerADS*100,3:F0}%     ║");
+    
+    // Truncate movement display if too long to maintain alignment
+    string truncatedMovementDisplay = movementDisplay.Length > 18 
+        ? movementDisplay.Substring(0, 15) + "..." 
+        : movementDisplay;
+    
+    Console.WriteLine($"║ Movement: {truncatedMovementDisplay,-18} │ Cover: {coverDisplay,-12} │ ADS: {playerADS*100,3:F0}%     ║");
     Console.WriteLine($"║ Suppression: {suppressionDisplay,-45} ║");
     Console.WriteLine("╚═══════════════════════════════════════════════════════════════════╝");
     Console.WriteLine();

@@ -15,8 +15,14 @@ public sealed class ShotResolutionDetails
 {
     public float BaseAimAngle { get; set; }
     public float AimError { get; set; }
+    public float SwayNoise { get; set; }
     public float RecoilAdded { get; set; }
     public float FinalAimAngle { get; set; }
+    
+    /// <summary>
+    /// Total aim deviation including both aim error and sway noise.
+    /// </summary>
+    public float TotalAimDeviation => AimError + SwayNoise;
 }
 
 /// <summary>
@@ -125,7 +131,8 @@ public static class HitResolution
         if (details != null)
         {
             details.BaseAimAngle = targetAngle;
-            details.AimError = aimError + swayNoise; // Include sway in aim error for reporting
+            details.AimError = aimError;
+            details.SwayNoise = swayNoise;
             details.RecoilAdded = totalVerticalRecoil;
             details.FinalAimAngle = finalAngle;
         }
