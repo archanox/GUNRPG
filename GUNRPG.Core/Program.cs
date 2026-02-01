@@ -164,7 +164,7 @@ while (combat.Phase != CombatPhase.Ended)
     // Ask for Tactical Posture (separate from movement)
     Console.WriteLine();
     Console.WriteLine("═══ TACTICAL POSTURE ═══");
-    Console.WriteLine("(Affects suppression and hit probability, NOT spatial distance)");
+    Console.WriteLine("(Affects suppression and hit probability, not spatial distance)");
     
     var postureOptions = new List<(string key, string label, PostureAction action)>
     {

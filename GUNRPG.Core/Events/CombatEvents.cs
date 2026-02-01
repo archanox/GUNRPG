@@ -555,8 +555,8 @@ public class MovementIntervalEvent : ISimulationEvent
         // Distance is now static unless explicitly changed by player actions
         _mover.MetersMovedSinceLastReaction += Math.Abs(_distance);
         
-        // Movement state affects accuracy, suppression, etc. but not position
-        Console.WriteLine($"[{EventTimeMs}ms] {_mover.Name} moved {_distance:F1}m worth of commitment (distance unchanged: {_mover.DistanceToOpponent:F1}m)");
+        // Tactical commitment affects reaction windows, not spatial position
+        Console.WriteLine($"[{EventTimeMs}ms] {_mover.Name} committed {_distance:F1}m of tactical movement (position unchanged: {_mover.DistanceToOpponent:F1}m)");
 
         // Check if this triggers a reaction window
         if (_mover.MetersMovedSinceLastReaction >= _metersPerCommitmentUnit)
