@@ -5,9 +5,11 @@ namespace GUNRPG.Core.Operators;
 /// </summary>
 public enum MovementState
 {
-    Idle,
+    Stationary,
+    Idle, // Alias for Stationary, kept for backward compatibility
     Walking,
     Sprinting,
+    Crouching,
     Sliding
 }
 
@@ -30,4 +32,14 @@ public enum WeaponState
     Ready,
     Reloading,
     Jammed
+}
+
+/// <summary>
+/// Cover state of an operator.
+/// </summary>
+public enum CoverState
+{
+    None,
+    Partial,
+    Full
 }

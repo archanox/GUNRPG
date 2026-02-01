@@ -154,6 +154,11 @@ public sealed class CombatEventTimelineRenderer
             SuppressionStartedEvent => MinEventDurationMs,
             SuppressionUpdatedEvent => MinEventDurationMs,
             SuppressionEndedEvent suppressionEnded => Math.Max((int)suppressionEnded.DurationMs, MinEventDurationMs),
+            MovementStartedEvent movementStarted => Math.Max((int)movementStarted.DurationMs, MinEventDurationMs),
+            MovementCancelledEvent => MinEventDurationMs,
+            MovementEndedEvent => MinEventDurationMs,
+            CoverEnteredEvent => MinEventDurationMs,
+            CoverExitedEvent => MinEventDurationMs,
             _ => MinEventDurationMs
         };
     }
@@ -190,6 +195,17 @@ public sealed class CombatEventTimelineRenderer
             case SuppressionEndedEvent suppressionEnded:
                 // Suppression ended event represents the entire duration
                 start = eventTime - (int)suppressionEnded.DurationMs;
+                end = eventTime;
+                break;
+            case MovementStartedEvent movementStarted:
+                // Movement shows duration from start to end
+                start = eventTime;
+                end = (int)movementStarted.EndTimeMs;
+                break;
+            case MovementCancelledEvent movementCancelled:
+                // Show cancelled movement as a bar ending at cancellation time
+                // We don't have the original start time, so just show a short marker
+                start = eventTime - MinEventDurationMs;
                 end = eventTime;
                 break;
         }

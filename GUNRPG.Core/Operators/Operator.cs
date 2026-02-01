@@ -25,6 +25,12 @@ public class Operator
     public AimState AimState { get; set; }
     public WeaponState WeaponState { get; set; }
 
+    // Movement System
+    public MovementState CurrentMovement { get; set; }
+    public CoverState CurrentCover { get; set; }
+    public long? MovementEndTimeMs { get; set; }
+    public bool IsMoving => MovementEndTimeMs.HasValue;
+
     // Equipment
     public Weapon? EquippedWeapon { get; set; }
     public int CurrentAmmo { get; set; }
@@ -166,6 +172,11 @@ public class Operator
         MovementState = MovementState.Idle;
         AimState = AimState.Hip;
         WeaponState = WeaponState.Ready;
+        
+        // Initialize movement system
+        CurrentMovement = MovementState.Stationary;
+        CurrentCover = CoverState.None;
+        MovementEndTimeMs = null;
         
         // Default regeneration values (Call of Duty style)
         HealthRegenDelayMs = 5000f; // 5 seconds
@@ -424,5 +435,172 @@ public class Operator
 
         // Linear interpolation between hip and ADS spread
         return hipSpread + (adsSpread - hipSpread) * adsProgress;
+    }
+
+    /// <summary>
+    /// Starts a movement action. Cancels any existing movement.
+    /// </summary>
+    /// <param name="movementType">Type of movement to start</param>
+    /// <param name="durationMs">Duration of the movement in milliseconds</param>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    /// <param name="eventQueue">Optional event queue for emitting events</param>
+    /// <returns>True if movement was started, false if invalid</returns>
+    public bool StartMovement(MovementState movementType, long durationMs, long currentTimeMs, Events.EventQueue? eventQueue = null)
+    {
+        // Can't start stationary/idle movement explicitly
+        if (movementType == MovementState.Stationary || movementType == MovementState.Idle)
+            return false;
+
+        // Cancel existing movement if any
+        if (IsMoving && MovementEndTimeMs.HasValue)
+        {
+            long remainingMs = MovementEndTimeMs.Value - currentTimeMs;
+            if (remainingMs > 0 && eventQueue != null)
+            {
+                eventQueue.Schedule(new Events.MovementCancelledEvent(
+                    currentTimeMs,
+                    this,
+                    CurrentMovement,
+                    remainingMs,
+                    eventQueue.GetNextSequenceNumber()));
+            }
+        }
+
+        // Start new movement
+        CurrentMovement = movementType;
+        MovementEndTimeMs = currentTimeMs + durationMs;
+
+        // Emit movement started event
+        if (eventQueue != null)
+        {
+            eventQueue.Schedule(new Events.MovementStartedEvent(
+                currentTimeMs,
+                this,
+                movementType,
+                MovementEndTimeMs.Value,
+                eventQueue.GetNextSequenceNumber()));
+
+            // Schedule movement ended event
+            eventQueue.Schedule(new Events.MovementEndedEvent(
+                MovementEndTimeMs.Value,
+                this,
+                movementType,
+                eventQueue.GetNextSequenceNumber()));
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Cancels the current movement immediately.
+    /// </summary>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    /// <param name="eventQueue">Optional event queue for emitting events</param>
+    /// <returns>True if movement was cancelled, false if no movement was active</returns>
+    public bool CancelMovement(long currentTimeMs, Events.EventQueue? eventQueue = null)
+    {
+        if (!IsMoving || !MovementEndTimeMs.HasValue)
+            return false;
+
+        long remainingMs = MovementEndTimeMs.Value - currentTimeMs;
+        MovementState cancelledType = CurrentMovement;
+
+        // Update state
+        CurrentMovement = MovementState.Stationary;
+        MovementEndTimeMs = null;
+
+        // Emit cancellation event
+        if (eventQueue != null)
+        {
+            eventQueue.Schedule(new Events.MovementCancelledEvent(
+                currentTimeMs,
+                this,
+                cancelledType,
+                Math.Max(0, remainingMs),
+                eventQueue.GetNextSequenceNumber()));
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Attempts to enter cover. Only succeeds if movement allows it.
+    /// </summary>
+    /// <param name="coverType">Type of cover to enter</param>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    /// <param name="eventQueue">Optional event queue for emitting events</param>
+    /// <returns>True if cover was entered, false otherwise</returns>
+    public bool EnterCover(CoverState coverType, long currentTimeMs, Events.EventQueue? eventQueue = null)
+    {
+        if (coverType == CoverState.None)
+            return false;
+
+        if (!Combat.MovementModel.CanEnterCover(CurrentMovement))
+            return false;
+
+        CoverState previousCover = CurrentCover;
+        CurrentCover = coverType;
+
+        // Emit cover entered event
+        if (eventQueue != null)
+        {
+            if (previousCover != CoverState.None)
+            {
+                eventQueue.Schedule(new Events.CoverExitedEvent(
+                    currentTimeMs,
+                    this,
+                    previousCover,
+                    eventQueue.GetNextSequenceNumber()));
+            }
+
+            eventQueue.Schedule(new Events.CoverEnteredEvent(
+                currentTimeMs,
+                this,
+                coverType,
+                eventQueue.GetNextSequenceNumber()));
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Exits the current cover.
+    /// </summary>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    /// <param name="eventQueue">Optional event queue for emitting events</param>
+    /// <returns>True if cover was exited, false if no cover was active</returns>
+    public bool ExitCover(long currentTimeMs, Events.EventQueue? eventQueue = null)
+    {
+        if (CurrentCover == CoverState.None)
+            return false;
+
+        CoverState exitedType = CurrentCover;
+        CurrentCover = CoverState.None;
+
+        // Emit cover exited event
+        if (eventQueue != null)
+        {
+            eventQueue.Schedule(new Events.CoverExitedEvent(
+                currentTimeMs,
+                this,
+                exitedType,
+                eventQueue.GetNextSequenceNumber()));
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Updates movement state based on current time.
+    /// Should be called during time advancement.
+    /// </summary>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    public void UpdateMovement(long currentTimeMs)
+    {
+        if (IsMoving && MovementEndTimeMs.HasValue && currentTimeMs >= MovementEndTimeMs.Value)
+        {
+            CurrentMovement = MovementState.Stationary;
+            MovementEndTimeMs = null;
+        }
     }
 }
