@@ -2,18 +2,9 @@ namespace GUNRPG.Core.Combat;
 
 /// <summary>
 /// Models suppression mechanics - the psychological pressure from near-misses and incoming fire
-/// that affects operator performance without dealing damage.
-/// 
-/// Design goals:
-/// - Suppression is triggered when shots threaten a target but do not hit
-/// - Suppression applies temporary penalties that decay over time
-/// - Suppression complements flinch (hit-based) but does not replace it
-/// - System integrates cleanly with existing event/timeline architecture
-/// 
-/// Constraints:
-/// - No stun-locks: suppression must never fully prevent actions
-/// - No randomness-only outcomes: suppression biases probabilities, not overrides them
-/// - Keep weapon stats faithful; operator state handles mitigation
+/// that affects operator performance without dealing damage. Suppression is triggered by
+/// threatening shots that miss, applies temporary penalties that decay over time, and
+/// complements flinch (hit-based) without replacing it.
 /// </summary>
 public static class SuppressionModel
 {
