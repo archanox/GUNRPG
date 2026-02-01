@@ -88,12 +88,14 @@ public static class SuppressionModel
     /// <param name="weaponFireRateRPM">Weapon fire rate in rounds per minute</param>
     /// <param name="distanceMeters">Distance between shooter and target</param>
     /// <param name="angularDeviationDegrees">How close the shot came to hitting (degrees)</param>
+    /// <param name="targetMovementState">Optional movement state of the target to apply modifiers</param>
     /// <returns>Suppression severity to apply (0.0 - 1.0)</returns>
     public static float CalculateSuppressionSeverity(
         float weaponSuppressionFactor,
         float weaponFireRateRPM,
         float distanceMeters,
-        float angularDeviationDegrees)
+        float angularDeviationDegrees,
+        Operators.MovementState? targetMovementState = null)
     {
         // No suppression if shot was too far off
         if (Math.Abs(angularDeviationDegrees) > SuppressionAngleThresholdDegrees)
@@ -114,6 +116,13 @@ public static class SuppressionModel
         float closenessFactor = 1.0f - (Math.Abs(angularDeviationDegrees) / SuppressionAngleThresholdDegrees);
 
         float severity = baseSuppression * fireRateFactor * distanceFactor * closenessFactor;
+
+        // Apply movement modifier for target
+        if (targetMovementState.HasValue)
+        {
+            float movementMultiplier = MovementModel.GetSuppressionBuildupMultiplier(targetMovementState.Value);
+            severity *= movementMultiplier;
+        }
 
         return Math.Clamp(severity, 0f, MaxSuppressionLevel);
     }
@@ -138,8 +147,9 @@ public static class SuppressionModel
     /// <param name="currentSuppression">Current suppression level</param>
     /// <param name="deltaMs">Time elapsed since last update</param>
     /// <param name="isUnderFire">Whether the operator is currently under continued fire</param>
+    /// <param name="movementState">Optional movement state to apply decay modifiers</param>
     /// <returns>New suppression level after decay</returns>
-    public static float ApplyDecay(float currentSuppression, long deltaMs, bool isUnderFire)
+    public static float ApplyDecay(float currentSuppression, long deltaMs, bool isUnderFire, Operators.MovementState? movementState = null)
     {
         if (currentSuppression <= MinSuppressionLevel)
             return MinSuppressionLevel;
@@ -148,6 +158,13 @@ public static class SuppressionModel
         float effectiveDecayRate = isUnderFire 
             ? DecayRatePerSecond * DecayRateUnderFireMultiplier 
             : DecayRatePerSecond;
+
+        // Apply movement modifier for decay rate
+        if (movementState.HasValue)
+        {
+            float movementMultiplier = MovementModel.GetSuppressionDecayMultiplier(movementState.Value);
+            effectiveDecayRate *= movementMultiplier;
+        }
 
         // Exponential decay: S(t) = S0 * e^(-rate * t)
         float decayFactor = (float)Math.Exp(-effectiveDecayRate * deltaSeconds);
