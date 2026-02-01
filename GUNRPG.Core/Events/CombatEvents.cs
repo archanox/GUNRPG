@@ -246,7 +246,7 @@ public class ShotFiredEvent : ISimulationEvent
                 IntendedBodyPart = targetBodyPart,
                 DistanceMeters = _shooter.DistanceToOpponent,
                 BaseAimAngle = details.BaseAimAngle,
-                AimError = details.AimError,
+                AimError = details.TotalAimDeviation, // Include both aim error and sway
                 RecoilAdded = details.RecoilAdded,
                 RecoilRecovered = recoilRecovered,
                 FinalAimAngle = details.FinalAimAngle,
