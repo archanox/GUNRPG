@@ -84,7 +84,6 @@ public class SuppressionIntegrationTests
             AccuracyProficiency = 0.8f
         };
 
-        float baseProficiency = op.AccuracyProficiency;
         float baseEffective = op.GetEffectiveAccuracyProficiency();
         
         // Apply suppression
@@ -120,14 +119,6 @@ public class SuppressionIntegrationTests
             DistanceToOpponent = 15f,
             Accuracy = 0.0f  // Ensure misses to test suppression
         };
-        var enemy = new Operator("Enemy")
-        {
-            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
-            CurrentAmmo = 30,
-            DistanceToOpponent = 15f,
-            Accuracy = 0.0f  // Ensure misses
-        };
-
         // Manually apply suppression to test decay
         player.ApplySuppression(0.5f, currentTimeMs: 0);
         float initialSuppression = player.SuppressionLevel;
@@ -217,9 +208,6 @@ public class SuppressionIntegrationTests
             AccuracyProficiency = 0.8f
         };
 
-        // Get baseline
-        float baseline = op.GetEffectiveAccuracyProficiency();
-
         // Apply flinch only
         op.ApplyFlinch(0.5f);
         float flinchOnly = op.GetEffectiveAccuracyProficiency();
@@ -247,7 +235,6 @@ public class SuppressionIntegrationTests
         
         // Apply initial suppression
         op.ApplySuppression(0.8f, currentTimeMs: 100);
-        float initialLevel = op.SuppressionLevel;
 
         // Decay without continued fire
         var op2 = new Operator("Test2");

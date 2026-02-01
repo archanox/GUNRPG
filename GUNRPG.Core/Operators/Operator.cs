@@ -246,7 +246,6 @@ public class Operator
             return false;
 
         bool wasNotSuppressed = !IsSuppressed;
-        float previousLevel = SuppressionLevel;
 
         SuppressionLevel = SuppressionModel.CombineSuppression(SuppressionLevel, severity);
         LastSuppressionApplicationMs = currentTimeMs;

@@ -291,8 +291,16 @@ public class ShotFiredEvent : ISimulationEvent
             // Overshoot - deviation is distance above max
             return finalAngleDegrees - MaxValidHitAngle;
         }
-        
-        // Shot was within valid range (shouldn't happen for a miss, but return 0)
+
+
+        // Shot was within the valid hit range [MinValidHitAngle, MaxValidHitAngle].
+        // When this method is used from miss-handling logic, reaching this branch
+        // indicates a potential upstream logic error (a hit treated as a miss).
+#if DEBUG
+        System.Diagnostics.Debug.Fail(
+            $"CalculateAngularDeviation was called with an in-range angle ({finalAngleDegrees}°). " +
+            "This suggests a hit was passed to miss-handling logic.");
+#endif
         return 0f;
     }
 
