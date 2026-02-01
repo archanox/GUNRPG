@@ -585,10 +585,12 @@ public class CombatSystemV2
         if (op.SuppressionLevel <= 0f)
             return;
 
-        // Track suppression start time for timeline
+        // Track suppression start time for timeline - use the first suppression application time
         if (!_suppressionStartTimes.ContainsKey(op.Id))
         {
-            _suppressionStartTimes[op.Id] = currentTimeMs - deltaMs;
+            // Use LastSuppressionApplicationMs as the start time if available,
+            // otherwise fall back to current time (shouldn't happen normally)
+            _suppressionStartTimes[op.Id] = op.LastSuppressionApplicationMs ?? currentTimeMs;
             _peakSuppressionLevels[op.Id] = op.SuppressionLevel;
         }
         else

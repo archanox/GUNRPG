@@ -10,6 +10,16 @@ namespace GUNRPG.Core.Events;
 /// </summary>
 public class ShotFiredEvent : ISimulationEvent
 {
+    /// <summary>
+    /// Minimum valid angle for a body hit (degrees). Shots below this are undershoots.
+    /// </summary>
+    private const float MinValidHitAngle = 0.0f;
+
+    /// <summary>
+    /// Maximum valid angle for a body hit (degrees). Shots above this are overshoots.
+    /// </summary>
+    private const float MaxValidHitAngle = 1.0f;
+
     public long EventTimeMs { get; }
     public Guid OperatorId { get; }
     public int SequenceNumber { get; }
@@ -266,24 +276,20 @@ public class ShotFiredEvent : ISimulationEvent
     }
 
     /// <summary>
-    /// Calculates how far the shot deviated from the valid hit zone (0-1 degrees).
+    /// Calculates how far the shot deviated from the valid hit zone.
     /// Used for suppression calculation - closer misses are more suppressive.
     /// </summary>
     private static float CalculateAngularDeviation(float finalAngleDegrees)
     {
-        // Valid hit zone is 0.0 - 1.0 degrees
-        const float minValidAngle = 0.0f;
-        const float maxValidAngle = 1.0f;
-
-        if (finalAngleDegrees < minValidAngle)
+        if (finalAngleDegrees < MinValidHitAngle)
         {
             // Undershoot - deviation is distance below min
-            return minValidAngle - finalAngleDegrees;
+            return MinValidHitAngle - finalAngleDegrees;
         }
-        else if (finalAngleDegrees > maxValidAngle)
+        else if (finalAngleDegrees > MaxValidHitAngle)
         {
             // Overshoot - deviation is distance above max
-            return finalAngleDegrees - maxValidAngle;
+            return finalAngleDegrees - MaxValidHitAngle;
         }
         
         // Shot was within valid range (shouldn't happen for a miss, but return 0)
