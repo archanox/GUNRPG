@@ -280,6 +280,13 @@ public class CombatSystemV2
 
     private void ProcessSimultaneousIntents(Operator op, SimultaneousIntents intents)
     {
+        // Process movement cancellation first (immediate)
+        if (intents.CancelMovement && op.IsMoving)
+        {
+            op.CancelMovement(_time.CurrentTimeMs, _eventQueue);
+            Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} cancelled movement");
+        }
+
         // Process stance first (ADS changes)
         if (intents.Stance != StanceAction.None)
         {
@@ -290,6 +297,12 @@ public class CombatSystemV2
         if (intents.Movement != MovementAction.Stand)
         {
             ProcessMovementAction(op, intents.Movement);
+        }
+
+        // Process cover actions
+        if (intents.Cover != CoverAction.None)
+        {
+            ProcessCoverAction(op, intents.Cover);
         }
 
         // Process primary action last
@@ -358,7 +371,7 @@ public class CombatSystemV2
     private void ProcessMovementAction(Operator op, MovementAction movement)
     {
         // Sprinting auto-exits ADS
-        if ((movement == MovementAction.SprintToward || movement == MovementAction.SprintAway) &&
+        if ((movement == MovementAction.SprintToward || movement == MovementAction.SprintAway || movement == MovementAction.Sprint) &&
             (op.AimState == AimState.ADS || op.AimState == AimState.TransitioningToADS))
         {
             op.AimState = AimState.Hip;
@@ -368,6 +381,7 @@ public class CombatSystemV2
 
         switch (movement)
         {
+            // Legacy directional movement
             case MovementAction.WalkToward:
                 op.MovementState = MovementState.Walking;
                 ScheduleMovementUpdate(op, true, op.WalkSpeed);
@@ -391,6 +405,49 @@ public class CombatSystemV2
             case MovementAction.SlideToward:
             case MovementAction.SlideAway:
                 ProcessSlide(op, movement == MovementAction.SlideToward);
+                break;
+
+            // New state-based movement
+            case MovementAction.Walk:
+                op.StartMovement(MovementState.Walking, 1000, _time.CurrentTimeMs, _eventQueue);
+                Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} started walking");
+                break;
+
+            case MovementAction.Sprint:
+                op.StartMovement(MovementState.Sprinting, 2000, _time.CurrentTimeMs, _eventQueue);
+                Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} started sprinting");
+                break;
+
+            case MovementAction.Crouch:
+                op.StartMovement(MovementState.Crouching, -1, _time.CurrentTimeMs, _eventQueue);
+                Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} started crouching");
+                break;
+        }
+    }
+
+    private void ProcessCoverAction(Operator op, CoverAction cover)
+    {
+        switch (cover)
+        {
+            case CoverAction.EnterPartial:
+                if (op.EnterCover(CoverState.Partial, _time.CurrentTimeMs, _eventQueue))
+                {
+                    Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} entered partial cover");
+                }
+                break;
+
+            case CoverAction.EnterFull:
+                if (op.EnterCover(CoverState.Full, _time.CurrentTimeMs, _eventQueue))
+                {
+                    Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} entered full cover");
+                }
+                break;
+
+            case CoverAction.Exit:
+                if (op.ExitCover(_time.CurrentTimeMs, _eventQueue))
+                {
+                    Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} exited cover");
+                }
                 break;
         }
     }

@@ -23,7 +23,23 @@ public enum MovementAction
     SprintToward,
     SprintAway,
     SlideToward,
-    SlideAway
+    SlideAway,
+    
+    // New state-based movement
+    Walk,
+    Sprint,
+    Crouch
+}
+
+/// <summary>
+/// Cover actions.
+/// </summary>
+public enum CoverAction
+{
+    None,
+    EnterPartial,
+    EnterFull,
+    Exit
 }
 
 /// <summary>
@@ -45,6 +61,8 @@ public class SimultaneousIntents
     public PrimaryAction Primary { get; set; }
     public MovementAction Movement { get; set; }
     public StanceAction Stance { get; set; }
+    public CoverAction Cover { get; set; }
+    public bool CancelMovement { get; set; }
     public long SubmittedAtMs { get; set; }
 
     public SimultaneousIntents(Guid operatorId)
@@ -53,6 +71,8 @@ public class SimultaneousIntents
         Primary = PrimaryAction.None;
         Movement = MovementAction.Stand;
         Stance = StanceAction.None;
+        Cover = CoverAction.None;
+        CancelMovement = false;
     }
 
     /// <summary>
@@ -117,6 +137,7 @@ public class SimultaneousIntents
         {
             case MovementAction.SprintToward:
             case MovementAction.SprintAway:
+            case MovementAction.Sprint:
                 if (op.Stamina <= 0)
                     return (false, "Cannot sprint: no stamina");
                 break;
@@ -156,6 +177,26 @@ public class SimultaneousIntents
 
     private (bool isValid, string? errorMessage) ValidateCombinations(Operator op)
     {
+        // Validate cover actions
+        if (Cover != CoverAction.None)
+        {
+            if (Cover == CoverAction.Exit && op.CurrentCover == CoverState.None)
+                return (false, "Not in cover");
+            
+            if ((Cover == CoverAction.EnterPartial || Cover == CoverAction.EnterFull) && op.CurrentCover != CoverState.None)
+                return (false, "Already in cover");
+            
+            // Can only enter cover when stationary or crouching
+            if ((Cover == CoverAction.EnterPartial || Cover == CoverAction.EnterFull) && 
+                !Combat.MovementModel.CanEnterCover(op.CurrentMovement) &&
+                Movement != MovementAction.Stand && Movement != MovementAction.Crouch)
+                return (false, "Can only enter cover when stationary or crouching");
+        }
+
+        // Cannot cancel movement if not moving
+        if (CancelMovement && !op.IsMoving)
+            return (false, "Not currently moving");
+
         // Cannot initiate ADS while actively firing
         if (Stance == StanceAction.EnterADS && Primary == PrimaryAction.Fire)
         {
@@ -164,7 +205,7 @@ public class SimultaneousIntents
         }
 
         // Sprinting auto-exits ADS (handled in processing)
-        if ((Movement == MovementAction.SprintToward || Movement == MovementAction.SprintAway))
+        if ((Movement == MovementAction.SprintToward || Movement == MovementAction.SprintAway || Movement == MovementAction.Sprint))
         {
             // This is valid, but will auto-exit ADS in processing
         }
@@ -185,7 +226,9 @@ public class SimultaneousIntents
     {
         return Primary != PrimaryAction.None ||
                Movement != MovementAction.Stand ||
-               Stance != StanceAction.None;
+               Stance != StanceAction.None ||
+               Cover != CoverAction.None ||
+               CancelMovement;
     }
 
     /// <summary>
