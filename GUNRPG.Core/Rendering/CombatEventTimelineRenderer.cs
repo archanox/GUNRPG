@@ -151,6 +151,9 @@ public sealed class CombatEventTimelineRenderer
             MovementIntervalEvent movement => Math.Max(movement.IntervalDurationMs, MinEventDurationMs),
             SlideCompleteEvent slide => Math.Max(slide.ActionDurationMs, MinEventDurationMs),
             MicroReactionEvent microReaction => Math.Max(microReaction.ActionDurationMs, MinEventDurationMs),
+            SuppressionStartedEvent => MinEventDurationMs,
+            SuppressionUpdatedEvent => MinEventDurationMs,
+            SuppressionEndedEvent suppressionEnded => Math.Max((int)suppressionEnded.DurationMs, MinEventDurationMs),
             _ => MinEventDurationMs
         };
     }
@@ -182,6 +185,11 @@ public sealed class CombatEventTimelineRenderer
                 break;
             case SlideCompleteEvent slide:
                 start = eventTime - Math.Max(slide.ActionDurationMs, MinEventDurationMs);
+                end = eventTime;
+                break;
+            case SuppressionEndedEvent suppressionEnded:
+                // Suppression ended event represents the entire duration
+                start = eventTime - (int)suppressionEnded.DurationMs;
                 end = eventTime;
                 break;
         }

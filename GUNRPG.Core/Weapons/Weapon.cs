@@ -63,6 +63,13 @@ public class Weapon
     public float AimingIdleSwayDegreesPerSecond { get; set; }
     public int AimingIdleSwayDelayMs { get; set; }
     public float FlinchResistance { get; set; }
+
+    /// <summary>
+    /// Suppression factor for this weapon class.
+    /// Higher values = more suppressive (LMGs > ARs > SMGs).
+    /// Typical values: SMG = 0.8, AR = 1.0, LMG = 1.5
+    /// </summary>
+    public float SuppressionFactor { get; set; }
     
     // Recoil Stats
     public float VerticalRecoil { get; set; }
@@ -96,6 +103,7 @@ public class Weapon
         HeadshotMultiplier = 1.5f;
         ADSMovementSpeedMultiplier = 0.6f;
         BulletsPerCommitmentUnit = 3; // Default: reaction every 3 bullets
+        SuppressionFactor = 1.0f; // Default: AR-level suppression
     }
 
     /// <summary>

@@ -110,6 +110,34 @@ public class Operator
     public int FlinchShotsRemaining { get; private set; }
     public int FlinchDurationShots { get; set; }
 
+    // Suppression tracking
+    private float _suppressionLevel;
+    /// <summary>
+    /// Current suppression level (0.0 - 1.0). Suppression is caused by near-misses
+    /// and incoming fire that threatens the operator without dealing damage.
+    /// Higher values = more severe performance penalties.
+    /// </summary>
+    public float SuppressionLevel
+    {
+        get => _suppressionLevel;
+        private set => _suppressionLevel = Math.Clamp(value, 0f, 1f);
+    }
+
+    /// <summary>
+    /// Returns true if the operator is currently suppressed (suppression level above threshold).
+    /// </summary>
+    public bool IsSuppressed => _suppressionLevel >= SuppressionModel.SuppressionThreshold;
+
+    /// <summary>
+    /// Time when suppression decay should start (after suppression ends).
+    /// </summary>
+    public long? SuppressionDecayStartMs { get; set; }
+
+    /// <summary>
+    /// Time of the last suppression application (for tracking "under fire" state).
+    /// </summary>
+    public long? LastSuppressionApplicationMs { get; set; }
+
     // Shot telemetry tracking
     public int ShotsFiredCount { get; private set; }
 
@@ -202,6 +230,86 @@ public class Operator
 
         if (FlinchShotsRemaining == 0)
             FlinchSeverity = 0f;
+    }
+
+    /// <summary>
+    /// Applies suppression from a near-miss or threatening shot.
+    /// Suppression stacks up to the maximum level.
+    /// </summary>
+    /// <param name="severity">Suppression severity to apply (0.0 - 1.0)</param>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    /// <returns>True if suppression was newly applied (operator became suppressed)</returns>
+    public bool ApplySuppression(float severity, long currentTimeMs)
+    {
+        severity = Math.Clamp(severity, 0f, 1f);
+        if (severity <= 0f)
+            return false;
+
+        bool wasNotSuppressed = !IsSuppressed;
+        float previousLevel = SuppressionLevel;
+
+        SuppressionLevel = SuppressionModel.CombineSuppression(SuppressionLevel, severity);
+        LastSuppressionApplicationMs = currentTimeMs;
+        SuppressionDecayStartMs = null; // Reset decay while under fire
+
+        return wasNotSuppressed && IsSuppressed;
+    }
+
+    /// <summary>
+    /// Updates suppression decay over time.
+    /// Should be called during time advancement.
+    /// </summary>
+    /// <param name="deltaMs">Time elapsed since last update</param>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    /// <returns>True if suppression ended (operator is no longer suppressed)</returns>
+    public bool UpdateSuppressionDecay(long deltaMs, long currentTimeMs)
+    {
+        if (SuppressionLevel <= 0f)
+            return false;
+
+        bool wasSuppressed = IsSuppressed;
+
+        // Determine if under continued fire
+        bool isUnderFire = LastSuppressionApplicationMs.HasValue &&
+            (currentTimeMs - LastSuppressionApplicationMs.Value) < SuppressionModel.ContinuedFireWindowMs;
+
+        // Apply decay
+        SuppressionLevel = SuppressionModel.ApplyDecay(SuppressionLevel, deltaMs, isUnderFire);
+
+        // Check if suppression ended
+        if (wasSuppressed && !IsSuppressed)
+        {
+            SuppressionDecayStartMs = null;
+            LastSuppressionApplicationMs = null;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Clears all suppression immediately.
+    /// </summary>
+    public void ClearSuppression()
+    {
+        SuppressionLevel = 0f;
+        SuppressionDecayStartMs = null;
+        LastSuppressionApplicationMs = null;
+    }
+
+    /// <summary>
+    /// Gets the effective accuracy proficiency considering both flinch and suppression.
+    /// </summary>
+    /// <returns>Effective accuracy proficiency after all penalties</returns>
+    public float GetEffectiveAccuracyProficiency()
+    {
+        // First apply flinch to base proficiency
+        float afterFlinch = AccuracyModel.CalculateEffectiveAccuracyProficiency(
+            AccuracyProficiency, FlinchSeverity);
+
+        // Then apply suppression
+        return SuppressionModel.CalculateEffectiveAccuracyProficiency(
+            afterFlinch, SuppressionLevel);
     }
 
     public int IncrementShotsFired()
