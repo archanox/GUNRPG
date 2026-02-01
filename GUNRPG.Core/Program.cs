@@ -47,11 +47,39 @@ while (combat.Phase != CombatPhase.Ended)
     Console.WriteLine($"═══ ROUND {roundNumber} - PLANNING PHASE ═══");
     Console.WriteLine();
     
-    // Show current operator status
+    // Show current operator status with movement and cover info
     float playerADS = player.GetADSProgress(combat.CurrentTimeMs);
     int magazineSize = player.EquippedWeapon?.MagazineSize ?? 0;
-    Console.WriteLine($"Player Status: HP {player.Health:F0}/{player.MaxHealth:F0}, Ammo {player.CurrentAmmo}/{magazineSize}, " +
-                      $"Stamina {player.Stamina:F0}, ADS {playerADS*100:F0}%, Distance {player.DistanceToOpponent:F1}m");
+    
+    // Movement state display
+    string movementDisplay = player.CurrentMovement.ToString();
+    if (player.IsMoving && player.MovementEndTimeMs.HasValue)
+    {
+        long remainingMs = player.MovementEndTimeMs.Value - combat.CurrentTimeMs;
+        movementDisplay += $" ({remainingMs}ms remaining)";
+    }
+    
+    // Cover state display
+    string coverDisplay = player.CurrentCover == CoverState.None ? "None" : player.CurrentCover.ToString();
+    
+    // Suppression state display
+    string suppressionDisplay = "None";
+    if (player.IsSuppressed)
+    {
+        if (player.SuppressionLevel >= 0.6f)
+            suppressionDisplay = "High";
+        else if (player.SuppressionLevel >= 0.3f)
+            suppressionDisplay = "Moderate";
+        else
+            suppressionDisplay = "Low";
+        suppressionDisplay += $" ({player.SuppressionLevel:F2})";
+    }
+    
+    Console.WriteLine("╔═══════════════════════════════════════════════════════════════════╗");
+    Console.WriteLine($"║ HP: {player.Health,5:F0}/{player.MaxHealth:F0}  │ Ammo: {player.CurrentAmmo,3}/{magazineSize}  │ Stamina: {player.Stamina,5:F0}  │ Distance: {player.DistanceToOpponent,5:F1}m ║");
+    Console.WriteLine($"║ Movement: {movementDisplay,-18} │ Cover: {coverDisplay,-12} │ ADS: {playerADS*100,3:F0}%     ║");
+    Console.WriteLine($"║ Suppression: {suppressionDisplay,-45} ║");
+    Console.WriteLine("╚═══════════════════════════════════════════════════════════════════╝");
     Console.WriteLine();
     
     // Create simultaneous intents
@@ -74,26 +102,38 @@ while (combat.Phase != CombatPhase.Ended)
         _ => PrimaryAction.None
     };
     
-    // Ask for Movement Action (filter out incompatible options)
+    // Ask for Movement Action with new state-based options
     Console.WriteLine();
     Console.WriteLine("═══ MOVEMENT ACTION ═══");
     
     bool canSlide = playerIntents.Primary != PrimaryAction.Reload;
-    var movementOptions = new List<(string key, string label, MovementAction action)>
+    var movementOptions = new List<(string key, string label, MovementAction action)>();
+    
+    // Add cancel movement option if currently moving
+    if (player.IsMoving)
     {
-        ("1", "Walk toward", MovementAction.WalkToward),
-        ("2", "Walk away", MovementAction.WalkAway),
-        ("3", "Sprint toward", MovementAction.SprintToward),
-        ("4", "Sprint away", MovementAction.SprintAway),
-    };
+        movementOptions.Add(("0", "Cancel current movement", MovementAction.Stand));
+        playerIntents.CancelMovement = false; // Will set based on selection
+    }
+    
+    // Add new state-based movement options
+    movementOptions.Add(("1", "Walk", MovementAction.Walk));
+    movementOptions.Add(("2", "Sprint", MovementAction.Sprint));
+    movementOptions.Add(("3", "Crouch", MovementAction.Crouch));
+    
+    // Legacy directional movement (still supported)
+    movementOptions.Add(("4", "Walk toward", MovementAction.WalkToward));
+    movementOptions.Add(("5", "Walk away", MovementAction.WalkAway));
+    movementOptions.Add(("6", "Sprint toward", MovementAction.SprintToward));
+    movementOptions.Add(("7", "Sprint away", MovementAction.SprintAway));
     
     if (canSlide)
     {
-        movementOptions.Add(("5", "Slide toward", MovementAction.SlideToward));
-        movementOptions.Add(("6", "Slide away", MovementAction.SlideAway));
+        movementOptions.Add(("8", "Slide toward", MovementAction.SlideToward));
+        movementOptions.Add(("9", "Slide away", MovementAction.SlideAway));
     }
     
-    movementOptions.Add(("7", "Stand", MovementAction.Stand));
+    movementOptions.Add(("s", "Stand still", MovementAction.Stand));
     
     foreach (var option in movementOptions)
     {
@@ -109,9 +149,18 @@ while (combat.Phase != CombatPhase.Ended)
     var movementKey = Console.ReadKey();
     Console.WriteLine();
     
-    // Map key to action using the available options
-    var selectedMovement = movementOptions.FirstOrDefault(o => o.key == movementKey.KeyChar.ToString());
-    playerIntents.Movement = selectedMovement != default ? selectedMovement.action : MovementAction.Stand;
+    // Handle cancel movement selection
+    if (movementKey.KeyChar == '0' && player.IsMoving)
+    {
+        playerIntents.CancelMovement = true;
+        playerIntents.Movement = MovementAction.Stand;
+    }
+    else
+    {
+        // Map key to action using the available options
+        var selectedMovement = movementOptions.FirstOrDefault(o => o.key == movementKey.KeyChar.ToString());
+        playerIntents.Movement = selectedMovement != default ? selectedMovement.action : MovementAction.Stand;
+    }
     
     // Ask for Stance Action (adapt to current ADS state and filter incompatible options)
     Console.WriteLine();
@@ -159,13 +208,52 @@ while (combat.Phase != CombatPhase.Ended)
     Console.Write($"Choose stance action: ");
     var stanceKey = Console.ReadKey();
     Console.WriteLine();
-    Console.WriteLine();
     
     // Map key to action using the available options
     var selectedStance = stanceOptions.FirstOrDefault(o => o.key == stanceKey.KeyChar.ToString());
     playerIntents.Stance = selectedStance != default ? selectedStance.action : StanceAction.None;
     
-    // Display chosen intents with current AIM state context
+    // Ask for Cover Action
+    Console.WriteLine();
+    Console.WriteLine("═══ COVER ACTION ═══");
+    
+    var coverOptions = new List<(string key, string label, CoverAction action)>();
+    
+    bool canEnterCover = MovementModel.CanEnterCover(player.CurrentMovement) ||
+                         playerIntents.Movement == MovementAction.Stand ||
+                         playerIntents.Movement == MovementAction.Crouch;
+    
+    if (player.CurrentCover == CoverState.None && canEnterCover)
+    {
+        coverOptions.Add(("1", "Enter Partial Cover", CoverAction.EnterPartial));
+        coverOptions.Add(("2", "Enter Full Cover", CoverAction.EnterFull));
+        coverOptions.Add(("3", "None", CoverAction.None));
+    }
+    else if (player.CurrentCover != CoverState.None)
+    {
+        coverOptions.Add(("1", "Exit Cover", CoverAction.Exit));
+        coverOptions.Add(("2", "Stay in Cover", CoverAction.None));
+    }
+    else
+    {
+        coverOptions.Add(("1", "None (cannot enter cover while moving)", CoverAction.None));
+    }
+    
+    foreach (var option in coverOptions)
+    {
+        Console.WriteLine($"{option.key}. {option.label}");
+    }
+    
+    Console.Write($"Choose cover action: ");
+    var coverKey = Console.ReadKey();
+    Console.WriteLine();
+    Console.WriteLine();
+    
+    // Map key to action using the available options
+    var selectedCover = coverOptions.FirstOrDefault(o => o.key == coverKey.KeyChar.ToString());
+    playerIntents.Cover = selectedCover != default ? selectedCover.action : CoverAction.None;
+    
+    // Display chosen intents with current state context
     string stanceDisplay = playerIntents.Stance switch
     {
         StanceAction.EnterADS => "EnterADS",
@@ -175,7 +263,10 @@ while (combat.Phase != CombatPhase.Ended)
         StanceAction.None => "None",
         _ => playerIntents.Stance.ToString()
     };
-    Console.WriteLine($"Selected: Primary={playerIntents.Primary}, Movement={playerIntents.Movement}, Stance={stanceDisplay}");
+    
+    string selectedMovementDisplay = playerIntents.CancelMovement ? "CancelMovement" : playerIntents.Movement.ToString();
+    
+    Console.WriteLine($"Selected: Primary={playerIntents.Primary}, Movement={selectedMovementDisplay}, Stance={stanceDisplay}, Cover={playerIntents.Cover}");
     
     // Submit player intents
     var playerResult = combat.SubmitIntents(player, playerIntents);
@@ -186,6 +277,7 @@ while (combat.Phase != CombatPhase.Ended)
         Console.WriteLine("  - Cannot reload while sliding");
         Console.WriteLine("  - Sprinting will auto-exit ADS");
         Console.WriteLine("  - Cannot ADS while sliding");
+        Console.WriteLine("  - Can only enter cover when stationary or crouching");
         Console.WriteLine("Defaulting to Stop.");
         combat.SubmitIntents(player, SimultaneousIntents.CreateStop(player.Id));
     }
