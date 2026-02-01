@@ -384,43 +384,59 @@ public class CombatSystemV2
             // Legacy directional movement
             case MovementAction.WalkToward:
                 op.MovementState = MovementState.Walking;
+                op.CurrentDirection = MovementDirection.Advancing;
                 ScheduleMovementUpdate(op, true, op.WalkSpeed);
                 break;
 
             case MovementAction.WalkAway:
                 op.MovementState = MovementState.Walking;
+                op.CurrentDirection = MovementDirection.Retreating;
                 ScheduleMovementUpdate(op, false, op.WalkSpeed);
                 break;
 
             case MovementAction.SprintToward:
                 op.MovementState = MovementState.Sprinting;
+                op.CurrentDirection = MovementDirection.Advancing;
                 ScheduleMovementUpdate(op, true, op.SprintSpeed);
                 break;
 
             case MovementAction.SprintAway:
                 op.MovementState = MovementState.Sprinting;
+                op.CurrentDirection = MovementDirection.Retreating;
                 ScheduleMovementUpdate(op, false, op.SprintSpeed);
                 break;
 
             case MovementAction.SlideToward:
+                op.CurrentDirection = MovementDirection.Advancing;
+                ProcessSlide(op, true);
+                break;
+                
             case MovementAction.SlideAway:
-                ProcessSlide(op, movement == MovementAction.SlideToward);
+                op.CurrentDirection = MovementDirection.Retreating;
+                ProcessSlide(op, false);
                 break;
 
-            // New state-based movement
+            // New state-based movement (non-directional)
             case MovementAction.Walk:
+                op.CurrentDirection = MovementDirection.Holding;
                 op.StartMovement(MovementState.Walking, 1000, _time.CurrentTimeMs, _eventQueue);
                 Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} started walking");
                 break;
 
             case MovementAction.Sprint:
+                op.CurrentDirection = MovementDirection.Holding;
                 op.StartMovement(MovementState.Sprinting, 2000, _time.CurrentTimeMs, _eventQueue);
                 Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} started sprinting");
                 break;
 
             case MovementAction.Crouch:
+                op.CurrentDirection = MovementDirection.Holding;
                 op.StartMovement(MovementState.Crouching, -1, _time.CurrentTimeMs, _eventQueue);
                 Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} started crouching");
+                break;
+                
+            case MovementAction.Stand:
+                op.CurrentDirection = MovementDirection.Holding;
                 break;
         }
     }
