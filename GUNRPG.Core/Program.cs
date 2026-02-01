@@ -113,7 +113,6 @@ while (combat.Phase != CombatPhase.Ended)
     if (player.IsMoving)
     {
         movementOptions.Add(("0", "Cancel current movement", MovementAction.Stand));
-        playerIntents.CancelMovement = false; // Will set based on selection
     }
     
     // Add new state-based movement options
@@ -219,9 +218,7 @@ while (combat.Phase != CombatPhase.Ended)
     
     var coverOptions = new List<(string key, string label, CoverAction action)>();
     
-    bool canEnterCover = MovementModel.CanEnterCover(player.CurrentMovement) ||
-                         playerIntents.Movement == MovementAction.Stand ||
-                         playerIntents.Movement == MovementAction.Crouch;
+    bool canEnterCover = MovementModel.CanEnterCover(player.CurrentMovement);
     
     if (player.CurrentCover == CoverState.None && canEnterCover)
     {
