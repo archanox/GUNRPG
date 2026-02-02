@@ -73,6 +73,7 @@ public static class HitResolution
     /// <param name="random">Random number generator for deterministic-friendly operation</param>
     /// <param name="details">Optional details object to capture intermediate values</param>
     /// <param name="movementState">Optional movement state to apply movement modifiers</param>
+    /// <param name="targetDirection">Optional movement direction of target to apply directional hit probability modifiers</param>
     /// <returns>The resolved body part hit or Miss if shot overshoots/undershoots</returns>
     public static ShotResolutionResult ResolveShotWithProficiency(
         BodyPart targetBodyPart,
@@ -83,7 +84,8 @@ public static class HitResolution
         float recoilVariance,
         Random random,
         ShotResolutionDetails? details = null,
-        MovementState? movementState = null)
+        MovementState? movementState = null,
+        MovementDirection? targetDirection = null)
     {
         // Clamp proficiency to valid range
         accuracyProficiency = Math.Clamp(accuracyProficiency, 0f, 1f);
@@ -103,6 +105,18 @@ public static class HitResolution
 
         // Apply initial aim acquisition error using AccuracyModel
         float aimErrorStdDev = AccuracyModel.CalculateAimErrorStdDev(effectiveAccuracy, accuracyProficiency);
+        
+        // Apply directional hit probability modifier to target
+        // Advancing = easier to hit (smaller error), Retreating = harder to hit (larger error)
+        if (targetDirection.HasValue)
+        {
+            float directionMultiplier = MovementModel.GetDirectionalHitProbabilityMultiplier(targetDirection.Value);
+            // Invert the multiplier for aim error: higher hit probability = lower error
+            // e.g., 1.15x hit probability -> 1/1.15 = 0.87x error
+            // e.g., 0.9x hit probability -> 1/0.9 = 1.11x error
+            aimErrorStdDev /= directionMultiplier;
+        }
+        
         float aimError = AccuracyModel.SampleGaussian(random, 0f, aimErrorStdDev);
 
         // Apply weapon sway as additional angular noise
