@@ -157,9 +157,26 @@ public class ShotFiredEvent : ISimulationEvent
         long impactTime = EventTimeMs + travelTime;
         
         bool isHit = resolution.HitLocation != BodyPart.Miss;
+        bool blockedByCover = false;
+        
+        // Apply cover-based hit reduction for target
+        // If target is in full cover and not actively firing (not peeking), they cannot be hit
+        if (isHit)
+        {
+            bool targetIsPeeking = _target.IsActivelyFiring;
+            float coverMultiplier = MovementModel.GetCoverHitProbabilityMultiplier(_target.CurrentCover, targetIsPeeking);
+            
+            // If cover blocks the hit (multiplier is 0), convert hit to miss
+            if (coverMultiplier == 0.0f)
+            {
+                isHit = false;
+                blockedByCover = true;
+            }
+        }
+        
         float damage = isHit ? weapon.GetDamageAtDistance(_shooter.DistanceToOpponent, resolution.HitLocation) : 0f;
 
-        if (resolution.HitLocation != BodyPart.Miss)
+        if (isHit)
         {
             if (_eventQueue != null)
             {
@@ -185,8 +202,9 @@ public class ShotFiredEvent : ISimulationEvent
         else
         {
             // Calculate angular deviation from target body band for suppression calculation
-            // Deviation is how far the shot was from the valid hit zone (0-1 degrees)
-            float angularDeviation = CalculateAngularDeviation(resolution.FinalAngleDegrees);
+            // If blocked by cover, set deviation to 0 (shot hit cover, no suppression)
+            // Otherwise, calculate based on how far off the shot was
+            float angularDeviation = blockedByCover ? 0f : CalculateAngularDeviation(resolution.FinalAngleDegrees);
 
             // Schedule miss event at impact time (when bullet passes target)
             if (_eventQueue != null)
