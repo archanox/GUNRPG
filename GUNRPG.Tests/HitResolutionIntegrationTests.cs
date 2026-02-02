@@ -285,9 +285,9 @@ public class HitResolutionIntegrationTests
     }
 
     [Fact]
-    public void TargetInFullCover_CanBeHit_WhenFiring()
+    public void TargetInPartialCover_CanBeHit_WhenExposed()
     {
-        // Test that a target in full cover who IS firing (peeking) can be hit
+        // Test that a target in partial cover (peeking) can be hit in exposed body parts
         int totalRounds = 50;
         int hitsLanded = 0;
 
@@ -305,15 +305,15 @@ public class HitResolutionIntegrationTests
             var enemy = new Operator("Enemy")
             {
                 EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
-                CurrentAmmo = 30,  // Has ammo - will be firing
+                CurrentAmmo = 30,  // Has ammo - can fire from partial cover
                 DistanceToOpponent = 15f,
                 Accuracy = 0f,
                 AccuracyProficiency = 0f
             };
 
-            // Enemy enters full cover but will be firing (peeking)
-            enemy.EnterCover(CoverState.Full, 0);
-            Assert.Equal(CoverState.Full, enemy.CurrentCover);
+            // Enemy enters partial cover (peeking)
+            enemy.EnterCover(CoverState.Partial, 0);
+            Assert.Equal(CoverState.Partial, enemy.CurrentCover);
 
             var combat = new CombatSystemV2(player, enemy, seed: 300 + i);
 
@@ -325,7 +325,7 @@ public class HitResolutionIntegrationTests
 
             var enemyIntents = new SimultaneousIntents(enemy.Id)
             {
-                Primary = PrimaryAction.Fire,  // Firing (peeking)
+                Primary = PrimaryAction.Fire,  // Firing from partial cover
                 Movement = MovementAction.Stand
             };
 
@@ -334,17 +334,77 @@ public class HitResolutionIntegrationTests
             combat.BeginExecution();
             combat.ExecuteUntilReactionWindow();
             
-            // Verify enemy is actively firing (since they have ammo and fire intent)
+            // Verify enemy is actively firing
             Assert.True(enemy.IsActivelyFiring, "Enemy should be actively firing with ammo");
 
             if (enemy.Health < enemy.MaxHealth)
                 hitsLanded++;
         }
 
-        _output.WriteLine($"Target in full cover (while firing): {hitsLanded}/{totalRounds} hits landed");
+        _output.WriteLine($"Target in partial cover (peeking): {hitsLanded}/{totalRounds} hits landed");
         
-        // With full cover but firing (peeking), hits should land regularly
+        // With partial cover (peeking), hits should land on exposed upper body parts
         // With perfect accuracy, we expect a reasonable hit rate when peeking
-        Assert.True(hitsLanded > 20, $"Target in full cover who is firing should be hit frequently with perfect accuracy (expected >20, got {hitsLanded})");
+        Assert.True(hitsLanded > 20, $"Target in partial cover should be hit frequently with perfect accuracy (expected >20, got {hitsLanded})");
+    }
+
+    [Fact]
+    public void TargetInFullCover_CannotBeHit()
+    {
+        // Test that a target in full cover (completely concealed) cannot be hit
+        int totalRounds = 50;
+        int hitsLanded = 0;
+
+        for (int i = 0; i < totalRounds; i++)
+        {
+            var player = new Operator("Player")
+            {
+                EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
+                CurrentAmmo = 30,
+                DistanceToOpponent = 15f,
+                Accuracy = 1.0f,  // Perfect accuracy
+                AccuracyProficiency = 1.0f
+            };
+
+            var enemy = new Operator("Enemy")
+            {
+                EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
+                CurrentAmmo = 30,
+                DistanceToOpponent = 15f,
+                Accuracy = 0f,
+                AccuracyProficiency = 0f
+            };
+
+            // Enemy enters full cover (completely concealed)
+            enemy.EnterCover(CoverState.Full, 0);
+            Assert.Equal(CoverState.Full, enemy.CurrentCover);
+
+            var combat = new CombatSystemV2(player, enemy, seed: 300 + i);
+
+            var playerIntents = new SimultaneousIntents(player.Id)
+            {
+                Primary = PrimaryAction.Fire,
+                Movement = MovementAction.Stand
+            };
+
+            // Enemy in full cover cannot shoot
+            var enemyIntents = new SimultaneousIntents(enemy.Id)
+            {
+                Movement = MovementAction.Stand
+            };
+
+            combat.SubmitIntents(player, playerIntents);
+            combat.SubmitIntents(enemy, enemyIntents);
+            combat.BeginExecution();
+            combat.ExecuteUntilReactionWindow();
+
+            if (enemy.Health < enemy.MaxHealth)
+                hitsLanded++;
+        }
+
+        _output.WriteLine($"Target in full cover (concealed): {hitsLanded}/{totalRounds} hits landed");
+        
+        // With full cover (complete concealment), NO hits should land
+        Assert.Equal(0, hitsLanded);
     }
 }
