@@ -371,7 +371,7 @@ public class CombatSystemV2
     private void ProcessMovementAction(Operator op, MovementAction movement)
     {
         // Sprinting auto-exits ADS
-        if ((movement == MovementAction.SprintToward || movement == MovementAction.SprintAway || movement == MovementAction.Sprint) &&
+        if ((movement == MovementAction.SprintToward || movement == MovementAction.SprintAway) &&
             (op.AimState == AimState.ADS || op.AimState == AimState.TransitioningToADS))
         {
             op.AimState = AimState.Hip;
@@ -416,19 +416,7 @@ public class CombatSystemV2
                 ProcessSlide(op, false);
                 break;
 
-            // New state-based movement (non-directional)
-            case MovementAction.Walk:
-                op.CurrentDirection = MovementDirection.Holding;
-                op.StartMovement(MovementState.Walking, 1000, _time.CurrentTimeMs, _eventQueue);
-                Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} started walking");
-                break;
-
-            case MovementAction.Sprint:
-                op.CurrentDirection = MovementDirection.Holding;
-                op.StartMovement(MovementState.Sprinting, 2000, _time.CurrentTimeMs, _eventQueue);
-                Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} started sprinting");
-                break;
-
+            // State-based movement (non-directional)
             case MovementAction.Crouch:
                 op.CurrentDirection = MovementDirection.Holding;
                 op.StartMovement(MovementState.Crouching, -1, _time.CurrentTimeMs, _eventQueue);
