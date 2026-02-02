@@ -160,28 +160,17 @@ public class ShotFiredEvent : ISimulationEvent
         bool blockedByCover = false;
         
         // Apply cover-based body-part filtering for target
-        if (isHit)
+        if (isHit && (_target.CurrentCover == CoverState.Full || 
+            (_target.CurrentCover == CoverState.Partial && resolution.HitLocation == BodyPart.LowerTorso)))
         {
-            if (_target.CurrentCover == CoverState.Full)
-            {
-                // Full Cover: Complete concealment - no body parts exposed, blocks all hits
-                isHit = false;
-                blockedByCover = true;
-            }
-            else if (_target.CurrentCover == CoverState.Partial)
-            {
-                // Partial Cover (Peeking): Only upper body exposed (UpperTorso, Neck, Head)
-                // Lower body (LowerTorso, legs) is protected by cover
-                if (resolution.HitLocation == BodyPart.LowerTorso)
-                {
-                    // Lower body hit is blocked by partial cover
-                    isHit = false;
-                    blockedByCover = true;
-                }
-                // UpperTorso, Neck, and Head hits are allowed through
-            }
-            // CoverState.None: All body parts are exposed, no filtering
+            // Full Cover: Complete concealment - no body parts exposed, blocks all hits
+            // Partial Cover (Peeking): Only upper body exposed (UpperTorso, Neck, Head)
+            // Lower body (LowerTorso, legs) is protected by partial cover
+            isHit = false;
+            blockedByCover = true;
         }
+        // CoverState.None: All body parts are exposed, no filtering
+        // Partial Cover with UpperTorso, Neck, Head hits: allowed through
         
         float damage = isHit ? weapon.GetDamageAtDistance(_shooter.DistanceToOpponent, resolution.HitLocation) : 0f;
 
