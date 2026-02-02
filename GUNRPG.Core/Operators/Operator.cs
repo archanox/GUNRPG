@@ -157,6 +157,29 @@ public class Operator
     public float ADSTransitionDurationMs { get; set; }
     public bool IsActivelyFiring { get; set; } // Track if currently in firing burst
 
+    // Cover Transition tracking
+    public bool IsCoverTransitioning { get; set; }
+    public CoverState CoverTransitionFromState { get; set; }
+    public CoverState CoverTransitionToState { get; set; }
+    public long? CoverTransitionStartMs { get; set; }
+    public long? CoverTransitionEndMs { get; set; }
+
+    // Awareness / Recognition tracking
+    /// <summary>
+    /// When the recognition delay will end (opponent will recognize this operator's exposure).
+    /// </summary>
+    public long? RecognitionDelayEndMs { get; set; }
+    
+    /// <summary>
+    /// The target operator ID that is being recognized (for tracking recognition state).
+    /// </summary>
+    public Guid? RecognitionTargetId { get; set; }
+
+    /// <summary>
+    /// Time when the opponent was last visible (for suppressive fire decision making).
+    /// </summary>
+    public long? LastTargetVisibleMs { get; set; }
+
     public Operator(string name)
     {
         Id = Guid.NewGuid();
@@ -624,5 +647,86 @@ public class Operator
     public bool CanAdvance()
     {
         return CurrentCover != CoverState.Full;
+    }
+
+    /// <summary>
+    /// Gets the effective cover state, accounting for cover transitions.
+    /// During transitions, treats the operator as being in Partial cover.
+    /// </summary>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    /// <returns>Effective cover state</returns>
+    public CoverState GetEffectiveCoverState(long currentTimeMs)
+    {
+        if (!IsCoverTransitioning || !CoverTransitionEndMs.HasValue)
+            return CurrentCover;
+
+        // During transition, return partial cover (exposed)
+        if (currentTimeMs < CoverTransitionEndMs.Value)
+            return CoverState.Partial;
+
+        // Transition complete
+        return CoverTransitionToState;
+    }
+
+    /// <summary>
+    /// Checks if an opponent can see this operator based on cover state.
+    /// </summary>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    /// <returns>True if this operator is visible to opponents</returns>
+    public bool IsVisibleToOpponents(long currentTimeMs)
+    {
+        var effectiveCover = GetEffectiveCoverState(currentTimeMs);
+        return AwarenessModel.CanSeeTarget(effectiveCover);
+    }
+
+    /// <summary>
+    /// Checks if this operator is currently in a recognition delay for a target.
+    /// </summary>
+    /// <param name="targetId">Target operator ID</param>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    /// <returns>True if still in recognition delay</returns>
+    public bool IsInRecognitionDelay(Guid targetId, long currentTimeMs)
+    {
+        if (!RecognitionDelayEndMs.HasValue || RecognitionTargetId != targetId)
+            return false;
+
+        return currentTimeMs < RecognitionDelayEndMs.Value;
+    }
+
+    /// <summary>
+    /// Gets the recognition progress for a target (0.0 = just started, 1.0 = complete).
+    /// </summary>
+    /// <param name="targetId">Target operator ID</param>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    /// <param name="recognitionStartMs">When recognition started</param>
+    /// <returns>Progress from 0.0 to 1.0</returns>
+    public float GetRecognitionProgress(Guid targetId, long currentTimeMs, long recognitionStartMs)
+    {
+        if (!RecognitionDelayEndMs.HasValue || RecognitionTargetId != targetId)
+            return 1.0f; // No recognition delay active = fully recognized
+
+        if (currentTimeMs >= RecognitionDelayEndMs.Value)
+            return 1.0f;
+
+        long totalDuration = RecognitionDelayEndMs.Value - recognitionStartMs;
+        if (totalDuration <= 0)
+            return 1.0f;
+
+        long elapsed = currentTimeMs - recognitionStartMs;
+        return Math.Clamp(elapsed / (float)totalDuration, 0f, 1f);
+    }
+
+    /// <summary>
+    /// Updates target visibility tracking.
+    /// Call when the target's visibility changes.
+    /// </summary>
+    /// <param name="targetIsVisible">Whether the target is currently visible</param>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    public void UpdateTargetVisibility(bool targetIsVisible, long currentTimeMs)
+    {
+        if (targetIsVisible)
+        {
+            LastTargetVisibleMs = currentTimeMs;
+        }
     }
 }

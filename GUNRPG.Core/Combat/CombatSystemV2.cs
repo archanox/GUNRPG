@@ -185,6 +185,12 @@ public class CombatSystemV2
                 shouldEndRound = true;
             }
 
+            // Suppressive fire completion ends the round early
+            if (evt is SuppressiveFireCompletedEvent)
+            {
+                shouldEndRound = true;
+            }
+
             // Track misses for "both miss" round end condition
             if (evt is ShotMissedEvent)
             {
@@ -452,29 +458,85 @@ public class CombatSystemV2
 
     private void ProcessCoverAction(Operator op, CoverAction cover)
     {
-        switch (cover)
+        CoverState targetCover = cover switch
         {
-            case CoverAction.EnterPartial:
-                if (op.EnterCover(CoverState.Partial, _time.CurrentTimeMs, _eventQueue))
-                {
-                    Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} entered partial cover");
-                }
-                break;
+            CoverAction.EnterPartial => CoverState.Partial,
+            CoverAction.EnterFull => CoverState.Full,
+            CoverAction.Exit => CoverState.None,
+            _ => op.CurrentCover
+        };
 
-            case CoverAction.EnterFull:
-                if (op.EnterCover(CoverState.Full, _time.CurrentTimeMs, _eventQueue))
-                {
-                    Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} entered full cover");
-                }
-                break;
+        if (targetCover == op.CurrentCover)
+            return;
 
-            case CoverAction.Exit:
-                if (op.ExitCover(_time.CurrentTimeMs, _eventQueue))
-                {
-                    Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} exited cover");
-                }
-                break;
+        // Get transition delay
+        int transitionDelayMs = CoverTransitionModel.GetTransitionDelayMs(op.CurrentCover, targetCover);
+        
+        if (transitionDelayMs > 0)
+        {
+            // Schedule cover transition with delay
+            StartCoverTransition(op, op.CurrentCover, targetCover, transitionDelayMs);
         }
+        else
+        {
+            // Instant transition (shouldn't happen with new model, but fallback)
+            switch (cover)
+            {
+                case CoverAction.EnterPartial:
+                    if (op.EnterCover(CoverState.Partial, _time.CurrentTimeMs, _eventQueue))
+                    {
+                        Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} entered partial cover");
+                    }
+                    break;
+
+                case CoverAction.EnterFull:
+                    if (op.EnterCover(CoverState.Full, _time.CurrentTimeMs, _eventQueue))
+                    {
+                        Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} entered full cover");
+                    }
+                    break;
+
+                case CoverAction.Exit:
+                    if (op.ExitCover(_time.CurrentTimeMs, _eventQueue))
+                    {
+                        Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} exited cover");
+                    }
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Starts a cover transition with delay.
+    /// </summary>
+    private void StartCoverTransition(Operator op, CoverState fromCover, CoverState toCover, int durationMs)
+    {
+        long completionTime = _time.CurrentTimeMs + durationMs;
+
+        // Schedule transition started event
+        _eventQueue.Schedule(new CoverTransitionStartedEvent(
+            _time.CurrentTimeMs,
+            op,
+            fromCover,
+            toCover,
+            completionTime,
+            _eventQueue.GetNextSequenceNumber()));
+
+        // Schedule transition completed event
+        _eventQueue.Schedule(new CoverTransitionCompletedEvent(
+            completionTime,
+            op,
+            fromCover,
+            toCover,
+            _eventQueue.GetNextSequenceNumber()));
+
+        // Track transition in timeline
+        _timelineEntries.Add(new CombatEventTimelineEntry(
+            "Cover",
+            (int)_time.CurrentTimeMs,
+            (int)completionTime,
+            op.Name,
+            $"{fromCover} → {toCover}"));
     }
 
     private void ProcessPrimaryAction(Operator op, PrimaryAction primary)
@@ -504,6 +566,24 @@ public class CombatSystemV2
             return;
         }
 
+        // Get the target
+        var target = (op == Player) ? Enemy : Player;
+
+        // Update target visibility tracking
+        bool targetVisible = target.IsVisibleToOpponents(_time.CurrentTimeMs);
+        op.UpdateTargetVisibility(targetVisible, _time.CurrentTimeMs);
+
+        // Check if we should use suppressive fire (target in full cover)
+        if (SuppressiveFireModel.ShouldUseSuppressiveFire(
+            op.CurrentAmmo,
+            target.GetEffectiveCoverState(_time.CurrentTimeMs),
+            op.LastTargetVisibleMs,
+            _time.CurrentTimeMs))
+        {
+            ProcessSuppressiveFireAction(op, target);
+            return;
+        }
+
         // Mark as actively firing
         op.IsActivelyFiring = true;
 
@@ -516,6 +596,62 @@ public class CombatSystemV2
         }
 
         ScheduleShotIfNeeded(op, fireTime);
+    }
+
+    /// <summary>
+    /// Processes suppressive fire against a concealed target.
+    /// </summary>
+    private void ProcessSuppressiveFireAction(Operator shooter, Operator target)
+    {
+        var weapon = shooter.EquippedWeapon;
+        if (weapon == null)
+            return;
+
+        // Calculate burst size
+        int burstSize = SuppressiveFireModel.CalculateSuppressiveBurstSize(weapon, shooter.CurrentAmmo);
+
+        // Consume ammo immediately
+        shooter.CurrentAmmo -= burstSize;
+
+        // Mark as actively firing (will be cleared by completed event)
+        shooter.IsActivelyFiring = true;
+
+        // Schedule suppressive fire started event
+        _eventQueue.Schedule(new SuppressiveFireStartedEvent(
+            _time.CurrentTimeMs,
+            shooter,
+            target,
+            burstSize,
+            weapon.Name,
+            _eventQueue.GetNextSequenceNumber()));
+
+        // Calculate burst duration and suppression
+        long burstDurationMs = SuppressiveFireModel.CalculateBurstDurationMs(weapon, burstSize);
+        float suppressionSeverity = SuppressiveFireModel.CalculateSuppressiveBurstSeverity(
+            weapon,
+            burstSize,
+            shooter.DistanceToOpponent,
+            target.CurrentMovement);
+
+        // Schedule suppressive fire completed event (applies suppression and ends round)
+        long completionTime = _time.CurrentTimeMs + burstDurationMs + SuppressiveFireModel.PostSuppressiveCooldownMs;
+        _eventQueue.Schedule(new SuppressiveFireCompletedEvent(
+            completionTime,
+            shooter,
+            target,
+            burstSize,
+            suppressionSeverity,
+            weapon.Name,
+            _eventQueue.GetNextSequenceNumber(),
+            _eventQueue));
+
+        // Add timeline entry
+        _timelineEntries.Add(new CombatEventTimelineEntry(
+            "SuppFire",
+            (int)_time.CurrentTimeMs,
+            (int)completionTime,
+            shooter.Name,
+            $"{burstSize} rounds"));
     }
 
     private void ProcessReloadAction(Operator op)
