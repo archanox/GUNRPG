@@ -25,9 +25,7 @@ public enum MovementAction
     SlideToward,
     SlideAway,
     
-    // New state-based movement
-    Walk,
-    Sprint,
+    // State-based movement (non-directional)
     Crouch
 }
 
@@ -137,7 +135,6 @@ public class SimultaneousIntents
         {
             case MovementAction.SprintToward:
             case MovementAction.SprintAway:
-            case MovementAction.Sprint:
                 if (op.Stamina <= 0)
                     return (false, "Cannot sprint: no stamina");
                 break;
@@ -204,7 +201,7 @@ public class SimultaneousIntents
         }
 
         // Sprinting auto-exits ADS (handled in processing)
-        if ((Movement == MovementAction.SprintToward || Movement == MovementAction.SprintAway || Movement == MovementAction.Sprint))
+        if ((Movement == MovementAction.SprintToward || Movement == MovementAction.SprintAway))
         {
             // This is valid, but will auto-exit ADS in processing
         }

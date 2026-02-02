@@ -121,21 +121,17 @@ while (combat.Phase != CombatPhase.Ended)
         movementOptions.Add(("0", "Cancel current movement", MovementAction.Stand));
     }
     
-    // Add new state-based movement options
-    movementOptions.Add(("1", "Walk", MovementAction.Walk));
-    movementOptions.Add(("2", "Sprint", MovementAction.Sprint));
-    movementOptions.Add(("3", "Crouch", MovementAction.Crouch));
-    
-    // Legacy directional movement (still supported)
-    movementOptions.Add(("4", "Walk toward", MovementAction.WalkToward));
-    movementOptions.Add(("5", "Walk away", MovementAction.WalkAway));
-    movementOptions.Add(("6", "Sprint toward", MovementAction.SprintToward));
-    movementOptions.Add(("7", "Sprint away", MovementAction.SprintAway));
+    // Directional movement options
+    movementOptions.Add(("1", "Walk toward", MovementAction.WalkToward));
+    movementOptions.Add(("2", "Walk away", MovementAction.WalkAway));
+    movementOptions.Add(("3", "Sprint toward", MovementAction.SprintToward));
+    movementOptions.Add(("4", "Sprint away", MovementAction.SprintAway));
+    movementOptions.Add(("5", "Crouch", MovementAction.Crouch));
     
     if (canSlide)
     {
-        movementOptions.Add(("8", "Slide toward", MovementAction.SlideToward));
-        movementOptions.Add(("9", "Slide away", MovementAction.SlideAway));
+        movementOptions.Add(("6", "Slide toward", MovementAction.SlideToward));
+        movementOptions.Add(("7", "Slide away", MovementAction.SlideAway));
     }
     
     movementOptions.Add(("s", "Stand still", MovementAction.Stand));
