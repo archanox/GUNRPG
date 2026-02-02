@@ -34,12 +34,22 @@ public class SuppressiveFireModelTests
     }
 
     [Fact]
-    public void CalculateSuppressiveBurstSize_MinimumAmmo_ReturnsMinimum()
+    public void CalculateSuppressiveBurstSize_AmmoEqualsMinBurst_ReturnsMinBurst()
     {
         var weapon = WeaponFactory.CreateSturmwolf45();
         int burstSize = SuppressiveFireModel.CalculateSuppressiveBurstSize(weapon, availableAmmo: 2);
 
-        Assert.Equal(SuppressiveFireModel.MinSuppressiveBurstSize, burstSize);
+        Assert.Equal(2, burstSize);
+    }
+
+    [Fact]
+    public void CalculateSuppressiveBurstSize_AmmoLessThanMinBurst_ReturnsAvailableAmmo()
+    {
+        var weapon = WeaponFactory.CreateSturmwolf45();
+        int burstSize = SuppressiveFireModel.CalculateSuppressiveBurstSize(weapon, availableAmmo: 1);
+
+        // Should return available ammo, not exceed it
+        Assert.Equal(1, burstSize);
     }
 
     #endregion

@@ -71,11 +71,12 @@ public static class SuppressiveFireModel
             burstSize = Math.Min(MaxSuppressiveBurstSize, burstSize + 1);
         }
 
-        // Don't exceed available ammo
+        // Clamp to available ammo (this is the hard constraint)
         burstSize = Math.Min(burstSize, availableAmmo);
 
-        // Ensure minimum burst
-        return Math.Max(MinSuppressiveBurstSize, burstSize);
+        // Return the clamped burst size (may be less than minimum if ammo is low)
+        // Caller should check ShouldUseSuppressiveFire which validates minimum ammo
+        return burstSize;
     }
 
     /// <summary>

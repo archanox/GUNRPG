@@ -713,7 +713,7 @@ public class Operator
             return 1.0f;
 
         long elapsed = currentTimeMs - recognitionStartMs;
-        return Math.Clamp(elapsed / (float)totalDuration, 0f, 1f);
+        return Math.Clamp((float)elapsed / totalDuration, 0f, 1f);
     }
 
     /// <summary>
