@@ -159,20 +159,28 @@ public class ShotFiredEvent : ISimulationEvent
         bool isHit = resolution.HitLocation != BodyPart.Miss;
         bool blockedByCover = false;
         
-        // Apply cover-based hit reduction for target
-        // If target is in full cover and not actively firing (not peeking), they cannot be hit
+        // Apply cover-based body-part filtering for target
         if (isHit)
         {
-            bool targetIsPeeking = _target.IsActivelyFiring;
-            float coverMultiplier = MovementModel.GetCoverHitProbabilityMultiplier(_target.CurrentCover, targetIsPeeking);
-            
-            // If cover blocks the hit (multiplier is 0), convert hit to miss
-            // TODO: Partial cover (multiplier 0.7) not yet implemented - requires probabilistic hit reduction
-            if (coverMultiplier == 0.0f)
+            if (_target.CurrentCover == CoverState.Full)
             {
+                // Full Cover: Complete concealment - no body parts exposed, blocks all hits
                 isHit = false;
                 blockedByCover = true;
             }
+            else if (_target.CurrentCover == CoverState.Partial)
+            {
+                // Partial Cover (Peeking): Only upper body exposed (UpperTorso, Neck, Head)
+                // Lower body (LowerTorso, legs) is protected by cover
+                if (resolution.HitLocation == BodyPart.LowerTorso)
+                {
+                    // Lower body hit is blocked by partial cover
+                    isHit = false;
+                    blockedByCover = true;
+                }
+                // UpperTorso, Neck, and Head hits are allowed through
+            }
+            // CoverState.None: All body parts are exposed, no filtering
         }
         
         float damage = isHit ? weapon.GetDamageAtDistance(_shooter.DistanceToOpponent, resolution.HitLocation) : 0f;
@@ -341,6 +349,7 @@ public sealed class DamageAppliedEvent : ISimulationEvent
     public Guid TargetId { get; }
     public string TargetName { get; }
     public int SequenceNumber { get; }
+    public Weapons.BodyPart BodyPart => _bodyPart;
 
     private readonly Operator _shooter;
     private readonly Operator _target;

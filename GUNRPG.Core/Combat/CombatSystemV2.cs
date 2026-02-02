@@ -383,6 +383,14 @@ public class CombatSystemV2
 
     private void ProcessMovementAction(Operator op, MovementAction movement)
     {
+        // Check if operator can advance based on cover state (for forward movement actions)
+        if ((movement == MovementAction.WalkToward || movement == MovementAction.SprintToward || movement == MovementAction.SlideToward) 
+            && !op.CanAdvance())
+        {
+            Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} cannot advance while in Full Cover (concealed)");
+            return;
+        }
+
         // Sprinting auto-exits ADS
         if ((movement == MovementAction.SprintToward || movement == MovementAction.SprintAway) &&
             (op.AimState == AimState.ADS || op.AimState == AimState.TransitioningToADS))
@@ -488,6 +496,13 @@ public class CombatSystemV2
         var weapon = op.EquippedWeapon;
         if (weapon == null || op.CurrentAmmo <= 0)
             return;
+
+        // Check if operator can shoot based on cover state
+        if (!op.CanShoot())
+        {
+            Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} cannot shoot while in Full Cover (concealed)");
+            return;
+        }
 
         // Mark as actively firing
         op.IsActivelyFiring = true;

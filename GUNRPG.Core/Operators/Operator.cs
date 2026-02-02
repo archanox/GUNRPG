@@ -605,4 +605,24 @@ public class Operator
             MovementEndTimeMs = null;
         }
     }
+
+    /// <summary>
+    /// Checks if the operator can shoot based on their current cover state.
+    /// Shooting is blocked when in Full Cover (complete concealment).
+    /// </summary>
+    /// <returns>True if shooting is allowed, false otherwise</returns>
+    public bool CanShoot()
+    {
+        return CurrentCover != CoverState.Full;
+    }
+
+    /// <summary>
+    /// Checks if the operator can advance (move forward) based on their current cover state.
+    /// Advancing is blocked when in Full Cover (must exit to Partial or None first).
+    /// </summary>
+    /// <returns>True if advancing is allowed, false otherwise</returns>
+    public bool CanAdvance()
+    {
+        return CurrentCover != CoverState.Full;
+    }
 }
