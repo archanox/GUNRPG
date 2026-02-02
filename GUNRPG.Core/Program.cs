@@ -59,8 +59,14 @@ while (combat.Phase != CombatPhase.Ended)
         movementDisplay += $" ({remainingMs}ms remaining)";
     }
     
-    // Cover state display
-    string coverDisplay = player.CurrentCover == CoverState.None ? "None" : player.CurrentCover.ToString();
+    // Cover state display with clarified semantics
+    string coverDisplay = player.CurrentCover switch
+    {
+        CoverState.Partial => "Partial (Peeking)",
+        CoverState.Full => "Full (Concealed)",
+        CoverState.None => "None",
+        _ => "None"
+    };
     
     // Suppression state display
     string suppressionDisplay = "None";
