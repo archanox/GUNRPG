@@ -35,13 +35,6 @@ public class CoverSemanticsTests
     [Fact]
     public void PartialCover_BlocksLowerTorsoHits()
     {
-        // Arrange
-        var shooter = CreateTestOperator("Shooter");
-        var target = CreateTestOperator("Target");
-        target.CurrentCover = CoverState.Partial; // Peeking - only upper body exposed
-
-        var combat = new CombatSystemV2(shooter, target, seed: 42);
-
         // Fire many shots to test hit distribution
         int lowerTorsoHits = 0;
         int upperBodyHits = 0;
@@ -55,7 +48,7 @@ public class CoverSemanticsTests
 
             var combat2 = new CombatSystemV2(shooter2, target2, seed: 42 + i);
             
-            var intents = new SimultaneousIntents(shooter.Id) { Primary = PrimaryAction.Fire };
+            var intents = new SimultaneousIntents(shooter2.Id) { Primary = PrimaryAction.Fire };
             combat2.SubmitIntents(shooter2, intents);
             combat2.BeginExecution();
             combat2.ExecuteUntilReactionWindow();
@@ -142,10 +135,12 @@ public class CoverSemanticsTests
             .Where(e => e is SuppressionStartedEvent || e is SuppressionUpdatedEvent)
             .ToList();
         
-        // We're just verifying that suppression events CAN be generated for full cover targets
-        // The actual suppression depends on shot proximity, which is probabilistic
-        // So we don't assert a specific value, just that the mechanism isn't blocked
-        Assert.True(target.Health == 100f, "Target in full cover should take no damage");
+        // We're verifying that suppression events CAN be generated for full cover targets
+        // (deterministically, given the fixed seed and parameters)
+        Assert.NotEmpty(suppressionEvents);
+        
+        // And full cover should still block all damage
+        Assert.InRange(target.Health, 99.9f, 100.1f);
     }
 
     [Fact]
@@ -210,8 +205,6 @@ public class CoverSemanticsTests
         var target = CreateTestOperator("Target");
 
         var combat = new CombatSystemV2(shooter, target, seed: 42);
-
-        float initialDistance = shooter.DistanceToOpponent;
 
         // Act: Try to retreat from full cover (should be allowed)
         var intents = new SimultaneousIntents(shooter.Id) { Movement = MovementAction.WalkAway };
@@ -316,10 +309,6 @@ public class CoverSemanticsTests
         // The implicit verification is that the PartialCover test shows lower torso IS filtered
         // Therefore, the filtering logic is working (it wouldn't make sense to filter if hits weren't possible)
         
-        var shooter = CreateTestOperator("Shooter", accuracy: 0.9f);
-        var target = CreateTestOperator("Target");
-        target.CurrentCover = CoverState.None; // No cover
-
         int hitsLanded = 0;
         
         for (int i = 0; i < 10; i++)
