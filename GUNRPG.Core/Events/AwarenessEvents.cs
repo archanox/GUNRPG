@@ -65,7 +65,7 @@ public sealed class CoverTransitionStartedEvent : ISimulationEvent
         Operator.CoverTransitionStartMs = EventTimeMs;
         Operator.CoverTransitionEndMs = CompletionTimeMs;
 
-        Console.WriteLine($"[{EventTimeMs}ms] {Operator.Name} started transitioning from {FromCover} cover to {ToCover} cover (will complete at {CompletionTimeMs}ms)");
+        Console.WriteLine($"[{EventTimeMs}ms] {Operator.Name} started transitioning from {FromCover} to {ToCover} cover (will complete at {CompletionTimeMs}ms)");
         return false; // Does not trigger reaction window
     }
 }

@@ -182,5 +182,15 @@ public class CoverTransitionModelTests
             CoverTransitionModel.FullToNoneDelayMs);
     }
 
+    [Fact]
+    public void CombinedTransitionDelays_AreWithinReasonableRange()
+    {
+        // Combined delays (multi-step transitions) should be reasonable
+        // NoneToFull and FullToNone go through intermediate state, so they're longer
+        // Expected range: 160ms to 500ms for combined transitions
+        Assert.InRange(CoverTransitionModel.NoneToFullDelayMs, 160, 500);
+        Assert.InRange(CoverTransitionModel.FullToNoneDelayMs, 160, 500);
+    }
+
     #endregion
 }
