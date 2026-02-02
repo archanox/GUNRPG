@@ -333,6 +333,9 @@ public class HitResolutionIntegrationTests
             combat.SubmitIntents(enemy, enemyIntents);
             combat.BeginExecution();
             combat.ExecuteUntilReactionWindow();
+            
+            // Verify enemy is actively firing (since they have ammo and fire intent)
+            Assert.True(enemy.IsActivelyFiring, "Enemy should be actively firing with ammo");
 
             if (enemy.Health < enemy.MaxHealth)
                 hitsLanded++;

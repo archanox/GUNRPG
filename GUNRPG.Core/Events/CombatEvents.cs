@@ -167,6 +167,7 @@ public class ShotFiredEvent : ISimulationEvent
             float coverMultiplier = MovementModel.GetCoverHitProbabilityMultiplier(_target.CurrentCover, targetIsPeeking);
             
             // If cover blocks the hit (multiplier is 0), convert hit to miss
+            // TODO: Partial cover (multiplier 0.7) not yet implemented - requires probabilistic hit reduction
             if (coverMultiplier == 0.0f)
             {
                 isHit = false;
