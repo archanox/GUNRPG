@@ -349,7 +349,7 @@ public sealed class DamageAppliedEvent : ISimulationEvent
     public Guid TargetId { get; }
     public string TargetName { get; }
     public int SequenceNumber { get; }
-    public Weapons.BodyPart BodyPart => _bodyPart;
+    public BodyPart BodyPart => _bodyPart;
 
     private readonly Operator _shooter;
     private readonly Operator _target;
