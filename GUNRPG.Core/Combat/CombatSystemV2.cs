@@ -163,6 +163,12 @@ public class CombatSystemV2
             if (!Player.IsAlive || !Enemy.IsAlive)
             {
                 Phase = CombatPhase.Ended;
+                
+                // Synchronize distance at end of combat
+                float averageDistance = (Player.DistanceToOpponent + Enemy.DistanceToOpponent) / 2f;
+                Player.DistanceToOpponent = averageDistance;
+                Enemy.DistanceToOpponent = averageDistance;
+                
                 Console.WriteLine($"\n=== COMBAT ENDED at {_time.CurrentTimeMs}ms ===");
                 
                 if (!Player.IsAlive)
@@ -211,6 +217,13 @@ public class CombatSystemV2
             if (shouldEndRound)
             {
                 Phase = CombatPhase.Planning;
+                
+                // Synchronize distance between both operators at end of round
+                // In 1v1 combat, both operators should have the same distance value
+                // Use the average in case of any drift during event processing
+                float averageDistance = (Player.DistanceToOpponent + Enemy.DistanceToOpponent) / 2f;
+                Player.DistanceToOpponent = averageDistance;
+                Enemy.DistanceToOpponent = averageDistance;
                 
                 Console.WriteLine($"\n=== ROUND COMPLETE at {_time.CurrentTimeMs}ms ===");
                 float plADS = Player.GetADSProgress(_time.CurrentTimeMs);
