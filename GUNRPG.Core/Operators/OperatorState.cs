@@ -46,7 +46,7 @@ public enum CoverState
 
 /// <summary>
 /// Movement direction relative to opponent.
-/// Affects suppression buildup and hit probability.
+/// Affects suppression buildup.
 /// </summary>
 public enum MovementDirection
 {

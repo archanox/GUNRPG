@@ -7,7 +7,7 @@ using Xunit;
 namespace GUNRPG.Tests;
 
 /// <summary>
-/// Tests for directional movement affecting suppression and hit probability.
+/// Tests for directional movement affecting suppression buildup.
 /// </summary>
 public class DirectionalSuppressionTests
 {

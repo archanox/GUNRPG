@@ -534,16 +534,18 @@ public class MovementIntervalEvent : ISimulationEvent
     public int SequenceNumber { get; }
     
     private readonly Operator _mover;
+    private readonly Operator? _opponent;
     private readonly float _distance;
     private readonly int _metersPerCommitmentUnit;
     private readonly int _intervalDurationMs;
 
-    public MovementIntervalEvent(long eventTimeMs, Operator mover, float distance, int sequenceNumber, int intervalDurationMs = DefaultIntervalMs, int metersPerCommitmentUnit = 2)
+    public MovementIntervalEvent(long eventTimeMs, Operator mover, float distance, int sequenceNumber, int intervalDurationMs = DefaultIntervalMs, int metersPerCommitmentUnit = 2, Operator? opponent = null)
     {
         EventTimeMs = eventTimeMs;
         OperatorId = mover.Id;
         SequenceNumber = sequenceNumber;
         _mover = mover;
+        _opponent = opponent;
         _distance = distance;
         _intervalDurationMs = intervalDurationMs;
         _metersPerCommitmentUnit = metersPerCommitmentUnit;
@@ -553,6 +555,13 @@ public class MovementIntervalEvent : ISimulationEvent
     {
         _mover.DistanceToOpponent += _distance; // Positive = away, negative = toward
         _mover.MetersMovedSinceLastReaction += Math.Abs(_distance);
+        
+        // In 1v1 combat, synchronously update opponent's distance
+        // Both operators should always have the same distance value
+        if (_opponent != null)
+        {
+            _opponent.DistanceToOpponent = _mover.DistanceToOpponent;
+        }
         
         Console.WriteLine($"[{EventTimeMs}ms] {_mover.Name} moved {_distance:F1}m (distance now: {_mover.DistanceToOpponent:F1}m)");
 
