@@ -7,7 +7,7 @@ using Xunit;
 namespace GUNRPG.Tests;
 
 /// <summary>
-/// Tests for directional movement affecting suppression buildup.
+/// Tests for directional movement affecting suppression buildup and hit probability.
 /// </summary>
 public class DirectionalSuppressionTests
 {
@@ -158,5 +158,68 @@ public class DirectionalSuppressionTests
 
         // Assert - Distance still unchanged
         Assert.Equal(initialDistance, op.DistanceToOpponent);
+    }
+
+    [Fact]
+    public void DirectionalHitProbability_IntegratedIntoHitResolution()
+    {
+        // This test verifies that directional movement affects hit probability
+        // by comparing overall hit rates with different directions
+        
+        // Arrange
+        var weapon = WeaponFactory.CreateM15Mod0();
+        
+        // Act - Resolve multiple shots and count ANY hit (not just head)
+        int advancingHits = 0;
+        int holdingHits = 0;
+        int retreatingHits = 0;
+        int iterations = 500;
+        
+        for (int i = 0; i < iterations; i++)
+        {
+            // Use lower accuracy to make the directional modifier more visible
+            float accuracy = 0.55f;
+            float proficiency = 0.5f;
+            float recoil = weapon.VerticalRecoil * 0.4f;
+            
+            // Test advancing target (easier to hit) - 15% bonus = 1.15x multiplier
+            var randomAdv = new Random(42 + i);
+            var resultAdvancing = HitResolution.ResolveShotWithProficiency(
+                BodyPart.UpperTorso, accuracy, proficiency, weapon.VerticalRecoil, recoil, 0.08f,
+                randomAdv, targetDirection: MovementDirection.Advancing);
+            if (resultAdvancing.HitLocation != BodyPart.Miss) advancingHits++;
+            
+            // Test holding target (baseline) - 1.0x multiplier
+            var randomHold = new Random(42 + i);
+            var resultHolding = HitResolution.ResolveShotWithProficiency(
+                BodyPart.UpperTorso, accuracy, proficiency, weapon.VerticalRecoil, recoil, 0.08f,
+                randomHold, targetDirection: MovementDirection.Holding);
+            if (resultHolding.HitLocation != BodyPart.Miss) holdingHits++;
+            
+            // Test retreating target (harder to hit) - 10% penalty = 0.9x multiplier
+            var randomRetr = new Random(42 + i);
+            var resultRetreating = HitResolution.ResolveShotWithProficiency(
+                BodyPart.UpperTorso, accuracy, proficiency, weapon.VerticalRecoil, recoil, 0.08f,
+                randomRetr, targetDirection: MovementDirection.Retreating);
+            if (resultRetreating.HitLocation != BodyPart.Miss) retreatingHits++;
+        }
+        
+        float advancingRate = advancingHits / (float)iterations;
+        float holdingRate = holdingHits / (float)iterations;
+        float retreatingRate = retreatingHits / (float)iterations;
+        
+        // Assert - The directional modifier should create visible differences in hit rates
+        // Advancing (1.15x) should have higher hit rate than holding (1.0x)
+        // Holding (1.0x) should have higher hit rate than retreating (0.9x)
+        Assert.True(advancingHits >= holdingHits,
+            $"Advancing targets should be at least as easy to hit as holding. Advancing={advancingHits} ({advancingRate:P}), Holding={holdingHits} ({holdingRate:P})");
+        Assert.True(holdingHits >= retreatingHits,
+            $"Holding targets should be at least as easy to hit as retreating. Holding={holdingHits} ({holdingRate:P}), Retreating={retreatingHits} ({retreatingRate:P})");
+        
+        // At least verify that the integration is working (not all zeros or all same)
+        int totalHits = advancingHits + holdingHits + retreatingHits;
+        Assert.True(totalHits > 0, "At least some shots should hit to validate the test");
+        Assert.True(advancingHits != holdingHits || holdingHits != retreatingHits,
+            $"Directional modifiers should create some variation. Advancing={advancingHits}, Holding={holdingHits}, Retreating={retreatingHits}");
     }
 }

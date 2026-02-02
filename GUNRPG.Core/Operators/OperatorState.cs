@@ -46,7 +46,7 @@ public enum CoverState
 
 /// <summary>
 /// Movement direction relative to opponent.
-/// Affects suppression buildup.
+/// Affects suppression buildup and hit probability.
 /// </summary>
 public enum MovementDirection
 {
@@ -57,13 +57,13 @@ public enum MovementDirection
     
     /// <summary>
     /// Moving toward the opponent (closing distance).
-    /// Increases suppression buildup (more aggressive/exposed).
+    /// Increases suppression buildup and hit probability against this operator (more aggressive/exposed).
     /// </summary>
     Advancing,
     
     /// <summary>
     /// Moving away from the opponent (opening distance).
-    /// Decreases suppression buildup (more defensive).
+    /// Decreases suppression buildup and hit probability against this operator (more defensive).
     /// </summary>
     Retreating
 }

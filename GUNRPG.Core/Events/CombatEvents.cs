@@ -149,7 +149,8 @@ public class ShotFiredEvent : ISimulationEvent
             recoilVariance: weapon.VerticalRecoil * 0.1f, // 10% variance
             random: _random,
             details: details,
-            movementState: _shooter.CurrentMovement);
+            movementState: _shooter.CurrentMovement,
+            targetDirection: _target.CurrentDirection);
 
         long travelTime = CalculateTravelTimeMs();
         _resolvedTravelTimeMs = travelTime;
