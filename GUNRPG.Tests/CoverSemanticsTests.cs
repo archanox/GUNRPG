@@ -195,9 +195,6 @@ public class CoverSemanticsTests
         Assert.True(result.success);
         
         combat.BeginExecution();
-        
-        // Let some time pass
-        System.Threading.Thread.Sleep(200);
         combat.ExecuteUntilReactionWindow();
 
         // Assert: Distance should not have changed (movement blocked)
