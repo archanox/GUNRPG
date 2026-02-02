@@ -270,6 +270,9 @@ public class HitResolutionIntegrationTests
             combat.SubmitIntents(enemy, enemyIntents);
             combat.BeginExecution();
             combat.ExecuteUntilReactionWindow();
+            
+            // Verify enemy is not actively firing (since they have no ammo)
+            Assert.False(enemy.IsActivelyFiring, "Enemy should not be actively firing without ammo");
 
             if (enemy.Health < enemy.MaxHealth)
                 hitsLanded++;
@@ -337,8 +340,8 @@ public class HitResolutionIntegrationTests
 
         _output.WriteLine($"Target in full cover (while firing): {hitsLanded}/{totalRounds} hits landed");
         
-        // With full cover but firing (peeking), hits should land (with perfect accuracy)
-        // Note: Due to timing, the target might not always be actively firing when the shot lands
-        Assert.True(hitsLanded > 0, "Target in full cover who is firing should be hit at least sometimes");
+        // With full cover but firing (peeking), hits should land regularly
+        // With perfect accuracy, we expect a reasonable hit rate when peeking
+        Assert.True(hitsLanded > 20, $"Target in full cover who is firing should be hit frequently with perfect accuracy (expected >20, got {hitsLanded})");
     }
 }
