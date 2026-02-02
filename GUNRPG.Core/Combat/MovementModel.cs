@@ -173,7 +173,8 @@ public static class MovementModel
 
     /// <summary>
     /// Gets the hit probability multiplier for movement direction.
-    /// Advancing = easier to hit, Retreating = harder to hit.
+    /// NOTE: This function is currently not integrated into the hit resolution system.
+    /// Advancing = easier to hit, Retreating = harder to hit (when integrated).
     /// </summary>
     public static float GetDirectionalHitProbabilityMultiplier(MovementDirection direction)
     {

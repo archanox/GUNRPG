@@ -394,7 +394,7 @@ public class CombatSystemV2
 
         switch (movement)
         {
-            // Legacy directional movement
+            // Directional movement
             case MovementAction.WalkToward:
                 op.MovementState = MovementState.Walking;
                 op.CurrentDirection = MovementDirection.Advancing;
@@ -563,13 +563,17 @@ public class CombatSystemV2
         // Negative if toward, positive if away
         float signedDistance = distanceMoved * (towardOpponent ? -1 : 1);
         
+        // Determine opponent for distance synchronization
+        Operator opponent = (op == Player) ? Enemy : Player;
+        
         var moveEvent = new MovementIntervalEvent(
             nextUpdateTime,
             op,
             signedDistance,
             _eventQueue.GetNextSequenceNumber(),
             intervalDurationMs: MOVEMENT_UPDATE_INTERVAL_MS,
-            metersPerCommitmentUnit: DISABLE_MOVEMENT_REACTIONS);
+            metersPerCommitmentUnit: DISABLE_MOVEMENT_REACTIONS,
+            opponent: opponent);
         _eventQueue.Schedule(moveEvent);
         
         // Track that we've scheduled this movement
