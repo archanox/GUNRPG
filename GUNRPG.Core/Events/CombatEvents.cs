@@ -141,9 +141,9 @@ public class ShotFiredEvent : ISimulationEvent
             flinchSeverity);
 
         // Apply recognition delay penalty if shooter is still recognizing target
-        if (_shooter.IsInRecognitionDelay(_target.Id, EventTimeMs) && _shooter.RecognitionStartMs.HasValue)
+        if (_shooter.IsInRecognitionDelay(_target.Id, EventTimeMs))
         {
-            float recognitionProgress = _shooter.GetRecognitionProgress(_target.Id, EventTimeMs, _shooter.RecognitionStartMs.Value);
+            float recognitionProgress = _shooter.GetRecognitionProgress(_target.Id, EventTimeMs, _shooter.RecognitionStartMs!.Value);
             float recognitionMultiplier = AwarenessModel.GetRecognitionAccuracyMultiplier(recognitionProgress);
             effectiveProficiency *= recognitionMultiplier;
         }

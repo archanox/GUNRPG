@@ -703,7 +703,7 @@ public class Operator
     /// <returns>True if still in recognition delay</returns>
     public bool IsInRecognitionDelay(Guid targetId, long currentTimeMs)
     {
-        if (!RecognitionDelayEndMs.HasValue || RecognitionTargetId != targetId)
+        if (!RecognitionDelayEndMs.HasValue || !RecognitionStartMs.HasValue || RecognitionTargetId != targetId)
             return false;
 
         return currentTimeMs < RecognitionDelayEndMs.Value;

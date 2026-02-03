@@ -568,6 +568,7 @@ public class CombatSystemV2
         // Check if in recognition delay and emit event when completed
         if (op.IsInRecognitionDelay(target.Id, _time.CurrentTimeMs) && 
             op.RecognitionDelayEndMs.HasValue && 
+            op.RecognitionStartMs.HasValue &&
             fireTime >= op.RecognitionDelayEndMs.Value)
         {
             // Schedule recognition completed event
@@ -575,7 +576,7 @@ public class CombatSystemV2
                 op.RecognitionDelayEndMs.Value,
                 op,
                 target,
-                op.RecognitionDelayEndMs.Value - (op.RecognitionStartMs ?? op.RecognitionDelayEndMs.Value),
+                op.RecognitionDelayEndMs.Value - op.RecognitionStartMs.Value,
                 _eventQueue.GetNextSequenceNumber()));
         }
 
