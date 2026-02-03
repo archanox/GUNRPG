@@ -346,9 +346,18 @@ public class CombatSystemV2
                     return;
                 }
 
+                // Calculate base ADS time with movement modifier
+                float baseAdsTime = op.EquippedWeapon.ADSTimeMs;
+                float movementMultiplier = MovementModel.GetADSTimeMultiplier(op.CurrentMovement);
+                float movementAdjustedTime = baseAdsTime * movementMultiplier;
+                
+                // Apply response proficiency scaling
+                float effectiveAdsTime = ResponseProficiencyModel.CalculateEffectiveDelay(
+                    movementAdjustedTime, op.ResponseProficiency);
+                
                 op.AimState = AimState.TransitioningToADS;
                 op.ADSTransitionStartMs = _time.CurrentTimeMs;
-                op.ADSTransitionDurationMs = op.EquippedWeapon.ADSTimeMs;
+                op.ADSTransitionDurationMs = effectiveAdsTime;
                 _activeAdsStarts[op.Id] = _time.CurrentTimeMs;
                 
                 // Schedule completion event
@@ -359,11 +368,18 @@ public class CombatSystemV2
                     _eventQueue.GetNextSequenceNumber(),
                     actionDurationMs: (int)op.ADSTransitionDurationMs);
                 _eventQueue.Schedule(adsEvent);
+                
+                // Track in timeline with response proficiency info
+                float responseMultiplier = ResponseProficiencyModel.GetDelayMultiplier(op.ResponseProficiency);
+                string detail = Math.Abs(responseMultiplier - 1.0f) > 0.01f
+                    ? $"EnterADS ({baseAdsTime:F0}ms × {responseMultiplier:F2} = {effectiveAdsTime:F0}ms)"
+                    : "EnterADS";
                 _timelineEntries.Add(new CombatEventTimelineEntry(
                     "ADS",
                     (int)_time.CurrentTimeMs,
                     (int)completionTime,
-                    op.Name));
+                    op.Name,
+                    detail));
                 
                 Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} started entering ADS (will complete at {completionTime}ms)");
                 break;
@@ -469,17 +485,18 @@ public class CombatSystemV2
         if (targetCover == op.CurrentCover)
             return;
 
-        // Get transition delay (current model guarantees > 0 for valid transitions)
-        int transitionDelayMs = CoverTransitionModel.GetTransitionDelayMs(op.CurrentCover, targetCover);
+        // Get effective transition delay scaled by response proficiency
+        var (effectiveDelayMs, baseDelayMs, multiplier) = CoverTransitionModel.GetEffectiveTransitionDelayWithInfo(
+            op.CurrentCover, targetCover, op.ResponseProficiency);
 
-        // Schedule cover transition with delay
-        StartCoverTransition(op, op.CurrentCover, targetCover, transitionDelayMs);
+        // Schedule cover transition with scaled delay
+        StartCoverTransition(op, op.CurrentCover, targetCover, effectiveDelayMs, baseDelayMs, multiplier);
     }
 
     /// <summary>
     /// Starts a cover transition with delay.
     /// </summary>
-    private void StartCoverTransition(Operator op, CoverState fromCover, CoverState toCover, int durationMs)
+    private void StartCoverTransition(Operator op, CoverState fromCover, CoverState toCover, int durationMs, int baseDelayMs = 0, float responseMultiplier = 1.0f)
     {
         long completionTime = _time.CurrentTimeMs + durationMs;
 
@@ -500,13 +517,17 @@ public class CombatSystemV2
             toCover,
             _eventQueue.GetNextSequenceNumber()));
 
-        // Track transition in timeline
+        // Track transition in timeline with response proficiency info
+        string detail = baseDelayMs > 0 && Math.Abs(responseMultiplier - 1.0f) > 0.01f
+            ? $"{fromCover} → {toCover} ({baseDelayMs}ms × {responseMultiplier:F2} = {durationMs}ms)"
+            : $"{fromCover} → {toCover}";
+        
         _timelineEntries.Add(new CombatEventTimelineEntry(
             "Cover",
             (int)_time.CurrentTimeMs,
             (int)completionTime,
             op.Name,
-            $"{fromCover} → {toCover}"));
+            detail));
     }
 
     private void ProcessPrimaryAction(Operator op, PrimaryAction primary)
@@ -557,11 +578,15 @@ public class CombatSystemV2
         // Mark as actively firing
         op.IsActivelyFiring = true;
 
-        // Handle sprint-to-fire delay
+        // Handle sprint-to-fire delay with response proficiency scaling
         long fireTime = _time.CurrentTimeMs;
         if (op.MovementState == MovementState.Sprinting)
         {
-            fireTime += (long)weapon.SprintToFireTimeMs;
+            // Scale sprint-to-fire delay by response proficiency
+            float baseSprintToFireMs = weapon.SprintToFireTimeMs;
+            float effectiveSprintToFireMs = ResponseProficiencyModel.CalculateEffectiveDelay(
+                baseSprintToFireMs, op.ResponseProficiency);
+            fireTime += (long)effectiveSprintToFireMs;
             op.MovementState = MovementState.Walking; // Transition from sprint to walk when firing
         }
 

@@ -48,11 +48,11 @@ public static class CoverTransitionModel
     public const int NoneToFullDelayMs = NoneToPartialDelayMs + PartialToFullDelayMs;
 
     /// <summary>
-    /// Gets the transition delay between two cover states.
+    /// Gets the base transition delay between two cover states.
     /// </summary>
     /// <param name="fromCover">Starting cover state</param>
     /// <param name="toCover">Target cover state</param>
-    /// <returns>Transition delay in milliseconds, or 0 if no change</returns>
+    /// <returns>Base transition delay in milliseconds, or 0 if no change</returns>
     public static int GetTransitionDelayMs(CoverState fromCover, CoverState toCover)
     {
         if (fromCover == toCover)
@@ -72,5 +72,44 @@ public static class CoverTransitionModel
 
             _ => 0
         };
+    }
+
+    /// <summary>
+    /// Gets the effective transition delay between two cover states, scaled by response proficiency.
+    /// Higher response proficiency results in faster transitions.
+    /// </summary>
+    /// <param name="fromCover">Starting cover state</param>
+    /// <param name="toCover">Target cover state</param>
+    /// <param name="responseProficiency">Operator's response proficiency (0.0-1.0)</param>
+    /// <returns>Effective transition delay in milliseconds</returns>
+    public static int GetEffectiveTransitionDelayMs(CoverState fromCover, CoverState toCover, float responseProficiency)
+    {
+        int baseDelay = GetTransitionDelayMs(fromCover, toCover);
+        if (baseDelay == 0)
+            return 0;
+
+        float effectiveDelay = ResponseProficiencyModel.CalculateEffectiveDelay(baseDelay, responseProficiency);
+        return (int)Math.Round(effectiveDelay);
+    }
+
+    /// <summary>
+    /// Gets the effective transition delay with multiplier info for logging/timeline display.
+    /// </summary>
+    /// <param name="fromCover">Starting cover state</param>
+    /// <param name="toCover">Target cover state</param>
+    /// <param name="responseProficiency">Operator's response proficiency (0.0-1.0)</param>
+    /// <returns>Tuple of (effectiveDelayMs, baseDelayMs, multiplier)</returns>
+    public static (int effectiveDelayMs, int baseDelayMs, float multiplier) GetEffectiveTransitionDelayWithInfo(
+        CoverState fromCover, 
+        CoverState toCover, 
+        float responseProficiency)
+    {
+        int baseDelay = GetTransitionDelayMs(fromCover, toCover);
+        if (baseDelay == 0)
+            return (0, 0, 1.0f);
+
+        var (effectiveDelay, multiplier) = ResponseProficiencyModel.CalculateEffectiveDelayWithMultiplier(
+            baseDelay, responseProficiency);
+        return ((int)Math.Round(effectiveDelay), baseDelay, multiplier);
     }
 }
