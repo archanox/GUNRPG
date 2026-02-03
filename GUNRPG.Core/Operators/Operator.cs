@@ -84,6 +84,34 @@ public class Operator
     /// </summary>
     public bool HasLowAccuracyProficiency => _accuracyProficiency < MinRecommendedAccuracyProficiency;
 
+    private float _responseProficiency;
+    /// <summary>
+    /// Operator response proficiency (0.0 to 1.0). Determines how quickly the operator can
+    /// transition between actions under pressure. This affects commitment cost scaling.
+    /// 
+    /// - 0.0 = slow transitions, higher commitment costs (clunky)
+    /// - 1.0 = fast transitions, lower commitment costs (smooth)
+    /// 
+    /// Affects:
+    /// 1. Cover transition delays (faster entry/exit from cover)
+    /// 2. ADS initiation time after movement
+    /// 3. Sprint-to-fire delay
+    /// 4. Suppression recovery rate
+    /// 5. Movement-to-stationary settle time
+    /// 
+    /// This completes the operator skill triangle:
+    /// - Reaction Proficiency → how fast actions start (via AccuracyProficiency recognition)
+    /// - Accuracy Proficiency → how well actions perform
+    /// - Response Proficiency → how fast actions switch
+    /// 
+    /// Applied identically to player and AI operators.
+    /// </summary>
+    public float ResponseProficiency
+    {
+        get => _responseProficiency;
+        set => _responseProficiency = Math.Clamp(value, 0.0f, 1.0f);
+    }
+
     // Position
     public float DistanceToOpponent { get; set; }
 
@@ -225,6 +253,7 @@ public class Operator
         // Operator skills (using property setter for validation)
         Accuracy = 0.7f; // Default 70% accuracy
         AccuracyProficiency = 0.5f; // Default 50% proficiency (mid-range skill)
+        ResponseProficiency = 0.5f; // Default 50% response proficiency (mid-range transitions)
         
         // Movement defaults
         WalkSpeed = 4f; // meters per second
@@ -318,8 +347,13 @@ public class Operator
         bool isUnderFire = LastSuppressionApplicationMs.HasValue &&
             (currentTimeMs - LastSuppressionApplicationMs.Value) < SuppressionModel.ContinuedFireWindowMs;
 
-        // Apply decay with movement state modifier
-        SuppressionLevel = SuppressionModel.ApplyDecay(SuppressionLevel, deltaMs, isUnderFire, CurrentMovement);
+        // Apply decay with movement state and response proficiency modifiers
+        SuppressionLevel = SuppressionModel.ApplyDecay(
+            SuppressionLevel, 
+            deltaMs, 
+            isUnderFire, 
+            CurrentMovement,
+            _responseProficiency);
 
         // Check if suppression ended
         if (wasSuppressed && !IsSuppressed)

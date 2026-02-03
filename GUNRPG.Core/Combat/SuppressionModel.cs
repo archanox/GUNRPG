@@ -157,8 +157,14 @@ public static class SuppressionModel
     /// <param name="deltaMs">Time elapsed since last update</param>
     /// <param name="isUnderFire">Whether the operator is currently under continued fire</param>
     /// <param name="movementState">Optional movement state to apply decay modifiers</param>
+    /// <param name="responseProficiency">Optional response proficiency to speed up decay (0.0-1.0)</param>
     /// <returns>New suppression level after decay</returns>
-    public static float ApplyDecay(float currentSuppression, long deltaMs, bool isUnderFire, Operators.MovementState? movementState = null)
+    public static float ApplyDecay(
+        float currentSuppression, 
+        long deltaMs, 
+        bool isUnderFire, 
+        Operators.MovementState? movementState = null,
+        float? responseProficiency = null)
     {
         if (currentSuppression <= MinSuppressionLevel)
             return MinSuppressionLevel;
@@ -173,6 +179,13 @@ public static class SuppressionModel
         {
             float movementMultiplier = MovementModel.GetSuppressionDecayMultiplier(movementState.Value);
             effectiveDecayRate *= movementMultiplier;
+        }
+
+        // Apply response proficiency modifier for faster recovery
+        if (responseProficiency.HasValue)
+        {
+            effectiveDecayRate = ResponseProficiencyModel.CalculateEffectiveSuppressionDecayRate(
+                effectiveDecayRate, responseProficiency.Value);
         }
 
         // Exponential decay: S(t) = S0 * e^(-rate * t)
