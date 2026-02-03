@@ -360,20 +360,40 @@ public class CombatSystemV2
                 op.ADSTransitionDurationMs = effectiveAdsTime;
                 _activeAdsStarts[op.Id] = _time.CurrentTimeMs;
                 
-                // Schedule completion event
-                long completionTime = _time.CurrentTimeMs + (long)op.ADSTransitionDurationMs;
+                // Schedule completion event - use consistent rounding for both completionTime and actionDurationMs
+                int roundedDurationMs = (int)Math.Round(op.ADSTransitionDurationMs);
+                long completionTime = _time.CurrentTimeMs + roundedDurationMs;
                 var adsEvent = new ADSTransitionUpdateEvent(
                     completionTime,
                     op,
                     _eventQueue.GetNextSequenceNumber(),
-                    actionDurationMs: (int)op.ADSTransitionDurationMs);
+                    actionDurationMs: roundedDurationMs);
                 _eventQueue.Schedule(adsEvent);
                 
-                // Track in timeline with response proficiency info
+                // Track in timeline with movement and response proficiency info
                 float responseMultiplier = ResponseProficiencyModel.GetDelayMultiplier(op.ResponseProficiency);
-                string detail = Math.Abs(responseMultiplier - 1.0f) > ResponseProficiencyModel.MultiplierDisplayThreshold
-                    ? $"EnterADS ({baseAdsTime:F0}ms × {responseMultiplier:F2} = {effectiveAdsTime:F0}ms)"
-                    : "EnterADS";
+                bool hasMovementScaling = Math.Abs(movementMultiplier - 1.0f) > 0.01f;
+                bool hasResponseScaling = Math.Abs(responseMultiplier - 1.0f) > ResponseProficiencyModel.MultiplierDisplayThreshold;
+                string detail;
+                if (hasMovementScaling || hasResponseScaling)
+                {
+                    if (hasMovementScaling && hasResponseScaling)
+                    {
+                        detail = $"EnterADS ({baseAdsTime:F0}ms × {movementMultiplier:F2} × {responseMultiplier:F2} = {effectiveAdsTime:F0}ms)";
+                    }
+                    else if (hasMovementScaling)
+                    {
+                        detail = $"EnterADS ({baseAdsTime:F0}ms × {movementMultiplier:F2} = {effectiveAdsTime:F0}ms)";
+                    }
+                    else // hasResponseScaling only
+                    {
+                        detail = $"EnterADS ({movementAdjustedTime:F0}ms × {responseMultiplier:F2} = {effectiveAdsTime:F0}ms)";
+                    }
+                }
+                else
+                {
+                    detail = "EnterADS";
+                }
                 _timelineEntries.Add(new CombatEventTimelineEntry(
                     "ADS",
                     (int)_time.CurrentTimeMs,

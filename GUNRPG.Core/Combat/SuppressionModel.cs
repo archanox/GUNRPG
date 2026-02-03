@@ -157,7 +157,7 @@ public static class SuppressionModel
     /// <param name="deltaMs">Time elapsed since last update</param>
     /// <param name="isUnderFire">Whether the operator is currently under continued fire</param>
     /// <param name="movementState">Optional movement state to apply decay modifiers</param>
-    /// <param name="responseProficiency">Optional response proficiency to speed up decay (0.0-1.0)</param>
+    /// <param name="responseProficiency">Optional response proficiency scaling the decay rate (0.0-1.0): lower values slow recovery, higher values speed it up.</param>
     /// <returns>New suppression level after decay</returns>
     public static float ApplyDecay(
         float currentSuppression, 
