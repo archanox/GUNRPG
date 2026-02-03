@@ -700,4 +700,302 @@ public class PetRulesTests
         // Morale: 50 - 2 - 3 = 45 (stress decay + health decay)
         Assert.Equal(45f, result.Morale);
     }
+
+    // ========================================
+    // Recovery Reduction Tests
+    // ========================================
+
+    [Fact]
+    public void Apply_HealthRecoveryReduced_WhenInjuryIsHigh()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 65f, // Above InjuryRecoveryReductionThreshold (30), halfway between 30 and 100
+            Stress: 20f,
+            Morale: 50f,
+            Hunger: 30f,
+            Hydration: 30f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.FromHours(1));
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Health recovery should be reduced
+        // Injury factor: (65 - 30) / (100 - 30) = 0.5
+        // Multiplier: 1 - (0.5 * (1 - 0.3)) = 1 - 0.35 = 0.65
+        // Recovery: 15 * 0.65 = 9.75
+        // Expected: 50 + 9.75 = 59.75
+        Assert.Equal(59.75f, result.Health);
+    }
+
+    [Fact]
+    public void Apply_HealthRecoveryNormal_WhenInjuryIsLow()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 20f, // Below InjuryRecoveryReductionThreshold (30)
+            Stress: 20f,
+            Morale: 50f,
+            Hunger: 30f,
+            Hydration: 30f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.FromHours(1));
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Health recovery should be normal (15 per hour)
+        // Expected: 50 + 15 = 65
+        Assert.Equal(65f, result.Health);
+    }
+
+    [Fact]
+    public void Apply_StressRecoveryReduced_WhenHungerIsHigh()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 10f,
+            Stress: 60f,
+            Morale: 50f,
+            Hunger: 85f, // Above HungerStressRecoveryThreshold (70)
+            Hydration: 30f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.FromHours(1));
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Stress recovery should be reduced
+        // Hunger factor: (85 - 70) / (100 - 70) = 0.5
+        // Multiplier: 1 - (0.5 * (1 - 0.3)) = 0.65
+        // Recovery: 12 * 0.65 = 7.8
+        // Expected: 60 - 7.8 = 52.2
+        Assert.Equal(52.2f, result.Stress);
+    }
+
+    [Fact]
+    public void Apply_StressRecoveryReduced_WhenHydrationIsHigh()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 10f,
+            Stress: 60f,
+            Morale: 50f,
+            Hunger: 30f,
+            Hydration: 85f, // Above HydrationStressRecoveryThreshold (70)
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.FromHours(1));
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Stress recovery should be reduced
+        // Hydration factor: (85 - 70) / (100 - 70) = 0.5
+        // Multiplier: 1 - (0.5 * (1 - 0.3)) = 0.65
+        // Recovery: 12 * 0.65 = 7.8
+        // Expected: 60 - 7.8 = 52.2
+        Assert.Equal(52.2f, result.Stress);
+    }
+
+    [Fact]
+    public void Apply_StressRecoveryReduced_WhenBothHungerAndHydrationAreHigh()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 10f,
+            Stress: 60f,
+            Morale: 50f,
+            Hunger: 85f, // Above threshold
+            Hydration: 85f, // Above threshold
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.FromHours(1));
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Stress recovery should be reduced by the most limiting factor (whichever is worse)
+        // Both factors are 0.5, so multiplier is 0.65
+        // Recovery: 12 * 0.65 = 7.8
+        // Expected: 60 - 7.8 = 52.2
+        Assert.Equal(52.2f, result.Stress);
+    }
+
+    [Fact]
+    public void Apply_FatigueRecoveryReduced_WhenStressIsHigh()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 60f,
+            Injury: 10f,
+            Stress: 80f, // Above StressFatigueRecoveryThreshold (60)
+            Morale: 50f,
+            Hunger: 30f,
+            Hydration: 30f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.FromHours(1));
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Fatigue recovery should be reduced
+        // Stress factor: (80 - 60) / (100 - 60) = 0.5
+        // Multiplier: 1 - (0.5 * (1 - 0.3)) = 0.65
+        // Recovery: 20 * 0.65 = 13
+        // Expected: 60 - 13 = 47
+        Assert.Equal(47f, result.Fatigue);
+    }
+
+    [Fact]
+    public void Apply_RecoveryMinimumRespected_WhenConditionsAreCritical()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 60f,
+            Injury: 100f, // Maximum injury
+            Stress: 100f, // Maximum stress
+            Morale: 50f,
+            Hunger: 100f, // Maximum hunger
+            Hydration: 100f, // Maximum hydration
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.FromHours(1));
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Recovery should still occur but at minimum rate (30%)
+        // Health: 50 + (15 * 0.3) = 54.5
+        Assert.Equal(54.5f, result.Health);
+        // Fatigue: 60 - (20 * 0.3) = 54
+        Assert.Equal(54f, result.Fatigue);
+        // Stress: 100 - (12 * 0.3) = 96.4
+        Assert.Equal(96.4f, result.Stress);
+    }
+
+    [Fact]
+    public void Apply_MultipleRecoveryReductions_ApplyIndependently()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 60f,
+            Injury: 65f, // Reduces health recovery
+            Stress: 80f, // Reduces fatigue recovery
+            Morale: 50f,
+            Hunger: 85f, // Reduces stress recovery
+            Hydration: 30f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.FromHours(1));
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Each recovery should be independently reduced
+        // Health: 50 + (15 * 0.65) = 59.75
+        Assert.Equal(59.75f, result.Health);
+        // Fatigue: 60 - (20 * 0.65) = 47
+        Assert.Equal(47f, result.Fatigue);
+        // Stress: 80 - (12 * 0.65) = 72.2
+        Assert.Equal(72.2f, result.Stress);
+    }
+
+    [Fact]
+    public void Apply_RecoveryReduction_WorksWithFractionalHours()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 60f,
+            Injury: 65f,
+            Stress: 20f,
+            Morale: 50f,
+            Hunger: 30f,
+            Hydration: 30f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.FromHours(0.5)); // Half hour
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Health recovery for 0.5 hours with 0.65 multiplier
+        // Expected: 50 + (15 * 0.5 * 0.65) = 54.875
+        Assert.Equal(54.875f, result.Health);
+    }
+
+    [Fact]
+    public void Apply_RecoveryReduction_IsDeterministic()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 60f,
+            Injury: 65f,
+            Stress: 80f,
+            Morale: 50f,
+            Hunger: 85f,
+            Hydration: 30f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.FromHours(1));
+
+        // Act
+        var result1 = PetRules.Apply(state, input, now);
+        var result2 = PetRules.Apply(state, input, now);
+
+        // Assert - Same inputs should produce identical results
+        Assert.Equal(result1.Health, result2.Health);
+        Assert.Equal(result1.Fatigue, result2.Fatigue);
+        Assert.Equal(result1.Stress, result2.Stress);
+    }
 }
