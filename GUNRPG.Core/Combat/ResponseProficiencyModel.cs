@@ -42,6 +42,12 @@ public static class ResponseProficiencyModel
     public const float MinEffectiveDelayMs = 10f;
 
     /// <summary>
+    /// Threshold for considering a multiplier as non-neutral for display purposes.
+    /// Multipliers within this threshold of 1.0 are considered "neutral" and may be hidden in UI.
+    /// </summary>
+    public const float MultiplierDisplayThreshold = 0.01f;
+
+    /// <summary>
     /// Calculates the effective delay after applying response proficiency scaling.
     /// 
     /// Formula: effectiveDelayMs = baseDelayMs × lerp(maxPenalty, minPenalty, responseProficiency)
