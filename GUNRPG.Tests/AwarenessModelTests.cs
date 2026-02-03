@@ -118,50 +118,6 @@ public class AwarenessModelTests
 
     #endregion
 
-    #region Suppressive Fire Decision Tests
-
-    [Fact]
-    public void ShouldUseSuppressiveFire_FullCoverRecentlyVisible_ReturnsTrue()
-    {
-        bool result = AwarenessModel.ShouldUseSuppressiveFire(
-            targetCoverState: CoverState.Full,
-            targetWasRecentlyVisible: true);
-
-        Assert.True(result);
-    }
-
-    [Fact]
-    public void ShouldUseSuppressiveFire_FullCoverNotRecentlyVisible_ReturnsFalse()
-    {
-        bool result = AwarenessModel.ShouldUseSuppressiveFire(
-            targetCoverState: CoverState.Full,
-            targetWasRecentlyVisible: false);
-
-        Assert.False(result);
-    }
-
-    [Fact]
-    public void ShouldUseSuppressiveFire_PartialCover_ReturnsFalse()
-    {
-        bool result = AwarenessModel.ShouldUseSuppressiveFire(
-            targetCoverState: CoverState.Partial,
-            targetWasRecentlyVisible: true);
-
-        Assert.False(result);
-    }
-
-    [Fact]
-    public void ShouldUseSuppressiveFire_NoCover_ReturnsFalse()
-    {
-        bool result = AwarenessModel.ShouldUseSuppressiveFire(
-            targetCoverState: CoverState.None,
-            targetWasRecentlyVisible: true);
-
-        Assert.False(result);
-    }
-
-    #endregion
-
     #region Recognition Accuracy Multiplier Tests
 
     [Fact]

@@ -469,41 +469,11 @@ public class CombatSystemV2
         if (targetCover == op.CurrentCover)
             return;
 
-        // Get transition delay
+        // Get transition delay (current model guarantees > 0 for valid transitions)
         int transitionDelayMs = CoverTransitionModel.GetTransitionDelayMs(op.CurrentCover, targetCover);
-        
-        if (transitionDelayMs > 0)
-        {
-            // Schedule cover transition with delay
-            StartCoverTransition(op, op.CurrentCover, targetCover, transitionDelayMs);
-        }
-        else
-        {
-            // Instant transition (shouldn't happen with new model, but fallback)
-            switch (cover)
-            {
-                case CoverAction.EnterPartial:
-                    if (op.EnterCover(CoverState.Partial, _time.CurrentTimeMs, _eventQueue))
-                    {
-                        Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} entered partial cover");
-                    }
-                    break;
 
-                case CoverAction.EnterFull:
-                    if (op.EnterCover(CoverState.Full, _time.CurrentTimeMs, _eventQueue))
-                    {
-                        Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} entered full cover");
-                    }
-                    break;
-
-                case CoverAction.Exit:
-                    if (op.ExitCover(_time.CurrentTimeMs, _eventQueue))
-                    {
-                        Console.WriteLine($"[{_time.CurrentTimeMs}ms] {op.Name} exited cover");
-                    }
-                    break;
-            }
-        }
+        // Schedule cover transition with delay
+        StartCoverTransition(op, op.CurrentCover, targetCover, transitionDelayMs);
     }
 
     /// <summary>
@@ -569,9 +539,9 @@ public class CombatSystemV2
         // Get the target
         var target = (op == Player) ? Enemy : Player;
 
-        // Update target visibility tracking
+        // Update target visibility tracking with recognition delay support
         bool targetVisible = target.IsVisibleToOpponents(_time.CurrentTimeMs);
-        op.UpdateTargetVisibility(targetVisible, _time.CurrentTimeMs);
+        op.UpdateTargetVisibility(target.Id, targetVisible, _time.CurrentTimeMs);
 
         // Check if we should use suppressive fire (target in full cover)
         if (SuppressiveFireModel.ShouldUseSuppressiveFire(
@@ -593,6 +563,20 @@ public class CombatSystemV2
         {
             fireTime += (long)weapon.SprintToFireTimeMs;
             op.MovementState = MovementState.Walking; // Transition from sprint to walk when firing
+        }
+
+        // Check if in recognition delay and emit event when completed
+        if (op.IsInRecognitionDelay(target.Id, _time.CurrentTimeMs) && 
+            op.RecognitionDelayEndMs.HasValue && 
+            fireTime >= op.RecognitionDelayEndMs.Value)
+        {
+            // Schedule recognition completed event
+            _eventQueue.Schedule(new TargetRecognizedEvent(
+                op.RecognitionDelayEndMs.Value,
+                op,
+                target,
+                op.RecognitionDelayEndMs.Value - (op.RecognitionStartMs ?? op.RecognitionDelayEndMs.Value),
+                _eventQueue.GetNextSequenceNumber()));
         }
 
         ScheduleShotIfNeeded(op, fireTime);

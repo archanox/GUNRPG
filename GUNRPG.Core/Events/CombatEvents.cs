@@ -139,6 +139,15 @@ public class ShotFiredEvent : ISimulationEvent
         float effectiveProficiency = AccuracyModel.CalculateEffectiveAccuracyProficiency(
             baseProficiency,
             flinchSeverity);
+
+        // Apply recognition delay penalty if shooter is still recognizing target
+        if (_shooter.IsInRecognitionDelay(_target.Id, EventTimeMs) && _shooter.RecognitionStartMs.HasValue)
+        {
+            float recognitionProgress = _shooter.GetRecognitionProgress(_target.Id, EventTimeMs, _shooter.RecognitionStartMs.Value);
+            float recognitionMultiplier = AwarenessModel.GetRecognitionAccuracyMultiplier(recognitionProgress);
+            effectiveProficiency *= recognitionMultiplier;
+        }
+
         var details = new ShotResolutionDetails();
         var resolution = HitResolution.ResolveShotWithProficiency(
             targetBodyPart: targetBodyPart,
