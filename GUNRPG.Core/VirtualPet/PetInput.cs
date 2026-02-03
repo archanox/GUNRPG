@@ -27,6 +27,6 @@ public sealed record DrinkInput(float Hydration) : PetInput;
 /// <summary>
 /// Input representing mission/combat deployment action.
 /// </summary>
-/// <param name="StressLoad">Stress impact of the mission.</param>
-/// <param name="InjuryRisk">Injury risk level of the mission.</param>
-public sealed record MissionInput(float StressLoad, float InjuryRisk) : PetInput;
+/// <param name="HitsTaken">Number of hits taken during the mission.</param>
+/// <param name="OpponentDifficulty">Difficulty rating of the opponent (0-100).</param>
+public sealed record MissionInput(int HitsTaken, float OpponentDifficulty) : PetInput;
