@@ -90,9 +90,22 @@ public static class ResponseProficiencyModel
         float multiplier = MaxDelayPenaltyMultiplier + 
             (MinDelayPenaltyMultiplier - MaxDelayPenaltyMultiplier) * responseProficiency;
         
-        float effectiveDelay = Math.Max(baseDelayMs * multiplier, MinEffectiveDelayMs);
+        // Compute the scaled delay before clamping
+        float scaledDelay = baseDelayMs * multiplier;
         
-        return (effectiveDelay, multiplier);
+        // Apply minimum delay clamp
+        float effectiveDelay = scaledDelay < MinEffectiveDelayMs
+            ? MinEffectiveDelayMs
+            : scaledDelay;
+        
+        // For logging/UI, we want baseDelayMs × multiplier ≈ effectiveDelayMs.
+        // When clamping occurs and baseDelayMs is positive, derive an "effective" multiplier
+        // from the clamped delay so that this relationship holds.
+        float effectiveMultiplier = (scaledDelay < MinEffectiveDelayMs && baseDelayMs > 0f)
+            ? effectiveDelay / baseDelayMs
+            : multiplier;
+        
+        return (effectiveDelay, effectiveMultiplier);
     }
 
     /// <summary>
