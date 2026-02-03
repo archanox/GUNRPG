@@ -105,15 +105,52 @@ public static class PetRules
     /// <summary>
     /// Applies rest action to the pet state.
     /// Rest reduces fatigue and stress, and recovers health.
+    /// Recovery rates are proportionally reduced based on adverse conditions.
     /// </summary>
     private static PetState ApplyRest(PetState state, RestInput input)
     {
         float hours = (float)input.Duration.TotalHours;
 
-        // Calculate recovery amounts
+        // Calculate base recovery amounts
         float healthRecovery = PetConstants.HealthRecoveryPerHour * hours;
         float fatigueRecovery = PetConstants.FatigueRecoveryPerHour * hours;
         float stressRecovery = PetConstants.StressRecoveryPerHour * hours;
+
+        // Apply recovery reduction multipliers based on current state
+        
+        // Health recovery is reduced when injured
+        if (state.Injury > PetConstants.InjuryRecoveryReductionThreshold)
+        {
+            float injuryFactor = (state.Injury - PetConstants.InjuryRecoveryReductionThreshold) 
+                               / (PetConstants.MaxStatValue - PetConstants.InjuryRecoveryReductionThreshold);
+            float healthMultiplier = 1f - (injuryFactor * (1f - PetConstants.MinRecoveryMultiplier));
+            healthRecovery *= healthMultiplier;
+        }
+
+        // Stress recovery is reduced when hungry or dehydrated
+        float stressMultiplier = 1f;
+        if (state.Hunger > PetConstants.HungerStressRecoveryThreshold)
+        {
+            float hungerFactor = (state.Hunger - PetConstants.HungerStressRecoveryThreshold) 
+                               / (PetConstants.MaxStatValue - PetConstants.HungerStressRecoveryThreshold);
+            stressMultiplier = Math.Min(stressMultiplier, 1f - (hungerFactor * (1f - PetConstants.MinRecoveryMultiplier)));
+        }
+        if (state.Hydration > PetConstants.HydrationStressRecoveryThreshold)
+        {
+            float hydrationFactor = (state.Hydration - PetConstants.HydrationStressRecoveryThreshold) 
+                                  / (PetConstants.MaxStatValue - PetConstants.HydrationStressRecoveryThreshold);
+            stressMultiplier = Math.Min(stressMultiplier, 1f - (hydrationFactor * (1f - PetConstants.MinRecoveryMultiplier)));
+        }
+        stressRecovery *= stressMultiplier;
+
+        // Fatigue recovery is reduced when stressed
+        if (state.Stress > PetConstants.StressFatigueRecoveryThreshold)
+        {
+            float stressFactor = (state.Stress - PetConstants.StressFatigueRecoveryThreshold) 
+                               / (PetConstants.MaxStatValue - PetConstants.StressFatigueRecoveryThreshold);
+            float fatigueMultiplier = 1f - (stressFactor * (1f - PetConstants.MinRecoveryMultiplier));
+            fatigueRecovery *= fatigueMultiplier;
+        }
 
         // Apply recovery and clamp to valid ranges
         return state with

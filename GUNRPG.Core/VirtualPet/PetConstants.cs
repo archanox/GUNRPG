@@ -139,4 +139,39 @@ public static class PetConstants
     /// Provisional value - adjust based on gameplay testing.
     /// </summary>
     public const float MoraleDecayDuringHealthDecay = 3f;
+
+    // ========================================
+    // Recovery Reduction Thresholds
+    // ========================================
+
+    /// <summary>
+    /// Injury threshold above which health recovery is reduced.
+    /// Provisional value - adjust based on gameplay testing.
+    /// </summary>
+    public const float InjuryRecoveryReductionThreshold = 30f;
+
+    /// <summary>
+    /// Hunger threshold above which stress recovery is reduced.
+    /// Provisional value - adjust based on gameplay testing.
+    /// </summary>
+    public const float HungerStressRecoveryThreshold = 70f;
+
+    /// <summary>
+    /// Hydration threshold above which stress recovery is reduced.
+    /// Provisional value - adjust based on gameplay testing.
+    /// </summary>
+    public const float HydrationStressRecoveryThreshold = 70f;
+
+    /// <summary>
+    /// Stress threshold above which fatigue recovery is reduced.
+    /// Provisional value - adjust based on gameplay testing.
+    /// </summary>
+    public const float StressFatigueRecoveryThreshold = 60f;
+
+    /// <summary>
+    /// Minimum recovery multiplier (prevents recovery from being eliminated entirely).
+    /// Value of 0.3 means recovery can be reduced to 30% at most.
+    /// Provisional value - adjust based on gameplay testing.
+    /// </summary>
+    public const float MinRecoveryMultiplier = 0.3f;
 }
