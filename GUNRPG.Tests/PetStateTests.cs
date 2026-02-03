@@ -151,7 +151,7 @@ public class PetStateTests
     }
 
     [Fact]
-    public void PetState_HasDifferentHashCodes_ForDifferentValues()
+    public void PetState_HasSameHashCode_ForEqualValues()
     {
         // Arrange
         var operatorId = Guid.NewGuid();
@@ -171,7 +171,7 @@ public class PetStateTests
 
         var petState2 = new PetState(
             operatorId,
-            Health: 50.0f,  // Different value
+            Health: 100.0f,
             Fatigue: 0.0f,
             Injury: 0.0f,
             Stress: 0.0f,
@@ -181,8 +181,8 @@ public class PetStateTests
             lastUpdated
         );
 
-        // Assert
-        Assert.NotEqual(petState1.GetHashCode(), petState2.GetHashCode());
+        // Assert - Equal objects must have equal hash codes
+        Assert.Equal(petState1.GetHashCode(), petState2.GetHashCode());
     }
 
     [Fact]
