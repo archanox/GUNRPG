@@ -189,15 +189,50 @@ public static class PetRules
 
     /// <summary>
     /// Applies mission action to the pet state.
-    /// Missions increase stress and may cause injury.
+    /// Missions affect injury, stress, fatigue, and potentially morale based on mission parameters.
     /// </summary>
     private static PetState ApplyMission(PetState state, MissionInput input)
     {
-        // Apply mission effects
+        // Calculate injury from hits taken
+        // Base injury is reduced proportionally by current health (healthier operators take less lasting injury)
+        float baseInjury = input.HitsTaken * PetConstants.InjuryPerHit;
+        float healthFactor = state.Health / PetConstants.MaxStatValue; // 0 to 1, higher is better
+        float injuryReduction = healthFactor * 0.5f; // Up to 50% reduction at full health
+        float actualInjury = baseInjury * (1f - injuryReduction);
+
+        // Calculate stress from opponent difficulty
+        float baseStress = input.OpponentDifficulty * PetConstants.StressPerDifficultyPoint;
+        
+        // Amplify stress gain when fatigue is high
+        float stressMultiplier = 1f;
+        if (state.Fatigue > PetConstants.HighFatigueStressAmplificationThreshold)
+        {
+            stressMultiplier = PetConstants.HighFatigueStressMultiplier;
+        }
+        float actualStress = baseStress * stressMultiplier;
+
+        // Fatigue increases modestly on every mission
+        float fatigueIncrease = PetConstants.MissionFatigueIncrease;
+
+        // Calculate new stat values (unclamped)
+        float newInjury = state.Injury + actualInjury;
+        float newStress = state.Stress + actualStress;
+        float newFatigue = state.Fatigue + fatigueIncrease;
+        
+        // Check if morale should decrease (after stress is applied)
+        float newMorale = state.Morale;
+        if (newStress > PetConstants.PostMissionStressThreshold)
+        {
+            newMorale = state.Morale - PetConstants.PostMissionMoraleDecrease;
+        }
+
+        // Apply all changes and clamp at the end
         return state with
         {
-            Stress = Clamp(state.Stress + input.StressLoad),
-            Injury = Clamp(state.Injury + input.InjuryRisk)
+            Injury = Clamp(newInjury),
+            Stress = Clamp(newStress),
+            Fatigue = Clamp(newFatigue),
+            Morale = Clamp(newMorale)
         };
     }
 

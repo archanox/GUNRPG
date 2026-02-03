@@ -102,22 +102,42 @@ public class PetRulesTests
     }
 
     [Fact]
-    public void Apply_WithMissionInput_IncreasesStressAndInjury()
+    public void Apply_WithMissionInput_AffectsMultipleStats()
     {
         // Arrange
         var lastUpdated = DateTimeOffset.UtcNow;
         var now = lastUpdated;
-        var state = CreateDefaultState(lastUpdated) with { Stress = 30f, Injury = 5f };
-        var input = new MissionInput(StressLoad: 20f, InjuryRisk: 10f);
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 80f, // High health reduces injury
+            Fatigue: 30f, // Low fatigue - no stress amplification
+            Injury: 5f,
+            Stress: 30f,
+            Morale: 50f,
+            Hunger: 30f,
+            Hydration: 30f,
+            LastUpdated: lastUpdated
+        );
+        var input = new MissionInput(HitsTaken: 2, OpponentDifficulty: 50f);
 
         // Act
         var result = PetRules.Apply(state, input, now);
 
         // Assert
-        // Stress should increase: 30 + 20 = 50
-        Assert.Equal(50f, result.Stress);
-        // Injury should increase: 5 + 10 = 15
-        Assert.Equal(15f, result.Injury);
+        // Injury: 2 hits * 8 = 16, reduced by health (80% health = 40% reduction): 16 * 0.6 = 9.6
+        // Expected: 5 + 9.6 = 14.6
+        Assert.Equal(14.6f, result.Injury);
+        
+        // Stress: 50 * 0.3 = 15 (no fatigue amplification)
+        // Expected: 30 + 15 = 45
+        Assert.Equal(45f, result.Stress);
+        
+        // Fatigue: increases by 15
+        // Expected: 30 + 15 = 45
+        Assert.Equal(45f, result.Fatigue);
+        
+        // Morale: unchanged (stress after mission is 45, below 70 threshold)
+        Assert.Equal(50f, result.Morale);
     }
 
     [Fact]
@@ -266,7 +286,7 @@ public class PetRulesTests
             Hydration: 100f,
             LastUpdated: lastUpdated
         );
-        var input = new MissionInput(StressLoad: 50f, InjuryRisk: 50f);
+        var input = new MissionInput(HitsTaken: 5, OpponentDifficulty: 100f);
 
         // Act
         var result = PetRules.Apply(state, input, now);
@@ -997,5 +1017,206 @@ public class PetRulesTests
         Assert.Equal(result1.Health, result2.Health);
         Assert.Equal(result1.Fatigue, result2.Fatigue);
         Assert.Equal(result1.Stress, result2.Stress);
+    }
+
+    // ========================================
+    // Mission Mechanics Tests
+    // ========================================
+
+    [Fact]
+    public void Apply_Mission_InjuryReducedByHighHealth()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var highHealthState = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 100f, // Maximum health
+            Fatigue: 30f,
+            Injury: 0f,
+            Stress: 30f,
+            Morale: 50f,
+            Hunger: 30f,
+            Hydration: 30f,
+            LastUpdated: lastUpdated
+        );
+        var lowHealthState = highHealthState with { Health = 0f }; // Minimum health
+        var input = new MissionInput(HitsTaken: 2, OpponentDifficulty: 50f);
+
+        // Act
+        var highHealthResult = PetRules.Apply(highHealthState, input, now);
+        var lowHealthResult = PetRules.Apply(lowHealthState, input, now);
+
+        // Assert - Higher health should result in less injury
+        // High health: 2*8 = 16, reduced by 50% = 8
+        // Low health: 2*8 = 16, no reduction = 16
+        Assert.Equal(8f, highHealthResult.Injury);
+        Assert.Equal(16f, lowHealthResult.Injury);
+    }
+
+    [Fact]
+    public void Apply_Mission_StressAmplifiedByHighFatigue()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var lowFatigueState = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 30f, // Below threshold (60)
+            Injury: 0f,
+            Stress: 20f,
+            Morale: 50f,
+            Hunger: 30f,
+            Hydration: 30f,
+            LastUpdated: lastUpdated
+        );
+        var highFatigueState = lowFatigueState with { Fatigue = 80f }; // Above threshold (60)
+        var input = new MissionInput(HitsTaken: 1, OpponentDifficulty: 100f);
+
+        // Act
+        var lowFatigueResult = PetRules.Apply(lowFatigueState, input, now);
+        var highFatigueResult = PetRules.Apply(highFatigueState, input, now);
+
+        // Assert - High fatigue should amplify stress
+        // Base stress: 100 * 0.3 = 30
+        // Low fatigue: 20 + 30 = 50
+        // High fatigue: 20 + (30 * 1.5) = 20 + 45 = 65
+        Assert.Equal(50f, lowFatigueResult.Stress);
+        Assert.Equal(65f, highFatigueResult.Stress);
+    }
+
+    [Fact]
+    public void Apply_Mission_FatigueIncreasesRegardlessOfHits()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = CreateDefaultState(lastUpdated) with { Fatigue = 30f };
+        var noHitsInput = new MissionInput(HitsTaken: 0, OpponentDifficulty: 50f);
+        var manyHitsInput = new MissionInput(HitsTaken: 10, OpponentDifficulty: 50f);
+
+        // Act
+        var noHitsResult = PetRules.Apply(state, noHitsInput, now);
+        var manyHitsResult = PetRules.Apply(state, manyHitsInput, now);
+
+        // Assert - Fatigue should increase by same amount regardless of hits
+        // Expected: 30 + 15 = 45
+        Assert.Equal(45f, noHitsResult.Fatigue);
+        Assert.Equal(45f, manyHitsResult.Fatigue);
+    }
+
+    [Fact]
+    public void Apply_Mission_MoraleDecreasesWhenStressExceedsThreshold()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var lowStressState = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 30f,
+            Injury: 0f,
+            Stress: 30f, // Will end below 70 after mission
+            Morale: 50f,
+            Hunger: 30f,
+            Hydration: 30f,
+            LastUpdated: lastUpdated
+        );
+        var highStressState = lowStressState with { Stress = 60f }; // Will end above 70
+        var input = new MissionInput(HitsTaken: 0, OpponentDifficulty: 30f); // Adds 9 stress
+
+        // Act
+        var lowStressResult = PetRules.Apply(lowStressState, input, now);
+        var highStressResult = PetRules.Apply(highStressState, input, now);
+
+        // Assert
+        // Low stress: 30 + 9 = 39 (below 70, morale unchanged)
+        Assert.Equal(50f, lowStressResult.Morale);
+        // High stress: 60 + 9 = 69 (below 70, morale unchanged)
+        Assert.Equal(50f, highStressResult.Morale);
+
+        // Now test with higher difficulty
+        var highDifficultyInput = new MissionInput(HitsTaken: 0, OpponentDifficulty: 40f); // Adds 12 stress
+        var highStressHighDiffResult = PetRules.Apply(highStressState, highDifficultyInput, now);
+        
+        // High stress + high difficulty: 60 + 12 = 72 (above 70, morale decreases)
+        // Expected morale: 50 - 5 = 45
+        Assert.Equal(45f, highStressHighDiffResult.Morale);
+    }
+
+    [Fact]
+    public void Apply_Mission_NoHitsNoInjury()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = CreateDefaultState(lastUpdated) with { Injury = 10f };
+        var input = new MissionInput(HitsTaken: 0, OpponentDifficulty: 50f);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Injury should remain unchanged
+        Assert.Equal(10f, result.Injury);
+    }
+
+    [Fact]
+    public void Apply_Mission_ComplexScenario()
+    {
+        // Arrange - Operator with low health and high fatigue
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 25f, // Low health - injury reduction: 25% of 50% = 12.5% reduction
+            Fatigue: 75f, // High fatigue - stress amplified by 1.5x
+            Injury: 20f,
+            Stress: 65f, // High starting stress
+            Morale: 60f,
+            Hunger: 30f,
+            Hydration: 30f,
+            LastUpdated: lastUpdated
+        );
+        var input = new MissionInput(HitsTaken: 3, OpponentDifficulty: 80f);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert
+        // Injury: 3*8 = 24, health factor = 0.25, reduction = 12.5%, actual = 24 * 0.875 = 21
+        // Expected: 20 + 21 = 41
+        Assert.Equal(41f, result.Injury);
+        
+        // Stress: 80 * 0.3 = 24, amplified by 1.5 = 36
+        // Expected: 65 + 36 = 101, clamped to 100
+        Assert.Equal(100f, result.Stress);
+        
+        // Fatigue: 75 + 15 = 90
+        Assert.Equal(90f, result.Fatigue);
+        
+        // Morale: Stress after = 100 (>70), so morale decreases
+        // Expected: 60 - 5 = 55
+        Assert.Equal(55f, result.Morale);
+    }
+
+    [Fact]
+    public void Apply_Mission_IsDeterministic()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow;
+        var now = lastUpdated;
+        var state = CreateDefaultState(lastUpdated);
+        var input = new MissionInput(HitsTaken: 3, OpponentDifficulty: 75f);
+
+        // Act
+        var result1 = PetRules.Apply(state, input, now);
+        var result2 = PetRules.Apply(state, input, now);
+
+        // Assert - Results should be identical
+        Assert.Equal(result1.Injury, result2.Injury);
+        Assert.Equal(result1.Stress, result2.Stress);
+        Assert.Equal(result1.Fatigue, result2.Fatigue);
+        Assert.Equal(result1.Morale, result2.Morale);
     }
 }

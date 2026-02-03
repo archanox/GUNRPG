@@ -174,4 +174,51 @@ public static class PetConstants
     /// Provisional value - adjust based on gameplay testing.
     /// </summary>
     public const float MinRecoveryMultiplier = 0.3f;
+
+    // ========================================
+    // Mission Impact Constants
+    // ========================================
+
+    /// <summary>
+    /// Base injury increase per hit taken during a mission.
+    /// Provisional value - adjust based on gameplay testing.
+    /// </summary>
+    public const float InjuryPerHit = 8f;
+
+    /// <summary>
+    /// Stress increase per point of opponent difficulty (0-100 scale).
+    /// Provisional value - adjust based on gameplay testing.
+    /// </summary>
+    public const float StressPerDifficultyPoint = 0.3f;
+
+    /// <summary>
+    /// Fatigue increase for completing any mission.
+    /// Provisional value - adjust based on gameplay testing.
+    /// </summary>
+    public const float MissionFatigueIncrease = 15f;
+
+    /// <summary>
+    /// Morale decrease when stress exceeds this threshold after a mission.
+    /// Provisional value - adjust based on gameplay testing.
+    /// </summary>
+    public const float PostMissionStressThreshold = 70f;
+
+    /// <summary>
+    /// Morale decrease amount when post-mission stress is high.
+    /// Provisional value - adjust based on gameplay testing.
+    /// </summary>
+    public const float PostMissionMoraleDecrease = 5f;
+
+    /// <summary>
+    /// Fatigue threshold above which stress gain is amplified during missions.
+    /// Provisional value - adjust based on gameplay testing.
+    /// </summary>
+    public const float HighFatigueStressAmplificationThreshold = 60f;
+
+    /// <summary>
+    /// Multiplier for stress gain when fatigue is high.
+    /// Value of 1.5 means 50% more stress when fatigued.
+    /// Provisional value - adjust based on gameplay testing.
+    /// </summary>
+    public const float HighFatigueStressMultiplier = 1.5f;
 }

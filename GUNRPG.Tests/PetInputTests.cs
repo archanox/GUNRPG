@@ -40,14 +40,14 @@ public class PetInputTests
     }
 
     [Fact]
-    public void MissionInput_CanBeCreated_WithStressLoadAndInjuryRisk()
+    public void MissionInput_CanBeCreated_WithHitsTakenAndOpponentDifficulty()
     {
         // Arrange & Act
-        var input = new MissionInput(StressLoad: 60.0f, InjuryRisk: 30.0f);
+        var input = new MissionInput(HitsTaken: 3, OpponentDifficulty: 75.0f);
 
         // Assert
-        Assert.Equal(60.0f, input.StressLoad);
-        Assert.Equal(30.0f, input.InjuryRisk);
+        Assert.Equal(3, input.HitsTaken);
+        Assert.Equal(75.0f, input.OpponentDifficulty);
         Assert.IsAssignableFrom<PetInput>(input);
     }
 
@@ -65,8 +65,8 @@ public class PetInputTests
         var drink1 = new DrinkInput(75.0f);
         var drink2 = new DrinkInput(75.0f);
 
-        var mission1 = new MissionInput(60.0f, 30.0f);
-        var mission2 = new MissionInput(60.0f, 30.0f);
+        var mission1 = new MissionInput(3, 75.0f);
+        var mission2 = new MissionInput(3, 75.0f);
 
         // Assert
         Assert.Equal(rest1, rest2);
@@ -81,18 +81,18 @@ public class PetInputTests
     {
         // Arrange
         var originalRest = new RestInput(TimeSpan.FromHours(8));
-        var originalMission = new MissionInput(StressLoad: 60.0f, InjuryRisk: 30.0f);
+        var originalMission = new MissionInput(HitsTaken: 3, OpponentDifficulty: 75.0f);
 
         // Act
         var updatedRest = originalRest with { Duration = TimeSpan.FromHours(10) };
-        var updatedMission = originalMission with { StressLoad = 80.0f };
+        var updatedMission = originalMission with { HitsTaken = 5 };
 
         // Assert
         Assert.Equal(TimeSpan.FromHours(8), originalRest.Duration);
         Assert.Equal(TimeSpan.FromHours(10), updatedRest.Duration);
-        Assert.Equal(60.0f, originalMission.StressLoad);
-        Assert.Equal(80.0f, updatedMission.StressLoad);
-        Assert.Equal(30.0f, updatedMission.InjuryRisk); // Unchanged property
+        Assert.Equal(3, originalMission.HitsTaken);
+        Assert.Equal(5, updatedMission.HitsTaken);
+        Assert.Equal(75.0f, updatedMission.OpponentDifficulty); // Unchanged property
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public class PetInputTests
             new RestInput(TimeSpan.FromHours(8)),
             new EatInput(50.0f),
             new DrinkInput(75.0f),
-            new MissionInput(60.0f, 30.0f)
+            new MissionInput(3, 75.0f)
         };
 
         // Assert
@@ -119,7 +119,7 @@ public class PetInputTests
     public void PetInput_SupportsPatternMatching()
     {
         // Arrange
-        PetInput input = new MissionInput(StressLoad: 60.0f, InjuryRisk: 30.0f);
+        PetInput input = new MissionInput(HitsTaken: 3, OpponentDifficulty: 75.0f);
 
         // Act & Assert
         var result = input switch
@@ -127,11 +127,11 @@ public class PetInputTests
             RestInput rest => $"Rest for {rest.Duration.TotalHours}h",
             EatInput eat => $"Eat {eat.Nutrition} nutrition",
             DrinkInput drink => $"Drink {drink.Hydration} hydration",
-            MissionInput mission => $"Mission with {mission.StressLoad} stress",
+            MissionInput mission => $"Mission with {mission.HitsTaken} hits at {mission.OpponentDifficulty} difficulty",
             _ => "Unknown"
         };
 
-        Assert.Equal("Mission with 60 stress", result);
+        Assert.Equal("Mission with 3 hits at 75 difficulty", result);
     }
 
     [Fact]
@@ -178,16 +178,16 @@ public class PetInputTests
     public void MissionInput_AcceptsBoundaryValues()
     {
         // Arrange & Act
-        var zeros = new MissionInput(0.0f, 0.0f);
-        var negatives = new MissionInput(-10.0f, -20.0f);
-        var large = new MissionInput(1000.0f, 2000.0f);
+        var zeros = new MissionInput(0, 0.0f);
+        var negatives = new MissionInput(-10, -20.0f);
+        var large = new MissionInput(1000, 2000.0f);
 
         // Assert
-        Assert.Equal(0.0f, zeros.StressLoad);
-        Assert.Equal(0.0f, zeros.InjuryRisk);
-        Assert.Equal(-10.0f, negatives.StressLoad);
-        Assert.Equal(-20.0f, negatives.InjuryRisk);
-        Assert.Equal(1000.0f, large.StressLoad);
-        Assert.Equal(2000.0f, large.InjuryRisk);
+        Assert.Equal(0, zeros.HitsTaken);
+        Assert.Equal(0.0f, zeros.OpponentDifficulty);
+        Assert.Equal(-10, negatives.HitsTaken);
+        Assert.Equal(-20.0f, negatives.OpponentDifficulty);
+        Assert.Equal(1000, large.HitsTaken);
+        Assert.Equal(2000.0f, large.OpponentDifficulty);
     }
 }
