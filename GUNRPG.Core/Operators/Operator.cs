@@ -180,6 +180,16 @@ public class Operator
     /// </summary>
     public long? LastTargetVisibleMs { get; set; }
 
+    /// <summary>
+    /// When recognition started (for calculating progress).
+    /// </summary>
+    public long? RecognitionStartMs { get; set; }
+
+    /// <summary>
+    /// Whether the target was visible in the previous check (for detecting visibility changes).
+    /// </summary>
+    public bool WasTargetVisible { get; set; }
+
     public Operator(string name)
     {
         Id = Guid.NewGuid();
@@ -664,8 +674,14 @@ public class Operator
         if (currentTimeMs < CoverTransitionEndMs.Value)
             return CoverState.Partial;
 
-        // Transition complete
-        return CoverTransitionToState;
+        // After the scheduled end time, only treat the transition as complete
+        // once the transition flag has been cleared by the completion event.
+        if (!IsCoverTransitioning)
+            return CoverTransitionToState;
+
+        // Transition end time has passed, but the completion event has not yet
+        // updated the underlying state; remain consistent with CurrentCover.
+        return CurrentCover;
     }
 
     /// <summary>
@@ -717,16 +733,56 @@ public class Operator
     }
 
     /// <summary>
+    /// Updates target visibility tracking and handles recognition delay.
+    /// Call when the target's visibility changes.
+    /// </summary>
+    /// <param name="targetId">Target operator ID</param>
+    /// <param name="targetIsVisible">Whether the target is currently visible</param>
+    /// <param name="currentTimeMs">Current simulation time</param>
+    public void UpdateTargetVisibility(Guid targetId, bool targetIsVisible, long currentTimeMs)
+    {
+        if (targetIsVisible)
+        {
+            LastTargetVisibleMs = currentTimeMs;
+
+            // Check if target just became visible (was not visible before)
+            if (!WasTargetVisible)
+            {
+                // Start recognition delay
+                float recognitionDelay = AwarenessModel.CalculateRecognitionDelayMs(
+                    AccuracyProficiency, SuppressionLevel);
+                RecognitionTargetId = targetId;
+                RecognitionStartMs = currentTimeMs;
+                RecognitionDelayEndMs = currentTimeMs + (long)recognitionDelay;
+            }
+        }
+        else
+        {
+            // Target no longer visible - clear recognition tracking
+            if (RecognitionTargetId == targetId)
+            {
+                RecognitionTargetId = null;
+                RecognitionStartMs = null;
+                RecognitionDelayEndMs = null;
+            }
+        }
+
+        WasTargetVisible = targetIsVisible;
+    }
+
+    /// <summary>
     /// Updates target visibility tracking.
     /// Call when the target's visibility changes.
     /// </summary>
     /// <param name="targetIsVisible">Whether the target is currently visible</param>
     /// <param name="currentTimeMs">Current simulation time</param>
+    [Obsolete("Use UpdateTargetVisibility(Guid, bool, long) for recognition delay support")]
     public void UpdateTargetVisibility(bool targetIsVisible, long currentTimeMs)
     {
         if (targetIsVisible)
         {
             LastTargetVisibleMs = currentTimeMs;
         }
+        WasTargetVisible = targetIsVisible;
     }
 }

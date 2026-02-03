@@ -86,8 +86,17 @@ public class AwarenessCoverIntegrationTests
         var effectiveCover = op.GetEffectiveCoverState(currentTimeMs: 100);
         Assert.Equal(CoverState.Partial, effectiveCover);
 
-        // After transition complete
+        // After transition end time but before completion event clears the flag,
+        // we remain consistent with CurrentCover (None in this case)
         effectiveCover = op.GetEffectiveCoverState(currentTimeMs: 250);
+        Assert.Equal(CoverState.None, effectiveCover);
+
+        // Simulate completion event clearing the transition flag and updating cover
+        op.IsCoverTransitioning = false;
+        op.CurrentCover = CoverState.Full;
+        
+        // Now should return the new cover state
+        effectiveCover = op.GetEffectiveCoverState(currentTimeMs: 300);
         Assert.Equal(CoverState.Full, effectiveCover);
     }
 

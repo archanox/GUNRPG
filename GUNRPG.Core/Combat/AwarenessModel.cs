@@ -102,19 +102,6 @@ public static class AwarenessModel
     }
 
     /// <summary>
-    /// Determines if an operator should fire suppressive fire instead of direct fire.
-    /// Suppressive fire is used when the target is not visible but believed to be present.
-    /// </summary>
-    /// <param name="targetCoverState">Target's current cover state</param>
-    /// <param name="targetWasRecentlyVisible">Whether the target was recently visible</param>
-    /// <returns>True if suppressive fire should be used</returns>
-    public static bool ShouldUseSuppressiveFire(CoverState targetCoverState, bool targetWasRecentlyVisible)
-    {
-        // Suppressive fire when target is in full cover but was recently seen
-        return targetCoverState == CoverState.Full && targetWasRecentlyVisible;
-    }
-
-    /// <summary>
     /// Gets the accuracy penalty multiplier during recognition delay.
     /// During recognition, shots are essentially blind fire.
     /// </summary>
