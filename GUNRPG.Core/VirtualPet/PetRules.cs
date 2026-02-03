@@ -38,24 +38,67 @@ public static class PetRules
 
     /// <summary>
     /// Applies background decay to all stats based on elapsed time.
+    /// Implements conditional coupling rules where certain stats affect others.
     /// </summary>
     private static PetState ApplyBackgroundDecay(PetState state, TimeSpan elapsed)
     {
         float hours = (float)elapsed.TotalHours;
 
-        // Calculate decay amounts
+        // Base decay amounts (always applied)
         float hungerIncrease = PetConstants.HungerIncreasePerHour * hours;
         float hydrationDecrease = PetConstants.HydrationDecreasePerHour * hours;
-        float fatigueIncrease = PetConstants.FatigueIncreasePerHour * hours;
-        float stressIncrease = PetConstants.StressIncreasePerHour * hours;
 
-        // Apply decay and clamp to valid ranges
+        // Fatigue increases at base rate, faster when stress is high
+        float fatigueIncrease = PetConstants.FatigueIncreasePerHour * hours;
+        if (state.Stress > PetConstants.HighStressThreshold)
+        {
+            fatigueIncrease += PetConstants.FatigueIncreaseHighStress * hours;
+        }
+
+        // Stress increases at base rate, faster when injury is high
+        float stressIncrease = PetConstants.StressIncreasePerHour * hours;
+        if (state.Injury > PetConstants.HighInjuryThreshold)
+        {
+            stressIncrease += PetConstants.StressIncreaseHighInjury * hours;
+        }
+
+        // Morale decreases slowly when stress is elevated
+        float moraleDecrease = 0f;
+        if (state.Stress > PetConstants.MoraleDecayStressThreshold)
+        {
+            moraleDecrease = PetConstants.MoraleDecayPerHour * hours;
+        }
+
+        // Health decay is conditional on critical conditions
+        float healthDecrease = 0f;
+        bool healthDecayActive = state.Hunger > PetConstants.CriticalHungerThreshold
+                               || state.Hydration > PetConstants.CriticalHydrationThreshold
+                               || state.Injury > PetConstants.CriticalInjuryThreshold;
+
+        if (healthDecayActive)
+        {
+            healthDecrease = PetConstants.HealthDecayPerHour * hours;
+            // Morale decreases faster while health is decaying
+            moraleDecrease += PetConstants.MoraleDecayDuringHealthDecay * hours;
+        }
+
+        // Calculate new stat values (unclamped)
+        float newHunger = state.Hunger + hungerIncrease;
+        float newHydration = state.Hydration - hydrationDecrease;
+        float newFatigue = state.Fatigue + fatigueIncrease;
+        float newStress = state.Stress + stressIncrease;
+        float newMorale = state.Morale - moraleDecrease;
+        float newHealth = state.Health - healthDecrease;
+
+        // Apply all changes and clamp once at the end
         return state with
         {
-            Hunger = Clamp(state.Hunger + hungerIncrease),
-            Hydration = Clamp(state.Hydration - hydrationDecrease),
-            Fatigue = Clamp(state.Fatigue + fatigueIncrease),
-            Stress = Clamp(state.Stress + stressIncrease)
+            Hunger = Clamp(newHunger),
+            Hydration = Clamp(newHydration),
+            Fatigue = Clamp(newFatigue),
+            Stress = Clamp(newStress),
+            Morale = Clamp(newMorale),
+            Health = Clamp(newHealth)
         };
     }
 

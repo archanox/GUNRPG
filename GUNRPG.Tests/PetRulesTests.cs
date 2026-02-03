@@ -342,4 +342,362 @@ public class PetRulesTests
         Assert.Equal(75f, result.Morale);
         Assert.Equal(state.OperatorId, result.OperatorId);
     }
+
+    // ========================================
+    // Conditional Decay Tests
+    // ========================================
+
+    [Fact]
+    public void Apply_FatigueIncreasesFaster_WhenStressIsHigh()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-1);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 0f,
+            Stress: 70f, // Above HighStressThreshold (60)
+            Morale: 50f,
+            Hunger: 50f,
+            Hydration: 50f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Fatigue increases by base rate + high stress rate
+        // Expected: 20 + (10 * 1) + (5 * 1) = 35
+        Assert.Equal(35f, result.Fatigue);
+    }
+
+    [Fact]
+    public void Apply_FatigueIncreasesNormally_WhenStressIsNotHigh()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-1);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 0f,
+            Stress: 50f, // Below HighStressThreshold (60)
+            Morale: 50f,
+            Hunger: 50f,
+            Hydration: 50f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Fatigue increases by base rate only
+        // Expected: 20 + (10 * 1) = 30
+        Assert.Equal(30f, result.Fatigue);
+    }
+
+    [Fact]
+    public void Apply_StressIncreasesFaster_WhenInjuryIsHigh()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-1);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 50f, // Above HighInjuryThreshold (40)
+            Stress: 20f,
+            Morale: 50f,
+            Hunger: 50f,
+            Hydration: 50f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Stress increases by base rate + high injury rate
+        // Expected: 20 + (3 * 1) + (4 * 1) = 27
+        Assert.Equal(27f, result.Stress);
+    }
+
+    [Fact]
+    public void Apply_MoraleDecreases_WhenStressIsElevated()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-1);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 0f,
+            Stress: 60f, // Above MoraleDecayStressThreshold (50)
+            Morale: 50f,
+            Hunger: 50f,
+            Hydration: 50f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Morale decreases
+        // Expected: 50 - (2 * 1) = 48
+        Assert.Equal(48f, result.Morale);
+    }
+
+    [Fact]
+    public void Apply_MoraleStable_WhenStressIsLow()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-1);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 0f,
+            Stress: 40f, // Below MoraleDecayStressThreshold (50)
+            Morale: 50f,
+            Hunger: 50f,
+            Hydration: 50f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Morale should not decrease
+        Assert.Equal(50f, result.Morale);
+    }
+
+    [Fact]
+    public void Apply_HealthDecays_WhenHungerIsCritical()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-1);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 0f,
+            Stress: 30f,
+            Morale: 50f,
+            Hunger: 85f, // Above CriticalHungerThreshold (80)
+            Hydration: 50f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Health should decrease
+        // Expected: 50 - (3 * 1) = 47
+        Assert.Equal(47f, result.Health);
+    }
+
+    [Fact]
+    public void Apply_HealthDecays_WhenHydrationIsCritical()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-1);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 0f,
+            Stress: 30f,
+            Morale: 50f,
+            Hunger: 50f,
+            Hydration: 85f, // Above CriticalHydrationThreshold (80)
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Health should decrease
+        // Expected: 50 - (3 * 1) = 47
+        Assert.Equal(47f, result.Health);
+    }
+
+    [Fact]
+    public void Apply_HealthDecays_WhenInjuryIsCritical()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-1);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 70f, // Above CriticalInjuryThreshold (60)
+            Stress: 30f,
+            Morale: 50f,
+            Hunger: 50f,
+            Hydration: 50f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Health should decrease
+        // Expected: 50 - (3 * 1) = 47
+        Assert.Equal(47f, result.Health);
+    }
+
+    [Fact]
+    public void Apply_HealthStable_WhenNoCriticalConditions()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-1);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 50f, // Below CriticalInjuryThreshold (60)
+            Stress: 30f,
+            Morale: 50f,
+            Hunger: 70f, // Below CriticalHungerThreshold (80)
+            Hydration: 70f, // Below CriticalHydrationThreshold (80)
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Health should not decrease
+        Assert.Equal(50f, result.Health);
+    }
+
+    [Fact]
+    public void Apply_MoraleDecreasesFaster_DuringHealthDecay()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-1);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 70f, // Critical injury triggers health decay
+            Stress: 60f, // Above MoraleDecayStressThreshold, so morale decays from stress too
+            Morale: 50f,
+            Hunger: 50f,
+            Hydration: 50f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Morale decreases from both stress and health decay
+        // Expected: 50 - (2 * 1) - (3 * 1) = 45
+        Assert.Equal(45f, result.Morale);
+    }
+
+    [Fact]
+    public void Apply_ConditionalDecay_WorksWithFractionalHours()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-0.5);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 0f,
+            Stress: 70f, // High stress
+            Morale: 50f,
+            Hunger: 50f,
+            Hydration: 50f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Fatigue increases by (10 + 5) * 0.5 = 7.5
+        // Expected: 20 + 7.5 = 27.5
+        Assert.Equal(27.5f, result.Fatigue);
+    }
+
+    [Fact]
+    public void Apply_ConditionalDecay_ClampsAtEnd()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-10);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 80f,
+            Injury: 0f,
+            Stress: 80f, // High stress - would cause large fatigue increase
+            Morale: 50f,
+            Hunger: 50f,
+            Hydration: 50f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Fatigue should be clamped at 100 despite large increase
+        Assert.Equal(100f, result.Fatigue);
+    }
+
+    [Fact]
+    public void Apply_MultipleConditionalEffects_ApplySimultaneously()
+    {
+        // Arrange
+        var lastUpdated = DateTimeOffset.UtcNow.AddHours(-1);
+        var now = DateTimeOffset.UtcNow;
+        var state = new PetState(
+            OperatorId: Guid.NewGuid(),
+            Health: 50f,
+            Fatigue: 20f,
+            Injury: 70f, // Triggers: stress increase + health decay
+            Stress: 70f, // Triggers: fatigue increase + morale decay
+            Morale: 50f,
+            Hunger: 85f, // Triggers: health decay
+            Hydration: 50f,
+            LastUpdated: lastUpdated
+        );
+        var input = new RestInput(TimeSpan.Zero);
+
+        // Act
+        var result = PetRules.Apply(state, input, now);
+
+        // Assert - Multiple effects should compound
+        // Fatigue: 20 + 10 + 5 = 35 (base + high stress)
+        Assert.Equal(35f, result.Fatigue);
+        // Stress: 70 + 3 + 4 = 77 (base + high injury)
+        Assert.Equal(77f, result.Stress);
+        // Health: 50 - 3 = 47 (health decay from injury + hunger)
+        Assert.Equal(47f, result.Health);
+        // Morale: 50 - 2 - 3 = 45 (stress decay + health decay)
+        Assert.Equal(45f, result.Morale);
+    }
 }
