@@ -2,25 +2,25 @@ namespace GUNRPG.Core.VirtualPet;
 
 /// <summary>
 /// Immutable record representing the condition of a virtual operator.
-/// Pure data model with no behavior.
+/// Pure data model with no behavior or validation.
 /// </summary>
+/// <param name="OperatorId">Unique identifier for the operator.</param>
+/// <param name="Health">Physical health level. Expected range: 0-100.</param>
+/// <param name="Fatigue">Fatigue level. Expected range: 0-100.</param>
+/// <param name="Injury">Injury severity. Expected range: 0-100.</param>
+/// <param name="Stress">Mental stress level. Expected range: 0-100.</param>
+/// <param name="Morale">Morale level. Expected range: 0-100.</param>
+/// <param name="Hunger">Hunger level. Expected range: 0-100.</param>
+/// <param name="Hydration">Hydration level. Expected range: 0-100.</param>
+/// <param name="LastUpdated">Timestamp of the last state update.</param>
 public sealed record PetState(
-    // Identity
     Guid OperatorId,
-    
-    // Physical (0-100)
     float Health,
     float Fatigue,
     float Injury,
-    
-    // Mental (0-100)
     float Stress,
     float Morale,
-    
-    // Care (0-100)
     float Hunger,
     float Hydration,
-    
-    // Timestamp
     DateTimeOffset LastUpdated
 );
