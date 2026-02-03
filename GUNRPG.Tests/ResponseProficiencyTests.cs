@@ -288,4 +288,95 @@ public class ResponseProficiencyTests
     }
 
     #endregion
+
+    #region Cover Transition Integration Tests
+
+    [Fact]
+    public void CoverTransitionModel_EffectiveDelay_ScalesWithProficiency()
+    {
+        // Test that CoverTransitionModel.GetEffectiveTransitionDelayMs properly integrates
+        // with ResponseProficiencyModel
+        var fromCover = CoverState.None;
+        var toCover = CoverState.Partial;
+
+        int baseDelay = CoverTransitionModel.GetTransitionDelayMs(fromCover, toCover);
+        
+        int lowProfDelay = CoverTransitionModel.GetEffectiveTransitionDelayMs(fromCover, toCover, 0f);
+        int midProfDelay = CoverTransitionModel.GetEffectiveTransitionDelayMs(fromCover, toCover, 0.5f);
+        int highProfDelay = CoverTransitionModel.GetEffectiveTransitionDelayMs(fromCover, toCover, 1f);
+        
+        // Verify scaling order
+        Assert.True(lowProfDelay >= midProfDelay, 
+            $"Low prof delay ({lowProfDelay}) should be >= mid ({midProfDelay})");
+        Assert.True(midProfDelay >= highProfDelay, 
+            $"Mid prof delay ({midProfDelay}) should be >= high ({highProfDelay})");
+        
+        // Mid proficiency should be close to base delay (within 5ms)
+        Assert.True(Math.Abs(baseDelay - midProfDelay) <= 5,
+            $"Mid proficiency delay ({midProfDelay}) should be close to base delay ({baseDelay})");
+    }
+
+    [Fact]
+    public void CoverTransitionModel_EffectiveDelayWithInfo_ReturnsConsistentData()
+    {
+        var fromCover = CoverState.Full;
+        var toCover = CoverState.Partial;
+        float proficiency = 0.75f;
+
+        var (effectiveDelayMs, baseDelayMs, multiplier) = 
+            CoverTransitionModel.GetEffectiveTransitionDelayWithInfo(fromCover, toCover, proficiency);
+        
+        // Verify values are consistent
+        int expectedEffective = CoverTransitionModel.GetEffectiveTransitionDelayMs(fromCover, toCover, proficiency);
+        int expectedBase = CoverTransitionModel.GetTransitionDelayMs(fromCover, toCover);
+        float expectedMultiplier = ResponseProficiencyModel.GetDelayMultiplier(proficiency);
+        
+        Assert.Equal(expectedEffective, effectiveDelayMs);
+        Assert.Equal(expectedBase, baseDelayMs);
+        Assert.Equal(expectedMultiplier, multiplier, 3);
+    }
+
+    #endregion
+
+    #region Suppression Recovery Integration Tests
+
+    [Fact]
+    public void SuppressionDecay_HighResponseProficiency_RecoversFaster()
+    {
+        float initialSuppression = 0.5f;
+        long deltaMs = 1000; // 1 second
+        bool isUnderFire = false;
+
+        float lowProfResult = SuppressionModel.ApplyDecay(
+            initialSuppression, deltaMs, isUnderFire, null, 0f);
+        float highProfResult = SuppressionModel.ApplyDecay(
+            initialSuppression, deltaMs, isUnderFire, null, 1f);
+
+        Assert.True(highProfResult < lowProfResult,
+            $"High proficiency decay ({highProfResult}) should leave less suppression than low proficiency ({lowProfResult})");
+    }
+
+    [Fact]
+    public void Operator_SuppressionDecay_UsesResponseProficiency()
+    {
+        var lowProfOp = new Operator("LowProf") { ResponseProficiency = 0.1f };
+        var highProfOp = new Operator("HighProf") { ResponseProficiency = 0.9f };
+        
+        // Apply same suppression to both
+        lowProfOp.ApplySuppression(0.5f, 0);
+        highProfOp.ApplySuppression(0.5f, 0);
+        
+        Assert.Equal(lowProfOp.SuppressionLevel, highProfOp.SuppressionLevel);
+        
+        // Let time pass and check decay (no fire, so decay starts immediately)
+        long decayTime = SuppressionModel.ContinuedFireWindowMs + 1000; // Past the fire window
+        lowProfOp.UpdateSuppressionDecay(decayTime, decayTime);
+        highProfOp.UpdateSuppressionDecay(decayTime, decayTime);
+        
+        // High proficiency should have recovered more
+        Assert.True(highProfOp.SuppressionLevel < lowProfOp.SuppressionLevel,
+            $"High prof suppression ({highProfOp.SuppressionLevel:F3}) should be lower than low prof ({lowProfOp.SuppressionLevel:F3})");
+    }
+
+    #endregion
 }

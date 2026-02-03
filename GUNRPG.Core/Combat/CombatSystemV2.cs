@@ -371,7 +371,7 @@ public class CombatSystemV2
                 
                 // Track in timeline with response proficiency info
                 float responseMultiplier = ResponseProficiencyModel.GetDelayMultiplier(op.ResponseProficiency);
-                string detail = Math.Abs(responseMultiplier - 1.0f) > 0.01f
+                string detail = Math.Abs(responseMultiplier - 1.0f) > ResponseProficiencyModel.MultiplierDisplayThreshold
                     ? $"EnterADS ({baseAdsTime:F0}ms × {responseMultiplier:F2} = {effectiveAdsTime:F0}ms)"
                     : "EnterADS";
                 _timelineEntries.Add(new CombatEventTimelineEntry(
@@ -518,7 +518,7 @@ public class CombatSystemV2
             _eventQueue.GetNextSequenceNumber()));
 
         // Track transition in timeline with response proficiency info
-        string detail = baseDelayMs > 0 && Math.Abs(responseMultiplier - 1.0f) > 0.01f
+        string detail = baseDelayMs > 0 && Math.Abs(responseMultiplier - 1.0f) > ResponseProficiencyModel.MultiplierDisplayThreshold
             ? $"{fromCover} → {toCover} ({baseDelayMs}ms × {responseMultiplier:F2} = {durationMs}ms)"
             : $"{fromCover} → {toCover}";
         
