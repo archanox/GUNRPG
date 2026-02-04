@@ -4,6 +4,7 @@ using GUNRPG.Core.Combat;
 using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
 using GUNRPG.Core.Rendering;
+using GUNRPG.Core.VirtualPet;
 
 Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
 Console.WriteLine("║          GUNRPG - Text-Based Tactical Combat Simulator       ║");
@@ -26,25 +27,144 @@ var enemy = new Operator("Enemy")
 };
 enemy.CurrentAmmo = enemy.EquippedWeapon!.MagazineSize;
 
-Console.WriteLine($"Player equipped with: {player.EquippedWeapon.Name}");
-Console.WriteLine($"Enemy equipped with:  {enemy.EquippedWeapon.Name}");
-Console.WriteLine($"Starting distance:    {player.DistanceToOpponent:F1} meters");
-Console.WriteLine();
-
-// Create combat system
-var combat = new CombatSystemV2(player, enemy, seed: 42); // Fixed seed for determinism
-var ai = new SimpleAIV2(seed: 42);
-var timelineRenderer = new CombatEventTimelineRenderer();
-
-Console.WriteLine("Combat initialized. Press any key to start...");
-Console.ReadKey(true);
-Console.WriteLine();
-
-// Main combat loop
-int roundNumber = 1;
-while (combat.Phase != CombatPhase.Ended)
+// Main menu loop
+bool exitRequested = false;
+while (!exitRequested)
 {
-    Console.WriteLine($"═══ ROUND {roundNumber} - PLANNING PHASE ═══");
+    Console.WriteLine("═══ MAIN MENU ═══");
+    Console.WriteLine("1. View Operator Stats (Virtual Pet)");
+    Console.WriteLine("2. Enter Battle");
+    Console.WriteLine("3. Exit");
+    Console.Write("Choose an option (1-3): ");
+    
+    var menuChoice = Console.ReadKey();
+    Console.WriteLine();
+    Console.WriteLine();
+    
+    switch (menuChoice.KeyChar)
+    {
+        case '1':
+            DisplayOperatorStats(player);
+            Console.WriteLine("Press any key to return to main menu...");
+            Console.ReadKey(true);
+            Console.WriteLine();
+            break;
+            
+        case '2':
+            StartBattle(player, enemy);
+            // After battle completes, reset operators for potential replay
+            Console.WriteLine();
+            Console.WriteLine("Press any key to return to main menu...");
+            Console.ReadKey(true);
+            Console.WriteLine();
+            break;
+            
+        case '3':
+            exitRequested = true;
+            Console.WriteLine("Exiting game. Goodbye!");
+            break;
+            
+        default:
+            Console.WriteLine("Invalid choice. Please select 1, 2, or 3.");
+            Console.WriteLine();
+            break;
+    }
+}
+
+static void DisplayOperatorStats(Operator op)
+{
+    // Create a virtual pet state snapshot
+    var petState = new PetState(
+        op.Id,
+        op.Health,
+        op.Fatigue,
+        0f, // Injury (not directly tracked on Operator)
+        0f, // Stress (not directly tracked on Operator)
+        100f, // Morale (not directly tracked on Operator, assume 100)
+        100f, // Hunger (not directly tracked on Operator, assume 100)
+        100f, // Hydration (not directly tracked on Operator, assume 100)
+        DateTimeOffset.Now
+    );
+    
+    Console.WriteLine("╔═════════════════════════════════════════════════════════════════════╗");
+    Console.WriteLine("║                       OPERATOR STATS (VIRTUAL PET)                  ║");
+    Console.WriteLine("╚═════════════════════════════════════════════════════════════════════╝");
+    Console.WriteLine();
+    
+    Console.WriteLine($"═══ BASIC INFO ═══");
+    Console.WriteLine($"Name:       {op.Name}");
+    Console.WriteLine($"ID:         {op.Id}");
+    Console.WriteLine();
+    
+    Console.WriteLine($"═══ PHYSICAL STATS ═══");
+    Console.WriteLine($"Health:     {op.Health:F0}/{op.MaxHealth:F0} ({op.Health/op.MaxHealth*100:F0}%)");
+    Console.WriteLine($"Stamina:    {op.Stamina:F0}/{op.MaxStamina:F0} ({op.Stamina/op.MaxStamina*100:F0}%)");
+    Console.WriteLine($"Fatigue:    {op.Fatigue:F0}/{op.MaxFatigue:F0}");
+    Console.WriteLine();
+    
+    Console.WriteLine($"═══ COMBAT SKILLS ═══");
+    Console.WriteLine($"Accuracy:            {op.Accuracy:F2} ({op.Accuracy*100:F0}%)");
+    Console.WriteLine($"Accuracy Proficiency: {op.AccuracyProficiency:F2} ({op.AccuracyProficiency*100:F0}%)");
+    Console.WriteLine($"Response Proficiency: {op.ResponseProficiency:F2} ({op.ResponseProficiency*100:F0}%)");
+    Console.WriteLine();
+    
+    Console.WriteLine($"═══ VIRTUAL PET CONDITION ═══");
+    Console.WriteLine($"Health:     {petState.Health:F0}");
+    Console.WriteLine($"Fatigue:    {petState.Fatigue:F0}");
+    Console.WriteLine($"Injury:     {petState.Injury:F0}");
+    Console.WriteLine($"Stress:     {petState.Stress:F0}");
+    Console.WriteLine($"Morale:     {petState.Morale:F0}");
+    Console.WriteLine($"Hunger:     {petState.Hunger:F0}");
+    Console.WriteLine($"Hydration:  {petState.Hydration:F0}");
+    Console.WriteLine();
+    
+    Console.WriteLine($"═══ EQUIPMENT ═══");
+    if (op.EquippedWeapon != null)
+    {
+        Console.WriteLine($"Weapon:     {op.EquippedWeapon.Name}");
+        Console.WriteLine($"Ammo:       {op.CurrentAmmo}/{op.EquippedWeapon.MagazineSize}");
+        Console.WriteLine($"Damage:     {op.EquippedWeapon.BaseDamage:F0}");
+        Console.WriteLine($"Fire Rate:  {op.EquippedWeapon.RoundsPerMinute:F0} RPM");
+    }
+    else
+    {
+        Console.WriteLine($"Weapon:     None");
+    }
+    Console.WriteLine();
+    
+    Console.WriteLine($"═══ MOVEMENT STATS ═══");
+    Console.WriteLine($"Walk Speed:    {op.WalkSpeed:F1} m/s");
+    Console.WriteLine($"Sprint Speed:  {op.SprintSpeed:F1} m/s");
+    Console.WriteLine($"Slide Distance: {op.SlideDistance:F1} m");
+    Console.WriteLine();
+    
+    Console.WriteLine($"═══ REGENERATION ═══");
+    Console.WriteLine($"Health Regen:  {op.HealthRegenRate:F1} HP/s (delay: {op.HealthRegenDelayMs:F0}ms)");
+    Console.WriteLine($"Stamina Regen: {op.StaminaRegenRate:F1} SP/s");
+    Console.WriteLine();
+}
+
+static void StartBattle(Operator player, Operator enemy)
+{
+    Console.WriteLine($"Player equipped with: {player.EquippedWeapon!.Name}");
+    Console.WriteLine($"Enemy equipped with:  {enemy.EquippedWeapon!.Name}");
+    Console.WriteLine($"Starting distance:    {player.DistanceToOpponent:F1} meters");
+    Console.WriteLine();
+
+    // Create combat system
+    var combat = new CombatSystemV2(player, enemy, seed: 42); // Fixed seed for determinism
+    var ai = new SimpleAIV2(seed: 42);
+    var timelineRenderer = new CombatEventTimelineRenderer();
+
+    Console.WriteLine("Combat initialized. Press any key to start...");
+    Console.ReadKey(true);
+    Console.WriteLine();
+
+    // Main combat loop
+    int roundNumber = 1;
+    while (combat.Phase != CombatPhase.Ended)
+    {
+        Console.WriteLine($"═══ ROUND {roundNumber} - PLANNING PHASE ═══");
     Console.WriteLine();
     
     // Show current operator status with movement and cover info
@@ -349,48 +469,47 @@ while (combat.Phase != CombatPhase.Ended)
     Console.ReadKey(true);
     Console.WriteLine();
     
-    roundNumber++;
-}
+        roundNumber++;
+    }
 
-Console.WriteLine();
-Console.WriteLine("═════════════════════════════════════════════════════════════");
-Console.WriteLine("                    COMBAT COMPLETE");
-Console.WriteLine("═════════════════════════════════════════════════════════════");
-Console.WriteLine();
-
-if (player.IsAlive && !enemy.IsAlive)
-{
-    Console.WriteLine("🎉 VICTORY! You defeated the enemy!");
-}
-else if (!player.IsAlive && enemy.IsAlive)
-{
-    Console.WriteLine("💀 DEFEAT! The enemy defeated you!");
-}
-else
-{
-    Console.WriteLine("Draw? This shouldn't happen...");
-}
-
-Console.WriteLine();
-Console.WriteLine($"Final Stats:");
-Console.WriteLine($"  Player: {player.Health:F0}/{player.MaxHealth:F0} HP");
-Console.WriteLine($"  Enemy:  {enemy.Health:F0}/{enemy.MaxHealth:F0} HP");
-Console.WriteLine($"  Duration: {combat.CurrentTimeMs}ms ({combat.CurrentTimeMs/1000.0:F1}s)");
-Console.WriteLine();
-
-try
-{
-    var timelineEntries = timelineRenderer.BuildTimelineEntries(combat.ExecutedEvents, player, enemy, combat.TimelineEntries);
-    var timelinePath = Path.Combine(Environment.CurrentDirectory, "combat-timeline.png");
-    timelineRenderer.RenderTimeline(timelineEntries, timelinePath);
-    Console.WriteLine($"Combat timeline saved to: {timelinePath}");
     Console.WriteLine();
-}
-catch (Exception ex)
-{
-    Console.WriteLine("Warning: Failed to render combat timeline. The application will continue without timeline output.");
-    Console.WriteLine($"  Details: {ex.Message}");
+    Console.WriteLine("═════════════════════════════════════════════════════════════");
+    Console.WriteLine("                    COMBAT COMPLETE");
+    Console.WriteLine("═════════════════════════════════════════════════════════════");
     Console.WriteLine();
+
+    if (player.IsAlive && !enemy.IsAlive)
+    {
+        Console.WriteLine("🎉 VICTORY! You defeated the enemy!");
+    }
+    else if (!player.IsAlive && enemy.IsAlive)
+    {
+        Console.WriteLine("💀 DEFEAT! The enemy defeated you!");
+    }
+    else
+    {
+        Console.WriteLine("Draw? This shouldn't happen...");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine($"Final Stats:");
+    Console.WriteLine($"  Player: {player.Health:F0}/{player.MaxHealth:F0} HP");
+    Console.WriteLine($"  Enemy:  {enemy.Health:F0}/{enemy.MaxHealth:F0} HP");
+    Console.WriteLine($"  Duration: {combat.CurrentTimeMs}ms ({combat.CurrentTimeMs/1000.0:F1}s)");
+    Console.WriteLine();
+
+    try
+    {
+        var timelineEntries = timelineRenderer.BuildTimelineEntries(combat.ExecutedEvents, player, enemy, combat.TimelineEntries);
+        var timelinePath = Path.Combine(Environment.CurrentDirectory, "combat-timeline.png");
+        timelineRenderer.RenderTimeline(timelineEntries, timelinePath);
+        Console.WriteLine($"Combat timeline saved to: {timelinePath}");
+        Console.WriteLine();
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine("Warning: Failed to render combat timeline. The application will continue without timeline output.");
+        Console.WriteLine($"  Details: {ex.Message}");
+        Console.WriteLine();
+    }
 }
-Console.WriteLine("Press any key to exit...");
-Console.ReadKey();
