@@ -73,16 +73,23 @@ while (!exitRequested)
 
 static void DisplayOperatorStats(Operator op)
 {
+    // Constants for default pet state values
+    const float DEFAULT_INJURY = 0f;
+    const float DEFAULT_STRESS = 0f;
+    const float DEFAULT_MORALE = 100f;
+    const float DEFAULT_HUNGER = 100f;
+    const float DEFAULT_HYDRATION = 100f;
+    
     // Create a virtual pet state snapshot
     var petState = new PetState(
         op.Id,
         op.Health,
         op.Fatigue,
-        0f, // Injury (not directly tracked on Operator)
-        0f, // Stress (not directly tracked on Operator)
-        100f, // Morale (not directly tracked on Operator, assume 100)
-        100f, // Hunger (not directly tracked on Operator, assume 100)
-        100f, // Hydration (not directly tracked on Operator, assume 100)
+        DEFAULT_INJURY,
+        DEFAULT_STRESS,
+        DEFAULT_MORALE,
+        DEFAULT_HUNGER,
+        DEFAULT_HYDRATION,
         DateTimeOffset.Now
     );
     
@@ -97,8 +104,10 @@ static void DisplayOperatorStats(Operator op)
     Console.WriteLine();
     
     Console.WriteLine($"═══ PHYSICAL STATS ═══");
-    Console.WriteLine($"Health:     {op.Health:F0}/{op.MaxHealth:F0} ({op.Health/op.MaxHealth*100:F0}%)");
-    Console.WriteLine($"Stamina:    {op.Stamina:F0}/{op.MaxStamina:F0} ({op.Stamina/op.MaxStamina*100:F0}%)");
+    float healthPercent = op.MaxHealth > 0 ? (op.Health / op.MaxHealth * 100) : 0;
+    float staminaPercent = op.MaxStamina > 0 ? (op.Stamina / op.MaxStamina * 100) : 0;
+    Console.WriteLine($"Health:     {op.Health:F0}/{op.MaxHealth:F0} ({healthPercent:F0}%)");
+    Console.WriteLine($"Stamina:    {op.Stamina:F0}/{op.MaxStamina:F0} ({staminaPercent:F0}%)");
     Console.WriteLine($"Fatigue:    {op.Fatigue:F0}/{op.MaxFatigue:F0}");
     Console.WriteLine();
     
@@ -146,8 +155,15 @@ static void DisplayOperatorStats(Operator op)
 
 static void StartBattle(Operator player, Operator enemy)
 {
-    Console.WriteLine($"Player equipped with: {player.EquippedWeapon!.Name}");
-    Console.WriteLine($"Enemy equipped with:  {enemy.EquippedWeapon!.Name}");
+    // Ensure both operators have weapons
+    if (player.EquippedWeapon == null || enemy.EquippedWeapon == null)
+    {
+        Console.WriteLine("Error: Both operators must have equipped weapons to start battle.");
+        return;
+    }
+    
+    Console.WriteLine($"Player equipped with: {player.EquippedWeapon.Name}");
+    Console.WriteLine($"Enemy equipped with:  {enemy.EquippedWeapon.Name}");
     Console.WriteLine($"Starting distance:    {player.DistanceToOpponent:F1} meters");
     Console.WriteLine();
 
