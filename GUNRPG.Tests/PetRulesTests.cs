@@ -542,7 +542,7 @@ public class PetRulesTests
             Stress: 30f,
             Morale: 50f,
             Hunger: 50f,
-            Hydration: 85f, // Above CriticalHydrationThreshold (80)
+            Hydration: 15f, // Below CriticalHydrationThreshold (20) - dehydrated
             LastUpdated: lastUpdated
         );
         var input = new RestInput(TimeSpan.Zero);
@@ -550,7 +550,7 @@ public class PetRulesTests
         // Act
         var result = PetRules.Apply(state, input, now);
 
-        // Assert - Health should decrease
+        // Assert - Health should decrease due to dehydration
         // Expected: 50 - (3 * 1) = 47
         Assert.Equal(47f, result.Health);
     }
@@ -813,7 +813,7 @@ public class PetRulesTests
     }
 
     [Fact]
-    public void Apply_StressRecoveryReduced_WhenHydrationIsHigh()
+    public void Apply_StressRecoveryReduced_WhenHydrationIsLow()
     {
         // Arrange
         var lastUpdated = DateTimeOffset.UtcNow;
@@ -826,7 +826,7 @@ public class PetRulesTests
             Stress: 60f,
             Morale: 50f,
             Hunger: 30f,
-            Hydration: 85f, // Above HydrationStressRecoveryThreshold (70)
+            Hydration: 15f, // Below HydrationStressRecoveryThreshold (30) - dehydrated
             LastUpdated: lastUpdated
         );
         var input = new RestInput(TimeSpan.FromHours(1));
@@ -834,8 +834,8 @@ public class PetRulesTests
         // Act
         var result = PetRules.Apply(state, input, now);
 
-        // Assert - Stress recovery should be reduced
-        // Hydration factor: (85 - 70) / (100 - 70) = 0.5
+        // Assert - Stress recovery should be reduced due to dehydration
+        // Hydration factor: (30 - 15) / 30 = 0.5
         // Multiplier: 1 - (0.5 * (1 - 0.3)) = 0.65
         // Recovery: 12 * 0.65 = 7.8
         // Expected: 60 - 7.8 = 52.2
@@ -843,7 +843,7 @@ public class PetRulesTests
     }
 
     [Fact]
-    public void Apply_StressRecoveryReduced_WhenBothHungerAndHydrationAreHigh()
+    public void Apply_StressRecoveryReduced_WhenBothHungerAndHydrationAreCritical()
     {
         // Arrange
         var lastUpdated = DateTimeOffset.UtcNow;
@@ -855,8 +855,8 @@ public class PetRulesTests
             Injury: 10f,
             Stress: 60f,
             Morale: 50f,
-            Hunger: 85f, // Above threshold
-            Hydration: 85f, // Above threshold
+            Hunger: 85f, // Above threshold (high hunger)
+            Hydration: 15f, // Below threshold (dehydrated)
             LastUpdated: lastUpdated
         );
         var input = new RestInput(TimeSpan.FromHours(1));

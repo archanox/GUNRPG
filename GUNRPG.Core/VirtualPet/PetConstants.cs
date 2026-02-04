@@ -95,10 +95,10 @@ public static class PetConstants
     public const float CriticalHungerThreshold = 80f;
 
     /// <summary>
-    /// Hydration threshold above which health decay becomes active.
+    /// Hydration threshold below which health decay becomes active (dehydration).
     /// Provisional value - adjust based on gameplay testing.
     /// </summary>
-    public const float CriticalHydrationThreshold = 80f;
+    public const float CriticalHydrationThreshold = 20f;
 
     /// <summary>
     /// Injury threshold above which health decay becomes active.
@@ -157,10 +157,10 @@ public static class PetConstants
     public const float HungerStressRecoveryThreshold = 70f;
 
     /// <summary>
-    /// Hydration threshold above which stress recovery is reduced.
+    /// Hydration threshold below which stress recovery is reduced (dehydration).
     /// Provisional value - adjust based on gameplay testing.
     /// </summary>
-    public const float HydrationStressRecoveryThreshold = 70f;
+    public const float HydrationStressRecoveryThreshold = 30f;
 
     /// <summary>
     /// Stress threshold above which fatigue recovery is reduced.

@@ -72,7 +72,7 @@ public static class PetRules
         // Health decay is conditional on critical conditions
         float healthDecrease = 0f;
         bool healthDecayActive = state.Hunger > PetConstants.CriticalHungerThreshold
-                               || state.Hydration > PetConstants.CriticalHydrationThreshold
+                               || state.Hydration < PetConstants.CriticalHydrationThreshold
                                || state.Injury > PetConstants.CriticalInjuryThreshold;
 
         if (healthDecayActive)
@@ -135,10 +135,10 @@ public static class PetRules
                                / (PetConstants.MaxStatValue - PetConstants.HungerStressRecoveryThreshold);
             stressMultiplier = Math.Min(stressMultiplier, 1f - (hungerFactor * (1f - PetConstants.MinRecoveryMultiplier)));
         }
-        if (state.Hydration > PetConstants.HydrationStressRecoveryThreshold)
+        if (state.Hydration < PetConstants.HydrationStressRecoveryThreshold)
         {
-            float hydrationFactor = (state.Hydration - PetConstants.HydrationStressRecoveryThreshold) 
-                                  / (PetConstants.MaxStatValue - PetConstants.HydrationStressRecoveryThreshold);
+            float hydrationFactor = (PetConstants.HydrationStressRecoveryThreshold - state.Hydration) 
+                                  / PetConstants.HydrationStressRecoveryThreshold;
             stressMultiplier = Math.Min(stressMultiplier, 1f - (hydrationFactor * (1f - PetConstants.MinRecoveryMultiplier)));
         }
         stressRecovery *= stressMultiplier;
