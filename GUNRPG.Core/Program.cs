@@ -30,6 +30,10 @@ enemy.CurrentAmmo = enemy.EquippedWeapon!.MagazineSize;
 // Initialize operator manager for rest/fatigue system
 var operatorManager = new OperatorManager();
 
+// Track operator experience and level
+long playerXp = 0L;
+int playerLevel = 0;
+
 // Initialize pet state for virtual pet management
 var playerPetState = new PetState(
     player.Id,
@@ -66,7 +70,7 @@ while (!exitRequested)
     switch (menuChoice.KeyChar)
     {
         case '1':
-            DisplayOperatorStats(player, playerPetState, operatorManager);
+            DisplayOperatorStats(player, playerPetState, operatorManager, playerLevel, playerXp);
             Console.WriteLine("Press any key to return to main menu...");
             Console.ReadKey(true);
             Console.WriteLine();
@@ -118,7 +122,7 @@ while (!exitRequested)
                 break;
             }
             
-            playerPetState = StartBattle(player, enemy, playerPetState, operatorManager);
+            (playerPetState, playerXp, playerLevel) = StartBattle(player, enemy, playerPetState, operatorManager, playerLevel, playerXp);
             Console.WriteLine();
             Console.WriteLine("Press any key to return to main menu...");
             Console.ReadKey(true);
@@ -158,7 +162,7 @@ while (!exitRequested)
     }
 }
 
-static void DisplayOperatorStats(Operator op, PetState petState, OperatorManager manager)
+static void DisplayOperatorStats(Operator op, PetState petState, OperatorManager manager, int level, long xp)
 {
     // Sync operator fatigue with pet state
     op.Fatigue = petState.Fatigue;
@@ -172,6 +176,17 @@ static void DisplayOperatorStats(Operator op, PetState petState, OperatorManager
     Console.WriteLine("-------------");
     Console.WriteLine($"  Name:     {op.Name}");
     Console.WriteLine($"  ID:       {op.Id}");
+    Console.WriteLine($"  Level:    {level}");
+    Console.WriteLine($"  XP:       {xp:N0}");
+    
+    // Calculate XP needed for next level
+    long xpForNextLevel = (long)((level + 1) * (level + 1) * 1000);
+    long xpNeeded = xpForNextLevel - xp;
+    if (xpNeeded > 0)
+    {
+        Console.WriteLine($"  Next Lvl: {xpNeeded:N0} XP needed");
+    }
+    
     Console.WriteLine($"  Status:   {manager.GetStatus(op)}");
     Console.WriteLine();
     
@@ -374,13 +389,13 @@ static PetState GiveWaterOperator(PetState petState)
     return petState;
 }
 
-static PetState StartBattle(Operator player, Operator enemy, PetState petState, OperatorManager manager)
+static (PetState, long, int) StartBattle(Operator player, Operator enemy, PetState petState, OperatorManager manager, int playerLevel, long playerXp)
 {
     // Ensure both operators have weapons
     if (player.EquippedWeapon == null || enemy.EquippedWeapon == null)
     {
         Console.WriteLine("Error: Both operators must have equipped weapons to start battle.");
-        return petState;
+        return (petState, playerXp, playerLevel);
     }
     
     Console.WriteLine($"Player equipped with: {player.EquippedWeapon.Name}");
@@ -759,27 +774,62 @@ static PetState StartBattle(Operator player, Operator enemy, PetState petState, 
         float healthLost = player.MaxHealth - player.Health;
         int hitsTaken = (int)Math.Ceiling(healthLost / 10f); // Estimate hits based on health lost
         
-        // Calculate opponent difficulty (0-100 scale)
-        // Base difficulty on enemy stats and combat outcome
-        float opponentDifficulty = 50f; // Base difficulty
+        // Generate enemy level based on combat difficulty (for demonstration, use a random but consistent level)
+        // In a real game, enemies would have assigned levels
+        int enemyLevel = playerLevel + (new Random(enemy.Id.GetHashCode()).Next(-2, 3)); // -2 to +2 levels
+        enemyLevel = Math.Max(0, enemyLevel); // Ensure non-negative
+        
+        // Calculate opponent difficulty using OpponentDifficulty system
+        // Uses level difference and proficiency comparisons
+        float opponentDifficulty = OpponentDifficulty.Compute(
+            opponentLevel: enemyLevel,
+            playerLevel: playerLevel
+        );
+        
+        // Adjust difficulty based on combat outcome for more accurate stress calculation
         if (!enemy.IsAlive)
         {
-            // Victory - but still stressful
-            opponentDifficulty = 40f + (healthLost / player.MaxHealth * 30f);
+            // Victory - reduce difficulty slightly (they were beatable)
+            opponentDifficulty *= 0.9f;
         }
         else
         {
-            // Defeat or ongoing combat - very stressful
-            opponentDifficulty = 70f + (healthLost / player.MaxHealth * 30f);
+            // Defeat - increase difficulty (they were too strong)
+            opponentDifficulty = Math.Min(100f, opponentDifficulty * 1.2f);
         }
         
         // Apply mission effects using PetRules
         petState = PetRules.Apply(petState, new MissionInput(hitsTaken, opponentDifficulty), DateTimeOffset.Now);
         
+        // Award XP based on opponent difficulty and outcome
+        long xpGained = 0L;
+        if (!enemy.IsAlive)
+        {
+            // Victory: Award XP based on difficulty
+            xpGained = (long)(opponentDifficulty * 20); // 200-2000 XP range
+            playerXp += xpGained;
+            
+            // Check for level up
+            int newLevel = OpponentDifficulty.ComputeLevelFromXp(playerXp);
+            if (newLevel > playerLevel)
+            {
+                int levelsGained = newLevel - playerLevel;
+                playerLevel = newLevel;
+                Console.WriteLine();
+                Console.WriteLine($"🎉 LEVEL UP! You are now level {playerLevel}! (+{levelsGained} level{(levelsGained > 1 ? "s" : "")})");
+            }
+        }
+        
         // Sync operator stats with pet state
         player.Fatigue = petState.Fatigue;
         
         Console.WriteLine("═══ POST-COMBAT STATUS ═══");
+        Console.WriteLine($"Enemy Level: {enemyLevel} (Difficulty: {opponentDifficulty:F0})");
+        if (xpGained > 0)
+        {
+            Console.WriteLine($"XP Gained: +{xpGained:N0} (Total: {playerXp:N0})");
+        }
+        Console.WriteLine();
         Console.WriteLine($"Fatigue: {petState.Fatigue:F0}/{PetConstants.MaxStatValue:F0}");
         Console.WriteLine($"Stress: {petState.Stress:F0}/{PetConstants.MaxStatValue:F0}");
         Console.WriteLine($"Injury: {petState.Injury:F0}/{PetConstants.MaxStatValue:F0}");
@@ -813,5 +863,5 @@ static PetState StartBattle(Operator player, Operator enemy, PetState petState, 
         Console.WriteLine();
     }
     
-    return petState;
+    return (petState, playerXp, playerLevel);
 }
