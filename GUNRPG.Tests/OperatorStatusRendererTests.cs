@@ -258,12 +258,12 @@ public class OperatorStatusRendererTests
             OperatorStatusRenderer.Render(view);
             var result = output.ToString();
 
-            // Assert - Check for ASCII separators
-            Assert.Contains("========", result);
+            // Assert - Check for ASCII separators with context
+            Assert.Contains("================================================================================", result);
             Assert.Contains("OPERATOR STATUS", result);
-            Assert.Contains("--------", result);
-            Assert.Contains("------", result);
-            Assert.Contains("----", result);
+            Assert.Contains("PHYSICAL\n--------", result);
+            Assert.Contains("MENTAL\n------", result);
+            Assert.Contains("CARE\n----", result);
         }
         finally
         {
@@ -298,13 +298,15 @@ public class OperatorStatusRendererTests
             var result = output.ToString();
 
             // Assert - All values should be 0
-            Assert.Contains("Health:    0", result);
-            Assert.Contains("Injury:    0", result);
-            Assert.Contains("Fatigue:   0", result);
-            Assert.Contains("Stress:    0", result);
-            Assert.Contains("Morale:    0", result);
-            Assert.Contains("Hunger:      0", result);
-            Assert.Contains("Hydration:   0", result);
+            // Note: Spacing varies by label length to accommodate right-aligned 3-digit formatting
+            // Format: "Label: " + "{value,3:F0}" where value,3 right-aligns in 3 chars
+            Assert.Contains("Health:    0", result);    // "  0" (2 spaces before 0)
+            Assert.Contains("Injury:    0", result);    // "  0" (2 spaces before 0)
+            Assert.Contains("Fatigue:   0", result);    // "  0" (2 spaces before 0)
+            Assert.Contains("Stress:    0", result);    // "  0" (2 spaces before 0)
+            Assert.Contains("Morale:    0", result);    // "  0" (2 spaces before 0)
+            Assert.Contains("Hunger:      0", result);  // "  0" (2 spaces before 0, 4 after colon)
+            Assert.Contains("Hydration:   0", result);  // "  0" (2 spaces before 0, 1 after colon)
         }
         finally
         {
