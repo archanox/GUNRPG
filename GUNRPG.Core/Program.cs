@@ -6,6 +6,9 @@ using GUNRPG.Core.Operators;
 using GUNRPG.Core.Rendering;
 using GUNRPG.Core.VirtualPet;
 
+// Shared random instance for enemy level generation
+var enemyLevelRandom = new Random(42);
+
 Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
 Console.WriteLine("║          GUNRPG - Text-Based Tactical Combat Simulator       ║");
 Console.WriteLine("║                     Foundation Demo v1.0                     ║");
@@ -122,7 +125,7 @@ while (!exitRequested)
                 break;
             }
             
-            (playerPetState, playerXp, playerLevel) = StartBattle(player, enemy, playerPetState, operatorManager, playerLevel, playerXp);
+            (playerPetState, playerXp, playerLevel) = StartBattle(player, enemy, playerPetState, operatorManager, playerLevel, playerXp, enemyLevelRandom);
             Console.WriteLine();
             Console.WriteLine("Press any key to return to main menu...");
             Console.ReadKey(true);
@@ -389,7 +392,7 @@ static PetState GiveWaterOperator(PetState petState)
     return petState;
 }
 
-static (PetState, long, int) StartBattle(Operator player, Operator enemy, PetState petState, OperatorManager manager, int playerLevel, long playerXp)
+static (PetState, long, int) StartBattle(Operator player, Operator enemy, PetState petState, OperatorManager manager, int playerLevel, long playerXp, Random enemyLevelRandom)
 {
     // Ensure both operators have weapons
     if (player.EquippedWeapon == null || enemy.EquippedWeapon == null)
@@ -774,13 +777,13 @@ static (PetState, long, int) StartBattle(Operator player, Operator enemy, PetSta
         float healthLost = player.MaxHealth - player.Health;
         int hitsTaken = (int)Math.Ceiling(healthLost / 10f); // Estimate hits based on health lost
         
-        // Generate enemy level based on combat difficulty (for demonstration, use a random but consistent level)
-        // In a real game, enemies would have assigned levels
-        int enemyLevel = playerLevel + (new Random(enemy.Id.GetHashCode()).Next(-2, 3)); // -2 to +2 levels
+        // Generate enemy level (varies -2 to +2 levels from player)
+        // Uses shared Random instance for consistent randomness across battles
+        int enemyLevel = playerLevel + enemyLevelRandom.Next(-2, 3);
         enemyLevel = Math.Max(0, enemyLevel); // Ensure non-negative
         
         // Calculate opponent difficulty using OpponentDifficulty system
-        // Uses level difference and proficiency comparisons
+        // Uses level difference (50 base, ±10 per level difference)
         float opponentDifficulty = OpponentDifficulty.Compute(
             opponentLevel: enemyLevel,
             playerLevel: playerLevel
@@ -805,8 +808,9 @@ static (PetState, long, int) StartBattle(Operator player, Operator enemy, PetSta
         long xpGained = 0L;
         if (!enemy.IsAlive)
         {
-            // Victory: Award XP based on difficulty
-            xpGained = (long)(opponentDifficulty * 20); // 200-2000 XP range
+            // Victory: Award XP based on adjusted difficulty
+            // Actual range: 180-1800 XP (after 0.9x victory modifier on 10-100 difficulty)
+            xpGained = (long)(opponentDifficulty * 20);
             playerXp += xpGained;
             
             // Check for level up
