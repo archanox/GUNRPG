@@ -73,14 +73,14 @@ while (!exitRequested)
 
 static void DisplayOperatorStats(Operator op)
 {
-    // Constants for default pet state values
+    // Constants for default pet state values (these would ideally come from a VirtualPet system)
     const float DEFAULT_INJURY = 0f;
     const float DEFAULT_STRESS = 0f;
     const float DEFAULT_MORALE = 100f;
     const float DEFAULT_HUNGER = 100f;
     const float DEFAULT_HYDRATION = 100f;
     
-    // Create a virtual pet state snapshot
+    // Create a PetState snapshot from operator
     var petState = new PetState(
         op.Id,
         op.Health,
@@ -93,64 +93,34 @@ static void DisplayOperatorStats(Operator op)
         DateTimeOffset.Now
     );
     
-    Console.WriteLine("╔═════════════════════════════════════════════════════════════════════╗");
-    Console.WriteLine("║                       OPERATOR STATS (VIRTUAL PET)                  ║");
-    Console.WriteLine("╚═════════════════════════════════════════════════════════════════════╝");
+    // Use the existing OperatorStatusRenderer to display the virtual pet stats
+    var statusView = OperatorStatusView.From(petState);
+    OperatorStatusRenderer.Render(statusView);
+    
+    // Display additional operator information not in the virtual pet view
+    Console.WriteLine("OPERATOR INFO");
+    Console.WriteLine("-------------");
+    Console.WriteLine($"  Name:     {op.Name}");
+    Console.WriteLine($"  ID:       {op.Id}");
     Console.WriteLine();
     
-    Console.WriteLine($"═══ BASIC INFO ═══");
-    Console.WriteLine($"Name:       {op.Name}");
-    Console.WriteLine($"ID:         {op.Id}");
+    Console.WriteLine("COMBAT PROFICIENCIES");
+    Console.WriteLine("--------------------");
+    Console.WriteLine($"  Accuracy:            {op.Accuracy:F2} ({op.Accuracy*100:F0}%)");
+    Console.WriteLine($"  Accuracy Proficiency: {op.AccuracyProficiency:F2} ({op.AccuracyProficiency*100:F0}%)");
+    Console.WriteLine($"  Response Proficiency: {op.ResponseProficiency:F2} ({op.ResponseProficiency*100:F0}%)");
     Console.WriteLine();
     
-    Console.WriteLine($"═══ PHYSICAL STATS ═══");
-    float healthPercent = op.MaxHealth > 0 ? (op.Health / op.MaxHealth * 100) : 0;
-    float staminaPercent = op.MaxStamina > 0 ? (op.Stamina / op.MaxStamina * 100) : 0;
-    Console.WriteLine($"Health:     {op.Health:F0}/{op.MaxHealth:F0} ({healthPercent:F0}%)");
-    Console.WriteLine($"Stamina:    {op.Stamina:F0}/{op.MaxStamina:F0} ({staminaPercent:F0}%)");
-    Console.WriteLine($"Fatigue:    {op.Fatigue:F0}/{op.MaxFatigue:F0}");
-    Console.WriteLine();
-    
-    Console.WriteLine($"═══ COMBAT SKILLS ═══");
-    Console.WriteLine($"Accuracy:            {op.Accuracy:F2} ({op.Accuracy*100:F0}%)");
-    Console.WriteLine($"Accuracy Proficiency: {op.AccuracyProficiency:F2} ({op.AccuracyProficiency*100:F0}%)");
-    Console.WriteLine($"Response Proficiency: {op.ResponseProficiency:F2} ({op.ResponseProficiency*100:F0}%)");
-    Console.WriteLine();
-    
-    Console.WriteLine($"═══ VIRTUAL PET CONDITION ═══");
-    Console.WriteLine($"Health:     {petState.Health:F0}");
-    Console.WriteLine($"Fatigue:    {petState.Fatigue:F0}");
-    Console.WriteLine($"Injury:     {petState.Injury:F0}");
-    Console.WriteLine($"Stress:     {petState.Stress:F0}");
-    Console.WriteLine($"Morale:     {petState.Morale:F0}");
-    Console.WriteLine($"Hunger:     {petState.Hunger:F0}");
-    Console.WriteLine($"Hydration:  {petState.Hydration:F0}");
-    Console.WriteLine();
-    
-    Console.WriteLine($"═══ EQUIPMENT ═══");
     if (op.EquippedWeapon != null)
     {
-        Console.WriteLine($"Weapon:     {op.EquippedWeapon.Name}");
-        Console.WriteLine($"Ammo:       {op.CurrentAmmo}/{op.EquippedWeapon.MagazineSize}");
-        Console.WriteLine($"Damage:     {op.EquippedWeapon.BaseDamage:F0}");
-        Console.WriteLine($"Fire Rate:  {op.EquippedWeapon.RoundsPerMinute:F0} RPM");
+        Console.WriteLine("EQUIPMENT");
+        Console.WriteLine("---------");
+        Console.WriteLine($"  Weapon:     {op.EquippedWeapon.Name}");
+        Console.WriteLine($"  Ammo:       {op.CurrentAmmo}/{op.EquippedWeapon.MagazineSize}");
+        Console.WriteLine($"  Damage:     {op.EquippedWeapon.BaseDamage:F0}");
+        Console.WriteLine($"  Fire Rate:  {op.EquippedWeapon.RoundsPerMinute:F0} RPM");
+        Console.WriteLine();
     }
-    else
-    {
-        Console.WriteLine($"Weapon:     None");
-    }
-    Console.WriteLine();
-    
-    Console.WriteLine($"═══ MOVEMENT STATS ═══");
-    Console.WriteLine($"Walk Speed:    {op.WalkSpeed:F1} m/s");
-    Console.WriteLine($"Sprint Speed:  {op.SprintSpeed:F1} m/s");
-    Console.WriteLine($"Slide Distance: {op.SlideDistance:F1} m");
-    Console.WriteLine();
-    
-    Console.WriteLine($"═══ REGENERATION ═══");
-    Console.WriteLine($"Health Regen:  {op.HealthRegenRate:F1} HP/s (delay: {op.HealthRegenDelayMs:F0}ms)");
-    Console.WriteLine($"Stamina Regen: {op.StaminaRegenRate:F1} SP/s");
-    Console.WriteLine();
 }
 
 static void StartBattle(Operator player, Operator enemy)
