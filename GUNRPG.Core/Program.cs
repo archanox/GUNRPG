@@ -215,7 +215,7 @@ static void RestOperator(Operator op, OperatorManager manager)
         {
             Console.WriteLine("✓ Operator is already well-rested and ready for combat.");
             Console.WriteLine();
-            Console.WriteLine("Send operator to rest anyway? (y/n): ");
+            Console.Write("Send operator to rest anyway? (y/n): ");
             var choice = Console.ReadKey();
             Console.WriteLine();
             Console.WriteLine();
