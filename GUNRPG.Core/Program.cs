@@ -27,6 +27,9 @@ var enemy = new Operator("Enemy")
 };
 enemy.CurrentAmmo = enemy.EquippedWeapon!.MagazineSize;
 
+// Initialize operator manager for rest/fatigue system
+var operatorManager = new OperatorManager();
+
 // Main menu loop
 bool exitRequested = false;
 while (!exitRequested)
@@ -34,8 +37,9 @@ while (!exitRequested)
     Console.WriteLine("═══ MAIN MENU ═══");
     Console.WriteLine("1. View Operator Stats (Virtual Pet)");
     Console.WriteLine("2. Enter Battle");
-    Console.WriteLine("3. Exit");
-    Console.Write("Choose an option (1-3): ");
+    Console.WriteLine("3. Rest Operator");
+    Console.WriteLine("4. Exit");
+    Console.Write("Choose an option (1-4): ");
     
     var menuChoice = Console.ReadKey();
     Console.WriteLine();
@@ -44,15 +48,59 @@ while (!exitRequested)
     switch (menuChoice.KeyChar)
     {
         case '1':
-            DisplayOperatorStats(player);
+            DisplayOperatorStats(player, operatorManager);
             Console.WriteLine("Press any key to return to main menu...");
             Console.ReadKey(true);
             Console.WriteLine();
             break;
             
         case '2':
-            StartBattle(player, enemy);
-            // After battle completes, reset operators for potential replay
+            // Check if operator is resting
+            if (operatorManager.IsResting(player))
+            {
+                Console.WriteLine("⚠️  Operator is currently resting.");
+                Console.WriteLine($"Status: {operatorManager.GetStatus(player)}");
+                Console.WriteLine();
+                Console.Write("Wake operator from rest? (y/n): ");
+                var wakeChoice = Console.ReadKey();
+                Console.WriteLine();
+                Console.WriteLine();
+                
+                if (wakeChoice.KeyChar == 'y' || wakeChoice.KeyChar == 'Y')
+                {
+                    operatorManager.WakeFromRest(player);
+                    Console.WriteLine("✓ Operator awakened from rest.");
+                    Console.WriteLine();
+                }
+                else
+                {
+                    Console.WriteLine("Operator continues resting.");
+                    Console.WriteLine();
+                    break;
+                }
+            }
+            
+            // Check combat readiness
+            if (!operatorManager.RestSystem.IsReadyForCombat(player))
+            {
+                Console.WriteLine($"❌ Operator is too fatigued for combat!");
+                Console.WriteLine($"Status: {operatorManager.GetStatus(player)}");
+                Console.WriteLine($"Fatigue: {player.Fatigue:F0}/{player.MaxFatigue:F0}");
+                float restNeeded = operatorManager.RestSystem.GetMinimumRestHours(player);
+                Console.WriteLine($"Minimum rest needed: {restNeeded:F1} hours");
+                Console.WriteLine();
+                break;
+            }
+            
+            // Prepare operator for combat
+            if (!operatorManager.PrepareForCombat(player))
+            {
+                Console.WriteLine("❌ Failed to prepare operator for combat.");
+                Console.WriteLine();
+                break;
+            }
+            
+            StartBattle(player, enemy, operatorManager);
             Console.WriteLine();
             Console.WriteLine("Press any key to return to main menu...");
             Console.ReadKey(true);
@@ -60,18 +108,25 @@ while (!exitRequested)
             break;
             
         case '3':
+            RestOperator(player, operatorManager);
+            Console.WriteLine("Press any key to return to main menu...");
+            Console.ReadKey(true);
+            Console.WriteLine();
+            break;
+            
+        case '4':
             exitRequested = true;
             Console.WriteLine("Exiting game. Goodbye!");
             break;
             
         default:
-            Console.WriteLine("Invalid choice. Please select 1, 2, or 3.");
+            Console.WriteLine("Invalid choice. Please select 1-4.");
             Console.WriteLine();
             break;
     }
 }
 
-static void DisplayOperatorStats(Operator op)
+static void DisplayOperatorStats(Operator op, OperatorManager manager)
 {
     // Constants for default pet state values (these would ideally come from a VirtualPet system)
     const float DEFAULT_INJURY = 0f;
@@ -102,6 +157,7 @@ static void DisplayOperatorStats(Operator op)
     Console.WriteLine("-------------");
     Console.WriteLine($"  Name:     {op.Name}");
     Console.WriteLine($"  ID:       {op.Id}");
+    Console.WriteLine($"  Status:   {manager.GetStatus(op)}");
     Console.WriteLine();
     
     Console.WriteLine("COMBAT PROFICIENCIES");
@@ -123,7 +179,75 @@ static void DisplayOperatorStats(Operator op)
     }
 }
 
-static void StartBattle(Operator player, Operator enemy)
+static void RestOperator(Operator op, OperatorManager manager)
+{
+    Console.WriteLine("═══ REST OPERATOR ═══");
+    Console.WriteLine();
+    Console.WriteLine($"Current Status: {manager.GetStatus(op)}");
+    Console.WriteLine($"Fatigue: {op.Fatigue:F0}/{op.MaxFatigue:F0}");
+    Console.WriteLine();
+    
+    if (manager.IsResting(op))
+    {
+        var duration = manager.GetRestDuration(op);
+        Console.WriteLine($"💤 Operator is currently resting ({duration.Hours}h {duration.Minutes}m)");
+        Console.WriteLine();
+        Console.Write("Wake operator from rest? (y/n): ");
+        var choice = Console.ReadKey();
+        Console.WriteLine();
+        Console.WriteLine();
+        
+        if (choice.KeyChar == 'y' || choice.KeyChar == 'Y')
+        {
+            manager.WakeFromRest(op);
+            Console.WriteLine("✓ Operator awakened and recovered!");
+            Console.WriteLine($"New Status: {manager.GetStatus(op)}");
+            Console.WriteLine($"Fatigue: {op.Fatigue:F0}/{op.MaxFatigue:F0}");
+        }
+        else
+        {
+            Console.WriteLine("Operator continues resting.");
+        }
+    }
+    else
+    {
+        if (manager.RestSystem.IsReadyForCombat(op))
+        {
+            Console.WriteLine("✓ Operator is already well-rested and ready for combat.");
+            Console.WriteLine();
+            Console.WriteLine("Send operator to rest anyway? (y/n): ");
+            var choice = Console.ReadKey();
+            Console.WriteLine();
+            Console.WriteLine();
+            
+            if (choice.KeyChar == 'y' || choice.KeyChar == 'Y')
+            {
+                manager.SendToRest(op);
+                Console.WriteLine("💤 Operator sent to rest.");
+            }
+        }
+        else
+        {
+            float restNeeded = manager.RestSystem.GetMinimumRestHours(op);
+            Console.WriteLine($"⚠️  Operator needs rest! Minimum: {restNeeded:F1} hours");
+            Console.WriteLine();
+            Console.Write("Send operator to rest now? (y/n): ");
+            var choice = Console.ReadKey();
+            Console.WriteLine();
+            Console.WriteLine();
+            
+            if (choice.KeyChar == 'y' || choice.KeyChar == 'Y')
+            {
+                manager.SendToRest(op);
+                Console.WriteLine("💤 Operator sent to rest.");
+                Console.WriteLine($"They will need at least {restNeeded:F1} hours to recover.");
+            }
+        }
+    }
+    Console.WriteLine();
+}
+
+static void StartBattle(Operator player, Operator enemy, OperatorManager manager)
 {
     // Ensure both operators have weapons
     if (player.EquippedWeapon == null || enemy.EquippedWeapon == null)
@@ -496,6 +620,24 @@ static void StartBattle(Operator player, Operator enemy)
     {
         Console.WriteLine("Warning: Failed to render combat timeline. The application will continue without timeline output.");
         Console.WriteLine($"  Details: {ex.Message}");
+        Console.WriteLine();
+    }
+    
+    // Apply post-combat fatigue management
+    manager.CompleteCombat(player, player.IsAlive);
+    
+    if (player.IsAlive)
+    {
+        Console.WriteLine("═══ POST-COMBAT STATUS ═══");
+        Console.WriteLine($"Fatigue gained: +{manager.RestSystem.FatiguePerCombat:F0}");
+        Console.WriteLine($"Current fatigue: {player.Fatigue:F0}/{player.MaxFatigue:F0}");
+        Console.WriteLine($"Status: {manager.GetStatus(player)}");
+        
+        if (!manager.RestSystem.IsReadyForCombat(player))
+        {
+            float restNeeded = manager.RestSystem.GetMinimumRestHours(player);
+            Console.WriteLine($"⚠️  Operator needs {restNeeded:F1} hours rest before next combat!");
+        }
         Console.WriteLine();
     }
 }
