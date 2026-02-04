@@ -262,7 +262,7 @@ public class OperatorStatusViewTests
         );
 
         // Act
-        var view = OperatorStatusView.From(petState);
+        OperatorStatusView.From(petState);
 
         // Assert - View should not expose OperatorId (presentation layer concern)
         var properties = typeof(OperatorStatusView).GetProperties();
@@ -286,7 +286,7 @@ public class OperatorStatusViewTests
         );
 
         // Act
-        var view = OperatorStatusView.From(petState);
+        OperatorStatusView.From(petState);
 
         // Assert - View should not expose timestamp (presentation layer concern)
         var properties = typeof(OperatorStatusView).GetProperties();

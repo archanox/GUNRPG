@@ -261,9 +261,9 @@ public class OperatorStatusRendererTests
             // Assert - Check for ASCII separators with context
             Assert.Contains("================================================================================", result);
             Assert.Contains("OPERATOR STATUS", result);
-            Assert.Contains("PHYSICAL\n--------", result);
-            Assert.Contains("MENTAL\n------", result);
-            Assert.Contains("CARE\n----", result);
+            Assert.Contains($"PHYSICAL{Environment.NewLine}--------", result);
+            Assert.Contains($"MENTAL{Environment.NewLine}------", result);
+            Assert.Contains($"CARE{Environment.NewLine}----", result);
         }
         finally
         {
