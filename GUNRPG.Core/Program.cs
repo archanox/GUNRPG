@@ -30,16 +30,34 @@ enemy.CurrentAmmo = enemy.EquippedWeapon!.MagazineSize;
 // Initialize operator manager for rest/fatigue system
 var operatorManager = new OperatorManager();
 
+// Initialize pet state for virtual pet management
+var playerPetState = new PetState(
+    player.Id,
+    Health: 100f,
+    Fatigue: 0f,
+    Injury: 0f,
+    Stress: 0f,
+    Morale: 100f,
+    Hunger: 0f,  // 0 = not hungry, 100 = very hungry
+    Hydration: 100f,  // 100 = well hydrated, 0 = dehydrated
+    LastUpdated: DateTimeOffset.Now
+);
+
 // Main menu loop
 bool exitRequested = false;
 while (!exitRequested)
 {
+    // Apply background decay since last update
+    playerPetState = PetRules.Apply(playerPetState, new RestInput(TimeSpan.Zero), DateTimeOffset.Now);
+    
     Console.WriteLine("═══ MAIN MENU ═══");
     Console.WriteLine("1. View Operator Stats (Virtual Pet)");
     Console.WriteLine("2. Enter Battle");
     Console.WriteLine("3. Rest Operator");
-    Console.WriteLine("4. Exit");
-    Console.Write("Choose an option (1-4): ");
+    Console.WriteLine("4. Feed Operator");
+    Console.WriteLine("5. Give Water");
+    Console.WriteLine("6. Exit");
+    Console.Write("Choose an option (1-6): ");
     
     var menuChoice = Console.ReadKey();
     Console.WriteLine();
@@ -48,7 +66,7 @@ while (!exitRequested)
     switch (menuChoice.KeyChar)
     {
         case '1':
-            DisplayOperatorStats(player, operatorManager);
+            DisplayOperatorStats(player, playerPetState, operatorManager);
             Console.WriteLine("Press any key to return to main menu...");
             Console.ReadKey(true);
             Console.WriteLine();
@@ -100,7 +118,7 @@ while (!exitRequested)
                 break;
             }
             
-            StartBattle(player, enemy, operatorManager);
+            playerPetState = StartBattle(player, enemy, playerPetState, operatorManager);
             Console.WriteLine();
             Console.WriteLine("Press any key to return to main menu...");
             Console.ReadKey(true);
@@ -108,45 +126,42 @@ while (!exitRequested)
             break;
             
         case '3':
-            RestOperator(player, operatorManager);
+            playerPetState = RestOperator(player, playerPetState, operatorManager);
             Console.WriteLine("Press any key to return to main menu...");
             Console.ReadKey(true);
             Console.WriteLine();
             break;
             
         case '4':
+            playerPetState = FeedOperator(playerPetState);
+            Console.WriteLine("Press any key to return to main menu...");
+            Console.ReadKey(true);
+            Console.WriteLine();
+            break;
+            
+        case '5':
+            playerPetState = GiveWaterOperator(playerPetState);
+            Console.WriteLine("Press any key to return to main menu...");
+            Console.ReadKey(true);
+            Console.WriteLine();
+            break;
+            
+        case '6':
             exitRequested = true;
             Console.WriteLine("Exiting game. Goodbye!");
             break;
             
         default:
-            Console.WriteLine("Invalid choice. Please select 1-4.");
+            Console.WriteLine("Invalid choice. Please select 1-6.");
             Console.WriteLine();
             break;
     }
 }
 
-static void DisplayOperatorStats(Operator op, OperatorManager manager)
+static void DisplayOperatorStats(Operator op, PetState petState, OperatorManager manager)
 {
-    // Constants for default pet state values (these would ideally come from a VirtualPet system)
-    const float DEFAULT_INJURY = 0f;
-    const float DEFAULT_STRESS = 0f;
-    const float DEFAULT_MORALE = 100f;
-    const float DEFAULT_HUNGER = 100f;
-    const float DEFAULT_HYDRATION = 100f;
-    
-    // Create a PetState snapshot from operator
-    var petState = new PetState(
-        op.Id,
-        op.Health,
-        op.Fatigue,
-        DEFAULT_INJURY,
-        DEFAULT_STRESS,
-        DEFAULT_MORALE,
-        DEFAULT_HUNGER,
-        DEFAULT_HYDRATION,
-        DateTimeOffset.Now
-    );
+    // Sync operator fatigue with pet state
+    op.Fatigue = petState.Fatigue;
     
     // Use the existing OperatorStatusRenderer to display the virtual pet stats
     var statusView = OperatorStatusView.From(petState);
@@ -179,12 +194,14 @@ static void DisplayOperatorStats(Operator op, OperatorManager manager)
     }
 }
 
-static void RestOperator(Operator op, OperatorManager manager)
+static PetState RestOperator(Operator op, PetState petState, OperatorManager manager)
 {
     Console.WriteLine("═══ REST OPERATOR ═══");
     Console.WriteLine();
     Console.WriteLine($"Current Status: {manager.GetStatus(op)}");
-    Console.WriteLine($"Fatigue: {op.Fatigue:F0}/{op.MaxFatigue:F0}");
+    Console.WriteLine($"Fatigue: {petState.Fatigue:F0}/{PetConstants.MaxStatValue:F0}");
+    Console.WriteLine($"Stress: {petState.Stress:F0}/{PetConstants.MaxStatValue:F0}");
+    Console.WriteLine($"Health: {petState.Health:F0}/{PetConstants.MaxStatValue:F0}");
     Console.WriteLine();
     
     if (manager.IsResting(op))
@@ -199,10 +216,17 @@ static void RestOperator(Operator op, OperatorManager manager)
         
         if (choice.KeyChar == 'y' || choice.KeyChar == 'Y')
         {
+            // Apply rest recovery using PetRules
+            petState = PetRules.Apply(petState, new RestInput(duration), DateTimeOffset.Now);
+            
             manager.WakeFromRest(op);
+            op.Fatigue = petState.Fatigue;
+            
             Console.WriteLine("✓ Operator awakened and recovered!");
             Console.WriteLine($"New Status: {manager.GetStatus(op)}");
-            Console.WriteLine($"Fatigue: {op.Fatigue:F0}/{op.MaxFatigue:F0}");
+            Console.WriteLine($"Fatigue: {petState.Fatigue:F0}/{PetConstants.MaxStatValue:F0}");
+            Console.WriteLine($"Stress: {petState.Stress:F0}/{PetConstants.MaxStatValue:F0}");
+            Console.WriteLine($"Health: {petState.Health:F0}/{PetConstants.MaxStatValue:F0}");
         }
         else
         {
@@ -211,49 +235,152 @@ static void RestOperator(Operator op, OperatorManager manager)
     }
     else
     {
-        if (manager.RestSystem.IsReadyForCombat(op))
+        Console.Write("Enter rest duration in hours (or press Enter for 1 hour): ");
+        var input = Console.ReadLine();
+        float hours = 1.0f;
+        if (!string.IsNullOrWhiteSpace(input) && float.TryParse(input, out float parsed))
         {
-            Console.WriteLine("✓ Operator is already well-rested and ready for combat.");
-            Console.WriteLine();
-            Console.Write("Send operator to rest anyway? (y/n): ");
-            var choice = Console.ReadKey();
-            Console.WriteLine();
-            Console.WriteLine();
-            
-            if (choice.KeyChar == 'y' || choice.KeyChar == 'Y')
-            {
-                manager.SendToRest(op);
-                Console.WriteLine("💤 Operator sent to rest.");
-            }
+            hours = Math.Max(0.1f, Math.Min(24f, parsed)); // Clamp between 0.1 and 24 hours
         }
-        else
-        {
-            float restNeeded = manager.RestSystem.GetMinimumRestHours(op);
-            Console.WriteLine($"⚠️  Operator needs rest! Minimum: {restNeeded:F1} hours");
-            Console.WriteLine();
-            Console.Write("Send operator to rest now? (y/n): ");
-            var choice = Console.ReadKey();
-            Console.WriteLine();
-            Console.WriteLine();
-            
-            if (choice.KeyChar == 'y' || choice.KeyChar == 'Y')
-            {
-                manager.SendToRest(op);
-                Console.WriteLine("💤 Operator sent to rest.");
-                Console.WriteLine($"They will need at least {restNeeded:F1} hours to recover.");
-            }
-        }
+        Console.WriteLine();
+        
+        Console.WriteLine($"💤 Operator resting for {hours:F1} hours...");
+        
+        // Apply rest recovery using PetRules
+        petState = PetRules.Apply(petState, new RestInput(TimeSpan.FromHours(hours)), DateTimeOffset.Now);
+        op.Fatigue = petState.Fatigue;
+        
+        Console.WriteLine();
+        Console.WriteLine("✓ Rest complete!");
+        Console.WriteLine($"Fatigue: {petState.Fatigue:F0}/{PetConstants.MaxStatValue:F0} (reduced by {hours * PetConstants.FatigueRecoveryPerHour:F0})");
+        Console.WriteLine($"Stress: {petState.Stress:F0}/{PetConstants.MaxStatValue:F0} (reduced by ~{hours * PetConstants.StressRecoveryPerHour:F0})");
+        Console.WriteLine($"Health: {petState.Health:F0}/{PetConstants.MaxStatValue:F0} (recovered)");
     }
     Console.WriteLine();
+    
+    return petState;
 }
 
-static void StartBattle(Operator player, Operator enemy, OperatorManager manager)
+static PetState FeedOperator(PetState petState)
+{
+    Console.WriteLine("═══ FEED OPERATOR ═══");
+    Console.WriteLine();
+    Console.WriteLine($"Current Hunger: {petState.Hunger:F0}/{PetConstants.MaxStatValue:F0}");
+    Console.WriteLine($"Current Morale: {petState.Morale:F0}/{PetConstants.MaxStatValue:F0}");
+    Console.WriteLine();
+    
+    if (petState.Hunger < 20f)
+    {
+        Console.WriteLine("✓ Operator is not hungry right now.");
+        Console.WriteLine();
+        Console.Write("Feed anyway? (y/n): ");
+        var choice = Console.ReadKey();
+        Console.WriteLine();
+        Console.WriteLine();
+        
+        if (choice.KeyChar != 'y' && choice.KeyChar != 'Y')
+        {
+            Console.WriteLine("Skipping meal.");
+            Console.WriteLine();
+            return petState;
+        }
+    }
+    
+    Console.WriteLine("Select meal type:");
+    Console.WriteLine("1. Light Snack (Nutrition: 15)");
+    Console.WriteLine("2. Standard Meal (Nutrition: 30)");
+    Console.WriteLine("3. Large Meal (Nutrition: 50)");
+    Console.Write("Choose (1-3): ");
+    var mealChoice = Console.ReadKey();
+    Console.WriteLine();
+    Console.WriteLine();
+    
+    float nutrition = mealChoice.KeyChar switch
+    {
+        '1' => 15f,
+        '2' => 30f,
+        '3' => 50f,
+        _ => 30f
+    };
+    
+    // Apply eating using PetRules
+    petState = PetRules.Apply(petState, new EatInput(nutrition), DateTimeOffset.Now);
+    
+    Console.WriteLine($"🍴 Operator fed! (Nutrition: {nutrition})");
+    Console.WriteLine($"Hunger: {petState.Hunger:F0}/{PetConstants.MaxStatValue:F0}");
+    
+    if (petState.Hunger < 20f)
+    {
+        Console.WriteLine("✓ Operator is well-fed!");
+    }
+    Console.WriteLine();
+    
+    return petState;
+}
+
+static PetState GiveWaterOperator(PetState petState)
+{
+    Console.WriteLine("═══ GIVE WATER ═══");
+    Console.WriteLine();
+    Console.WriteLine($"Current Hydration: {petState.Hydration:F0}/{PetConstants.MaxStatValue:F0}");
+    Console.WriteLine();
+    
+    if (petState.Hydration > 80f)
+    {
+        Console.WriteLine("✓ Operator is well hydrated.");
+        Console.WriteLine();
+        Console.Write("Give water anyway? (y/n): ");
+        var choice = Console.ReadKey();
+        Console.WriteLine();
+        Console.WriteLine();
+        
+        if (choice.KeyChar != 'y' && choice.KeyChar != 'Y')
+        {
+            Console.WriteLine("Skipping water.");
+            Console.WriteLine();
+            return petState;
+        }
+    }
+    
+    Console.WriteLine("Select drink:");
+    Console.WriteLine("1. Small Drink (Hydration: 20)");
+    Console.WriteLine("2. Standard Drink (Hydration: 40)");
+    Console.WriteLine("3. Large Drink (Hydration: 60)");
+    Console.Write("Choose (1-3): ");
+    var drinkChoice = Console.ReadKey();
+    Console.WriteLine();
+    Console.WriteLine();
+    
+    float hydration = drinkChoice.KeyChar switch
+    {
+        '1' => 20f,
+        '2' => 40f,
+        '3' => 60f,
+        _ => 40f
+    };
+    
+    // Apply drinking using PetRules
+    petState = PetRules.Apply(petState, new DrinkInput(hydration), DateTimeOffset.Now);
+    
+    Console.WriteLine($"💧 Operator hydrated! (Hydration: +{hydration})");
+    Console.WriteLine($"Hydration: {petState.Hydration:F0}/{PetConstants.MaxStatValue:F0}");
+    
+    if (petState.Hydration > 80f)
+    {
+        Console.WriteLine("✓ Operator is well hydrated!");
+    }
+    Console.WriteLine();
+    
+    return petState;
+}
+
+static PetState StartBattle(Operator player, Operator enemy, PetState petState, OperatorManager manager)
 {
     // Ensure both operators have weapons
     if (player.EquippedWeapon == null || enemy.EquippedWeapon == null)
     {
         Console.WriteLine("Error: Both operators must have equipped weapons to start battle.");
-        return;
+        return petState;
     }
     
     Console.WriteLine($"Player equipped with: {player.EquippedWeapon.Name}");
@@ -628,9 +755,35 @@ static void StartBattle(Operator player, Operator enemy, OperatorManager manager
     
     if (player.IsAlive)
     {
+        // Calculate mission impact for PetRules
+        float healthLost = player.MaxHealth - player.Health;
+        int hitsTaken = (int)Math.Ceiling(healthLost / 10f); // Estimate hits based on health lost
+        
+        // Calculate opponent difficulty (0-100 scale)
+        // Base difficulty on enemy stats and combat outcome
+        float opponentDifficulty = 50f; // Base difficulty
+        if (!enemy.IsAlive)
+        {
+            // Victory - but still stressful
+            opponentDifficulty = 40f + (healthLost / player.MaxHealth * 30f);
+        }
+        else
+        {
+            // Defeat or ongoing combat - very stressful
+            opponentDifficulty = 70f + (healthLost / player.MaxHealth * 30f);
+        }
+        
+        // Apply mission effects using PetRules
+        petState = PetRules.Apply(petState, new MissionInput(hitsTaken, opponentDifficulty), DateTimeOffset.Now);
+        
+        // Sync operator stats with pet state
+        player.Fatigue = petState.Fatigue;
+        
         Console.WriteLine("═══ POST-COMBAT STATUS ═══");
-        Console.WriteLine($"Fatigue gained: +{manager.RestSystem.FatiguePerCombat:F0}");
-        Console.WriteLine($"Current fatigue: {player.Fatigue:F0}/{player.MaxFatigue:F0}");
+        Console.WriteLine($"Fatigue: {petState.Fatigue:F0}/{PetConstants.MaxStatValue:F0}");
+        Console.WriteLine($"Stress: {petState.Stress:F0}/{PetConstants.MaxStatValue:F0}");
+        Console.WriteLine($"Injury: {petState.Injury:F0}/{PetConstants.MaxStatValue:F0}");
+        Console.WriteLine($"Morale: {petState.Morale:F0}/{PetConstants.MaxStatValue:F0}");
         Console.WriteLine($"Status: {manager.GetStatus(player)}");
         
         if (!manager.RestSystem.IsReadyForCombat(player))
@@ -638,6 +791,27 @@ static void StartBattle(Operator player, Operator enemy, OperatorManager manager
             float restNeeded = manager.RestSystem.GetMinimumRestHours(player);
             Console.WriteLine($"⚠️  Operator needs {restNeeded:F1} hours rest before next combat!");
         }
+        
+        // Warnings for critical conditions
+        if (petState.Stress > PetConstants.HighStressThreshold)
+        {
+            Console.WriteLine($"⚠️  High stress detected! Consider resting.");
+        }
+        if (petState.Injury > PetConstants.HighInjuryThreshold)
+        {
+            Console.WriteLine($"⚠️  Significant injuries! Health recovery will be slower.");
+        }
+        if (petState.Hunger > PetConstants.HungerStressRecoveryThreshold)
+        {
+            Console.WriteLine($"⚠️  Operator is hungry! This affects stress recovery.");
+        }
+        if (petState.Hydration < PetConstants.HydrationStressRecoveryThreshold)
+        {
+            Console.WriteLine($"⚠️  Low hydration! This affects stress recovery.");
+        }
+        
         Console.WriteLine();
     }
+    
+    return petState;
 }
