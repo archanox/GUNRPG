@@ -136,7 +136,7 @@ static async Task<Guid?> SubmitIntentsAsync(HttpClient httpClient, JsonSerialize
     }
 
     var intent = PromptForIntents();
-    var request = new SubmitIntentsRequest { Intents = intent, AutoResolve = true };
+    var request = new SubmitIntentsRequest { Intents = intent };
 
     try
     {
