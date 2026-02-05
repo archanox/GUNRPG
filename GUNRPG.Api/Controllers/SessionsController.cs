@@ -1,10 +1,14 @@
-using GUNRPG.Application.Dtos;
-using GUNRPG.Application.Requests;
+using GUNRPG.Api.Dtos;
+using GUNRPG.Api.Mapping;
 using GUNRPG.Application.Sessions;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GUNRPG.Api.Controllers;
 
+/// <summary>
+/// Thin controller that only handles HTTP transport mapping.
+/// All business logic is delegated to the application service.
+/// </summary>
 [ApiController]
 [Route("sessions")]
 public class SessionsController : ControllerBase
@@ -17,61 +21,68 @@ public class SessionsController : ControllerBase
     }
 
     [HttpPost]
-    public ActionResult<CombatSessionDto> Create([FromBody] SessionCreateRequest? request)
+    public ActionResult<ApiCombatSessionDto> Create([FromBody] ApiSessionCreateRequest? request)
     {
-        var dto = _service.CreateSession(request ?? new SessionCreateRequest());
-        return CreatedAtAction(nameof(GetState), new { id = dto.Id }, dto);
+        var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiSessionCreateRequest());
+        var dto = _service.CreateSession(appRequest);
+        var apiDto = ApiMapping.ToApiDto(dto);
+        return CreatedAtAction(nameof(GetState), new { id = apiDto.Id }, apiDto);
     }
 
     [HttpGet("{id:guid}/state")]
-    public ActionResult<CombatSessionDto> GetState(Guid id)
+    public ActionResult<ApiCombatSessionDto> GetState(Guid id)
     {
-        var state = _service.GetState(id);
-        return state == null ? NotFound() : Ok(state);
+        var result = _service.GetState(id);
+        if (!result.IsSuccess)
+        {
+            return NotFound(new { error = result.ErrorMessage });
+        }
+
+        return Ok(ApiMapping.ToApiDto(result.Value!));
     }
 
     [HttpPost("{id:guid}/intent")]
-    public ActionResult<IntentSubmissionResultDto> SubmitIntent(Guid id, [FromBody] SubmitIntentsRequest? request)
+    public ActionResult<ApiIntentSubmissionResultDto> SubmitIntent(Guid id, [FromBody] ApiSubmitIntentsRequest? request)
     {
-        var result = _service.SubmitPlayerIntents(id, request ?? new SubmitIntentsRequest());
+        var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiSubmitIntentsRequest());
+        var result = _service.SubmitPlayerIntents(id, appRequest);
+        var apiResult = ApiMapping.ToApiDto(result);
+
         if (!result.Accepted && string.Equals(result.Error, "Session not found", StringComparison.OrdinalIgnoreCase))
         {
-            return NotFound(result);
+            return NotFound(apiResult);
         }
 
         if (!result.Accepted)
         {
-            return BadRequest(result);
+            return BadRequest(apiResult);
         }
 
-        return Ok(result);
+        return Ok(apiResult);
     }
 
     [HttpPost("{id:guid}/advance")]
-    public ActionResult<CombatSessionDto> Advance(Guid id)
+    public ActionResult<ApiCombatSessionDto> Advance(Guid id)
     {
-        try
+        var result = _service.Advance(id);
+        if (!result.IsSuccess)
         {
-            var state = _service.Advance(id);
-            return Ok(state);
+            return NotFound(new { error = result.ErrorMessage });
         }
-        catch (InvalidOperationException)
-        {
-            return NotFound();
-        }
+
+        return Ok(ApiMapping.ToApiDto(result.Value!));
     }
 
     [HttpPost("{id:guid}/pet")]
-    public ActionResult<PetStateDto> ApplyPetAction(Guid id, [FromBody] PetActionRequest? request)
+    public ActionResult<ApiPetStateDto> ApplyPetAction(Guid id, [FromBody] ApiPetActionRequest? request)
     {
-        try
+        var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiPetActionRequest());
+        var result = _service.ApplyPetAction(id, appRequest);
+        if (!result.IsSuccess)
         {
-            var state = _service.ApplyPetAction(id, request ?? new PetActionRequest());
-            return Ok(state);
+            return NotFound(new { error = result.ErrorMessage });
         }
-        catch (InvalidOperationException)
-        {
-            return NotFound();
-        }
+
+        return Ok(ApiMapping.ToApiDto(result.Value!));
     }
 }

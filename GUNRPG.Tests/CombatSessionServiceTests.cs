@@ -50,13 +50,15 @@ public class CombatSessionServiceTests
         var service = new CombatSessionService(store);
         var session = service.CreateSession(new SessionCreateRequest { Seed = 7 });
 
-        var petState = service.ApplyPetAction(session.Id, new PetActionRequest
+        var petStateResult = service.ApplyPetAction(session.Id, new PetActionRequest
         {
             Action = "mission",
             HitsTaken = 2,
             OpponentDifficulty = 80
         });
 
-        Assert.True(petState.Stress > 0);
+        Assert.True(petStateResult.IsSuccess);
+        Assert.NotNull(petStateResult.Value);
+        Assert.True(petStateResult.Value.Stress > 0);
     }
 }

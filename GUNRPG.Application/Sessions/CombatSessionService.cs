@@ -1,6 +1,7 @@
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Mapping;
 using GUNRPG.Application.Requests;
+using GUNRPG.Application.Results;
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
@@ -36,12 +37,18 @@ public sealed class CombatSessionService
         return SessionMapping.ToDto(session);
     }
 
-    public CombatSessionDto? GetState(Guid sessionId)
+    public ServiceResult<CombatSessionDto> GetState(Guid sessionId)
     {
         var session = _store.Get(sessionId);
-        return session == null ? null : SessionMapping.ToDto(session);
+        return session == null
+            ? ServiceResult<CombatSessionDto>.NotFound("Session not found")
+            : ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
     }
 
+    /// <summary>
+    /// Submits player intents without advancing the turn. This only records the intent.
+    /// Call Advance() separately to resolve the turn.
+    /// </summary>
     public IntentSubmissionResultDto SubmitPlayerIntents(Guid sessionId, SubmitIntentsRequest request)
     {
         var session = _store.Get(sessionId);
@@ -88,11 +95,6 @@ public sealed class CombatSessionService
             session.Combat.BeginExecution();
         }
 
-        if (request.AutoResolve)
-        {
-            ResolveUntilPlanningOrEnd(session);
-        }
-
         _store.Upsert(session);
         return new IntentSubmissionResultDto
         {
@@ -101,9 +103,16 @@ public sealed class CombatSessionService
         };
     }
 
-    public CombatSessionDto Advance(Guid sessionId)
+    /// <summary>
+    /// Advances the combat turn until the next planning phase or end of combat.
+    /// </summary>
+    public ServiceResult<CombatSessionDto> Advance(Guid sessionId)
     {
-        var session = _store.Get(sessionId) ?? throw new InvalidOperationException("Session not found");
+        var session = _store.Get(sessionId);
+        if (session == null)
+        {
+            return ServiceResult<CombatSessionDto>.NotFound("Session not found");
+        }
 
         if (session.Combat.Phase == CombatPhase.Executing)
         {
@@ -116,19 +125,24 @@ public sealed class CombatSessionService
         }
 
         _store.Upsert(session);
-        return SessionMapping.ToDto(session);
+        return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
     }
 
-    public PetStateDto ApplyPetInput(Guid sessionId, PetInput input, DateTimeOffset now)
+    public ServiceResult<PetStateDto> ApplyPetInput(Guid sessionId, PetInput input, DateTimeOffset now)
     {
-        var session = _store.Get(sessionId) ?? throw new InvalidOperationException("Session not found");
+        var session = _store.Get(sessionId);
+        if (session == null)
+        {
+            return ServiceResult<PetStateDto>.NotFound("Session not found");
+        }
+
         session.PetState = PetRules.Apply(session.PetState, input, now);
         session.Player.Fatigue = session.PetState.Fatigue;
         _store.Upsert(session);
-        return SessionMapping.ToDto(session.PetState);
+        return ServiceResult<PetStateDto>.Success(SessionMapping.ToDto(session.PetState));
     }
 
-    public PetStateDto ApplyPetAction(Guid sessionId, PetActionRequest request)
+    public ServiceResult<PetStateDto> ApplyPetAction(Guid sessionId, PetActionRequest request)
     {
         var now = DateTimeOffset.UtcNow;
         var input = ResolvePetInput(request);
