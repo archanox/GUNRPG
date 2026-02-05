@@ -60,6 +60,7 @@ public static class ApiMapping
         {
             Id = appDto.Id,
             Phase = appDto.Phase.ToString(),
+            CombatPhase = appDto.CombatPhase.ToString(),
             CurrentTimeMs = appDto.CurrentTimeMs,
             Player = ToApiDto(appDto.Player),
             Enemy = ToApiDto(appDto.Enemy),
@@ -67,6 +68,7 @@ public static class ApiMapping
             PlayerXp = appDto.PlayerXp,
             PlayerLevel = appDto.PlayerLevel,
             EnemyLevel = appDto.EnemyLevel,
+            TurnNumber = appDto.TurnNumber,
             IsComplete = appDto.IsComplete
         };
     }

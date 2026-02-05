@@ -10,21 +10,21 @@ public interface ICombatSessionStore
     /// <summary>
     /// Creates a new session. Throws if a session with the same ID already exists.
     /// </summary>
-    CombatSession Create(CombatSession session);
+    CombatSessionSnapshot Create(CombatSessionSnapshot snapshot);
 
     /// <summary>
     /// Retrieves a session by ID. Returns null if not found.
     /// </summary>
-    CombatSession? Get(Guid id);
+    CombatSessionSnapshot? Get(Guid id);
 
     /// <summary>
     /// Updates an existing session or inserts if it doesn't exist.
     /// This should perform a full snapshot replacement.
     /// </summary>
-    void Upsert(CombatSession session);
+    void Upsert(CombatSessionSnapshot snapshot);
 
     /// <summary>
     /// Lists all sessions. For production use, consider adding pagination.
     /// </summary>
-    IReadOnlyCollection<CombatSession> List();
+    IReadOnlyCollection<CombatSessionSnapshot> List();
 }

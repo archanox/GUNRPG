@@ -67,7 +67,10 @@ public class SessionsController : ControllerBase
         var result = _service.Advance(id);
         if (!result.IsSuccess)
         {
-            return NotFound(new { error = result.ErrorMessage });
+            var response = string.Equals(result.ErrorMessage, "Session not found", StringComparison.OrdinalIgnoreCase)
+                ? NotFound(new { error = result.ErrorMessage })
+                : BadRequest(new { error = result.ErrorMessage });
+            return response;
         }
 
         return Ok(ApiMapping.ToApiDto(result.Value!));

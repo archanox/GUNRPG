@@ -20,6 +20,8 @@ public sealed class CombatSession
     public int PlayerLevel { get; set; }
     public int EnemyLevel { get; }
     public int Seed { get; }
+    public SessionPhase Phase { get; private set; }
+    public int TurnNumber { get; private set; }
     public DateTimeOffset CreatedAt { get; }
     public bool PostCombatResolved { get; set; }
 
@@ -35,7 +37,10 @@ public sealed class CombatSession
         long playerXp,
         int playerLevel,
         int enemyLevel,
-        int seed)
+        int seed,
+        SessionPhase phase,
+        int turnNumber,
+        DateTimeOffset createdAt)
     {
         Id = id;
         Combat = combat;
@@ -46,7 +51,9 @@ public sealed class CombatSession
         PlayerLevel = playerLevel;
         EnemyLevel = enemyLevel;
         Seed = seed;
-        CreatedAt = DateTimeOffset.UtcNow;
+        Phase = phase;
+        TurnNumber = turnNumber;
+        CreatedAt = createdAt;
     }
 
     public static CombatSession CreateDefault(string? playerName = null, int? seed = null, float? startingDistance = null, string? enemyName = null)
@@ -77,6 +84,46 @@ public sealed class CombatSession
         var petState = new PetState(player.Id, 100f, 0f, 0f, 0f, 100f, 0f, 100f, DateTimeOffset.UtcNow);
         var enemyLevel = Math.Max(0, new Random(resolvedSeed).Next(-2, 3));
 
-        return new CombatSession(Guid.NewGuid(), combat, ai, operatorManager, petState, 0, 0, enemyLevel, resolvedSeed);
+        return new CombatSession(
+            Guid.NewGuid(),
+            combat,
+            ai,
+            operatorManager,
+            petState,
+            0,
+            0,
+            enemyLevel,
+            resolvedSeed,
+            SessionPhase.Planning,
+            1,
+            DateTimeOffset.UtcNow);
+    }
+
+    public void TransitionTo(SessionPhase nextPhase)
+    {
+        if (!IsValidTransition(Phase, nextPhase))
+        {
+            throw new InvalidOperationException($"Invalid session phase transition: {Phase} -> {nextPhase}");
+        }
+
+        Phase = nextPhase;
+    }
+
+    public void AdvanceTurnCounter()
+    {
+        TurnNumber++;
+    }
+
+    private static bool IsValidTransition(SessionPhase current, SessionPhase next)
+    {
+        return (current, next) switch
+        {
+            (SessionPhase.Created, SessionPhase.Planning) => true,
+            (SessionPhase.Planning, SessionPhase.Resolving) => true,
+            (SessionPhase.Resolving, SessionPhase.Planning) => true,
+            (SessionPhase.Planning, SessionPhase.Completed) => true,
+            (SessionPhase.Resolving, SessionPhase.Completed) => true,
+            _ => current == next
+        };
     }
 }

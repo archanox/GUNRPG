@@ -32,7 +32,7 @@ public class CombatSystemV2
 {
     private readonly SimulationTime _time;
     private readonly EventQueue _eventQueue;
-    private readonly Random _random;
+    private readonly TrackedRandom _random;
     private readonly List<ISimulationEvent> _executedEvents = new();
     private readonly List<CombatEventTimelineEntry> _timelineEntries = new();
     private readonly Dictionary<Guid, long> _activeAdsStarts = new();
@@ -48,6 +48,7 @@ public class CombatSystemV2
 
     public Operator Player { get; }
     public Operator Enemy { get; }
+    public int Seed { get; }
     public CombatPhase Phase { get; private set; }
     public IReadOnlyList<ISimulationEvent> ExecutedEvents => _executedEvents;
     public IReadOnlyList<CombatEventTimelineEntry> TimelineEntries => _timelineEntries;
@@ -62,17 +63,69 @@ public class CombatSystemV2
 
     public CombatDebugOptions DebugOptions { get; } = new() { VerboseShotLogs = true };
 
-    public CombatSystemV2(Operator player, Operator enemy, int? seed = null, CombatDebugOptions? debugOptions = null)
+    public CombatSystemV2(Operator player, Operator enemy, int? seed = null, CombatDebugOptions? debugOptions = null, TrackedRandom? randomOverride = null)
     {
         _time = new SimulationTime();
         _eventQueue = new EventQueue();
-        _random = seed.HasValue ? new Random(seed.Value) : new Random();
+        var resolvedSeed = randomOverride?.Seed ?? seed ?? Random.Shared.Next();
+        _random = randomOverride ?? new TrackedRandom(resolvedSeed);
+        Seed = resolvedSeed;
         
         Player = player;
         Enemy = enemy;
         if (debugOptions != null)
             DebugOptions = debugOptions;
         Phase = CombatPhase.Planning;
+    }
+
+    public (int Seed, int CallCount) GetRandomState()
+    {
+        return (Seed, _random.CallCount);
+    }
+
+    public (SimultaneousIntents? player, SimultaneousIntents? enemy) GetPendingIntents()
+    {
+        return (CloneIntents(_playerIntents), CloneIntents(_enemyIntents));
+    }
+
+    public static CombatSystemV2 FromState(
+        Operator player,
+        Operator enemy,
+        CombatPhase phase,
+        long currentTimeMs,
+        SimultaneousIntents? playerIntents,
+        SimultaneousIntents? enemyIntents,
+        int seed,
+        int randomCallCount,
+        CombatDebugOptions? debugOptions = null)
+    {
+        var random = new TrackedRandom(seed, randomCallCount);
+        var system = new CombatSystemV2(player, enemy, seed, debugOptions, random);
+        if (currentTimeMs > 0)
+        {
+            system._time.Advance(currentTimeMs);
+        }
+
+        system._playerIntents = CloneIntents(playerIntents);
+        system._enemyIntents = CloneIntents(enemyIntents);
+        system.Phase = phase;
+        return system;
+    }
+
+    private static SimultaneousIntents? CloneIntents(SimultaneousIntents? intents)
+    {
+        if (intents == null)
+            return null;
+
+        return new SimultaneousIntents(intents.OperatorId)
+        {
+            Primary = intents.Primary,
+            Movement = intents.Movement,
+            Stance = intents.Stance,
+            Cover = intents.Cover,
+            CancelMovement = intents.CancelMovement,
+            SubmittedAtMs = intents.SubmittedAtMs
+        };
     }
 
     /// <summary>
