@@ -51,6 +51,7 @@ public class CombatSystemV2
     public CombatPhase Phase { get; private set; }
     public IReadOnlyList<ISimulationEvent> ExecutedEvents => _executedEvents;
     public IReadOnlyList<CombatEventTimelineEntry> TimelineEntries => _timelineEntries;
+    public long CurrentTimeMs => _time.CurrentTimeMs;
 
     private SimultaneousIntents? _playerIntents;
     private SimultaneousIntents? _enemyIntents;
@@ -814,8 +815,6 @@ public class CombatSystemV2
             ScheduleMovementUpdate(op, towardOpponent, speed);
         }
     }
-
-    public long CurrentTimeMs => _time.CurrentTimeMs;
 
     private void ScheduleShotIfNeeded(Operator op, long shotTime)
     {
