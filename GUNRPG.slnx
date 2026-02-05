@@ -1,4 +1,7 @@
 <Solution>
   <Project Path="GUNRPG.Core/GUNRPG.Core.csproj" />
   <Project Path="GUNRPG.Tests/GUNRPG.Tests.csproj" />
+  <Project Path="GUNRPG.Application/GUNRPG.Application.csproj" />
+  <Project Path="GUNRPG.Api/GUNRPG.Api.csproj" />
+  <Project Path="GUNRPG.ConsoleClient/GUNRPG.ConsoleClient.csproj" />
 </Solution>

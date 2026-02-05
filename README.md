@@ -130,8 +130,11 @@ dotnet build
 ### Run
 
 ```bash
-cd GUNRPG.Core
-dotnet run
+# Start the headless Web API (http://localhost:5209 by default)
+dotnet run --project GUNRPG.Api
+
+# In another terminal, launch the console client (uses the same API)
+GUNRPG_API_BASE=http://localhost:5209 dotnet run --project GUNRPG.ConsoleClient
 ```
 
 ### Test
@@ -140,7 +143,20 @@ dotnet run
 dotnet test
 ```
 
-All tests should pass (38 tests covering core systems).
+Core tests exercise the domain and application layers; see `GUNRPG.Tests` for coverage details.
+
+## Headless Architecture
+
+- **Domain (`GUNRPG.Core`)**: Combat engine, operators, weapons, intents, virtual pet rules (no UI or HTTP dependencies).
+- **Application (`GUNRPG.Application`)**: `CombatSessionService`, DTOs, in-memory session store, pet care helpers. Converts domain state into transport-ready shapes.
+- **Web API (`GUNRPG.Api`)**: Stateless controllers exposing the service. Key endpoints:
+  - `POST /sessions` – create a combat session (`SessionCreateRequest`).
+  - `GET /sessions/{id}/state` – fetch current session state (`CombatSessionDto`).
+  - `POST /sessions/{id}/intent` – submit player intents (`SubmitIntentsRequest`/`IntentDto`).
+  - `POST /sessions/{id}/advance` – resolve execution to the next reaction window or combat end.
+  - `POST /sessions/{id}/pet` – apply rest/eat/drink/mission inputs (`PetActionRequest` → `PetStateDto`).
+- **Responsibilities**: Controllers only translate HTTP ⇄ DTOs; `CombatSessionService` owns session lifecycle and deterministic transitions; domain types stay UI-agnostic.
+- **Console client (`GUNRPG.ConsoleClient`)**: Thin CLI that calls the API for session creation, intent submission, advancement, and pet care. Configurable via `GUNRPG_API_BASE`.
 
 ## Usage Example
 
