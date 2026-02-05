@@ -7,6 +7,7 @@ public sealed class ApiCombatSessionDto
 {
     public Guid Id { get; init; }
     public string Phase { get; init; } = "";
+    public string CombatPhase { get; init; } = "";
     public long CurrentTimeMs { get; init; }
     public ApiOperatorStateDto Player { get; init; } = default!;
     public ApiOperatorStateDto Enemy { get; init; } = default!;
@@ -14,5 +15,6 @@ public sealed class ApiCombatSessionDto
     public long PlayerXp { get; init; }
     public int PlayerLevel { get; init; }
     public int EnemyLevel { get; init; }
+    public int TurnNumber { get; init; }
     public bool IsComplete { get; init; }
 }

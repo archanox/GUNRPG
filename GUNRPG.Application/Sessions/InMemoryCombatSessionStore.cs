@@ -4,26 +4,26 @@ namespace GUNRPG.Application.Sessions;
 
 public sealed class InMemoryCombatSessionStore : ICombatSessionStore
 {
-    private readonly ConcurrentDictionary<Guid, CombatSession> _sessions = new();
+    private readonly ConcurrentDictionary<Guid, CombatSessionSnapshot> _sessions = new();
 
-    public CombatSession Create(CombatSession session)
+    public CombatSessionSnapshot Create(CombatSessionSnapshot snapshot)
     {
-        if (!_sessions.TryAdd(session.Id, session))
-            throw new InvalidOperationException($"Session {session.Id} already exists.");
+        if (!_sessions.TryAdd(snapshot.Id, snapshot))
+            throw new InvalidOperationException($"Session {snapshot.Id} already exists.");
 
-        return session;
+        return snapshot;
     }
 
-    public CombatSession? Get(Guid id)
+    public CombatSessionSnapshot? Get(Guid id)
     {
-        _sessions.TryGetValue(id, out var session);
-        return session;
+        _sessions.TryGetValue(id, out var snapshot);
+        return snapshot;
     }
 
-    public void Upsert(CombatSession session)
+    public void Upsert(CombatSessionSnapshot snapshot)
     {
-        _sessions[session.Id] = session;
+        _sessions[snapshot.Id] = snapshot;
     }
 
-    public IReadOnlyCollection<CombatSession> List() => _sessions.Values.ToArray();
+    public IReadOnlyCollection<CombatSessionSnapshot> List() => _sessions.Values.ToArray();
 }

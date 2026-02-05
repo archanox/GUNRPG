@@ -1,5 +1,6 @@
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Requests;
+using GUNRPG.Application.Mapping;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Intents;
@@ -16,14 +17,15 @@ public class CombatSessionServiceTests
         var state = service.CreateSession(new SessionCreateRequest { PlayerName = "Tester", Seed = 123, StartingDistance = 10 });
 
         Assert.NotNull(state);
-        Assert.Equal(CombatPhase.Planning, state.Phase);
+        Assert.Equal(SessionPhase.Planning, state.Phase);
+        Assert.Equal(CombatPhase.Planning, state.CombatPhase);
         Assert.Equal("Tester", state.Player.Name);
         Assert.True(state.Player.CurrentAmmo > 0);
         Assert.True(state.Enemy.CurrentAmmo > 0);
     }
 
     [Fact]
-    public void SubmitIntents_AdvancesCombat()
+    public void SubmitIntents_RecordsWithoutAdvancing()
     {
         var store = new InMemoryCombatSessionStore();
         var service = new CombatSessionService(store);
@@ -39,9 +41,8 @@ public class CombatSessionServiceTests
 
         Assert.True(result.Accepted);
         Assert.NotNull(result.State);
-        // After submitting intents, combat should begin execution but not auto-advance
-        Assert.Equal(CombatPhase.Executing, result.State!.Phase);
-        Assert.True(result.State.CurrentTimeMs >= 0);
+        Assert.Equal(SessionPhase.Planning, result.State!.Phase);
+        Assert.Equal(CombatPhase.Planning, result.State.CombatPhase);
     }
 
     [Fact]
@@ -65,10 +66,37 @@ public class CombatSessionServiceTests
 
         Assert.True(advanceResult.IsSuccess);
         Assert.NotNull(advanceResult.Value);
-        // After advancing, combat should be in Planning or Ended phase
-        Assert.NotEqual(CombatPhase.Executing, advanceResult.Value!.Phase);
+        Assert.NotEqual(CombatPhase.Executing, advanceResult.Value!.CombatPhase);
+        Assert.Contains(advanceResult.Value!.Phase, new[] { SessionPhase.Planning, SessionPhase.Completed });
     }
 
+    [Fact]
+    public void Advance_WithoutIntents_IsInvalid()
+    {
+        var service = new CombatSessionService(new InMemoryCombatSessionStore());
+        var session = service.CreateSession(new SessionCreateRequest { Seed = 5 });
+
+        var result = service.Advance(session.Id);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal("Advance requires recorded intents for both sides", result.ErrorMessage);
+    }
+
+    [Fact]
+    public void Snapshot_RoundTripsThroughStore()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+        var created = service.CreateSession(new SessionCreateRequest { Seed = 11 });
+
+        var snapshot = store.Get(created.Id);
+        Assert.NotNull(snapshot);
+
+        var rehydrated = SessionMapping.FromSnapshot(snapshot!);
+        Assert.Equal(created.Id, rehydrated.Id);
+        Assert.Equal(SessionPhase.Planning, rehydrated.Phase);
+        Assert.Equal(created.TurnNumber, rehydrated.TurnNumber);
+    }
 
     [Fact]
     public void ApplyPetAction_MissionUpdatesStress()

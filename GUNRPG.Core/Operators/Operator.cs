@@ -218,9 +218,9 @@ public class Operator
     /// </summary>
     public bool WasTargetVisible { get; set; }
 
-    public Operator(string name)
+    public Operator(string name, Guid? id = null)
     {
-        Id = Guid.NewGuid();
+        Id = id ?? Guid.NewGuid();
         Name = name;
         
         // Default values
@@ -374,6 +374,25 @@ public class Operator
         SuppressionLevel = 0f;
         SuppressionDecayStartMs = null;
         LastSuppressionApplicationMs = null;
+    }
+
+    public void RestoreSuppression(float level, long? lastApplicationMs, long? decayStartMs)
+    {
+        SuppressionLevel = level;
+        LastSuppressionApplicationMs = lastApplicationMs;
+        SuppressionDecayStartMs = decayStartMs;
+    }
+
+    public void RestoreFlinch(float severity, int shotsRemaining, int durationShots)
+    {
+        FlinchSeverity = Math.Clamp(severity, 0f, 1f);
+        FlinchShotsRemaining = Math.Max(0, shotsRemaining);
+        FlinchDurationShots = durationShots;
+    }
+
+    public void RestoreShotsFired(int shotsFired)
+    {
+        ShotsFiredCount = Math.Max(0, shotsFired);
     }
 
     /// <summary>

@@ -33,13 +33,13 @@ public sealed class CombatSessionService
             startingDistance: request.StartingDistance,
             enemyName: request.EnemyName);
 
-        _store.Create(session);
+        _store.Create(SessionMapping.ToSnapshot(session));
         return SessionMapping.ToDto(session);
     }
 
     public ServiceResult<CombatSessionDto> GetState(Guid sessionId)
     {
-        var session = _store.Get(sessionId);
+        var session = Load(sessionId);
         return session == null
             ? ServiceResult<CombatSessionDto>.NotFound("Session not found")
             : ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
@@ -51,13 +51,23 @@ public sealed class CombatSessionService
     /// </summary>
     public IntentSubmissionResultDto SubmitPlayerIntents(Guid sessionId, SubmitIntentsRequest request)
     {
-        var session = _store.Get(sessionId);
+        var session = Load(sessionId);
         if (session == null)
         {
             return new IntentSubmissionResultDto
             {
                 Accepted = false,
                 Error = "Session not found"
+            };
+        }
+
+        if (session.Phase != SessionPhase.Planning)
+        {
+            return new IntentSubmissionResultDto
+            {
+                Accepted = false,
+                Error = "Intents can only be submitted during the Planning phase",
+                State = SessionMapping.ToDto(session)
             };
         }
 
@@ -90,12 +100,7 @@ public sealed class CombatSessionService
             session.Combat.SubmitIntents(session.Enemy, SimultaneousIntents.CreateStop(session.Enemy.Id));
         }
 
-        if (session.Combat.Phase == CombatPhase.Planning)
-        {
-            session.Combat.BeginExecution();
-        }
-
-        _store.Upsert(session);
+        Save(session);
         return new IntentSubmissionResultDto
         {
             Accepted = true,
@@ -108,10 +113,37 @@ public sealed class CombatSessionService
     /// </summary>
     public ServiceResult<CombatSessionDto> Advance(Guid sessionId)
     {
-        var session = _store.Get(sessionId);
+        var session = Load(sessionId);
         if (session == null)
         {
             return ServiceResult<CombatSessionDto>.NotFound("Session not found");
+        }
+
+        if (session.Phase != SessionPhase.Planning && session.Phase != SessionPhase.Resolving)
+        {
+            return ServiceResult<CombatSessionDto>.InvalidState("Advance is only allowed during Planning or Resolving phases");
+        }
+
+        if (session.Combat.Phase == CombatPhase.Ended)
+        {
+            ApplyPostCombat(session);
+            session.TransitionTo(SessionPhase.Completed);
+            Save(session);
+            return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
+        }
+
+        var pendingIntents = session.Combat.GetPendingIntents();
+        var hasPlayerIntents = pendingIntents.player != null;
+        var hasEnemyIntents = pendingIntents.enemy != null;
+        if (!hasPlayerIntents || !hasEnemyIntents)
+        {
+            return ServiceResult<CombatSessionDto>.InvalidState("Advance requires recorded intents for both sides");
+        }
+
+        if (session.Combat.Phase == CombatPhase.Planning)
+        {
+            session.TransitionTo(SessionPhase.Resolving);
+            session.Combat.BeginExecution();
         }
 
         if (session.Combat.Phase == CombatPhase.Executing)
@@ -122,15 +154,21 @@ public sealed class CombatSessionService
         if (session.Combat.Phase == CombatPhase.Ended)
         {
             ApplyPostCombat(session);
+            session.TransitionTo(SessionPhase.Completed);
+        }
+        else
+        {
+            session.TransitionTo(SessionPhase.Planning);
+            session.AdvanceTurnCounter();
         }
 
-        _store.Upsert(session);
+        Save(session);
         return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
     }
 
     public ServiceResult<PetStateDto> ApplyPetInput(Guid sessionId, PetInput input, DateTimeOffset now)
     {
-        var session = _store.Get(sessionId);
+        var session = Load(sessionId);
         if (session == null)
         {
             return ServiceResult<PetStateDto>.NotFound("Session not found");
@@ -138,7 +176,7 @@ public sealed class CombatSessionService
 
         session.PetState = PetRules.Apply(session.PetState, input, now);
         session.Player.Fatigue = session.PetState.Fatigue;
-        _store.Upsert(session);
+        Save(session);
         return ServiceResult<PetStateDto>.Success(SessionMapping.ToDto(session.PetState));
     }
 
@@ -147,6 +185,17 @@ public sealed class CombatSessionService
         var now = DateTimeOffset.UtcNow;
         var input = ResolvePetInput(request);
         return ApplyPetInput(sessionId, input, now);
+    }
+
+    private CombatSession? Load(Guid id)
+    {
+        var snapshot = _store.Get(id);
+        return snapshot == null ? null : SessionMapping.FromSnapshot(snapshot);
+    }
+
+    private void Save(CombatSession session)
+    {
+        _store.Upsert(SessionMapping.ToSnapshot(session));
     }
 
     private static void ResolveUntilPlanningOrEnd(CombatSession session)
