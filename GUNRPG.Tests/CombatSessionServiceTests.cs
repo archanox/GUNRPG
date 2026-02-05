@@ -39,9 +39,36 @@ public class CombatSessionServiceTests
 
         Assert.True(result.Accepted);
         Assert.NotNull(result.State);
-        Assert.NotEqual(CombatPhase.Executing, result.State!.Phase);
+        // After submitting intents, combat should begin execution but not auto-advance
+        Assert.Equal(CombatPhase.Executing, result.State!.Phase);
         Assert.True(result.State.CurrentTimeMs >= 0);
     }
+
+    [Fact]
+    public void Advance_ProgressesCombatTurn()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+        var session = service.CreateSession(new SessionCreateRequest { Seed = 42 });
+
+        // Submit intents first
+        service.SubmitPlayerIntents(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto
+            {
+                Primary = PrimaryAction.Fire
+            }
+        });
+
+        // Now advance the turn
+        var advanceResult = service.Advance(session.Id);
+
+        Assert.True(advanceResult.IsSuccess);
+        Assert.NotNull(advanceResult.Value);
+        // After advancing, combat should be in Planning or Ended phase
+        Assert.NotEqual(CombatPhase.Executing, advanceResult.Value!.Phase);
+    }
+
 
     [Fact]
     public void ApplyPetAction_MissionUpdatesStress()
