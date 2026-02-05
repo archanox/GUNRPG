@@ -6,8 +6,23 @@ using GUNRPG.Core.Operators;
 using GUNRPG.Core.Rendering;
 using GUNRPG.Core.VirtualPet;
 
+// Game balance constants
+const float VictoryDifficultyModifier = 0.9f;  // Reduce difficulty after victory (they were beatable)
+const float DefeatDifficultyModifier = 1.2f;   // Increase difficulty after defeat (they were too strong)
+const int XpMultiplier = 20;                   // XP = adjusted difficulty × this value
+const int MinEnemyLevelOffset = -2;            // Minimum enemy level relative to player
+const int MaxEnemyLevelOffset = 2;             // Maximum enemy level relative to player (inclusive)
+const float LightSnackNutrition = 15f;
+const float StandardMealNutrition = 30f;
+const float LargeMealNutrition = 50f;
+const float SmallDrinkHydration = 20f;
+const float StandardDrinkHydration = 40f;
+const float LargeDrinkHydration = 60f;
+const float HungerPromptThreshold = 20f;       // Prompt user if hunger below this
+const float HydrationPromptThreshold = 80f;    // Prompt user if hydration above this
+
 // Shared random instance for enemy level generation
-var enemyLevelRandom = new Random(42);
+var enemyLevelRandom = new Random();
 
 Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
 Console.WriteLine("║          GUNRPG - Text-Based Tactical Combat Simulator       ║");
@@ -91,9 +106,18 @@ while (!exitRequested)
                 Console.WriteLine();
                 Console.WriteLine();
                 
-                if (wakeChoice.KeyChar == 'y' || wakeChoice.KeyChar == 'Y')
+                if (char.ToUpperInvariant(wakeChoice.KeyChar) == 'Y')
                 {
+                    // Get rest duration for PetRules recovery calculation
+                    var restDuration = operatorManager.GetRestDuration(player);
+                    
+                    // Apply rest recovery using PetRules
+                    playerPetState = PetRules.Apply(playerPetState, new RestInput(restDuration), DateTimeOffset.Now);
+                    
+                    // Wake operator and sync fatigue
                     operatorManager.WakeFromRest(player);
+                    player.Fatigue = playerPetState.Fatigue;
+                    
                     Console.WriteLine("✓ Operator awakened from rest.");
                     Console.WriteLine();
                 }
@@ -117,12 +141,27 @@ while (!exitRequested)
                 break;
             }
             
+            // Recreate enemy operator for fresh battle
+            enemy = new Operator("Enemy")
+            {
+                EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
+                DistanceToOpponent = 15f
+            };
+            enemy.CurrentAmmo = enemy.EquippedWeapon!.MagazineSize;
+            
             // Prepare operator for combat
             if (!operatorManager.PrepareForCombat(player))
             {
                 Console.WriteLine("❌ Failed to prepare operator for combat.");
                 Console.WriteLine();
                 break;
+            }
+            
+            // Apply injury from PetState to player health before combat
+            if (playerPetState.Injury > 0f)
+            {
+                float injuryFactor = Math.Clamp(playerPetState.Injury / PetConstants.MaxStatValue, 0f, 1f);
+                player.Health = player.MaxHealth * (1f - injuryFactor);
             }
             
             (playerPetState, playerXp, playerLevel) = StartBattle(player, enemy, playerPetState, operatorManager, playerLevel, playerXp, enemyLevelRandom);
@@ -232,19 +271,29 @@ static PetState RestOperator(Operator op, PetState petState, OperatorManager man
         Console.WriteLine();
         Console.WriteLine();
         
-        if (choice.KeyChar == 'y' || choice.KeyChar == 'Y')
+        if (char.ToUpperInvariant(choice.KeyChar) == 'Y')
         {
+            // Capture pre-rest stats to compute actual recovery deltas
+            var previousFatigue = petState.Fatigue;
+            var previousStress = petState.Stress;
+            var previousHealth = petState.Health;
+            
             // Apply rest recovery using PetRules
             petState = PetRules.Apply(petState, new RestInput(duration), DateTimeOffset.Now);
             
             manager.WakeFromRest(op);
             op.Fatigue = petState.Fatigue;
             
+            // Compute actual changes after rest
+            var fatigueReduced = previousFatigue - petState.Fatigue;
+            var stressReduced = previousStress - petState.Stress;
+            var healthRecovered = petState.Health - previousHealth;
+            
             Console.WriteLine("✓ Operator awakened and recovered!");
             Console.WriteLine($"New Status: {manager.GetStatus(op)}");
-            Console.WriteLine($"Fatigue: {petState.Fatigue:F0}/{PetConstants.MaxStatValue:F0}");
-            Console.WriteLine($"Stress: {petState.Stress:F0}/{PetConstants.MaxStatValue:F0}");
-            Console.WriteLine($"Health: {petState.Health:F0}/{PetConstants.MaxStatValue:F0}");
+            Console.WriteLine($"Fatigue: {petState.Fatigue:F0}/{PetConstants.MaxStatValue:F0} (reduced by {fatigueReduced:F0})");
+            Console.WriteLine($"Stress: {petState.Stress:F0}/{PetConstants.MaxStatValue:F0} (reduced by {stressReduced:F0})");
+            Console.WriteLine($"Health: {petState.Health:F0}/{PetConstants.MaxStatValue:F0} (recovered by {healthRecovered:F0})");
         }
         else
         {
@@ -256,23 +305,31 @@ static PetState RestOperator(Operator op, PetState petState, OperatorManager man
         Console.Write("Enter rest duration in hours (or press Enter for 1 hour): ");
         var input = Console.ReadLine();
         float hours = 1.0f;
-        if (!string.IsNullOrWhiteSpace(input) && float.TryParse(input, out float parsed))
+        if (!string.IsNullOrWhiteSpace(input) && float.TryParse(input, System.Globalization.CultureInfo.InvariantCulture, out float parsed))
         {
             hours = Math.Max(0.1f, Math.Min(24f, parsed)); // Clamp between 0.1 and 24 hours
         }
         Console.WriteLine();
         
-        Console.WriteLine($"💤 Operator resting for {hours:F1} hours...");
+        // Capture pre-rest stats to compute actual recovery deltas
+        var previousFatigue = petState.Fatigue;
+        var previousStress = petState.Stress;
+        var previousHealth = petState.Health;
         
         // Apply rest recovery using PetRules
         petState = PetRules.Apply(petState, new RestInput(TimeSpan.FromHours(hours)), DateTimeOffset.Now);
         op.Fatigue = petState.Fatigue;
         
+        // Compute actual changes after rest
+        var fatigueReduced = previousFatigue - petState.Fatigue;
+        var stressReduced = previousStress - petState.Stress;
+        var healthRecovered = petState.Health - previousHealth;
+        
         Console.WriteLine();
         Console.WriteLine("✓ Rest complete!");
-        Console.WriteLine($"Fatigue: {petState.Fatigue:F0}/{PetConstants.MaxStatValue:F0} (reduced by {hours * PetConstants.FatigueRecoveryPerHour:F0})");
-        Console.WriteLine($"Stress: {petState.Stress:F0}/{PetConstants.MaxStatValue:F0} (reduced by ~{hours * PetConstants.StressRecoveryPerHour:F0})");
-        Console.WriteLine($"Health: {petState.Health:F0}/{PetConstants.MaxStatValue:F0} (recovered)");
+        Console.WriteLine($"Fatigue: {petState.Fatigue:F0}/{PetConstants.MaxStatValue:F0} (reduced by {fatigueReduced:F0})");
+        Console.WriteLine($"Stress: {petState.Stress:F0}/{PetConstants.MaxStatValue:F0} (reduced by {stressReduced:F0})");
+        Console.WriteLine($"Health: {petState.Health:F0}/{PetConstants.MaxStatValue:F0} (recovered by {healthRecovered:F0})");
     }
     Console.WriteLine();
     
@@ -287,7 +344,7 @@ static PetState FeedOperator(PetState petState)
     Console.WriteLine($"Current Morale: {petState.Morale:F0}/{PetConstants.MaxStatValue:F0}");
     Console.WriteLine();
     
-    if (petState.Hunger < 20f)
+    if (petState.Hunger < HungerPromptThreshold)
     {
         Console.WriteLine("✓ Operator is not hungry right now.");
         Console.WriteLine();
@@ -296,7 +353,7 @@ static PetState FeedOperator(PetState petState)
         Console.WriteLine();
         Console.WriteLine();
         
-        if (choice.KeyChar != 'y' && choice.KeyChar != 'Y')
+        if (char.ToUpperInvariant(choice.KeyChar) != 'Y')
         {
             Console.WriteLine("Skipping meal.");
             Console.WriteLine();
@@ -305,9 +362,9 @@ static PetState FeedOperator(PetState petState)
     }
     
     Console.WriteLine("Select meal type:");
-    Console.WriteLine("1. Light Snack (Nutrition: 15)");
-    Console.WriteLine("2. Standard Meal (Nutrition: 30)");
-    Console.WriteLine("3. Large Meal (Nutrition: 50)");
+    Console.WriteLine($"1. Light Snack (Nutrition: {LightSnackNutrition:F0})");
+    Console.WriteLine($"2. Standard Meal (Nutrition: {StandardMealNutrition:F0})");
+    Console.WriteLine($"3. Large Meal (Nutrition: {LargeMealNutrition:F0})");
     Console.Write("Choose (1-3): ");
     var mealChoice = Console.ReadKey();
     Console.WriteLine();
@@ -315,10 +372,10 @@ static PetState FeedOperator(PetState petState)
     
     float nutrition = mealChoice.KeyChar switch
     {
-        '1' => 15f,
-        '2' => 30f,
-        '3' => 50f,
-        _ => 30f
+        '1' => LightSnackNutrition,
+        '2' => StandardMealNutrition,
+        '3' => LargeMealNutrition,
+        _ => StandardMealNutrition
     };
     
     // Apply eating using PetRules
@@ -327,7 +384,7 @@ static PetState FeedOperator(PetState petState)
     Console.WriteLine($"🍴 Operator fed! (Nutrition: {nutrition})");
     Console.WriteLine($"Hunger: {petState.Hunger:F0}/{PetConstants.MaxStatValue:F0}");
     
-    if (petState.Hunger < 20f)
+    if (petState.Hunger < HungerPromptThreshold)
     {
         Console.WriteLine("✓ Operator is well-fed!");
     }
@@ -343,7 +400,7 @@ static PetState GiveWaterOperator(PetState petState)
     Console.WriteLine($"Current Hydration: {petState.Hydration:F0}/{PetConstants.MaxStatValue:F0}");
     Console.WriteLine();
     
-    if (petState.Hydration > 80f)
+    if (petState.Hydration > HydrationPromptThreshold)
     {
         Console.WriteLine("✓ Operator is well hydrated.");
         Console.WriteLine();
@@ -352,7 +409,7 @@ static PetState GiveWaterOperator(PetState petState)
         Console.WriteLine();
         Console.WriteLine();
         
-        if (choice.KeyChar != 'y' && choice.KeyChar != 'Y')
+        if (char.ToUpperInvariant(choice.KeyChar) != 'Y')
         {
             Console.WriteLine("Skipping water.");
             Console.WriteLine();
@@ -361,9 +418,9 @@ static PetState GiveWaterOperator(PetState petState)
     }
     
     Console.WriteLine("Select drink:");
-    Console.WriteLine("1. Small Drink (Hydration: 20)");
-    Console.WriteLine("2. Standard Drink (Hydration: 40)");
-    Console.WriteLine("3. Large Drink (Hydration: 60)");
+    Console.WriteLine($"1. Small Drink (Hydration: {SmallDrinkHydration:F0})");
+    Console.WriteLine($"2. Standard Drink (Hydration: {StandardDrinkHydration:F0})");
+    Console.WriteLine($"3. Large Drink (Hydration: {LargeDrinkHydration:F0})");
     Console.Write("Choose (1-3): ");
     var drinkChoice = Console.ReadKey();
     Console.WriteLine();
@@ -371,10 +428,10 @@ static PetState GiveWaterOperator(PetState petState)
     
     float hydration = drinkChoice.KeyChar switch
     {
-        '1' => 20f,
-        '2' => 40f,
-        '3' => 60f,
-        _ => 40f
+        '1' => SmallDrinkHydration,
+        '2' => StandardDrinkHydration,
+        '3' => LargeDrinkHydration,
+        _ => StandardDrinkHydration
     };
     
     // Apply drinking using PetRules
@@ -383,7 +440,7 @@ static PetState GiveWaterOperator(PetState petState)
     Console.WriteLine($"💧 Operator hydrated! (Hydration: +{hydration})");
     Console.WriteLine($"Hydration: {petState.Hydration:F0}/{PetConstants.MaxStatValue:F0}");
     
-    if (petState.Hydration > 80f)
+    if (petState.Hydration > HydrationPromptThreshold)
     {
         Console.WriteLine("✓ Operator is well hydrated!");
     }
@@ -394,6 +451,10 @@ static PetState GiveWaterOperator(PetState petState)
 
 static (PetState, long, int) StartBattle(Operator player, Operator enemy, PetState petState, OperatorManager manager, int playerLevel, long playerXp, Random enemyLevelRandom)
 {
+    // Generate enemy level before combat starts (varies -2 to +2 from player level)
+    int enemyLevel = playerLevel + enemyLevelRandom.Next(MinEnemyLevelOffset, MaxEnemyLevelOffset + 1);
+    enemyLevel = Math.Max(0, enemyLevel); // Ensure non-negative
+    
     // Ensure both operators have weapons
     if (player.EquippedWeapon == null || enemy.EquippedWeapon == null)
     {
@@ -403,12 +464,14 @@ static (PetState, long, int) StartBattle(Operator player, Operator enemy, PetSta
     
     Console.WriteLine($"Player equipped with: {player.EquippedWeapon.Name}");
     Console.WriteLine($"Enemy equipped with:  {enemy.EquippedWeapon.Name}");
+    Console.WriteLine($"Enemy Level: {enemyLevel}");
     Console.WriteLine($"Starting distance:    {player.DistanceToOpponent:F1} meters");
     Console.WriteLine();
 
-    // Create combat system
-    var combat = new CombatSystemV2(player, enemy, seed: 42); // Fixed seed for determinism
-    var ai = new SimpleAIV2(seed: 42);
+    // Create combat system with random seed for varied gameplay
+    var combatSeed = Random.Shared.Next();
+    var combat = new CombatSystemV2(player, enemy, seed: combatSeed);
+    var ai = new SimpleAIV2(seed: combatSeed);
     var timelineRenderer = new CombatEventTimelineRenderer();
 
     Console.WriteLine("Combat initialized. Press any key to start...");
@@ -424,7 +487,7 @@ static (PetState, long, int) StartBattle(Operator player, Operator enemy, PetSta
     
     // Show current operator status with movement and cover info
     float playerADS = player.GetADSProgress(combat.CurrentTimeMs);
-    int magazineSize = player.EquippedWeapon?.MagazineSize ?? 0;
+    int magazineSize = player.EquippedWeapon.MagazineSize;
     
     // Movement state display
     string movementDisplay = player.CurrentMovement.ToString();
@@ -771,101 +834,100 @@ static (PetState, long, int) StartBattle(Operator player, Operator enemy, PetSta
     // Apply post-combat fatigue management
     manager.CompleteCombat(player, player.IsAlive);
     
-    if (player.IsAlive)
+    // Calculate mission impact for PetRules (applied whether player won or lost)
+    float healthLost = player.MaxHealth - player.Health;
+    // Note: Estimate hits based on health lost. This assumes ~10 damage per hit,
+    // which may not reflect actual weapon damage values or armor effects.
+    int hitsTaken = (int)Math.Ceiling(healthLost / 10f);
+    
+    // Calculate opponent difficulty using OpponentDifficulty system
+    // Uses level difference (50 base, ±10 per level difference)
+    float opponentDifficulty = OpponentDifficulty.Compute(
+        opponentLevel: enemyLevel,
+        playerLevel: playerLevel
+    );
+    
+    // Adjust difficulty based on combat outcome for more accurate stress calculation
+    if (player.IsAlive && !enemy.IsAlive)
     {
-        // Calculate mission impact for PetRules
-        float healthLost = player.MaxHealth - player.Health;
-        int hitsTaken = (int)Math.Ceiling(healthLost / 10f); // Estimate hits based on health lost
-        
-        // Generate enemy level (varies -2 to +2 levels from player)
-        // Uses shared Random instance for consistent randomness across battles
-        int enemyLevel = playerLevel + enemyLevelRandom.Next(-2, 3);
-        enemyLevel = Math.Max(0, enemyLevel); // Ensure non-negative
-        
-        // Calculate opponent difficulty using OpponentDifficulty system
-        // Uses level difference (50 base, ±10 per level difference)
-        float opponentDifficulty = OpponentDifficulty.Compute(
-            opponentLevel: enemyLevel,
-            playerLevel: playerLevel
-        );
-        
-        // Adjust difficulty based on combat outcome for more accurate stress calculation
-        if (!enemy.IsAlive)
-        {
-            // Victory - reduce difficulty slightly (they were beatable)
-            opponentDifficulty *= 0.9f;
-        }
-        else
-        {
-            // Defeat - increase difficulty (they were too strong)
-            opponentDifficulty = Math.Min(100f, opponentDifficulty * 1.2f);
-        }
-        
-        // Apply mission effects using PetRules
-        petState = PetRules.Apply(petState, new MissionInput(hitsTaken, opponentDifficulty), DateTimeOffset.Now);
-        
-        // Award XP based on opponent difficulty and outcome
-        long xpGained = 0L;
-        if (!enemy.IsAlive)
-        {
-            // Victory: Award XP based on adjusted difficulty
-            // Actual range: 180-1800 XP (after 0.9x victory modifier on 10-100 difficulty)
-            xpGained = (long)(opponentDifficulty * 20);
-            playerXp += xpGained;
-            
-            // Check for level up
-            int newLevel = OpponentDifficulty.ComputeLevelFromXp(playerXp);
-            if (newLevel > playerLevel)
-            {
-                int levelsGained = newLevel - playerLevel;
-                playerLevel = newLevel;
-                Console.WriteLine();
-                Console.WriteLine($"🎉 LEVEL UP! You are now level {playerLevel}! (+{levelsGained} level{(levelsGained > 1 ? "s" : "")})");
-            }
-        }
-        
-        // Sync operator stats with pet state
-        player.Fatigue = petState.Fatigue;
-        
-        Console.WriteLine("═══ POST-COMBAT STATUS ═══");
-        Console.WriteLine($"Enemy Level: {enemyLevel} (Difficulty: {opponentDifficulty:F0})");
-        if (xpGained > 0)
-        {
-            Console.WriteLine($"XP Gained: +{xpGained:N0} (Total: {playerXp:N0})");
-        }
-        Console.WriteLine();
-        Console.WriteLine($"Fatigue: {petState.Fatigue:F0}/{PetConstants.MaxStatValue:F0}");
-        Console.WriteLine($"Stress: {petState.Stress:F0}/{PetConstants.MaxStatValue:F0}");
-        Console.WriteLine($"Injury: {petState.Injury:F0}/{PetConstants.MaxStatValue:F0}");
-        Console.WriteLine($"Morale: {petState.Morale:F0}/{PetConstants.MaxStatValue:F0}");
-        Console.WriteLine($"Status: {manager.GetStatus(player)}");
-        
-        if (!manager.RestSystem.IsReadyForCombat(player))
-        {
-            float restNeeded = manager.RestSystem.GetMinimumRestHours(player);
-            Console.WriteLine($"⚠️  Operator needs {restNeeded:F1} hours rest before next combat!");
-        }
-        
-        // Warnings for critical conditions
-        if (petState.Stress > PetConstants.HighStressThreshold)
-        {
-            Console.WriteLine($"⚠️  High stress detected! Consider resting.");
-        }
-        if (petState.Injury > PetConstants.HighInjuryThreshold)
-        {
-            Console.WriteLine($"⚠️  Significant injuries! Health recovery will be slower.");
-        }
-        if (petState.Hunger > PetConstants.HungerStressRecoveryThreshold)
-        {
-            Console.WriteLine($"⚠️  Operator is hungry! This affects stress recovery.");
-        }
-        if (petState.Hydration < PetConstants.HydrationStressRecoveryThreshold)
-        {
-            Console.WriteLine($"⚠️  Low hydration! This affects stress recovery.");
-        }
-        
-        Console.WriteLine();
+        // Victory - reduce difficulty slightly (they were beatable)
+        opponentDifficulty *= VictoryDifficultyModifier;
     }
+    else if (!player.IsAlive)
+    {
+        // Defeat - increase difficulty (they were too strong)
+        opponentDifficulty = Math.Min(100f, opponentDifficulty * DefeatDifficultyModifier);
+    }
+    // else: Draw or ongoing (both alive) - leave base difficulty unchanged
+    
+    // Apply mission effects using PetRules
+    petState = PetRules.Apply(petState, new MissionInput(hitsTaken, opponentDifficulty), DateTimeOffset.Now);
+    
+    // Award XP based on opponent difficulty and outcome (only on victory)
+    long xpGained = 0L;
+    if (player.IsAlive && !enemy.IsAlive)
+    {
+        // Victory: Award XP based on adjusted difficulty
+        // opponentDifficulty here already includes the VictoryDifficultyModifier.
+        // With an original difficulty range of 10-100, this becomes 9-90 after the modifier,
+        // yielding an XP range of 180-1800 (difficulty × XpMultiplier).
+        xpGained = (long)(opponentDifficulty * XpMultiplier);
+        playerXp += xpGained;
+        
+        // Check for level up
+        int newLevel = OpponentDifficulty.ComputeLevelFromXp(playerXp);
+        if (newLevel > playerLevel)
+        {
+            int levelsGained = newLevel - playerLevel;
+            playerLevel = newLevel;
+            Console.WriteLine();
+            Console.WriteLine($"🎉 LEVEL UP! You are now level {playerLevel}! (+{levelsGained} level{(levelsGained > 1 ? "s" : "")})");
+            // Note: Level-ups currently don't provide stat bonuses or other benefits.
+            // Levels are used for matchmaking and opponent difficulty calculation.
+        }
+    }
+    
+    // Sync operator stats with pet state
+    player.Fatigue = petState.Fatigue;
+    
+    Console.WriteLine("═══ POST-COMBAT STATUS ═══");
+    Console.WriteLine($"Enemy Level: {enemyLevel} (Difficulty: {opponentDifficulty:F0})");
+    if (xpGained > 0)
+    {
+        Console.WriteLine($"XP Gained: +{xpGained:N0} (Total: {playerXp:N0})");
+    }
+    Console.WriteLine();
+    Console.WriteLine($"Fatigue: {petState.Fatigue:F0}/{PetConstants.MaxStatValue:F0}");
+    Console.WriteLine($"Stress: {petState.Stress:F0}/{PetConstants.MaxStatValue:F0}");
+    Console.WriteLine($"Injury: {petState.Injury:F0}/{PetConstants.MaxStatValue:F0}");
+    Console.WriteLine($"Morale: {petState.Morale:F0}/{PetConstants.MaxStatValue:F0}");
+    Console.WriteLine($"Status: {manager.GetStatus(player)}");
+    
+    if (!manager.RestSystem.IsReadyForCombat(player))
+    {
+        float restNeeded = manager.RestSystem.GetMinimumRestHours(player);
+        Console.WriteLine($"⚠️  Operator needs {restNeeded:F1} hours rest before next combat!");
+    }
+    
+    // Warnings for critical conditions
+    if (petState.Stress > PetConstants.HighStressThreshold)
+    {
+        Console.WriteLine($"⚠️  High stress detected! Consider resting.");
+    }
+    if (petState.Injury > PetConstants.HighInjuryThreshold)
+    {
+        Console.WriteLine($"⚠️  Significant injuries! Health recovery will be slower.");
+    }
+    if (petState.Hunger > PetConstants.HungerStressRecoveryThreshold)
+    {
+        Console.WriteLine($"⚠️  Operator is hungry! This affects stress recovery.");
+    }
+    if (petState.Hydration < PetConstants.HydrationStressRecoveryThreshold)
+    {
+        Console.WriteLine($"⚠️  Low hydration! This affects stress recovery.");
+    }
+    
+    Console.WriteLine();
     
     return (petState, playerXp, playerLevel);
 }
