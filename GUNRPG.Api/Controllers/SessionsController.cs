@@ -22,18 +22,18 @@ public class SessionsController : ControllerBase
     }
 
     [HttpPost]
-    public ActionResult<ApiCombatSessionDto> Create([FromBody] ApiSessionCreateRequest? request)
+    public async Task<ActionResult<ApiCombatSessionDto>> Create([FromBody] ApiSessionCreateRequest? request)
     {
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiSessionCreateRequest());
-        var dto = _service.CreateSession(appRequest);
+        var dto = await _service.CreateSessionAsync(appRequest);
         var apiDto = ApiMapping.ToApiDto(dto);
         return CreatedAtAction(nameof(GetState), new { id = apiDto.Id }, apiDto);
     }
 
     [HttpGet("{id:guid}/state")]
-    public ActionResult<ApiCombatSessionDto> GetState(Guid id)
+    public async Task<ActionResult<ApiCombatSessionDto>> GetState(Guid id)
     {
-        var result = _service.GetState(id);
+        var result = await _service.GetStateAsync(id);
         return result.Status switch
         {
             ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
@@ -43,10 +43,10 @@ public class SessionsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/intent")]
-    public ActionResult<ApiIntentSubmissionResultDto> SubmitIntent(Guid id, [FromBody] ApiSubmitIntentsRequest? request)
+    public async Task<ActionResult<ApiIntentSubmissionResultDto>> SubmitIntent(Guid id, [FromBody] ApiSubmitIntentsRequest? request)
     {
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiSubmitIntentsRequest());
-        var result = _service.SubmitPlayerIntents(id, appRequest);
+        var result = await _service.SubmitPlayerIntentsAsync(id, appRequest);
         var apiResult = ApiMapping.ToApiDto(result);
 
         if (!result.Accepted && result.Error != null && result.Error.Contains("not found", StringComparison.OrdinalIgnoreCase))
@@ -63,9 +63,9 @@ public class SessionsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/advance")]
-    public ActionResult<ApiCombatSessionDto> Advance(Guid id)
+    public async Task<ActionResult<ApiCombatSessionDto>> Advance(Guid id)
     {
-        var result = _service.Advance(id);
+        var result = await _service.AdvanceAsync(id);
         return result.Status switch
         {
             ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
@@ -77,10 +77,10 @@ public class SessionsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/pet")]
-    public ActionResult<ApiPetStateDto> ApplyPetAction(Guid id, [FromBody] ApiPetActionRequest? request)
+    public async Task<ActionResult<ApiPetStateDto>> ApplyPetAction(Guid id, [FromBody] ApiPetActionRequest? request)
     {
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiPetActionRequest());
-        var result = _service.ApplyPetAction(id, appRequest);
+        var result = await _service.ApplyPetActionAsync(id, appRequest);
         return result.Status switch
         {
             ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),

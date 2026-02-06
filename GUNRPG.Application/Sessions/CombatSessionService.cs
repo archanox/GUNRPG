@@ -25,7 +25,7 @@ public sealed class CombatSessionService
         _store = store;
     }
 
-    public CombatSessionDto CreateSession(SessionCreateRequest request)
+    public async Task<CombatSessionDto> CreateSessionAsync(SessionCreateRequest request)
     {
         var session = CombatSession.CreateDefault(
             playerName: request.PlayerName,
@@ -33,13 +33,13 @@ public sealed class CombatSessionService
             startingDistance: request.StartingDistance,
             enemyName: request.EnemyName);
 
-        _store.Create(SessionMapping.ToSnapshot(session));
+        await _store.SaveAsync(SessionMapping.ToSnapshot(session));
         return SessionMapping.ToDto(session);
     }
 
-    public ServiceResult<CombatSessionDto> GetState(Guid sessionId)
+    public async Task<ServiceResult<CombatSessionDto>> GetStateAsync(Guid sessionId)
     {
-        var session = Load(sessionId);
+        var session = await LoadAsync(sessionId);
         return session == null
             ? ServiceResult<CombatSessionDto>.NotFound("Session not found")
             : ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
@@ -49,9 +49,9 @@ public sealed class CombatSessionService
     /// Submits player intents without advancing the turn. This only records the intent.
     /// Call Advance() separately to resolve the turn.
     /// </summary>
-    public IntentSubmissionResultDto SubmitPlayerIntents(Guid sessionId, SubmitIntentsRequest request)
+    public async Task<IntentSubmissionResultDto> SubmitPlayerIntentsAsync(Guid sessionId, SubmitIntentsRequest request)
     {
-        var session = Load(sessionId);
+        var session = await LoadAsync(sessionId);
         if (session == null)
         {
             return new IntentSubmissionResultDto
@@ -100,7 +100,7 @@ public sealed class CombatSessionService
             session.Combat.SubmitIntents(session.Enemy, SimultaneousIntents.CreateStop(session.Enemy.Id));
         }
 
-        Save(session);
+        await SaveAsync(session);
         return new IntentSubmissionResultDto
         {
             Accepted = true,
@@ -111,9 +111,9 @@ public sealed class CombatSessionService
     /// <summary>
     /// Advances the combat turn until the next planning phase or end of combat.
     /// </summary>
-    public ServiceResult<CombatSessionDto> Advance(Guid sessionId)
+    public async Task<ServiceResult<CombatSessionDto>> AdvanceAsync(Guid sessionId)
     {
-        var session = Load(sessionId);
+        var session = await LoadAsync(sessionId);
         if (session == null)
         {
             return ServiceResult<CombatSessionDto>.NotFound("Session not found");
@@ -128,7 +128,7 @@ public sealed class CombatSessionService
         {
             ApplyPostCombat(session);
             session.TransitionTo(SessionPhase.Completed);
-            Save(session);
+            await SaveAsync(session);
             return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
         }
 
@@ -162,13 +162,13 @@ public sealed class CombatSessionService
             session.AdvanceTurnCounter();
         }
 
-        Save(session);
+        await SaveAsync(session);
         return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
     }
 
-    public ServiceResult<PetStateDto> ApplyPetInput(Guid sessionId, PetInput input, DateTimeOffset now)
+    public async Task<ServiceResult<PetStateDto>> ApplyPetInputAsync(Guid sessionId, PetInput input, DateTimeOffset now)
     {
-        var session = Load(sessionId);
+        var session = await LoadAsync(sessionId);
         if (session == null)
         {
             return ServiceResult<PetStateDto>.NotFound("Session not found");
@@ -176,26 +176,26 @@ public sealed class CombatSessionService
 
         session.PetState = PetRules.Apply(session.PetState, input, now);
         session.Player.Fatigue = session.PetState.Fatigue;
-        Save(session);
+        await SaveAsync(session);
         return ServiceResult<PetStateDto>.Success(SessionMapping.ToDto(session.PetState));
     }
 
-    public ServiceResult<PetStateDto> ApplyPetAction(Guid sessionId, PetActionRequest request)
+    public async Task<ServiceResult<PetStateDto>> ApplyPetActionAsync(Guid sessionId, PetActionRequest request)
     {
         var now = DateTimeOffset.UtcNow;
         var input = ResolvePetInput(request);
-        return ApplyPetInput(sessionId, input, now);
+        return await ApplyPetInputAsync(sessionId, input, now);
     }
 
-    private CombatSession? Load(Guid id)
+    private async Task<CombatSession?> LoadAsync(Guid id)
     {
-        var snapshot = _store.Get(id);
+        var snapshot = await _store.LoadAsync(id);
         return snapshot == null ? null : SessionMapping.FromSnapshot(snapshot);
     }
 
-    private void Save(CombatSession session)
+    private async Task SaveAsync(CombatSession session)
     {
-        _store.Upsert(SessionMapping.ToSnapshot(session));
+        await _store.SaveAsync(SessionMapping.ToSnapshot(session));
     }
 
     private static void ResolveUntilPlanningOrEnd(CombatSession session)

@@ -8,23 +8,22 @@ namespace GUNRPG.Application.Sessions;
 public interface ICombatSessionStore
 {
     /// <summary>
-    /// Creates a new session. Throws if a session with the same ID already exists.
+    /// Saves a session snapshot. Creates if new, updates if exists.
     /// </summary>
-    CombatSessionSnapshot Create(CombatSessionSnapshot snapshot);
+    Task SaveAsync(CombatSessionSnapshot snapshot);
 
     /// <summary>
-    /// Retrieves a session by ID. Returns null if not found.
+    /// Loads a session snapshot by ID. Returns null if not found.
     /// </summary>
-    CombatSessionSnapshot? Get(Guid id);
+    Task<CombatSessionSnapshot?> LoadAsync(Guid id);
 
     /// <summary>
-    /// Updates an existing session or inserts if it doesn't exist.
-    /// This should perform a full snapshot replacement.
+    /// Deletes a session by ID if it exists.
     /// </summary>
-    void Upsert(CombatSessionSnapshot snapshot);
+    Task DeleteAsync(Guid id);
 
     /// <summary>
-    /// Lists all sessions. For production use, consider adding pagination.
+    /// Lists all session snapshots. For production use, consider adding pagination.
     /// </summary>
-    IReadOnlyCollection<CombatSessionSnapshot> List();
+    Task<IReadOnlyCollection<CombatSessionSnapshot>> ListAsync();
 }
