@@ -18,7 +18,6 @@ public static class SessionMapping
         {
             Id = session.Id,
             Phase = session.Phase,
-            CombatPhase = session.Combat.Phase,
             CurrentTimeMs = session.Combat.CurrentTimeMs,
             Player = ToDto(session.Player),
             Enemy = ToDto(session.Enemy),
