@@ -17,7 +17,13 @@ public class LiteDbCombatSessionStoreTests : IDisposable
     {
         // Create a unique temp file for each test run
         _tempDbPath = Path.Combine(Path.GetTempPath(), $"test_combat_sessions_{Guid.NewGuid()}.db");
-        _database = new LiteDatabase(_tempDbPath);
+        
+        // Create custom mapper for consistency with production
+        var mapper = new BsonMapper();
+        mapper.EnumAsInteger = false;
+        mapper.Entity<CombatSessionSnapshot>().Id(x => x.Id);
+        
+        _database = new LiteDatabase(_tempDbPath, mapper);
         
         // Apply migrations as would happen in production
         LiteDbMigrations.ApplyMigrations(_database);
@@ -211,6 +217,38 @@ public class LiteDbCombatSessionStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task ConcurrentAccess_MultipleThreads_ThreadSafe()
+    {
+        // Test actual concurrent access from multiple threads
+        var snapshot1 = CreateTestSnapshot();
+        var snapshot2 = CreateTestSnapshot();
+        var snapshot3 = CreateTestSnapshot();
+
+        // Perform concurrent write operations
+        var tasks = new[]
+        {
+            Task.Run(() => _store.SaveAsync(snapshot1)),
+            Task.Run(() => _store.SaveAsync(snapshot2)),
+            Task.Run(() => _store.SaveAsync(snapshot3))
+        };
+        await Task.WhenAll(tasks);
+
+        // Verify all writes succeeded and can be read concurrently
+        var readTasks = new[]
+        {
+            Task.Run(() => _store.LoadAsync(snapshot1.Id)),
+            Task.Run(() => _store.LoadAsync(snapshot2.Id)),
+            Task.Run(() => _store.LoadAsync(snapshot3.Id))
+        };
+        var results = await Task.WhenAll(readTasks);
+
+        Assert.All(results, result => Assert.NotNull(result));
+        Assert.Contains(results, r => r!.Id == snapshot1.Id);
+        Assert.Contains(results, r => r!.Id == snapshot2.Id);
+        Assert.Contains(results, r => r!.Id == snapshot3.Id);
+    }
+
+    [Fact]
     public void Migrations_AreAppliedOnStartup()
     {
         // Verify schema version is set
@@ -234,6 +272,47 @@ public class LiteDbCombatSessionStoreTests : IDisposable
         Assert.NotNull(loaded);
         Assert.Equal(snapshot.Id, loaded.Id);
         Assert.Equal(snapshot.TurnNumber, loaded.TurnNumber);
+    }
+
+    [Fact]
+    public async Task Migrations_UpgradeFromVersion0()
+    {
+        // Create a database without version set (simulating existing database)
+        var testDbPath = Path.Combine(Path.GetTempPath(), $"test_migration_{Guid.NewGuid()}.db");
+        try
+        {
+            // Create custom mapper for consistency with production
+            var mapper = new BsonMapper();
+            mapper.EnumAsInteger = false;
+            mapper.Entity<CombatSessionSnapshot>().Id(x => x.Id);
+            
+            using var db = new LiteDatabase(testDbPath, mapper);
+            var col = db.GetCollection<CombatSessionSnapshot>("combat_sessions");
+            
+            // Add data without setting version (version 0)
+            var snapshot = CreateTestSnapshot();
+            col.Upsert(snapshot.Id, snapshot);
+            
+            // Verify no version is set
+            Assert.Equal(0, LiteDbMigrations.GetDatabaseSchemaVersion(db));
+            
+            // Now apply migrations
+            LiteDbMigrations.ApplyMigrations(db);
+            LiteDbMigrations.SetDatabaseSchemaVersion(db, LiteDbMigrations.CurrentSchemaVersion);
+            
+            // Verify version is updated
+            Assert.Equal(LiteDbMigrations.CurrentSchemaVersion, LiteDbMigrations.GetDatabaseSchemaVersion(db));
+            
+            // Verify data still exists and is accessible
+            var loaded = col.FindById(snapshot.Id);
+            Assert.NotNull(loaded);
+            Assert.Equal(snapshot.Id, loaded.Id);
+        }
+        finally
+        {
+            if (File.Exists(testDbPath))
+                File.Delete(testDbPath);
+        }
     }
 
     private static CombatSessionSnapshot CreateTestSnapshot()

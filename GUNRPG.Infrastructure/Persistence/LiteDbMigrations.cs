@@ -23,6 +23,9 @@ public static class LiteDbMigrations
     /// <param name="database">The LiteDB database instance</param>
     public static void ApplyMigrations(LiteDatabase database)
     {
+        if (database == null)
+            throw new ArgumentNullException(nameof(database));
+            
         // Currently on version 1 with no migrations needed
         // When schema changes are needed, add migrations here using LiteDB.Migration
         
@@ -53,6 +56,9 @@ public static class LiteDbMigrations
     /// </summary>
     public static int GetDatabaseSchemaVersion(LiteDatabase database)
     {
+        if (database == null)
+            throw new ArgumentNullException(nameof(database));
+            
         var metadata = database.GetCollection("_metadata");
         var versionDoc = metadata.FindById("schema_version");
         
@@ -70,6 +76,9 @@ public static class LiteDbMigrations
     /// </summary>
     public static void SetDatabaseSchemaVersion(LiteDatabase database, int version)
     {
+        if (database == null)
+            throw new ArgumentNullException(nameof(database));
+            
         var metadata = database.GetCollection("_metadata");
         var versionDoc = new BsonDocument
         {
