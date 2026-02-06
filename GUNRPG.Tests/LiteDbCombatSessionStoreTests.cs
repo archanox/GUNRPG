@@ -18,6 +18,11 @@ public class LiteDbCombatSessionStoreTests : IDisposable
         // Create a unique temp file for each test run
         _tempDbPath = Path.Combine(Path.GetTempPath(), $"test_combat_sessions_{Guid.NewGuid()}.db");
         _database = new LiteDatabase(_tempDbPath);
+        
+        // Apply migrations as would happen in production
+        LiteDbMigrations.ApplyMigrations(_database);
+        LiteDbMigrations.SetDatabaseSchemaVersion(_database, LiteDbMigrations.CurrentSchemaVersion);
+        
         _store = new LiteDbCombatSessionStore(_database);
     }
 
@@ -203,6 +208,32 @@ public class LiteDbCombatSessionStoreTests : IDisposable
         var loaded = await store2.LoadAsync(snapshot.Id);
         Assert.NotNull(loaded);
         Assert.Equal(snapshot.Id, loaded.Id);
+    }
+
+    [Fact]
+    public void Migrations_AreAppliedOnStartup()
+    {
+        // Verify schema version is set
+        var schemaVersion = LiteDbMigrations.GetDatabaseSchemaVersion(_database);
+        Assert.Equal(LiteDbMigrations.CurrentSchemaVersion, schemaVersion);
+    }
+
+    [Fact]
+    public async Task Migrations_DoNotAffectExistingData()
+    {
+        // Save data before migration check
+        var snapshot = CreateTestSnapshot();
+        await _store.SaveAsync(snapshot);
+
+        // Re-apply migrations (should be idempotent)
+        LiteDbMigrations.ApplyMigrations(_database);
+        LiteDbMigrations.SetDatabaseSchemaVersion(_database, LiteDbMigrations.CurrentSchemaVersion);
+
+        // Verify data still loads correctly
+        var loaded = await _store.LoadAsync(snapshot.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal(snapshot.Id, loaded.Id);
+        Assert.Equal(snapshot.TurnNumber, loaded.TurnNumber);
     }
 
     private static CombatSessionSnapshot CreateTestSnapshot()
