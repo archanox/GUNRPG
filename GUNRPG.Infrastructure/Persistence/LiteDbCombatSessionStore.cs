@@ -10,13 +10,12 @@ namespace GUNRPG.Infrastructure.Persistence;
 /// </summary>
 public sealed class LiteDbCombatSessionStore : ICombatSessionStore
 {
-    private readonly LiteDatabase _database;
     private readonly ILiteCollection<CombatSessionSnapshot> _sessions;
 
     public LiteDbCombatSessionStore(LiteDatabase database)
     {
-        _database = database ?? throw new ArgumentNullException(nameof(database));
-        _sessions = _database.GetCollection<CombatSessionSnapshot>("combat_sessions");
+        _sessions = (database ?? throw new ArgumentNullException(nameof(database)))
+            .GetCollection<CombatSessionSnapshot>("combat_sessions");
         
         // Ensure index on Id for fast lookups
         _sessions.EnsureIndex(x => x.Id);

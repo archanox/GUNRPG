@@ -3,6 +3,7 @@ using GUNRPG.Infrastructure.Persistence;
 using LiteDB;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace GUNRPG.Infrastructure;
@@ -20,14 +21,16 @@ public static class InfrastructureServiceExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // Bind storage configuration
+        // Bind storage configuration for IOptions<StorageOptions>
         services.Configure<StorageOptions>(
             configuration.GetSection(StorageOptions.SectionName));
 
-        var storageOptions = new StorageOptions();
-        configuration.GetSection(StorageOptions.SectionName).Bind(storageOptions);
+        // Read provider directly from configuration to decide which store to register
+        var provider = configuration
+            .GetSection(StorageOptions.SectionName)
+            .GetValue<string>(nameof(StorageOptions.Provider));
 
-        if (storageOptions.Provider.Equals("InMemory", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(provider, "InMemory", StringComparison.OrdinalIgnoreCase))
         {
             // In-memory store for testing
             services.AddSingleton<ICombatSessionStore, InMemoryCombatSessionStore>();
@@ -38,16 +41,40 @@ public static class InfrastructureServiceExtensions
             services.AddSingleton<LiteDatabase>(sp =>
             {
                 var options = sp.GetRequiredService<IOptions<StorageOptions>>().Value;
-                var database = new LiteDatabase(options.LiteDbConnectionString);
                 
-                // Configure LiteDB mapper for snapshot types
-                ConfigureLiteDbMapper(database.Mapper);
+                // Create custom BsonMapper to avoid global state issues
+                var mapper = new BsonMapper();
+                ConfigureLiteDbMapper(mapper);
                 
-                // Apply any pending migrations
-                LiteDbMigrations.ApplyMigrations(database);
+                var database = new LiteDatabase(options.LiteDbConnectionString, mapper);
                 
-                // Update schema version
-                LiteDbMigrations.SetDatabaseSchemaVersion(database, LiteDbMigrations.CurrentSchemaVersion);
+                // Check current schema version before applying migrations
+                var currentVersion = LiteDbMigrations.GetDatabaseSchemaVersion(database);
+                if (currentVersion < LiteDbMigrations.CurrentSchemaVersion)
+                {
+                    // Apply any pending migrations and update schema version
+                    LiteDbMigrations.ApplyMigrations(database);
+                    LiteDbMigrations.SetDatabaseSchemaVersion(database, LiteDbMigrations.CurrentSchemaVersion);
+                }
+                
+                // Register disposal on application shutdown if available
+                // LiteDatabase implements IDisposable, so it will be disposed by DI container
+                // This registration ensures it happens during graceful shutdown
+                var lifetime = sp.GetService<IHostApplicationLifetime>();
+                if (lifetime != null)
+                {
+                    lifetime.ApplicationStopping.Register(() =>
+                    {
+                        try
+                        {
+                            database.Dispose();
+                        }
+                        catch
+                        {
+                            // Ignore disposal errors during shutdown
+                        }
+                    });
+                }
                 
                 return database;
             });
