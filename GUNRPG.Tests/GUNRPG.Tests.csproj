@@ -23,6 +23,7 @@
   <ItemGroup>
     <ProjectReference Include="..\GUNRPG.Core\GUNRPG.Core.csproj" />
     <ProjectReference Include="..\GUNRPG.Application\GUNRPG.Application.csproj" />
+    <ProjectReference Include="..\GUNRPG.Infrastructure\GUNRPG.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>
