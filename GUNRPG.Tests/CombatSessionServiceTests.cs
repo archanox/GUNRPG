@@ -39,9 +39,9 @@ public class CombatSessionServiceTests
             }
         });
 
-        Assert.True(result.Accepted);
-        Assert.NotNull(result.State);
-        Assert.Equal(SessionPhase.Planning, result.State!.Phase);
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.Value);
+        Assert.Equal(SessionPhase.Planning, result.Value!.Phase);
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public class CombatSessionServiceTests
         });
 
         // Verify submission was accepted
-        if (!submitResult.Accepted)
+        if (!submitResult.IsSuccess)
         {
             // If submission failed for a valid reason (e.g., combat ended), skip this test
             return;
@@ -289,6 +289,8 @@ public class CombatSessionServiceTests
         for (int i = 0; i < 50; i++)
         {
             var state = await service.GetStateAsync(session.Id);
+            Assert.True(state.IsSuccess, "GetStateAsync should succeed");
+            
             if (state.Value!.Phase == SessionPhase.Completed)
             {
                 // Try to advance a completed session
@@ -304,11 +306,23 @@ public class CombatSessionServiceTests
             });
 
             var advanceResult = await service.AdvanceAsync(session.Id);
-            if (!advanceResult.IsSuccess || advanceResult.Value!.Phase == SessionPhase.Completed)
+            
+            if (!advanceResult.IsSuccess)
             {
-                break;
+                Assert.Fail("AdvanceAsync failed before the session reached the Completed phase.");
+            }
+
+            if (advanceResult.Value!.Phase == SessionPhase.Completed)
+            {
+                // On the next loop iteration, the Completed phase will be detected
+                // by GetStateAsync and the negative-advance assertion will run.
+                continue;
             }
         }
+
+        // If we exit the loop without ever reaching the Completed phase,
+        // the test has not actually verified that a completed session cannot advance.
+        Assert.Fail("Session did not reach the Completed phase within 50 iterations; test did not verify that a completed session cannot advance.");
     }
 
     [Fact]
@@ -326,30 +340,36 @@ public class CombatSessionServiceTests
     }
 
     [Fact]
-    public async Task SubmitIntents_DuringResolving_IsRejected()
+    public async Task SubmitIntents_WhenNotInPlanningPhase_IsRejected()
     {
         var store = new InMemoryCombatSessionStore();
         var service = new CombatSessionService(store);
         var session = await service.CreateSessionAsync(new SessionCreateRequest { Seed = 300 });
 
-        // Submit initial intents and advance to resolving
+        // Submit initial intents and advance
         await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
         {
             Intents = new IntentDto { Primary = PrimaryAction.Fire }
         });
 
-        // Advance starts resolving
+        // Advance completes the turn and transitions to either Planning (next turn) or Completed
         var advanceResult = await service.AdvanceAsync(session.Id);
+        Assert.True(advanceResult.IsSuccess, "AdvanceAsync should succeed");
         
-        // If we're in resolving or completed, submitting intents should fail
-        if (advanceResult.Value!.Phase == SessionPhase.Resolving || advanceResult.Value.Phase == SessionPhase.Completed)
+        var phase = advanceResult.Value!.Phase;
+        
+        // If we're in Completed phase, submitting intents should fail
+        if (phase == SessionPhase.Completed)
         {
             var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
             {
                 Intents = new IntentDto { Primary = PrimaryAction.Reload }
             });
 
-            Assert.False(submitResult.Accepted);
+            Assert.False(submitResult.IsSuccess, "Submitting intents during Completed phase should be rejected");
+            Assert.Equal(ResultStatus.InvalidState, submitResult.Status);
         }
+        // If we're back in Planning, the test doesn't verify the rejection behavior
+        // but that's acceptable as Resolving is never persisted
     }
 }
