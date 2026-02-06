@@ -20,6 +20,44 @@ Embedded document database implementation of `ICombatSessionStore` using LiteDB.
 - Thread-safe for concurrent requests
 - Automatic enum serialization to strings for readability
 - No annotations required on domain objects
+- Schema migration support via LiteDB.Migration
+
+#### LiteDbMigrations
+
+Manages database schema migrations using the [LiteDB.Migration](https://github.com/JKamsker/LiteDB.Migration) library.
+
+**Features:**
+- Automatic migration application on startup
+- Schema version tracking
+- Forward-only migrations
+- Supports complex data transformations
+
+**Current Schema Version:** 1 (initial baseline)
+
+**Adding Migrations:**
+
+When the snapshot schema evolves, add migrations in `LiteDbMigrations.ApplyMigrations`:
+
+```csharp
+var migrations = new MigrationContainer(config =>
+{
+    config.Collection<CombatSessionSnapshotV2>("combat_sessions", collectionConfig =>
+    {
+        collectionConfig
+            .StartWithModel<CombatSessionSnapshotV1>()
+            .WithMigration(v1 => new CombatSessionSnapshotV2
+            {
+                Id = v1.Id,
+                // ... map existing properties
+                NewProperty = "default-value" // Add new property
+            })
+            .UseLatestVersion();
+    });
+});
+migrations.Apply(database);
+```
+
+Update `CurrentSchemaVersion` constant after adding migrations.
 
 **Configuration:**
 
@@ -61,6 +99,7 @@ To switch to in-memory storage for testing:
 ## Dependencies
 
 - `LiteDB` (5.0.21): Embedded NoSQL document database
+- `LiteDB.Migration` (0.0.10): Schema migration framework for LiteDB
 - `Microsoft.Extensions.Configuration.Abstractions`: Configuration support
 - `Microsoft.Extensions.DependencyInjection.Abstractions`: DI support
 - `Microsoft.Extensions.Options.ConfigurationExtensions`: Options pattern support

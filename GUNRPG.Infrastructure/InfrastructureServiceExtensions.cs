@@ -43,6 +43,12 @@ public static class InfrastructureServiceExtensions
                 // Configure LiteDB mapper for snapshot types
                 ConfigureLiteDbMapper(database.Mapper);
                 
+                // Apply any pending migrations
+                LiteDbMigrations.ApplyMigrations(database);
+                
+                // Update schema version
+                LiteDbMigrations.SetDatabaseSchemaVersion(database, LiteDbMigrations.CurrentSchemaVersion);
+                
                 return database;
             });
 
