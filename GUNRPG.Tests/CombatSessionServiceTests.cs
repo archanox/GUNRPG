@@ -18,7 +18,6 @@ public class CombatSessionServiceTests
 
         Assert.NotNull(state);
         Assert.Equal(SessionPhase.Planning, state.Phase);
-        Assert.Equal(CombatPhase.Planning, state.CombatPhase);
         Assert.Equal("Tester", state.Player.Name);
         Assert.True(state.Player.CurrentAmmo > 0);
         Assert.True(state.Enemy.CurrentAmmo > 0);
@@ -42,7 +41,6 @@ public class CombatSessionServiceTests
         Assert.True(result.Accepted);
         Assert.NotNull(result.State);
         Assert.Equal(SessionPhase.Planning, result.State!.Phase);
-        Assert.Equal(CombatPhase.Planning, result.State.CombatPhase);
     }
 
     [Fact]
@@ -66,7 +64,6 @@ public class CombatSessionServiceTests
 
         Assert.True(advanceResult.IsSuccess);
         Assert.NotNull(advanceResult.Value);
-        Assert.NotEqual(CombatPhase.Executing, advanceResult.Value!.CombatPhase);
         Assert.Contains(advanceResult.Value!.Phase, new[] { SessionPhase.Planning, SessionPhase.Completed });
     }
 

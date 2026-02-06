@@ -1,5 +1,6 @@
 using GUNRPG.Api.Dtos;
 using GUNRPG.Api.Mapping;
+using GUNRPG.Application.Results;
 using GUNRPG.Application.Sessions;
 using Microsoft.AspNetCore.Mvc;
 
@@ -33,12 +34,12 @@ public class SessionsController : ControllerBase
     public ActionResult<ApiCombatSessionDto> GetState(Guid id)
     {
         var result = _service.GetState(id);
-        if (!result.IsSuccess)
+        return result.Status switch
         {
-            return NotFound(new { error = result.ErrorMessage });
-        }
-
-        return Ok(ApiMapping.ToApiDto(result.Value!));
+            ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
+            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
+            _ => StatusCode(500, new { error = "Unexpected error" })
+        };
     }
 
     [HttpPost("{id:guid}/intent")]
@@ -48,7 +49,7 @@ public class SessionsController : ControllerBase
         var result = _service.SubmitPlayerIntents(id, appRequest);
         var apiResult = ApiMapping.ToApiDto(result);
 
-        if (!result.Accepted && string.Equals(result.Error, "Session not found", StringComparison.OrdinalIgnoreCase))
+        if (!result.Accepted && result.Error != null && result.Error.Contains("not found", StringComparison.OrdinalIgnoreCase))
         {
             return NotFound(apiResult);
         }
@@ -65,15 +66,14 @@ public class SessionsController : ControllerBase
     public ActionResult<ApiCombatSessionDto> Advance(Guid id)
     {
         var result = _service.Advance(id);
-        if (!result.IsSuccess)
+        return result.Status switch
         {
-            var response = string.Equals(result.ErrorMessage, "Session not found", StringComparison.OrdinalIgnoreCase)
-                ? NotFound(new { error = result.ErrorMessage })
-                : BadRequest(new { error = result.ErrorMessage });
-            return response;
-        }
-
-        return Ok(ApiMapping.ToApiDto(result.Value!));
+            ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
+            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
+            ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
+            ResultStatus.ValidationError => BadRequest(new { error = result.ErrorMessage }),
+            _ => StatusCode(500, new { error = "Unexpected error" })
+        };
     }
 
     [HttpPost("{id:guid}/pet")]
@@ -81,11 +81,11 @@ public class SessionsController : ControllerBase
     {
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiPetActionRequest());
         var result = _service.ApplyPetAction(id, appRequest);
-        if (!result.IsSuccess)
+        return result.Status switch
         {
-            return NotFound(new { error = result.ErrorMessage });
-        }
-
-        return Ok(ApiMapping.ToApiDto(result.Value!));
+            ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
+            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
+            _ => StatusCode(500, new { error = "Unexpected error" })
+        };
     }
 }
