@@ -43,23 +43,19 @@ public class SessionsController : ControllerBase
     }
 
     [HttpPost("{id:guid}/intent")]
-    public async Task<ActionResult<ApiIntentSubmissionResultDto>> SubmitIntent(Guid id, [FromBody] ApiSubmitIntentsRequest? request)
+    public async Task<ActionResult<ApiCombatSessionDto>> SubmitIntent(Guid id, [FromBody] ApiSubmitIntentsRequest? request)
     {
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiSubmitIntentsRequest());
         var result = await _service.SubmitPlayerIntentsAsync(id, appRequest);
-        var apiResult = ApiMapping.ToApiDto(result);
-
-        if (!result.Accepted && result.Error != null && result.Error.Contains("not found", StringComparison.OrdinalIgnoreCase))
+        
+        return result.Status switch
         {
-            return NotFound(apiResult);
-        }
-
-        if (!result.Accepted)
-        {
-            return BadRequest(apiResult);
-        }
-
-        return Ok(apiResult);
+            ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
+            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
+            ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
+            ResultStatus.ValidationError => BadRequest(new { error = result.ErrorMessage }),
+            _ => StatusCode(500, new { error = "Unexpected error" })
+        };
     }
 
     [HttpPost("{id:guid}/advance")]

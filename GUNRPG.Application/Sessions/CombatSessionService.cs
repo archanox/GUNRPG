@@ -49,48 +49,29 @@ public sealed class CombatSessionService
     /// Submits player intents without advancing the turn. This only records the intent.
     /// Call Advance() separately to resolve the turn.
     /// </summary>
-    public async Task<IntentSubmissionResultDto> SubmitPlayerIntentsAsync(Guid sessionId, SubmitIntentsRequest request)
+    public async Task<ServiceResult<CombatSessionDto>> SubmitPlayerIntentsAsync(Guid sessionId, SubmitIntentsRequest request)
     {
         var session = await LoadAsync(sessionId);
         if (session == null)
         {
-            return new IntentSubmissionResultDto
-            {
-                Accepted = false,
-                Error = "Session not found"
-            };
+            return ServiceResult<CombatSessionDto>.NotFound("Session not found");
         }
 
         if (session.Phase != SessionPhase.Planning)
         {
-            return new IntentSubmissionResultDto
-            {
-                Accepted = false,
-                Error = "Intents can only be submitted during the Planning phase",
-                State = SessionMapping.ToDto(session)
-            };
+            return ServiceResult<CombatSessionDto>.InvalidState("Intents can only be submitted during the Planning phase");
         }
 
         if (session.Combat.Phase == CombatPhase.Ended)
         {
-            return new IntentSubmissionResultDto
-            {
-                Accepted = false,
-                Error = "Combat has already ended",
-                State = SessionMapping.ToDto(session)
-            };
+            return ServiceResult<CombatSessionDto>.InvalidState("Combat has already ended");
         }
 
         var playerIntents = SessionMapping.ToDomainIntent(session.Player.Id, request.Intents);
         var submission = session.Combat.SubmitIntents(session.Player, playerIntents);
         if (!submission.success)
         {
-            return new IntentSubmissionResultDto
-            {
-                Accepted = false,
-                Error = submission.errorMessage,
-                State = SessionMapping.ToDto(session)
-            };
+            return ServiceResult<CombatSessionDto>.ValidationError(submission.errorMessage ?? "Intent submission failed");
         }
 
         var enemyIntents = session.Ai.DecideIntents(session.Enemy, session.Player, session.Combat);
@@ -101,11 +82,7 @@ public sealed class CombatSessionService
         }
 
         await SaveAsync(session);
-        return new IntentSubmissionResultDto
-        {
-            Accepted = true,
-            State = SessionMapping.ToDto(session)
-        };
+        return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
     }
 
     /// <summary>
