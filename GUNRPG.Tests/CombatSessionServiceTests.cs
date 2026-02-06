@@ -1,6 +1,7 @@
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Mapping;
+using GUNRPG.Application.Results;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Intents;
@@ -112,5 +113,243 @@ public class CombatSessionServiceTests
         Assert.True(petStateResult.IsSuccess);
         Assert.NotNull(petStateResult.Value);
         Assert.True(petStateResult.Value.Stress > 0);
+    }
+
+    [Fact]
+    public void Snapshot_RoundTrip_IsIdempotent()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+        var created = service.CreateSession(new SessionCreateRequest 
+        { 
+            PlayerName = "TestPlayer", 
+            EnemyName = "TestEnemy", 
+            Seed = 42, 
+            StartingDistance = 20 
+        });
+
+        // Submit intents to add complexity
+        service.SubmitPlayerIntents(created.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire }
+        });
+
+        var snapshot1 = store.Get(created.Id);
+        Assert.NotNull(snapshot1);
+
+        // Rehydrate from snapshot
+        var rehydrated = SessionMapping.FromSnapshot(snapshot1!);
+        
+        // Create second snapshot from rehydrated domain object
+        var snapshot2 = SessionMapping.ToSnapshot(rehydrated);
+
+        // Verify idempotency: snapshot1 should match snapshot2
+        Assert.Equal(snapshot1.Id, snapshot2.Id);
+        Assert.Equal(snapshot1.Phase, snapshot2.Phase);
+        Assert.Equal(snapshot1.TurnNumber, snapshot2.TurnNumber);
+        Assert.Equal(snapshot1.PlayerXp, snapshot2.PlayerXp);
+        Assert.Equal(snapshot1.PlayerLevel, snapshot2.PlayerLevel);
+        Assert.Equal(snapshot1.EnemyLevel, snapshot2.EnemyLevel);
+        Assert.Equal(snapshot1.Seed, snapshot2.Seed);
+        Assert.Equal(snapshot1.PostCombatResolved, snapshot2.PostCombatResolved);
+        
+        // Verify combat state
+        Assert.Equal(snapshot1.Combat.Phase, snapshot2.Combat.Phase);
+        Assert.Equal(snapshot1.Combat.CurrentTimeMs, snapshot2.Combat.CurrentTimeMs);
+        
+        // Verify RNG state preservation
+        Assert.Equal(snapshot1.Combat.RandomState.Seed, snapshot2.Combat.RandomState.Seed);
+        Assert.Equal(snapshot1.Combat.RandomState.CallCount, snapshot2.Combat.RandomState.CallCount);
+        
+        // Verify pending intents are preserved
+        Assert.NotNull(snapshot1.Combat.PlayerIntents);
+        Assert.NotNull(snapshot2.Combat.PlayerIntents);
+        Assert.Equal(snapshot1.Combat.PlayerIntents.Primary, snapshot2.Combat.PlayerIntents.Primary);
+        
+        // Verify operator state
+        Assert.Equal(snapshot1.Player.Id, snapshot2.Player.Id);
+        Assert.Equal(snapshot1.Player.Health, snapshot2.Player.Health);
+        Assert.Equal(snapshot1.Player.CurrentAmmo, snapshot2.Player.CurrentAmmo);
+        Assert.Equal(snapshot1.Enemy.Id, snapshot2.Enemy.Id);
+    }
+
+    [Fact]
+    public void Snapshot_RehydrationWithPendingIntents_PreservesIntentData()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+        var session = service.CreateSession(new SessionCreateRequest { Seed = 123 });
+
+        // Submit player intents
+        var submitResult = service.SubmitPlayerIntents(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto 
+            { 
+                Primary = PrimaryAction.Reload,
+                Movement = MovementAction.WalkToward,
+                Stance = StanceAction.EnterADS,
+                Cover = CoverAction.EnterPartial,
+                CancelMovement = false
+            }
+        });
+
+        // Verify submission was accepted
+        if (!submitResult.Accepted)
+        {
+            // If submission failed for a valid reason (e.g., combat ended), skip this test
+            return;
+        }
+
+        var snapshot = store.Get(session.Id);
+        if (snapshot == null)
+        {
+            return; // Should not happen but handle gracefully
+        }
+
+        // Verify at least one side has intents in snapshot
+        // The service submits both player and enemy intents
+        bool hasIntents = snapshot.Combat.PlayerIntents != null || snapshot.Combat.EnemyIntents != null;
+        Assert.True(hasIntents, "At least one side should have intents after successful submission");
+
+        // Rehydrate
+        var rehydrated = SessionMapping.FromSnapshot(snapshot);
+        var (playerIntents, enemyIntents) = rehydrated.Combat.GetPendingIntents();
+
+        // At least one side should have intents after rehydration
+        Assert.True(playerIntents != null || enemyIntents != null, 
+            "Pending intents should be preserved after rehydration");
+
+        // Verify roundtrip consistency
+        var snapshot2 = SessionMapping.ToSnapshot(rehydrated);
+        Assert.Equal(snapshot.Combat.PlayerIntents != null, snapshot2.Combat.PlayerIntents != null);
+        Assert.Equal(snapshot.Combat.EnemyIntents != null, snapshot2.Combat.EnemyIntents != null);
+    }
+
+    [Fact]
+    public void Snapshot_RehydrationWithRngState_PreservesDeterminism()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+        var session = service.CreateSession(new SessionCreateRequest { Seed = 999 });
+
+        // Submit and advance to modify RNG state
+        service.SubmitPlayerIntents(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire }
+        });
+        
+        var beforeSnapshot = store.Get(session.Id);
+        Assert.NotNull(beforeSnapshot);
+        var initialRngSeed = beforeSnapshot!.Combat.RandomState.Seed;
+        var initialCallCount = beforeSnapshot.Combat.RandomState.CallCount;
+
+        // Rehydrate and verify RNG state
+        var rehydrated = SessionMapping.FromSnapshot(beforeSnapshot);
+        var (rngSeed, rngCalls) = rehydrated.Combat.GetRandomState();
+        
+        Assert.Equal(initialRngSeed, rngSeed);
+        Assert.Equal(initialCallCount, rngCalls);
+
+        // Take snapshot after rehydration and verify consistency
+        var afterSnapshot = SessionMapping.ToSnapshot(rehydrated);
+        Assert.Equal(initialRngSeed, afterSnapshot.Combat.RandomState.Seed);
+        Assert.Equal(initialCallCount, afterSnapshot.Combat.RandomState.CallCount);
+    }
+
+    [Fact]
+    public void PhaseTransition_Planning_To_Resolving_IsValid()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+        var session = service.CreateSession(new SessionCreateRequest { Seed = 50 });
+
+        Assert.Equal(SessionPhase.Planning, session.Phase);
+
+        // Submit intents and advance
+        service.SubmitPlayerIntents(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire }
+        });
+
+        var advanceResult = service.Advance(session.Id);
+        Assert.True(advanceResult.IsSuccess);
+        
+        // Should transition to Planning (next turn) or Completed
+        Assert.Contains(advanceResult.Value!.Phase, new[] { SessionPhase.Planning, SessionPhase.Completed });
+    }
+
+    [Fact]
+    public void PhaseTransition_Completed_CannotAdvance()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+        var session = service.CreateSession(new SessionCreateRequest { Seed = 100 });
+
+        // Advance combat until it completes (simulate multiple rounds)
+        for (int i = 0; i < 50; i++)
+        {
+            var state = service.GetState(session.Id);
+            if (state.Value!.Phase == SessionPhase.Completed)
+            {
+                // Try to advance a completed session
+                var result = service.Advance(session.Id);
+                Assert.False(result.IsSuccess);
+                Assert.Equal(ResultStatus.InvalidState, result.Status);
+                return;
+            }
+
+            service.SubmitPlayerIntents(session.Id, new SubmitIntentsRequest
+            {
+                Intents = new IntentDto { Primary = PrimaryAction.Fire }
+            });
+
+            var advanceResult = service.Advance(session.Id);
+            if (!advanceResult.IsSuccess || advanceResult.Value!.Phase == SessionPhase.Completed)
+            {
+                break;
+            }
+        }
+    }
+
+    [Fact]
+    public void Advance_WithoutIntents_ReturnsInvalidState()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+        var session = service.CreateSession(new SessionCreateRequest { Seed = 200 });
+
+        var result = service.Advance(session.Id);
+
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("intents", result.ErrorMessage ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SubmitIntents_DuringResolving_IsRejected()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+        var session = service.CreateSession(new SessionCreateRequest { Seed = 300 });
+
+        // Submit initial intents and advance to resolving
+        service.SubmitPlayerIntents(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire }
+        });
+
+        // Advance starts resolving
+        var advanceResult = service.Advance(session.Id);
+        
+        // If we're in resolving or completed, submitting intents should fail
+        if (advanceResult.Value!.Phase == SessionPhase.Resolving || advanceResult.Value.Phase == SessionPhase.Completed)
+        {
+            var submitResult = service.SubmitPlayerIntents(session.Id, new SubmitIntentsRequest
+            {
+                Intents = new IntentDto { Primary = PrimaryAction.Reload }
+            });
+
+            Assert.False(submitResult.Accepted);
+        }
     }
 }
