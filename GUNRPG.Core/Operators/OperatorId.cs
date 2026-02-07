@@ -8,6 +8,11 @@ public readonly struct OperatorId : IEquatable<OperatorId>
 {
     public Guid Value { get; }
 
+    /// <summary>
+    /// Returns true if this is an empty/default operator ID (Guid.Empty).
+    /// </summary>
+    public bool IsEmpty => Value == Guid.Empty;
+
     public OperatorId(Guid value)
     {
         if (value == Guid.Empty)

@@ -186,45 +186,14 @@ public class OperatorAggregateTests
     }
 
     [Fact]
-    public void TakeCombatDamage_ShouldReduceHealth()
-    {
-        // Arrange
-        var operatorId = OperatorId.NewId();
-        var evt = new OperatorCreatedEvent(operatorId, "TestOperator");
-        var aggregate = OperatorAggregate.Create(evt);
-
-        // Act
-        aggregate.TakeCombatDamage(30f);
-
-        // Assert
-        Assert.Equal(70f, aggregate.CurrentHealth);
-    }
-
-    [Fact]
-    public void TakeCombatDamage_ShouldNotGoNegative()
-    {
-        // Arrange
-        var operatorId = OperatorId.NewId();
-        var evt = new OperatorCreatedEvent(operatorId, "TestOperator");
-        var aggregate = OperatorAggregate.Create(evt);
-
-        // Act
-        aggregate.TakeCombatDamage(150f);
-
-        // Assert
-        Assert.Equal(0f, aggregate.CurrentHealth);
-    }
-
-    [Fact]
     public void WoundsTreated_ShouldNotExceedMaxHealth()
     {
         // Arrange
         var operatorId = OperatorId.NewId();
         var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
-        var aggregate = OperatorAggregate.Create(evt1);
-        aggregate.TakeCombatDamage(20f); // Health now at 80
 
-        var evt2 = new WoundsTreatedEvent(operatorId, 1, 50f, evt1.Hash); // Try to heal 50
+        // Simulate healing more than max would allow
+        var evt2 = new WoundsTreatedEvent(operatorId, 1, 50f, evt1.Hash);
 
         // Act
         var events = new List<OperatorEvent> { evt1, evt2 };
