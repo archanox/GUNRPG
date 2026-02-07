@@ -179,6 +179,52 @@ await exfilService.ChangeLoadoutAsync(operatorId, "AK-47");
 
 // Only in exfil - unlock perk
 await exfilService.UnlockPerkAsync(operatorId, "Fast Reload");
+
+// Record successful exfil (increments streak)
+await exfilService.RecordExfilSuccessAsync(operatorId);
+
+// Record explicit exfil failure (resets streak)
+await exfilService.RecordExfilFailureAsync(operatorId, "Ran out of time");
+
+// Record operator death (marks as dead, resets streak)
+await exfilService.RecordOperatorDeathAsync(operatorId, "Killed in action");
+```
+
+## Exfil Streak Tracking
+
+The operator aggregate tracks a **exfil streak** value representing consecutive successful exfils.
+
+### Streak Behavior
+- **Increments on**: `ExfilSucceeded` event
+- **Resets to 0 on**:
+  - `ExfilFailed` event (explicit failure)
+  - `OperatorDied` event (operator death)
+  - Event chain rollback past last successful exfil
+- **Informational only**: No gameplay effects yet (future feature)
+
+### Dead Operators
+Once an `OperatorDied` event is applied:
+- `IsDead` flag is set to true
+- `CurrentHealth` is set to 0
+- `ExfilStreak` is reset to 0
+- **No further events can be applied** (enforced by service)
+
+### Example Streak Progression
+```csharp
+// Operator completes 3 successful exfils -> streak = 3
+await exfilService.RecordExfilSuccessAsync(opId); // streak: 1
+await exfilService.RecordExfilSuccessAsync(opId); // streak: 2
+await exfilService.RecordExfilSuccessAsync(opId); // streak: 3
+
+// Explicit failure resets streak
+await exfilService.RecordExfilFailureAsync(opId, "Timeout"); // streak: 0
+
+// Rebuild streak
+await exfilService.RecordExfilSuccessAsync(opId); // streak: 1
+await exfilService.RecordExfilSuccessAsync(opId); // streak: 2
+
+// Death resets streak and marks operator as dead
+await exfilService.RecordOperatorDeathAsync(opId, "KIA"); // streak: 0, IsDead: true
 ```
 
 ## Data Integrity

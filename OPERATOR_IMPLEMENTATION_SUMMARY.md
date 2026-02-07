@@ -15,7 +15,13 @@ This PR successfully implements a first-class **Operator aggregate** with event 
   - `WoundsTreatedEvent` - Health restoration
   - `LoadoutChangedEvent` - Equipment changes
   - `PerkUnlockedEvent` - Skill/perk unlocks
+  - `ExfilSucceededEvent` - Successful exfil (increments streak)
+  - `ExfilFailedEvent` - Explicit exfil failure (resets streak)
+  - `OperatorDiedEvent` - Operator death (resets streak, marks as dead)
 - **OperatorAggregate** - Event-sourced aggregate that replays events to derive state
+  - Tracks `ExfilStreak` - consecutive successful exfils
+  - Tracks `IsDead` - whether operator has died
+  - Streak resets on death, explicit failure, or event chain rollback
 
 ### 2. Operator Event Hashing & Verification Logic
 - SHA256 deterministic hashing of event contents
@@ -39,9 +45,13 @@ This PR successfully implements a first-class **Operator aggregate** with event 
   - `TreatWoundsAsync` - Restore health
   - `ChangeLoadoutAsync` - Change equipment
   - `UnlockPerkAsync` - Unlock perks/skills
+  - `RecordExfilSuccessAsync` - Record successful exfil (increments streak)
+  - `RecordExfilFailureAsync` - Record explicit exfil failure (resets streak)
+  - `RecordOperatorDeathAsync` - Record operator death (marks as dead, resets streak)
   - `ProcessCombatOutcomeAsync` - Process combat results
 - Full validation and error handling
 - Returns ServiceResult<T> for consistent error propagation
+- Dead operators cannot have further events applied (enforced by service)
 
 ### 5. Clear Explanation of Infil/Exfil Boundary
 - **INFIL_EXFIL_BOUNDARY.md** - Comprehensive documentation
