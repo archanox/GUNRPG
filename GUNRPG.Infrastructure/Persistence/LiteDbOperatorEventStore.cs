@@ -103,9 +103,8 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             if (evt.Hash != doc.Hash)
             {
                 // Corruption detected - rollback to last valid event
+                // TODO: Add logging/metrics to track rollback incidents for diagnostics
                 RollbackInvalidEvents(operatorId, doc.SequenceNumber);
-                // TODO: Add logging/metrics here to track rollback incidents
-                // Corruption at sequence 0 results in empty stream (may appear as "not found")
                 break;
             }
 
@@ -113,8 +112,8 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             if (!evt.VerifyHash())
             {
                 // Corruption detected - rollback to last valid event
+                // TODO: Add logging/metrics to track rollback incidents for diagnostics
                 RollbackInvalidEvents(operatorId, doc.SequenceNumber);
-                // TODO: Add logging/metrics here to track rollback incidents
                 break;
             }
 
@@ -122,8 +121,8 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             if (!evt.VerifyChain(previousEvent))
             {
                 // Chain broken - rollback to last valid event
+                // TODO: Add logging/metrics to track rollback incidents for diagnostics
                 RollbackInvalidEvents(operatorId, doc.SequenceNumber);
-                // TODO: Add logging/metrics here to track rollback incidents
                 break;
             }
 
