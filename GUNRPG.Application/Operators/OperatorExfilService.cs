@@ -352,6 +352,11 @@ public sealed class OperatorExfilService
     /// 
     /// The outcome is accepted from combat, but the player can review/modify before committing.
     /// Once committed, this method translates the outcome into operator events.
+    /// 
+    /// Exfil Semantics:
+    /// - If operator died: Emit OperatorDied event (resets streak, marks IsDead)
+    /// - If operator survived and is victorious: Apply XP, emit ExfilSucceeded (increments streak)
+    /// - If operator survived but retreated/failed: Apply no XP, emit no events (or ExfilFailed if explicit failure)
     /// </summary>
     public async Task<ServiceResult> ProcessCombatOutcomeAsync(CombatOutcome outcome, bool playerConfirmed = true)
     {
@@ -365,7 +370,23 @@ public sealed class OperatorExfilService
         if (!loadResult.IsSuccess)
             return MapLoadResultStatus(loadResult);
 
-        // Apply XP if earned
+        var aggregate = loadResult.Value!;
+
+        // Already dead operators cannot process new outcomes
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Cannot process combat outcome for dead operator");
+
+        // If operator died in combat, record the death
+        if (!outcome.Survived)
+        {
+            var deathResult = await KillOperatorAsync(outcome.OperatorId, "Killed in combat");
+            if (!deathResult.IsSuccess)
+                return deathResult;
+
+            return ServiceResult.Success();
+        }
+
+        // Operator survived - apply XP if earned
         if (outcome.XpEarned > 0)
         {
             var xpResult = await ApplyXpAsync(outcome.OperatorId, outcome.XpEarned, outcome.XpReason);
@@ -373,9 +394,16 @@ public sealed class OperatorExfilService
                 return xpResult;
         }
 
-        // If operator survived but took damage, update health state
-        // Note: We don't emit health events here yet - that would be added when we have
-        // a HealthChangedEvent or we could treat full healing in exfil as a separate action
+        // If operator achieved victory, mark exfil as successful
+        if (outcome.IsVictory)
+        {
+            var exfilResult = await CompleteExfilAsync(outcome.OperatorId);
+            if (!exfilResult.IsSuccess)
+                return exfilResult;
+        }
+        // If operator survived but did not win, this could be treated as exfil failure
+        // For now, we just don't emit any exfil event (neutral outcome)
+        // Future: Could add explicit ExfilFailed event here if desired
 
         return ServiceResult.Success();
     }
