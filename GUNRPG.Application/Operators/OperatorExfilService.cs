@@ -351,7 +351,7 @@ public sealed class OperatorExfilService
     /// This is the primary boundary between infil (combat) and exfil (operator management).
     /// 
     /// The outcome is accepted from combat, but the player can review/modify before committing.
-    /// Once committed, this method translates the outcome into operator events.
+    /// Once committed, this method translates the outcome into operator events atomically.
     /// 
     /// Exfil Semantics:
     /// - If operator died: Emit OperatorDied event (resets streak, marks IsDead, no XP awarded)
@@ -376,37 +376,67 @@ public sealed class OperatorExfilService
         if (aggregate.IsDead)
             return ServiceResult.InvalidState("Cannot process combat outcome for dead operator");
 
-        // If operator died in combat, record the death
+        // Build event list to append atomically
+        var eventsToAppend = new List<OperatorEvent>();
+        var previousHash = aggregate.GetLastEventHash();
+        var nextSequence = aggregate.CurrentSequence + 1;
+
+        // If operator died in combat, emit death event only
         if (!outcome.Survived)
         {
-            var deathResult = await KillOperatorAsync(outcome.OperatorId, "Killed in combat");
-            if (!deathResult.IsSuccess)
-                return deathResult;
-
-            return ServiceResult.Success();
+            var deathEvent = new OperatorDiedEvent(
+                outcome.OperatorId,
+                nextSequence,
+                "Killed in combat",
+                previousHash);
+            
+            eventsToAppend.Add(deathEvent);
         }
-
-        // Operator survived - apply XP if earned
-        if (outcome.XpEarned > 0)
+        else
         {
-            var xpResult = await ApplyXpAsync(outcome.OperatorId, outcome.XpEarned, outcome.XpReason);
-            if (!xpResult.IsSuccess)
-                return xpResult;
+            // Operator survived - emit XP event if earned
+            if (outcome.XpEarned > 0)
+            {
+                var xpEvent = new XpGainedEvent(
+                    outcome.OperatorId,
+                    nextSequence,
+                    outcome.XpEarned,
+                    outcome.XpReason,
+                    previousHash);
+                
+                eventsToAppend.Add(xpEvent);
+                previousHash = xpEvent.Hash;
+                nextSequence++;
+            }
+
+            // If operator achieved victory, emit exfil success event
+            if (outcome.IsVictory)
+            {
+                var exfilEvent = new ExfilSucceededEvent(
+                    outcome.OperatorId,
+                    nextSequence,
+                    previousHash);
+                
+                eventsToAppend.Add(exfilEvent);
+            }
         }
 
-        // If operator achieved victory, mark exfil as successful
-        if (outcome.IsVictory)
+        // Append all events atomically
+        if (eventsToAppend.Count > 0)
         {
-            var exfilResult = await CompleteExfilAsync(outcome.OperatorId);
-            if (!exfilResult.IsSuccess)
-                return exfilResult;
+            try
+            {
+                await _eventStore.AppendEventsAsync(eventsToAppend);
+            }
+            catch (Exception ex)
+            {
+                return ServiceResult.InvalidState($"Failed to process combat outcome: {ex.Message}");
+            }
         }
-        // If operator survived but did not win, this could be treated as exfil failure
-        // For now, we just don't emit any exfil event (neutral outcome)
-        // Future: Could add explicit ExfilFailed event here if desired
 
         return ServiceResult.Success();
     }
+
 
     /// <summary>
     /// Lists all known operator IDs.

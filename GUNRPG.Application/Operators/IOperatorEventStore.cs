@@ -18,6 +18,15 @@ public interface IOperatorEventStore
     Task AppendEventAsync(OperatorEvent evt);
 
     /// <summary>
+    /// Appends multiple events atomically to an operator's event stream.
+    /// All events must belong to the same operator and be in sequence order.
+    /// Either all events are appended or none are (transactional).
+    /// </summary>
+    /// <param name="events">The events to append in order</param>
+    /// <exception cref="InvalidOperationException">If events are invalid, out of order, or from different operators</exception>
+    Task AppendEventsAsync(IReadOnlyList<OperatorEvent> events);
+
+    /// <summary>
     /// Loads all events for a specific operator, ordered by sequence number.
     /// Returns empty list if operator has no events.
     /// Verifies hash chain integrity during load - fails fast if tampering detected.
