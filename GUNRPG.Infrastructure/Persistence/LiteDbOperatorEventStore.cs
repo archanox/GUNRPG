@@ -18,9 +18,10 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
         _events = (database ?? throw new ArgumentNullException(nameof(database)))
             .GetCollection<OperatorEventDocument>("operator_events");
 
-        // Create indexes for efficient queries
+        // Create indexes for efficient queries and uniqueness enforcement
         _events.EnsureIndex(x => x.OperatorId);
         _events.EnsureIndex(x => x.SequenceNumber);
+        _events.EnsureIndex("idx_operator_sequence_unique", x => new { x.OperatorId, x.SequenceNumber }, unique: true);
     }
 
     public Task AppendEventAsync(OperatorEvent evt)

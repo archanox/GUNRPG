@@ -21,7 +21,7 @@ This PR successfully implements a first-class **Operator aggregate** with event 
 - **OperatorAggregate** - Event-sourced aggregate that replays events to derive state
   - Tracks `ExfilStreak` - consecutive successful exfils
   - Tracks `IsDead` - whether operator has died
-  - Streak resets on death, explicit failure, or event chain rollback
+  - Streak resets on death or explicit failure (no rollback implemented)
 
 ### 2. Operator Event Hashing & Verification Logic
 - SHA256 deterministic hashing of event contents

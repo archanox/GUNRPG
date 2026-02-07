@@ -192,15 +192,16 @@ await exfilService.RecordOperatorDeathAsync(operatorId, "Killed in action");
 
 ## Exfil Streak Tracking
 
-The operator aggregate tracks a **exfil streak** value representing consecutive successful exfils.
+The operator aggregate tracks an **exfil streak** value representing consecutive successful exfils.
 
 ### Streak Behavior
 - **Increments on**: `ExfilSucceeded` event
 - **Resets to 0 on**:
   - `ExfilFailed` event (explicit failure)
   - `OperatorDied` event (operator death)
-  - Event chain rollback past last successful exfil
 - **Informational only**: No gameplay effects yet (future feature)
+
+**Note**: The current event-store/aggregate load path fails fast on corruption and does **not** roll back to a last valid event stream; rollback does not affect `ExfilStreak`.
 
 ### Dead Operators
 Once an `OperatorDied` event is applied:

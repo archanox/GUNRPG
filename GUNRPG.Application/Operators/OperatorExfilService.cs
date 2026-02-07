@@ -26,6 +26,19 @@ public sealed class OperatorExfilService
     }
 
     /// <summary>
+    /// Maps a LoadOperatorAsync failure result to a ServiceResult, preserving error semantics.
+    /// </summary>
+    private static ServiceResult MapLoadResultStatus(ServiceResult<OperatorAggregate> loadResult)
+    {
+        return loadResult.Status switch
+        {
+            ResultStatus.NotFound => ServiceResult.NotFound(loadResult.ErrorMessage!),
+            ResultStatus.ValidationError => ServiceResult.ValidationError(loadResult.ErrorMessage!),
+            _ => ServiceResult.InvalidState(loadResult.ErrorMessage!)
+        };
+    }
+
+    /// <summary>
     /// Creates a new operator and persists the creation event.
     /// </summary>
     public async Task<ServiceResult<OperatorId>> CreateOperatorAsync(string name)
@@ -86,9 +99,13 @@ public sealed class OperatorExfilService
 
         var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.InvalidState(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
+
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Cannot apply XP to dead operator");
+
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;
 
@@ -120,9 +137,13 @@ public sealed class OperatorExfilService
 
         var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.InvalidState(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
+
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Cannot treat wounds of dead operator");
+
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;
 
@@ -153,9 +174,13 @@ public sealed class OperatorExfilService
 
         var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.InvalidState(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
+
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Cannot change loadout of dead operator");
+
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;
 
@@ -186,9 +211,12 @@ public sealed class OperatorExfilService
 
         var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.InvalidState(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
+
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Cannot unlock perk for dead operator");
 
         // Check if perk already unlocked
         if (aggregate.UnlockedPerks.Contains(perkName))
@@ -231,7 +259,12 @@ public sealed class OperatorExfilService
 
         var loadResult = await LoadOperatorAsync(outcome.OperatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.InvalidState(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
+
+        var aggregate = loadResult.Value!;
+
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Cannot process combat outcome for dead operator");
 
         // Apply XP if earned
         if (outcome.XpEarned > 0)
@@ -255,7 +288,7 @@ public sealed class OperatorExfilService
     {
         var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.NotFound(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
 
@@ -291,7 +324,7 @@ public sealed class OperatorExfilService
 
         var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.NotFound(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
 
@@ -329,7 +362,7 @@ public sealed class OperatorExfilService
 
         var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.NotFound(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
 

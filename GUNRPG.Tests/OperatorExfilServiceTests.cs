@@ -1,3 +1,4 @@
+using GUNRPG.Application.Combat;
 using GUNRPG.Application.Operators;
 using GUNRPG.Application.Results;
 using GUNRPG.Core.Operators;
@@ -424,5 +425,97 @@ public class OperatorExfilServiceTests : IDisposable
 
         // Assert
         Assert.Equal(ResultStatus.NotFound, result.Status);
+    }
+
+    [Fact]
+    public async Task ApplyXpAsync_AfterDeath_ShouldFail()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.RecordOperatorDeathAsync(operatorId, "Killed in action");
+
+        // Act
+        var result = await _service.ApplyXpAsync(operatorId, 100, "posthumous");
+
+        // Assert
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("dead operator", result.ErrorMessage!);
+    }
+
+    [Fact]
+    public async Task TreatWoundsAsync_AfterDeath_ShouldFail()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.RecordOperatorDeathAsync(operatorId, "Killed in action");
+
+        // Act
+        var result = await _service.TreatWoundsAsync(operatorId, 50f);
+
+        // Assert
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("dead operator", result.ErrorMessage!);
+    }
+
+    [Fact]
+    public async Task ChangeLoadoutAsync_AfterDeath_ShouldFail()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.RecordOperatorDeathAsync(operatorId, "Killed in action");
+
+        // Act
+        var result = await _service.ChangeLoadoutAsync(operatorId, "AK-47");
+
+        // Assert
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("dead operator", result.ErrorMessage!);
+    }
+
+    [Fact]
+    public async Task UnlockPerkAsync_AfterDeath_ShouldFail()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.RecordOperatorDeathAsync(operatorId, "Killed in action");
+
+        // Act
+        var result = await _service.UnlockPerkAsync(operatorId, "Fast Reload");
+
+        // Assert
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("dead operator", result.ErrorMessage!);
+    }
+
+    [Fact]
+    public async Task ProcessCombatOutcomeAsync_AfterDeath_ShouldFail()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.RecordOperatorDeathAsync(operatorId, "Killed in action");
+
+        var outcome = new CombatOutcome(
+            Guid.NewGuid(),
+            operatorId,
+            survived: true,
+            damageTaken: 10f,
+            remainingHealth: 90f,
+            xpEarned: 100,
+            xpReason: "Victory",
+            enemiesEliminated: 1,
+            isVictory: true,
+            completedAt: DateTimeOffset.UtcNow);
+
+        // Act
+        var result = await _service.ProcessCombatOutcomeAsync(outcome, playerConfirmed: true);
+
+        // Assert
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("dead operator", result.ErrorMessage!);
     }
 }

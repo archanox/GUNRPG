@@ -55,7 +55,8 @@ public sealed class OperatorAggregate
 
     /// <summary>
     /// Whether this operator is currently dead.
-    /// Once dead, no further events can be applied.
+    /// Once dead, domain services are expected to prevent appending further events;
+    /// this aggregate does not enforce that constraint during replay or application.
     /// </summary>
     public bool IsDead { get; private set; }
 
