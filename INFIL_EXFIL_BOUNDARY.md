@@ -269,7 +269,7 @@ The implementation includes comprehensive tests:
 - `LiteDbOperatorEventStoreTests` - Persistence, integrity checks, rollback behavior
 - `OperatorExfilServiceTests` - Service operations, validation, dead operator constraints
 
-All 64+ operator tests pass, ensuring the boundary is maintained correctly.
+All 77 operator tests pass, ensuring the boundary is maintained correctly.
 
 ## Summary
 
