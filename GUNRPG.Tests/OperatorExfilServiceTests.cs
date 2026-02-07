@@ -488,4 +488,258 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.False(result.IsSuccess);
         Assert.Contains("cause of death", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task ProcessCombatOutcome_SuccessfulExfil_ShouldCommitAllEvents()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+
+        var outcome = new Application.Combat.CombatOutcome(
+            sessionId: Guid.NewGuid(),
+            operatorId: operatorId,
+            survived: true,
+            damageTaken: 20f,
+            remainingHealth: 80f,
+            xpEarned: 100,
+            xpReason: "Victory",
+            enemiesEliminated: 1,
+            isVictory: true,
+            completedAt: DateTimeOffset.UtcNow);
+
+        // Act
+        var result = await _service.ProcessCombatOutcomeAsync(outcome, playerConfirmed: true);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+
+        // Verify events were committed
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        var aggregate = loadResult.Value!;
+        
+        Assert.Equal(100, aggregate.TotalXp);
+        Assert.Equal(1, aggregate.ExfilStreak);
+        Assert.False(aggregate.IsDead);
+        
+        // Should have: OperatorCreated + XpGained + ExfilSucceeded = 3 events
+        Assert.Equal(3, aggregate.Events.Count);
+    }
+
+    [Fact]
+    public async Task ProcessCombatOutcome_OperatorDeath_ShouldResetStreak()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        
+        // Build up a streak first
+        await _service.CompleteExfilAsync(operatorId);
+        await _service.CompleteExfilAsync(operatorId);
+        
+        var loadBefore = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(2, loadBefore.Value!.ExfilStreak);
+
+        var outcome = new Application.Combat.CombatOutcome(
+            sessionId: Guid.NewGuid(),
+            operatorId: operatorId,
+            survived: false,
+            damageTaken: 100f,
+            remainingHealth: 0f,
+            xpEarned: 10,
+            xpReason: "Participation",
+            enemiesEliminated: 0,
+            isVictory: false,
+            completedAt: DateTimeOffset.UtcNow);
+
+        // Act
+        var result = await _service.ProcessCombatOutcomeAsync(outcome, playerConfirmed: true);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+
+        var loadAfter = await _service.LoadOperatorAsync(operatorId);
+        var aggregate = loadAfter.Value!;
+        
+        Assert.True(aggregate.IsDead);
+        Assert.Equal(0, aggregate.CurrentHealth);
+        Assert.Equal(0, aggregate.ExfilStreak); // Streak should be reset
+        
+        // Should have: OperatorCreated + 2xExfilSucceeded + OperatorDied = 4 events
+        // (No XP awarded on death)
+        Assert.Equal(4, aggregate.Events.Count);
+    }
+
+    [Fact]
+    public async Task ProcessCombatOutcome_SurvivalWithoutVictory_ShouldApplyXpButNotExfil()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+
+        var outcome = new Application.Combat.CombatOutcome(
+            sessionId: Guid.NewGuid(),
+            operatorId: operatorId,
+            survived: true,
+            damageTaken: 50f,
+            remainingHealth: 50f,
+            xpEarned: 50,
+            xpReason: "Survived",
+            enemiesEliminated: 0,
+            isVictory: false, // Survived but didn't win
+            completedAt: DateTimeOffset.UtcNow);
+
+        // Act
+        var result = await _service.ProcessCombatOutcomeAsync(outcome, playerConfirmed: true);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        var aggregate = loadResult.Value!;
+        
+        Assert.Equal(50, aggregate.TotalXp);
+        Assert.Equal(0, aggregate.ExfilStreak); // No exfil event = no streak increment
+        Assert.False(aggregate.IsDead);
+        
+        // Should have: OperatorCreated + XpGained = 2 events
+        Assert.Equal(2, aggregate.Events.Count);
+    }
+
+    [Fact]
+    public async Task ProcessCombatOutcome_RequiresPlayerConfirmation()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+
+        var outcome = new Application.Combat.CombatOutcome(
+            sessionId: Guid.NewGuid(),
+            operatorId: operatorId,
+            survived: true,
+            damageTaken: 0f,
+            remainingHealth: 100f,
+            xpEarned: 100,
+            xpReason: "Victory",
+            enemiesEliminated: 1,
+            isVictory: true,
+            completedAt: DateTimeOffset.UtcNow);
+
+        // Act
+        var result = await _service.ProcessCombatOutcomeAsync(outcome, playerConfirmed: false);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.ValidationError, result.Status);
+        Assert.Contains("confirmed", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ProcessCombatOutcome_RejectsNullOutcome()
+    {
+        // Act
+        var result = await _service.ProcessCombatOutcomeAsync(null!, playerConfirmed: true);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.ValidationError, result.Status);
+    }
+
+    [Fact]
+    public async Task ProcessCombatOutcome_RejectsOutcomeForDeadOperator()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.KillOperatorAsync(operatorId, "Previous death");
+
+        var outcome = new Application.Combat.CombatOutcome(
+            sessionId: Guid.NewGuid(),
+            operatorId: operatorId,
+            survived: true,
+            damageTaken: 0f,
+            remainingHealth: 100f,
+            xpEarned: 100,
+            xpReason: "Victory",
+            enemiesEliminated: 1,
+            isVictory: true,
+            completedAt: DateTimeOffset.UtcNow);
+
+        // Act
+        var result = await _service.ProcessCombatOutcomeAsync(outcome, playerConfirmed: true);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("dead operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ProcessCombatOutcome_MultipleSuccessfulExfils_ShouldIncrementStreak()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+
+        // Act - Process multiple successful combat outcomes
+        for (int i = 0; i < 5; i++)
+        {
+            var outcome = new Application.Combat.CombatOutcome(
+                sessionId: Guid.NewGuid(),
+                operatorId: operatorId,
+                survived: true,
+                damageTaken: 10f,
+                remainingHealth: 90f,
+                xpEarned: 100,
+                xpReason: $"Victory {i + 1}",
+                enemiesEliminated: 1,
+                isVictory: true,
+                completedAt: DateTimeOffset.UtcNow);
+
+            var result = await _service.ProcessCombatOutcomeAsync(outcome, playerConfirmed: true);
+            Assert.True(result.IsSuccess);
+        }
+
+        // Assert
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        var aggregate = loadResult.Value!;
+        
+        Assert.Equal(5, aggregate.ExfilStreak);
+        Assert.Equal(500, aggregate.TotalXp);
+    }
+
+    [Fact]
+    public async Task ProcessCombatOutcome_ZeroXp_ShouldNotApplyXpEvent()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+
+        var outcome = new Application.Combat.CombatOutcome(
+            sessionId: Guid.NewGuid(),
+            operatorId: operatorId,
+            survived: true,
+            damageTaken: 0f,
+            remainingHealth: 100f,
+            xpEarned: 0, // No XP
+            xpReason: "No XP",
+            enemiesEliminated: 0,
+            isVictory: true, // Still victory, just no XP
+            completedAt: DateTimeOffset.UtcNow);
+
+        // Act
+        var result = await _service.ProcessCombatOutcomeAsync(outcome, playerConfirmed: true);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        var aggregate = loadResult.Value!;
+        
+        Assert.Equal(0, aggregate.TotalXp);
+        Assert.Equal(1, aggregate.ExfilStreak); // Exfil still succeeds
+        
+        // Should have: OperatorCreated + ExfilSucceeded = 2 events (no XpGained)
+        Assert.Equal(2, aggregate.Events.Count);
+    }
 }
