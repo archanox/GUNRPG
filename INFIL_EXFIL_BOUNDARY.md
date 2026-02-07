@@ -161,10 +161,11 @@ The streak is informational only (no gameplay effects yet) but provides foundati
 
 #### Operator Death
 Once an operator dies (`IsDead = true`):
-- All mutating operations are rejected at the service level
+- All mutating operations are rejected at the service level (via `OperatorExfilService`)
 - Health is set to 0
 - Exfil streak is reset to 0
-- No further events can be appended for this operator
+- `OperatorExfilService` will reject any further attempts to append events for this operator
+- The underlying event store does not enforce this constraint by itself (allows replay for audit)
 - The aggregate can still replay historical events for audit purposes
 
 The `IsDead` flag is derived from events - it's not persisted separately, ensuring event sourcing integrity.

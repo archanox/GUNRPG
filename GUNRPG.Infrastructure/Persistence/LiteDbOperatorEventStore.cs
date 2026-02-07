@@ -104,6 +104,8 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             {
                 // Corruption detected - rollback to last valid event
                 RollbackInvalidEvents(operatorId, doc.SequenceNumber);
+                // TODO: Add logging/metrics here to track rollback incidents
+                // Corruption at sequence 0 results in empty stream (may appear as "not found")
                 break;
             }
 
@@ -112,6 +114,7 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             {
                 // Corruption detected - rollback to last valid event
                 RollbackInvalidEvents(operatorId, doc.SequenceNumber);
+                // TODO: Add logging/metrics here to track rollback incidents
                 break;
             }
 
@@ -120,6 +123,7 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             {
                 // Chain broken - rollback to last valid event
                 RollbackInvalidEvents(operatorId, doc.SequenceNumber);
+                // TODO: Add logging/metrics here to track rollback incidents
                 break;
             }
 
@@ -189,7 +193,7 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             "WoundsTreated" => WoundsTreatedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "LoadoutChanged" => LoadoutChangedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "PerkUnlocked" => PerkUnlockedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
-            "ExfilSucceeded" => ExfilSucceededEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.PreviousHash, doc.Timestamp),
+            "ExfilSucceeded" => ExfilSucceededEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "ExfilFailed" => ExfilFailedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "OperatorDied" => OperatorDiedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             _ => throw new InvalidOperationException($"Unknown event type: {doc.EventType}")

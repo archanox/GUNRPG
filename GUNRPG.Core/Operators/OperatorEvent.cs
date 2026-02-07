@@ -369,16 +369,34 @@ public sealed class ExfilSucceededEvent : OperatorEvent
     {
     }
 
+    private ExfilSucceededEvent(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string payload,
+        string previousHash,
+        DateTimeOffset timestamp)
+        : base(
+            operatorId,
+            sequenceNumber,
+            eventType: "ExfilSucceeded",
+            payload: payload,
+            previousHash: previousHash,
+            timestamp: timestamp)
+    {
+    }
+
     /// <summary>
     /// Rehydrates an ExfilSucceededEvent from storage.
+    /// Uses the persisted payload to ensure tampering detection via hash verification.
     /// </summary>
     public static ExfilSucceededEvent Rehydrate(
         OperatorId operatorId,
         long sequenceNumber,
+        string payload,
         string previousHash,
         DateTimeOffset timestamp)
     {
-        return new ExfilSucceededEvent(operatorId, sequenceNumber, previousHash, timestamp);
+        return new ExfilSucceededEvent(operatorId, sequenceNumber, payload, previousHash, timestamp);
     }
 }
 
