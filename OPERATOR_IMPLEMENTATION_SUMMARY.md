@@ -15,12 +15,17 @@ This PR successfully implements a first-class **Operator aggregate** with event 
   - `WoundsTreatedEvent` - Health restoration
   - `LoadoutChangedEvent` - Equipment changes
   - `PerkUnlockedEvent` - Skill/perk unlocks
+  - `ExfilSucceededEvent` - Successful exfil (increments streak)
+  - `ExfilFailedEvent` - Failed exfil (resets streak)
+  - `OperatorDiedEvent` - Operator death (permanent, resets streak)
 - **OperatorAggregate** - Event-sourced aggregate that replays events to derive state
+  - `ExfilStreak` - Tracks consecutive successful exfils
+  - `IsDead` - Marks permanently dead operators
 
 ### 2. Operator Event Hashing & Verification Logic
 - SHA256 deterministic hashing of event contents
 - Hash chaining (each event references previous event's hash)
-- Automatic verification on load - fails fast on tampering
+- Automatic verification on load with rollback to last valid event on corruption
 - No cryptographic keys (as specified) - hash-only integrity
 
 ### 3. LiteDB-Backed Operator Event Store
@@ -29,7 +34,7 @@ This PR successfully implements a first-class **Operator aggregate** with event 
 - Indexes on OperatorId and SequenceNumber for performance
 - Atomic event appending with chain validation
 - Hash chain integrity verification on every load
-- Fails fast on corruption or tampering
+- **Automatic rollback** - Deletes corrupted events and restores to last valid state
 
 ### 4. Exfil Application Service
 - **OperatorExfilService** - Single source of truth for operator state changes
@@ -39,8 +44,12 @@ This PR successfully implements a first-class **Operator aggregate** with event 
   - `TreatWoundsAsync` - Restore health
   - `ChangeLoadoutAsync` - Change equipment
   - `UnlockPerkAsync` - Unlock perks/skills
+  - `CompleteExfilAsync` - Mark successful exfil (increments streak)
+  - `FailExfilAsync` - Mark failed exfil (resets streak)
+  - `KillOperatorAsync` - Mark operator as dead (permanent)
   - `ProcessCombatOutcomeAsync` - Process combat results
 - Full validation and error handling
+- **Dead operator enforcement** - All mutating operations check IsDead and reject with InvalidState
 - Returns ServiceResult<T> for consistent error propagation
 
 ### 5. Clear Explanation of Infil/Exfil Boundary
@@ -52,11 +61,11 @@ This PR successfully implements a first-class **Operator aggregate** with event 
 
 ## Test Coverage ✅
 
-**55 Tests Passing:**
-- 12 tests - Event hashing, chaining, verification
-- 16 tests - Aggregate event replay and state derivation
-- 15 tests - Event store persistence and integrity
-- 18 tests - Exfil service operations and validation
+**64 Tests Passing:**
+- 15 tests - Event hashing, chaining, verification, new event types
+- 18 tests - Aggregate event replay, state derivation, streak tracking, death handling, rollback
+- 17 tests - Event store persistence, integrity, rollback behavior
+- 29 tests - Exfil service operations, validation, dead operator constraints
 
 All tests pass with 100% success rate.
 
