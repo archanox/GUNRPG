@@ -350,4 +350,82 @@ public class LiteDbOperatorEventStoreTests : IDisposable
         Assert.IsType<OperatorDiedEvent>(events[1]);
         Assert.Equal("Combat casualty", ((OperatorDiedEvent)events[1]).GetCauseOfDeath());
     }
+
+    [Fact]
+    public async Task AppendEventsAsync_ShouldAppendMultipleEventsAtomically()
+    {
+        // Arrange
+        var operatorId = OperatorId.NewId();
+        var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
+        var evt2 = new XpGainedEvent(operatorId, 1, 100, "Victory", evt1.Hash);
+        var evt3 = new ExfilSucceededEvent(operatorId, 2, evt2.Hash);
+
+        var eventsToAppend = new List<OperatorEvent> { evt1, evt2, evt3 };
+
+        // Act
+        await _store.AppendEventsAsync(eventsToAppend);
+
+        // Assert
+        var events = await _store.LoadEventsAsync(operatorId);
+        Assert.Equal(3, events.Count);
+        Assert.IsType<OperatorCreatedEvent>(events[0]);
+        Assert.IsType<XpGainedEvent>(events[1]);
+        Assert.IsType<ExfilSucceededEvent>(events[2]);
+    }
+
+    [Fact]
+    public async Task AppendEventsAsync_ShouldRejectEventsFromDifferentOperators()
+    {
+        // Arrange
+        var op1 = OperatorId.NewId();
+        var op2 = OperatorId.NewId();
+        var evt1 = new OperatorCreatedEvent(op1, "Operator1");
+        var evt2 = new OperatorCreatedEvent(op2, "Operator2");
+
+        var eventsToAppend = new List<OperatorEvent> { evt1, evt2 };
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _store.AppendEventsAsync(eventsToAppend));
+        Assert.Contains("same operator", ex.Message);
+    }
+
+    [Fact]
+    public async Task AppendEventsAsync_ShouldRejectNonSequentialEvents()
+    {
+        // Arrange
+        var operatorId = OperatorId.NewId();
+        var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
+        var evt2 = new XpGainedEvent(operatorId, 2, 100, "Victory", evt1.Hash); // Gap in sequence
+
+        var eventsToAppend = new List<OperatorEvent> { evt1, evt2 };
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _store.AppendEventsAsync(eventsToAppend));
+        Assert.Contains("sequential order", ex.Message);
+    }
+
+    [Fact]
+    public async Task AppendEventsAsync_ShouldBeAtomicOnFailure()
+    {
+        // Arrange
+        var operatorId = OperatorId.NewId();
+        var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
+        await _store.AppendEventAsync(evt1); // First event already exists
+
+        var evt2 = new XpGainedEvent(operatorId, 1, 100, "Victory", evt1.Hash);
+        var evt3 = new ExfilSucceededEvent(operatorId, 2, evt2.Hash);
+        
+        // Try to append a batch that includes a duplicate sequence
+        var eventsToAppend = new List<OperatorEvent> { evt1, evt2, evt3 }; // evt1 is duplicate
+
+        // Act & Assert
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _store.AppendEventsAsync(eventsToAppend));
+
+        // Verify no events were appended (atomicity)
+        var events = await _store.LoadEventsAsync(operatorId);
+        Assert.Single(events); // Only original evt1 should exist
+    }
 }

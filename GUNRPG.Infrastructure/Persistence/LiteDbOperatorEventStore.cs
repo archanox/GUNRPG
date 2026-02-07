@@ -12,11 +12,12 @@ namespace GUNRPG.Infrastructure.Persistence;
 public sealed class LiteDbOperatorEventStore : IOperatorEventStore
 {
     private readonly ILiteCollection<OperatorEventDocument> _events;
+    private readonly LiteDatabase _database;
 
     public LiteDbOperatorEventStore(LiteDatabase database)
     {
-        _events = (database ?? throw new ArgumentNullException(nameof(database)))
-            .GetCollection<OperatorEventDocument>("operator_events");
+        _database = database ?? throw new ArgumentNullException(nameof(database));
+        _events = _database.GetCollection<OperatorEventDocument>("operator_events");
 
         // Create indexes for efficient queries
         _events.EnsureIndex(x => x.OperatorId);
@@ -80,6 +81,96 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
         };
 
         _events.Insert(document);
+        return Task.CompletedTask;
+    }
+
+    public Task AppendEventsAsync(IReadOnlyList<OperatorEvent> events)
+    {
+        if (events == null)
+            throw new ArgumentNullException(nameof(events));
+
+        if (events.Count == 0)
+            return Task.CompletedTask;
+
+        // Validate all events belong to same operator
+        var operatorId = events[0].OperatorId;
+        if (events.Any(e => e.OperatorId != operatorId))
+            throw new InvalidOperationException("All events in batch must belong to the same operator");
+
+        // Validate events are in sequence order
+        for (int i = 1; i < events.Count; i++)
+        {
+            if (events[i].SequenceNumber != events[i - 1].SequenceNumber + 1)
+                throw new InvalidOperationException(
+                    $"Events must be in sequential order. Expected sequence {events[i - 1].SequenceNumber + 1}, got {events[i].SequenceNumber}");
+        }
+
+        // Use transaction to ensure atomicity
+        _database.BeginTrans();
+        try
+        {
+            foreach (var evt in events)
+            {
+                // Verify hash integrity before storing
+                if (!evt.VerifyHash())
+                    throw new InvalidOperationException($"Cannot append event with invalid hash at sequence {evt.SequenceNumber}");
+
+                // Validate sequence-0 (genesis event) invariants
+                if (evt.SequenceNumber == 0)
+                {
+                    if (evt.PreviousHash != string.Empty)
+                        throw new InvalidOperationException(
+                            "Genesis event (sequence 0) must have empty previous hash");
+                }
+
+                // Check if this sequence already exists
+                var existing = _events.FindOne(doc =>
+                    doc.OperatorId == evt.OperatorId.Value &&
+                    doc.SequenceNumber == evt.SequenceNumber);
+
+                if (existing != null)
+                    throw new InvalidOperationException(
+                        $"Event with sequence {evt.SequenceNumber} already exists for operator {evt.OperatorId}");
+
+                // If not the first event, verify chain integrity
+                if (evt.SequenceNumber > 0)
+                {
+                    var previousEvent = _events.FindOne(doc =>
+                        doc.OperatorId == evt.OperatorId.Value &&
+                        doc.SequenceNumber == evt.SequenceNumber - 1);
+
+                    if (previousEvent == null)
+                        throw new InvalidOperationException(
+                            $"Cannot append event at sequence {evt.SequenceNumber}. Previous event not found.");
+
+                    if (previousEvent.Hash != evt.PreviousHash)
+                        throw new InvalidOperationException(
+                            $"Hash chain broken at sequence {evt.SequenceNumber}. Previous hash mismatch.");
+                }
+
+                // Map to document and insert
+                var document = new OperatorEventDocument
+                {
+                    OperatorId = evt.OperatorId.Value,
+                    SequenceNumber = evt.SequenceNumber,
+                    EventType = evt.EventType,
+                    Payload = evt.Payload,
+                    PreviousHash = evt.PreviousHash,
+                    Hash = evt.Hash,
+                    Timestamp = evt.Timestamp
+                };
+
+                _events.Insert(document);
+            }
+
+            _database.Commit();
+        }
+        catch
+        {
+            _database.Rollback();
+            throw;
+        }
+
         return Task.CompletedTask;
     }
 

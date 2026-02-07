@@ -534,8 +534,10 @@ public class OperatorExfilServiceTests : IDisposable
         var operatorId = createResult.Value!;
         
         // Build up a streak first
-        await _service.CompleteExfilAsync(operatorId);
-        await _service.CompleteExfilAsync(operatorId);
+        var exfilResult1 = await _service.CompleteExfilAsync(operatorId);
+        Assert.True(exfilResult1.IsSuccess);
+        var exfilResult2 = await _service.CompleteExfilAsync(operatorId);
+        Assert.True(exfilResult2.IsSuccess);
         
         var loadBefore = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(2, loadBefore.Value!.ExfilStreak);
@@ -793,7 +795,8 @@ public class OperatorExfilServiceTests : IDisposable
             isVictory: true,
             completedAt: DateTimeOffset.UtcNow);
 
-        await _service.ProcessCombatOutcomeAsync(combatOutcome2, playerConfirmed: true);
+        var result2 = await _service.ProcessCombatOutcomeAsync(combatOutcome2, playerConfirmed: true);
+        Assert.True(result2.IsSuccess);
 
         // Step 6: Reload from persistence (proves persistence works)
         var loadResult2 = await _service.LoadOperatorAsync(operatorId);
