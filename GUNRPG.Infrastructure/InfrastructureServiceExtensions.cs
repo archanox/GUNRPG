@@ -92,7 +92,7 @@ public static class InfrastructureServiceExtensions
     /// </summary>
     public static IServiceCollection AddOperatorEventStore(this IServiceCollection services)
     {
-        // Register as scoped to ensure proper lifecycle management
+        // Register as singleton to share LiteDB instance
         services.AddSingleton<IOperatorEventStore, LiteDbOperatorEventStore>();
         services.AddSingleton<OperatorExfilService>();
         return services;

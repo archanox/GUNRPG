@@ -23,8 +23,9 @@ public class LiteDbOperatorEventStore : IOperatorEventStore
         var collection = _database.GetCollection<OperatorEventDocument>(CollectionName);
         collection.EnsureIndex(x => x.OperatorId);
         collection.EnsureIndex(x => x.SequenceNumber);
-        // Note: Composite indexes are not strictly required for correctness,
-        // just for performance. Uniqueness is enforced by application logic.
+        // Note: Composite uniqueness (OperatorId, SequenceNumber) is enforced
+        // by the OperatorExfilService which ensures sequential numbering.
+        // LiteDB v5 composite index syntax is complex, so we rely on application logic.
     }
 
     public Task AppendEventAsync(OperatorEvent @event)
