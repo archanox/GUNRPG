@@ -306,4 +306,123 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Single(aggregate.UnlockedPerks);
         Assert.Equal(6, aggregate.Events.Count); // 1 create + 5 operations
     }
+
+    [Fact]
+    public async Task RecordExfilSuccess_ShouldIncrementStreak()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+
+        // Act
+        await _service.RecordExfilSuccessAsync(operatorId);
+        await _service.RecordExfilSuccessAsync(operatorId);
+        await _service.RecordExfilSuccessAsync(operatorId);
+
+        // Assert
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        var aggregate = loadResult.Value!;
+        Assert.Equal(3, aggregate.ExfilStreak);
+        Assert.False(aggregate.IsDead);
+    }
+
+    [Fact]
+    public async Task RecordExfilFailure_ShouldResetStreak()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.RecordExfilSuccessAsync(operatorId);
+        await _service.RecordExfilSuccessAsync(operatorId);
+
+        // Act
+        await _service.RecordExfilFailureAsync(operatorId, "Ran out of time");
+
+        // Assert
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        var aggregate = loadResult.Value!;
+        Assert.Equal(0, aggregate.ExfilStreak);
+        Assert.False(aggregate.IsDead);
+    }
+
+    [Fact]
+    public async Task RecordOperatorDeath_ShouldResetStreakAndMarkDead()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.RecordExfilSuccessAsync(operatorId);
+        await _service.RecordExfilSuccessAsync(operatorId);
+
+        // Act
+        await _service.RecordOperatorDeathAsync(operatorId, "Killed in action");
+
+        // Assert
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        var aggregate = loadResult.Value!;
+        Assert.Equal(0, aggregate.ExfilStreak);
+        Assert.True(aggregate.IsDead);
+        Assert.Equal(0, aggregate.CurrentHealth);
+    }
+
+    [Fact]
+    public async Task RecordOperatorDeath_ShouldRejectDeadOperator()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.RecordOperatorDeathAsync(operatorId, "First death");
+
+        // Act
+        var result = await _service.RecordOperatorDeathAsync(operatorId, "Second death");
+
+        // Assert
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("already dead", result.ErrorMessage!);
+    }
+
+    [Fact]
+    public async Task ExfilSuccess_AfterDeath_ShouldFail()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.RecordOperatorDeathAsync(operatorId, "Killed in action");
+
+        // Act
+        var result = await _service.RecordExfilSuccessAsync(operatorId);
+
+        // Assert
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("dead operator", result.ErrorMessage!);
+    }
+
+    [Fact]
+    public async Task ExfilFailure_AfterDeath_ShouldFail()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.RecordOperatorDeathAsync(operatorId, "Killed in action");
+
+        // Act
+        var result = await _service.RecordExfilFailureAsync(operatorId, "Failed after death");
+
+        // Assert
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("dead operator", result.ErrorMessage!);
+    }
+
+    [Fact]
+    public async Task RecordExfilSuccess_ShouldRequireExistingOperator()
+    {
+        // Arrange
+        var nonexistentId = OperatorId.NewId();
+
+        // Act
+        var result = await _service.RecordExfilSuccessAsync(nonexistentId);
+
+        // Assert
+        Assert.Equal(ResultStatus.NotFound, result.Status);
+    }
 }

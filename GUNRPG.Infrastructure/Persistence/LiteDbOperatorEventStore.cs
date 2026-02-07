@@ -155,6 +155,9 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             "WoundsTreated" => typeof(WoundsTreatedEvent),
             "LoadoutChanged" => typeof(LoadoutChangedEvent),
             "PerkUnlocked" => typeof(PerkUnlockedEvent),
+            "ExfilSucceeded" => typeof(ExfilSucceededEvent),
+            "ExfilFailed" => typeof(ExfilFailedEvent),
+            "OperatorDied" => typeof(OperatorDiedEvent),
             _ => throw new InvalidOperationException($"Unknown event type: {doc.EventType}")
         };
 

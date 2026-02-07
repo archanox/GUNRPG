@@ -269,3 +269,87 @@ public sealed class PerkUnlockedEvent : OperatorEvent
 
     private record PerkPayload(string PerkName);
 }
+
+/// <summary>
+/// Event emitted when an operator successfully completes exfil.
+/// Increments the exfil streak.
+/// </summary>
+public sealed class ExfilSucceededEvent : OperatorEvent
+{
+    public ExfilSucceededEvent(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string previousHash,
+        DateTimeOffset? timestamp = null)
+        : base(
+            operatorId,
+            sequenceNumber,
+            eventType: "ExfilSucceeded",
+            payload: JsonSerializer.Serialize(new { }),
+            previousHash: previousHash,
+            timestamp: timestamp)
+    {
+    }
+}
+
+/// <summary>
+/// Event emitted when an operator explicitly fails exfil.
+/// Resets the exfil streak.
+/// </summary>
+public sealed class ExfilFailedEvent : OperatorEvent
+{
+    public ExfilFailedEvent(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string reason,
+        string previousHash,
+        DateTimeOffset? timestamp = null)
+        : base(
+            operatorId,
+            sequenceNumber,
+            eventType: "ExfilFailed",
+            payload: JsonSerializer.Serialize(new { Reason = reason }),
+            previousHash: previousHash,
+            timestamp: timestamp)
+    {
+    }
+
+    public string GetReason()
+    {
+        var data = JsonSerializer.Deserialize<FailedPayload>(Payload)!;
+        return data.Reason;
+    }
+
+    private record FailedPayload(string Reason);
+}
+
+/// <summary>
+/// Event emitted when an operator dies.
+/// Resets the exfil streak and marks the operator as dead.
+/// </summary>
+public sealed class OperatorDiedEvent : OperatorEvent
+{
+    public OperatorDiedEvent(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string causeOfDeath,
+        string previousHash,
+        DateTimeOffset? timestamp = null)
+        : base(
+            operatorId,
+            sequenceNumber,
+            eventType: "OperatorDied",
+            payload: JsonSerializer.Serialize(new { CauseOfDeath = causeOfDeath }),
+            previousHash: previousHash,
+            timestamp: timestamp)
+    {
+    }
+
+    public string GetCauseOfDeath()
+    {
+        var data = JsonSerializer.Deserialize<DiedPayload>(Payload)!;
+        return data.CauseOfDeath;
+    }
+
+    private record DiedPayload(string CauseOfDeath);
+}

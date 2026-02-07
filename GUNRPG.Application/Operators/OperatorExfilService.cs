@@ -249,6 +249,114 @@ public sealed class OperatorExfilService
     }
 
     /// <summary>
+    /// Records a successful exfil, incrementing the operator's exfil streak.
+    /// </summary>
+    public async Task<ServiceResult> RecordExfilSuccessAsync(OperatorId operatorId)
+    {
+        var loadResult = await LoadOperatorAsync(operatorId);
+        if (!loadResult.IsSuccess)
+            return ServiceResult.NotFound(loadResult.ErrorMessage!);
+
+        var aggregate = loadResult.Value!;
+
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Cannot record exfil success for dead operator");
+
+        var sequenceNumber = aggregate.CurrentSequence + 1;
+        var previousHash = aggregate.GetLastEventHash();
+
+        var exfilEvent = new ExfilSucceededEvent(
+            operatorId,
+            sequenceNumber,
+            previousHash);
+
+        try
+        {
+            await _eventStore.AppendEventAsync(exfilEvent);
+            return ServiceResult.Success();
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult.InvalidState($"Failed to record exfil success: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Records an explicit exfil failure, resetting the operator's exfil streak.
+    /// </summary>
+    public async Task<ServiceResult> RecordExfilFailureAsync(OperatorId operatorId, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            return ServiceResult.ValidationError("Failure reason cannot be empty");
+
+        var loadResult = await LoadOperatorAsync(operatorId);
+        if (!loadResult.IsSuccess)
+            return ServiceResult.NotFound(loadResult.ErrorMessage!);
+
+        var aggregate = loadResult.Value!;
+
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Cannot record exfil failure for dead operator");
+
+        var sequenceNumber = aggregate.CurrentSequence + 1;
+        var previousHash = aggregate.GetLastEventHash();
+
+        var exfilEvent = new ExfilFailedEvent(
+            operatorId,
+            sequenceNumber,
+            reason,
+            previousHash);
+
+        try
+        {
+            await _eventStore.AppendEventAsync(exfilEvent);
+            return ServiceResult.Success();
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult.InvalidState($"Failed to record exfil failure: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Records the death of an operator, resetting exfil streak and marking as dead.
+    /// Once dead, no further events can be applied to the operator.
+    /// </summary>
+    public async Task<ServiceResult> RecordOperatorDeathAsync(OperatorId operatorId, string causeOfDeath)
+    {
+        if (string.IsNullOrWhiteSpace(causeOfDeath))
+            return ServiceResult.ValidationError("Cause of death cannot be empty");
+
+        var loadResult = await LoadOperatorAsync(operatorId);
+        if (!loadResult.IsSuccess)
+            return ServiceResult.NotFound(loadResult.ErrorMessage!);
+
+        var aggregate = loadResult.Value!;
+
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Operator is already dead");
+
+        var sequenceNumber = aggregate.CurrentSequence + 1;
+        var previousHash = aggregate.GetLastEventHash();
+
+        var deathEvent = new OperatorDiedEvent(
+            operatorId,
+            sequenceNumber,
+            causeOfDeath,
+            previousHash);
+
+        try
+        {
+            await _eventStore.AppendEventAsync(deathEvent);
+            return ServiceResult.Success();
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult.InvalidState($"Failed to record operator death: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Lists all known operator IDs.
     /// </summary>
     public async Task<ServiceResult<IReadOnlyList<OperatorId>>> ListOperatorsAsync()

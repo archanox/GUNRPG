@@ -233,4 +233,81 @@ public class OperatorAggregateTests
         // Assert
         Assert.Equal(100f, restoredAggregate.CurrentHealth); // Capped at max
     }
+
+    [Fact]
+    public void ExfilSucceeded_ShouldIncrementStreak()
+    {
+        // Arrange
+        var operatorId = OperatorId.NewId();
+        var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
+        var evt2 = new ExfilSucceededEvent(operatorId, 1, evt1.Hash);
+        var evt3 = new ExfilSucceededEvent(operatorId, 2, evt2.Hash);
+
+        // Act
+        var events = new List<OperatorEvent> { evt1, evt2, evt3 };
+        var aggregate = OperatorAggregate.FromEvents(events);
+
+        // Assert
+        Assert.Equal(2, aggregate.ExfilStreak);
+        Assert.False(aggregate.IsDead);
+    }
+
+    [Fact]
+    public void ExfilFailed_ShouldResetStreak()
+    {
+        // Arrange
+        var operatorId = OperatorId.NewId();
+        var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
+        var evt2 = new ExfilSucceededEvent(operatorId, 1, evt1.Hash);
+        var evt3 = new ExfilSucceededEvent(operatorId, 2, evt2.Hash);
+        var evt4 = new ExfilFailedEvent(operatorId, 3, "Ran out of time", evt3.Hash);
+
+        // Act
+        var events = new List<OperatorEvent> { evt1, evt2, evt3, evt4 };
+        var aggregate = OperatorAggregate.FromEvents(events);
+
+        // Assert
+        Assert.Equal(0, aggregate.ExfilStreak);
+        Assert.False(aggregate.IsDead);
+    }
+
+    [Fact]
+    public void OperatorDied_ShouldResetStreakAndMarkDead()
+    {
+        // Arrange
+        var operatorId = OperatorId.NewId();
+        var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
+        var evt2 = new ExfilSucceededEvent(operatorId, 1, evt1.Hash);
+        var evt3 = new OperatorDiedEvent(operatorId, 2, "Killed in action", evt2.Hash);
+
+        // Act
+        var events = new List<OperatorEvent> { evt1, evt2, evt3 };
+        var aggregate = OperatorAggregate.FromEvents(events);
+
+        // Assert
+        Assert.Equal(0, aggregate.ExfilStreak);
+        Assert.True(aggregate.IsDead);
+        Assert.Equal(0, aggregate.CurrentHealth);
+    }
+
+    [Fact]
+    public void ExfilStreak_AfterFailureAndSuccess_ShouldRestart()
+    {
+        // Arrange
+        var operatorId = OperatorId.NewId();
+        var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
+        var evt2 = new ExfilSucceededEvent(operatorId, 1, evt1.Hash);
+        var evt3 = new ExfilSucceededEvent(operatorId, 2, evt2.Hash);
+        var evt4 = new ExfilFailedEvent(operatorId, 3, "Failed", evt3.Hash);
+        var evt5 = new ExfilSucceededEvent(operatorId, 4, evt4.Hash);
+        var evt6 = new ExfilSucceededEvent(operatorId, 5, evt5.Hash);
+
+        // Act
+        var events = new List<OperatorEvent> { evt1, evt2, evt3, evt4, evt5, evt6 };
+        var aggregate = OperatorAggregate.FromEvents(events);
+
+        // Assert
+        Assert.Equal(2, aggregate.ExfilStreak); // Restarted after failure
+        Assert.False(aggregate.IsDead);
+    }
 }

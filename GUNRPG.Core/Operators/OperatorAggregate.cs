@@ -48,6 +48,18 @@ public sealed class OperatorAggregate
     public IReadOnlyList<string> UnlockedPerks { get; private set; } = new List<string>();
 
     /// <summary>
+    /// Current exfil streak (number of consecutive successful exfils).
+    /// Resets to 0 on operator death or explicit exfil failure.
+    /// </summary>
+    public int ExfilStreak { get; private set; }
+
+    /// <summary>
+    /// Whether this operator is currently dead.
+    /// Once dead, no further events can be applied.
+    /// </summary>
+    public bool IsDead { get; private set; }
+
+    /// <summary>
     /// Current sequence number (number of events applied).
     /// </summary>
     public long CurrentSequence => _events.Count - 1;
@@ -140,6 +152,23 @@ public sealed class OperatorAggregate
                 var perkName = perkUnlocked.GetPerkName();
                 var perks = new List<string>(UnlockedPerks) { perkName };
                 UnlockedPerks = perks;
+                break;
+
+            case ExfilSucceededEvent:
+                // Increment streak on successful exfil
+                ExfilStreak++;
+                break;
+
+            case ExfilFailedEvent:
+                // Reset streak on explicit exfil failure
+                ExfilStreak = 0;
+                break;
+
+            case OperatorDiedEvent:
+                // Mark as dead and reset streak
+                IsDead = true;
+                ExfilStreak = 0;
+                CurrentHealth = 0;
                 break;
 
             default:
