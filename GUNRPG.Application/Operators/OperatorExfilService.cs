@@ -354,9 +354,9 @@ public sealed class OperatorExfilService
     /// Once committed, this method translates the outcome into operator events.
     /// 
     /// Exfil Semantics:
-    /// - If operator died: Emit OperatorDied event (resets streak, marks IsDead)
-    /// - If operator survived and is victorious: Apply XP, emit ExfilSucceeded (increments streak)
-    /// - If operator survived but retreated/failed: Apply no XP, emit no events (or ExfilFailed if explicit failure)
+    /// - If operator died: Emit OperatorDied event (resets streak, marks IsDead, no XP awarded)
+    /// - If operator survived and is victorious: Apply XP (if any), emit ExfilSucceeded (increments streak)
+    /// - If operator survived but retreated/failed: Apply XP (if any), emit no exfil events (neutral outcome)
     /// </summary>
     public async Task<ServiceResult> ProcessCombatOutcomeAsync(CombatOutcome outcome, bool playerConfirmed = true)
     {

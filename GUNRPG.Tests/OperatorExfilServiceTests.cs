@@ -546,7 +546,7 @@ public class OperatorExfilServiceTests : IDisposable
             survived: false,
             damageTaken: 100f,
             remainingHealth: 0f,
-            xpEarned: 10,
+            xpEarned: 10, // Outcome includes XP, but death prevents it from being applied
             xpReason: "Participation",
             enemiesEliminated: 0,
             isVictory: false,
@@ -566,7 +566,7 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Equal(0, aggregate.ExfilStreak); // Streak should be reset
         
         // Should have: OperatorCreated + 2xExfilSucceeded + OperatorDied = 4 events
-        // (No XP awarded on death)
+        // (XP in outcome is not applied because operator died)
         Assert.Equal(4, aggregate.Events.Count);
     }
 
@@ -814,7 +814,7 @@ public class OperatorExfilServiceTests : IDisposable
             survived: false,
             damageTaken: 100f,
             remainingHealth: 0f,
-            xpEarned: 10,
+            xpEarned: 10, // Outcome has XP but won't be applied due to death
             xpReason: "Participation",
             enemiesEliminated: 0,
             isVictory: false,
@@ -830,7 +830,7 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.True(aggregate3.IsDead);
         Assert.Equal(0, aggregate3.CurrentHealth);
         Assert.Equal(0, aggregate3.ExfilStreak); // Reset on death
-        Assert.Equal(350, aggregate3.TotalXp); // XP is preserved even on death
+        Assert.Equal(350, aggregate3.TotalXp); // Total from previous outcomes (150 + 200); death event doesn't apply XP
         
         // Should have: previous 5 + OperatorDied = 6 events
         Assert.Equal(6, aggregate3.Events.Count);
