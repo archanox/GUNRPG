@@ -88,6 +88,9 @@ All operator events inherit from `OperatorEvent` and include:
 - **WoundsTreatedEvent** - Health restoration
 - **LoadoutChangedEvent** - Equipment changes
 - **PerkUnlockedEvent** - Skill/perk unlocks
+- **ExfilSucceededEvent** - Successful exfil completion (increments streak)
+- **ExfilFailedEvent** - Failed exfil (resets streak)
+- **OperatorDiedEvent** - Operator death (marks IsDead=true, resets streak)
 
 ### Hash Chaining
 
@@ -106,6 +109,16 @@ Event 3: Hash D (prev: C)
 ```
 
 If any event is modified, the hash chain breaks and the corruption is detected immediately on load.
+
+### Rollback on Corruption
+
+When hash chain verification fails during load:
+1. The system stops at the first corrupted event
+2. All events from that point onward are deleted from storage
+3. The operator is restored to the last valid state
+4. No attempt is made to repair or rewrite corrupted events
+
+This ensures deterministic recovery - operators always roll back to their last known-good state.
 
 ## The Boundary Contract
 
@@ -133,6 +146,28 @@ If any event is modified, the hash chain breaks and the corruption is detected i
 - ✅ Allow player confirmation before committing outcomes
 
 ## Usage Examples
+
+### Exfil Semantics
+
+#### Exfil Streak
+The `ExfilStreak` property tracks consecutive successful exfils:
+- Increments by 1 on each `ExfilSucceededEvent`
+- Resets to 0 on:
+  - `ExfilFailedEvent` (retreat, abandon mission, etc.)
+  - `OperatorDiedEvent` (operator death)
+  - Event chain rollback past the last successful exfil
+
+The streak is informational only (no gameplay effects yet) but provides foundation for future features like bonus rewards or difficulty modifiers.
+
+#### Operator Death
+Once an operator dies (`IsDead = true`):
+- All mutating operations are rejected at the service level
+- Health is set to 0
+- Exfil streak is reset to 0
+- No further events can be appended for this operator
+- The aggregate can still replay historical events for audit purposes
+
+The `IsDead` flag is derived from events - it's not persisted separately, ensuring event sourcing integrity.
 
 ### Creating an Operator (Exfil)
 ```csharp
@@ -179,6 +214,15 @@ await exfilService.ChangeLoadoutAsync(operatorId, "AK-47");
 
 // Only in exfil - unlock perk
 await exfilService.UnlockPerkAsync(operatorId, "Fast Reload");
+
+// Only in exfil - complete successful exfil (increments streak)
+await exfilService.CompleteExfilAsync(operatorId);
+
+// Only in exfil - fail exfil (resets streak)
+await exfilService.FailExfilAsync(operatorId, "Retreat");
+
+// Only in exfil - operator death (permanent, resets streak)
+await exfilService.KillOperatorAsync(operatorId, "Combat casualty");
 ```
 
 ## Data Integrity
@@ -189,7 +233,11 @@ On load, the system verifies:
 2. Each event's previous hash matches the prior event's hash
 3. Sequence numbers are consecutive with no gaps
 
-If any check fails, the load fails with a clear error indicating tampering or corruption.
+If any check fails, the system:
+1. Stops processing at the corrupted event
+2. Rolls back (deletes) all events from that point onward
+3. Returns only the valid events before the corruption
+4. The aggregate is restored to the last known-good state
 
 ### Append Constraints
 When appending events:
@@ -216,12 +264,12 @@ When appending events:
 ## Testing
 
 The implementation includes comprehensive tests:
-- `OperatorEventTests` - Event creation, hashing, chain verification
-- `OperatorAggregateTests` - Event replay, state derivation
-- `LiteDbOperatorEventStoreTests` - Persistence, integrity checks
-- `OperatorExfilServiceTests` - Service operations, validation
+- `OperatorEventTests` - Event creation, hashing, chain verification, new event types
+- `OperatorAggregateTests` - Event replay, state derivation, streak tracking, death handling, rollback
+- `LiteDbOperatorEventStoreTests` - Persistence, integrity checks, rollback behavior
+- `OperatorExfilServiceTests` - Service operations, validation, dead operator constraints
 
-All 55+ tests pass, ensuring the boundary is maintained correctly.
+All 64+ operator tests pass, ensuring the boundary is maintained correctly.
 
 ## Summary
 
