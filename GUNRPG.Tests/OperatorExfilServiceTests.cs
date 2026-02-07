@@ -742,4 +742,120 @@ public class OperatorExfilServiceTests : IDisposable
         // Should have: OperatorCreated + ExfilSucceeded = 2 events (no XpGained)
         Assert.Equal(2, aggregate.Events.Count);
     }
+
+    [Fact]
+    public async Task EndToEndWorkflow_CombatToOutcomeToExfilToPersistenceToReload()
+    {
+        // This test proves the complete workflow:
+        // Combat → Outcome → Exfil → Operator Events → Persistence → Reload
+        
+        // Step 1: Create operator (exfil-only)
+        var createResult = await _service.CreateOperatorAsync("Alpha Squad");
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!;
+
+        // Step 2: Simulate combat producing an outcome
+        var combatOutcome = new Application.Combat.CombatOutcome(
+            sessionId: Guid.NewGuid(),
+            operatorId: operatorId,
+            survived: true,
+            damageTaken: 30f,
+            remainingHealth: 70f,
+            xpEarned: 150,
+            xpReason: "Mission Victory",
+            enemiesEliminated: 3,
+            isVictory: true,
+            completedAt: DateTimeOffset.UtcNow);
+
+        // Step 3: Process outcome through exfil (the boundary)
+        var processResult = await _service.ProcessCombatOutcomeAsync(combatOutcome, playerConfirmed: true);
+        Assert.True(processResult.IsSuccess);
+
+        // Step 4: Verify events were persisted
+        var loadResult1 = await _service.LoadOperatorAsync(operatorId);
+        Assert.True(loadResult1.IsSuccess);
+        var aggregate1 = loadResult1.Value!;
+        
+        Assert.Equal(150, aggregate1.TotalXp);
+        Assert.Equal(1, aggregate1.ExfilStreak);
+        Assert.False(aggregate1.IsDead);
+
+        // Step 5: Simulate another combat (should increment streak)
+        var combatOutcome2 = new Application.Combat.CombatOutcome(
+            sessionId: Guid.NewGuid(),
+            operatorId: operatorId,
+            survived: true,
+            damageTaken: 20f,
+            remainingHealth: 80f,
+            xpEarned: 200,
+            xpReason: "Flawless Victory",
+            enemiesEliminated: 5,
+            isVictory: true,
+            completedAt: DateTimeOffset.UtcNow);
+
+        await _service.ProcessCombatOutcomeAsync(combatOutcome2, playerConfirmed: true);
+
+        // Step 6: Reload from persistence (proves persistence works)
+        var loadResult2 = await _service.LoadOperatorAsync(operatorId);
+        Assert.True(loadResult2.IsSuccess);
+        var aggregate2 = loadResult2.Value!;
+        
+        Assert.Equal(350, aggregate2.TotalXp); // 150 + 200
+        Assert.Equal(2, aggregate2.ExfilStreak); // Both exfils succeeded
+        Assert.False(aggregate2.IsDead);
+        
+        // Should have: OperatorCreated + XpGained + ExfilSucceeded + XpGained + ExfilSucceeded = 5 events
+        Assert.Equal(5, aggregate2.Events.Count);
+
+        // Step 7: Simulate a fatal combat
+        var fatalCombat = new Application.Combat.CombatOutcome(
+            sessionId: Guid.NewGuid(),
+            operatorId: operatorId,
+            survived: false,
+            damageTaken: 100f,
+            remainingHealth: 0f,
+            xpEarned: 10,
+            xpReason: "Participation",
+            enemiesEliminated: 0,
+            isVictory: false,
+            completedAt: DateTimeOffset.UtcNow);
+
+        await _service.ProcessCombatOutcomeAsync(fatalCombat, playerConfirmed: true);
+
+        // Step 8: Final reload - operator should be dead with reset streak
+        var loadResult3 = await _service.LoadOperatorAsync(operatorId);
+        Assert.True(loadResult3.IsSuccess);
+        var aggregate3 = loadResult3.Value!;
+        
+        Assert.True(aggregate3.IsDead);
+        Assert.Equal(0, aggregate3.CurrentHealth);
+        Assert.Equal(0, aggregate3.ExfilStreak); // Reset on death
+        Assert.Equal(350, aggregate3.TotalXp); // XP is preserved even on death
+        
+        // Should have: previous 5 + OperatorDied = 6 events
+        Assert.Equal(6, aggregate3.Events.Count);
+
+        // Step 9: Verify hash chain integrity on all events
+        foreach (var evt in aggregate3.Events)
+        {
+            Assert.True(evt.VerifyHash(), $"Event {evt.SequenceNumber} failed hash verification");
+        }
+
+        // Step 10: Verify dead operator cannot process new outcomes
+        var postMortemOutcome = new Application.Combat.CombatOutcome(
+            sessionId: Guid.NewGuid(),
+            operatorId: operatorId,
+            survived: true,
+            damageTaken: 0f,
+            remainingHealth: 100f,
+            xpEarned: 100,
+            xpReason: "Should fail",
+            enemiesEliminated: 1,
+            isVictory: true,
+            completedAt: DateTimeOffset.UtcNow);
+
+        var postMortemResult = await _service.ProcessCombatOutcomeAsync(postMortemOutcome, playerConfirmed: true);
+        Assert.False(postMortemResult.IsSuccess);
+        Assert.Equal(ResultStatus.InvalidState, postMortemResult.Status);
+    }
 }
