@@ -306,4 +306,186 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Single(aggregate.UnlockedPerks);
         Assert.Equal(6, aggregate.Events.Count); // 1 create + 5 operations (2xp + loadout + perk + wounds)
     }
+
+    [Fact]
+    public async Task CompleteExfilAsync_ShouldIncrementStreak()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+
+        // Act
+        await _service.CompleteExfilAsync(operatorId);
+        await _service.CompleteExfilAsync(operatorId);
+
+        // Assert
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        var aggregate = loadResult.Value!;
+        Assert.Equal(2, aggregate.ExfilStreak);
+    }
+
+    [Fact]
+    public async Task FailExfilAsync_ShouldResetStreak()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.CompleteExfilAsync(operatorId);
+        await _service.CompleteExfilAsync(operatorId);
+
+        // Act
+        var result = await _service.FailExfilAsync(operatorId, "Retreat");
+
+        // Assert
+        Assert.True(result.IsSuccess);
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        var aggregate = loadResult.Value!;
+        Assert.Equal(0, aggregate.ExfilStreak);
+    }
+
+    [Fact]
+    public async Task KillOperatorAsync_ShouldMarkDead()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.CompleteExfilAsync(operatorId);
+
+        // Act
+        var result = await _service.KillOperatorAsync(operatorId, "Combat casualty");
+
+        // Assert
+        Assert.True(result.IsSuccess);
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        var aggregate = loadResult.Value!;
+        Assert.True(aggregate.IsDead);
+        Assert.Equal(0, aggregate.CurrentHealth);
+        Assert.Equal(0, aggregate.ExfilStreak);
+    }
+
+    [Fact]
+    public async Task DeadOperator_CannotGainXp()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.KillOperatorAsync(operatorId, "Combat casualty");
+
+        // Act
+        var result = await _service.ApplyXpAsync(operatorId, 100, "Should fail");
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("dead operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task DeadOperator_CannotBeHealed()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.KillOperatorAsync(operatorId, "Combat casualty");
+
+        // Act
+        var result = await _service.TreatWoundsAsync(operatorId, 50f);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("dead operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task DeadOperator_CannotChangeLoadout()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.KillOperatorAsync(operatorId, "Combat casualty");
+
+        // Act
+        var result = await _service.ChangeLoadoutAsync(operatorId, "AK-47");
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("dead operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task DeadOperator_CannotUnlockPerks()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.KillOperatorAsync(operatorId, "Combat casualty");
+
+        // Act
+        var result = await _service.UnlockPerkAsync(operatorId, "Fast Reload");
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("dead operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task DeadOperator_CannotCompleteExfil()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.KillOperatorAsync(operatorId, "Combat casualty");
+
+        // Act
+        var result = await _service.CompleteExfilAsync(operatorId);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("dead", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task KillOperatorAsync_CannotKillAlreadyDead()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+        await _service.KillOperatorAsync(operatorId, "First death");
+
+        // Act
+        var result = await _service.KillOperatorAsync(operatorId, "Second death");
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("already dead", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task FailExfilAsync_RequiresReason()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+
+        // Act
+        var result = await _service.FailExfilAsync(operatorId, "");
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("reason", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task KillOperatorAsync_RequiresCauseOfDeath()
+    {
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+
+        // Act
+        var result = await _service.KillOperatorAsync(operatorId, "");
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Contains("cause of death", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
 }
