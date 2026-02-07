@@ -192,14 +192,14 @@ public class OperatorAggregateTests
         var operatorId = OperatorId.NewId();
         var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
 
-        // Simulate healing more than max would allow
+        // Apply healing to an operator at full health
         var evt2 = new WoundsTreatedEvent(operatorId, 1, 50f, evt1.Hash);
 
         // Act
         var events = new List<OperatorEvent> { evt1, evt2 };
         var restoredAggregate = OperatorAggregate.FromEvents(events);
 
-        // Assert
-        Assert.Equal(100f, restoredAggregate.CurrentHealth); // Capped at max
+        // Assert - Health should remain capped at max even with excess healing
+        Assert.Equal(100f, restoredAggregate.CurrentHealth);
     }
 }
