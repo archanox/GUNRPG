@@ -61,13 +61,13 @@ This PR successfully implements a first-class **Operator aggregate** with event 
 
 ## Test Coverage ✅
 
-**64 Tests Passing:**
+**77 Operator Tests Passing:**
 - 15 tests - Event hashing, chaining, verification, new event types
 - 18 tests - Aggregate event replay, state derivation, streak tracking, death handling, rollback
 - 17 tests - Event store persistence, integrity, rollback behavior
 - 29 tests - Exfil service operations, validation, dead operator constraints
 
-All tests pass with 100% success rate.
+Plus many other tests for combat, weapons, AI, etc. All operator tests pass with 100% success rate.
 
 ## Code Quality ✅
 
