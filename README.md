@@ -242,7 +242,7 @@ Explicitly out of scope:
 
 ## Technical Details
 
-- **Language**: C# (.NET 8.0)
+- **Language**: C# (.NET 10.0)
 - **Testing**: xUnit
 - **Platform**: Cross-platform (Windows, Linux, macOS)
 
