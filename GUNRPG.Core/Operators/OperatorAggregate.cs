@@ -177,9 +177,11 @@ public sealed class OperatorAggregate
 
     /// <summary>
     /// Applies damage taken during combat. This should only be called during exfil
-    /// after reviewing combat outcomes.
+    /// after reviewing combat outcomes. 
+    /// INTERNAL: This method mutates state without emitting an event.
+    /// Use with caution - prefer emitting a proper event when available.
     /// </summary>
-    public void TakeCombatDamage(float damageAmount)
+    internal void TakeCombatDamage(float damageAmount)
     {
         CurrentHealth = Math.Max(0, CurrentHealth - damageAmount);
     }

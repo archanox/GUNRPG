@@ -86,7 +86,7 @@ public sealed class OperatorExfilService
 
         var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.InvalidState(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
         var previousHash = aggregate.GetLastEventHash();
@@ -120,7 +120,7 @@ public sealed class OperatorExfilService
 
         var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.InvalidState(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
         var previousHash = aggregate.GetLastEventHash();
@@ -153,7 +153,7 @@ public sealed class OperatorExfilService
 
         var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.InvalidState(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
         var previousHash = aggregate.GetLastEventHash();
@@ -186,7 +186,7 @@ public sealed class OperatorExfilService
 
         var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.InvalidState(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
 
@@ -231,7 +231,7 @@ public sealed class OperatorExfilService
 
         var loadResult = await LoadOperatorAsync(outcome.OperatorId);
         if (!loadResult.IsSuccess)
-            return ServiceResult.InvalidState(loadResult.ErrorMessage!);
+            return MapLoadResultStatus(loadResult);
 
         // Apply XP if earned
         if (outcome.XpEarned > 0)
@@ -270,5 +270,20 @@ public sealed class OperatorExfilService
     public async Task<bool> OperatorExistsAsync(OperatorId operatorId)
     {
         return await _eventStore.OperatorExistsAsync(operatorId);
+    }
+
+    /// <summary>
+    /// Maps a ServiceResult&lt;OperatorAggregate&gt; to a ServiceResult,
+    /// preserving the original ResultStatus (NotFound/ValidationError/InvalidState).
+    /// </summary>
+    private static ServiceResult MapLoadResultStatus(ServiceResult<OperatorAggregate> loadResult)
+    {
+        return loadResult.Status switch
+        {
+            ResultStatus.NotFound => ServiceResult.NotFound(loadResult.ErrorMessage!),
+            ResultStatus.ValidationError => ServiceResult.ValidationError(loadResult.ErrorMessage!),
+            ResultStatus.InvalidState => ServiceResult.InvalidState(loadResult.ErrorMessage!),
+            _ => ServiceResult.InvalidState(loadResult.ErrorMessage!)
+        };
     }
 }

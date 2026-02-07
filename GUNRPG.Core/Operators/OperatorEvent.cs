@@ -58,6 +58,9 @@ public abstract class OperatorEvent
         string previousHash,
         DateTimeOffset? timestamp = null)
     {
+        if (operatorId.Value == Guid.Empty)
+            throw new ArgumentException("Operator ID cannot be empty", nameof(operatorId));
+        
         if (sequenceNumber < 0)
             throw new ArgumentException("Sequence number must be non-negative", nameof(sequenceNumber));
         
@@ -138,13 +141,32 @@ public sealed class OperatorCreatedEvent : OperatorEvent
             operatorId,
             sequenceNumber: 0,
             eventType: "OperatorCreated",
-            payload: JsonSerializer.Serialize(new { Name = name }),
+            payload: JsonSerializer.Serialize(new { Name = ValidateName(name) }),
             previousHash: string.Empty,
             timestamp: timestamp)
     {
     }
 
+    private static string ValidateName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Operator name cannot be empty or whitespace", nameof(name));
+        return name.Trim();
+    }
+
     public string GetName() => JsonSerializer.Deserialize<CreatedPayload>(Payload)!.Name;
+
+    /// <summary>
+    /// Rehydrates an OperatorCreatedEvent from storage.
+    /// </summary>
+    public static OperatorCreatedEvent Rehydrate(
+        OperatorId operatorId,
+        string payload,
+        DateTimeOffset timestamp)
+    {
+        var data = JsonSerializer.Deserialize<CreatedPayload>(payload)!;
+        return new OperatorCreatedEvent(operatorId, data.Name, timestamp);
+    }
 
     private record CreatedPayload(string Name);
 }
@@ -177,6 +199,20 @@ public sealed class XpGainedEvent : OperatorEvent
         return (data.XpAmount, data.Reason);
     }
 
+    /// <summary>
+    /// Rehydrates an XpGainedEvent from storage.
+    /// </summary>
+    public static XpGainedEvent Rehydrate(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string payload,
+        string previousHash,
+        DateTimeOffset timestamp)
+    {
+        var data = JsonSerializer.Deserialize<XpPayload>(payload)!;
+        return new XpGainedEvent(operatorId, sequenceNumber, data.XpAmount, data.Reason, previousHash, timestamp);
+    }
+
     private record XpPayload(long XpAmount, string Reason);
 }
 
@@ -205,6 +241,20 @@ public sealed class WoundsTreatedEvent : OperatorEvent
     {
         var data = JsonSerializer.Deserialize<WoundsPayload>(Payload)!;
         return data.HealthRestored;
+    }
+
+    /// <summary>
+    /// Rehydrates a WoundsTreatedEvent from storage.
+    /// </summary>
+    public static WoundsTreatedEvent Rehydrate(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string payload,
+        string previousHash,
+        DateTimeOffset timestamp)
+    {
+        var data = JsonSerializer.Deserialize<WoundsPayload>(payload)!;
+        return new WoundsTreatedEvent(operatorId, sequenceNumber, data.HealthRestored, previousHash, timestamp);
     }
 
     private record WoundsPayload(float HealthRestored);
@@ -237,6 +287,20 @@ public sealed class LoadoutChangedEvent : OperatorEvent
         return data.WeaponName;
     }
 
+    /// <summary>
+    /// Rehydrates a LoadoutChangedEvent from storage.
+    /// </summary>
+    public static LoadoutChangedEvent Rehydrate(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string payload,
+        string previousHash,
+        DateTimeOffset timestamp)
+    {
+        var data = JsonSerializer.Deserialize<LoadoutPayload>(payload)!;
+        return new LoadoutChangedEvent(operatorId, sequenceNumber, data.WeaponName, previousHash, timestamp);
+    }
+
     private record LoadoutPayload(string WeaponName);
 }
 
@@ -265,6 +329,20 @@ public sealed class PerkUnlockedEvent : OperatorEvent
     {
         var data = JsonSerializer.Deserialize<PerkPayload>(Payload)!;
         return data.PerkName;
+    }
+
+    /// <summary>
+    /// Rehydrates a PerkUnlockedEvent from storage.
+    /// </summary>
+    public static PerkUnlockedEvent Rehydrate(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string payload,
+        string previousHash,
+        DateTimeOffset timestamp)
+    {
+        var data = JsonSerializer.Deserialize<PerkPayload>(payload)!;
+        return new PerkUnlockedEvent(operatorId, sequenceNumber, data.PerkName, previousHash, timestamp);
     }
 
     private record PerkPayload(string PerkName);

@@ -139,7 +139,7 @@ public class LiteDbOperatorEventStoreTests : IDisposable
         // Act & Assert
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => _store.LoadEventsAsync(operatorId));
-        Assert.Contains("Hash verification failed", ex.Message);
+        Assert.Contains("Corrupted event", ex.Message);
     }
 
     [Fact]

@@ -21,8 +21,8 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
         // Create indexes for efficient queries
         _events.EnsureIndex(x => x.OperatorId);
         _events.EnsureIndex(x => x.SequenceNumber);
-        // Composite index for operator + sequence ordering
-        _events.EnsureIndex("idx_operator_sequence", "$.OperatorId, $.SequenceNumber");
+        // Create unique compound index with explicit name to enforce ordering
+        _events.EnsureIndex("idx_op_seq", x => new { x.OperatorId, x.SequenceNumber }, true);
     }
 
     public Task AppendEventAsync(OperatorEvent evt)
@@ -33,6 +33,14 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
         // Verify hash integrity before storing
         if (!evt.VerifyHash())
             throw new InvalidOperationException("Cannot append event with invalid hash");
+
+        // Validate sequence-0 (genesis event) invariants
+        if (evt.SequenceNumber == 0)
+        {
+            if (evt.PreviousHash != string.Empty)
+                throw new InvalidOperationException(
+                    "Genesis event (sequence 0) must have empty previous hash");
+        }
 
         // Check if this sequence already exists
         var existing = _events.FindOne(doc =>
@@ -91,7 +99,12 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
         {
             var evt = MapToDomainEvent(doc);
 
-            // Verify hash
+            // Verify the rehydrated event's hash matches what was stored
+            if (evt.Hash != doc.Hash)
+                throw new InvalidOperationException(
+                    $"Corrupted event detected at sequence {evt.SequenceNumber}. Stored hash doesn't match recomputed hash.");
+
+            // Verify hash computation is correct
             if (!evt.VerifyHash())
                 throw new InvalidOperationException(
                     $"Corrupted event detected at sequence {evt.SequenceNumber}. Hash verification failed.");
@@ -141,50 +154,21 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
 
     /// <summary>
     /// Maps a persistence document to a domain event.
+    /// Uses factory methods on concrete event types to reconstruct events from storage.
     /// </summary>
     private static OperatorEvent MapToDomainEvent(OperatorEventDocument doc)
     {
         var operatorId = OperatorId.FromGuid(doc.OperatorId);
 
-        // Recreate the appropriate event type
+        // Recreate the appropriate event type using their rehydration factory methods
         return doc.EventType switch
         {
-            "OperatorCreated" => ReconstructEvent<OperatorCreatedEvent>(operatorId, doc),
-            "XpGained" => ReconstructEvent<XpGainedEvent>(operatorId, doc),
-            "WoundsTreated" => ReconstructEvent<WoundsTreatedEvent>(operatorId, doc),
-            "LoadoutChanged" => ReconstructEvent<LoadoutChangedEvent>(operatorId, doc),
-            "PerkUnlocked" => ReconstructEvent<PerkUnlockedEvent>(operatorId, doc),
+            "OperatorCreated" => OperatorCreatedEvent.Rehydrate(operatorId, doc.Payload, doc.Timestamp),
+            "XpGained" => XpGainedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
+            "WoundsTreated" => WoundsTreatedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
+            "LoadoutChanged" => LoadoutChangedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
+            "PerkUnlocked" => PerkUnlockedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             _ => throw new InvalidOperationException($"Unknown event type: {doc.EventType}")
         };
-    }
-
-    /// <summary>
-    /// Reconstructs an event using reflection to call the protected base constructor.
-    /// This allows us to restore events from storage with their original hashes intact.
-    /// </summary>
-    private static TEvent ReconstructEvent<TEvent>(OperatorId operatorId, OperatorEventDocument doc)
-        where TEvent : OperatorEvent
-    {
-        // Use reflection to access the protected constructor
-        var constructor = typeof(OperatorEvent).GetConstructor(
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance,
-            null,
-            new[] { typeof(OperatorId), typeof(long), typeof(string), typeof(string), typeof(string), typeof(DateTimeOffset?) },
-            null);
-
-        if (constructor == null)
-            throw new InvalidOperationException("Could not find OperatorEvent constructor");
-
-        var evt = (TEvent)constructor.Invoke(new object?[]
-        {
-            operatorId,
-            doc.SequenceNumber,
-            doc.EventType,
-            doc.Payload,
-            doc.PreviousHash,
-            doc.Timestamp
-        });
-
-        return evt;
     }
 }
