@@ -21,8 +21,6 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
         // Create indexes for efficient queries
         _events.EnsureIndex(x => x.OperatorId);
         _events.EnsureIndex(x => x.SequenceNumber);
-        // Composite index for operator + sequence ordering
-        _events.EnsureIndex("idx_operator_sequence", "$.OperatorId, $.SequenceNumber");
     }
 
     public Task AppendEventAsync(OperatorEvent evt)
@@ -141,50 +139,53 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
 
     /// <summary>
     /// Maps a persistence document to a domain event.
+    /// Uses FormatterServices to reconstruct events without calling constructors,
+    /// preserving the original hash values from storage.
     /// </summary>
+#pragma warning disable SYSLIB0050 // FormatterServices is obsolete but needed for event reconstruction
     private static OperatorEvent MapToDomainEvent(OperatorEventDocument doc)
     {
         var operatorId = OperatorId.FromGuid(doc.OperatorId);
 
-        // Recreate the appropriate event type
-        return doc.EventType switch
+        // Determine the concrete type based on EventType
+        Type concreteType = doc.EventType switch
         {
-            "OperatorCreated" => ReconstructEvent<OperatorCreatedEvent>(operatorId, doc),
-            "XpGained" => ReconstructEvent<XpGainedEvent>(operatorId, doc),
-            "WoundsTreated" => ReconstructEvent<WoundsTreatedEvent>(operatorId, doc),
-            "LoadoutChanged" => ReconstructEvent<LoadoutChangedEvent>(operatorId, doc),
-            "PerkUnlocked" => ReconstructEvent<PerkUnlockedEvent>(operatorId, doc),
+            "OperatorCreated" => typeof(OperatorCreatedEvent),
+            "XpGained" => typeof(XpGainedEvent),
+            "WoundsTreated" => typeof(WoundsTreatedEvent),
+            "LoadoutChanged" => typeof(LoadoutChangedEvent),
+            "PerkUnlocked" => typeof(PerkUnlockedEvent),
             _ => throw new InvalidOperationException($"Unknown event type: {doc.EventType}")
         };
+
+        // Create instance without calling constructor (like serializers do)
+        var instance = System.Runtime.Serialization.FormatterServices.GetUninitializedObject(concreteType);
+        
+        // Set properties by directly accessing backing fields
+        // Note: Coalesce null strings to empty string to handle LiteDB serialization
+        SetBackingField(instance, nameof(OperatorEvent.OperatorId), operatorId);
+        SetBackingField(instance, nameof(OperatorEvent.SequenceNumber), doc.SequenceNumber);
+        SetBackingField(instance, nameof(OperatorEvent.EventType), doc.EventType ?? string.Empty);
+        SetBackingField(instance, nameof(OperatorEvent.Payload), doc.Payload ?? string.Empty);
+        SetBackingField(instance, nameof(OperatorEvent.PreviousHash), doc.PreviousHash ?? string.Empty);
+        SetBackingField(instance, nameof(OperatorEvent.Hash), doc.Hash ?? string.Empty);
+        SetBackingField(instance, nameof(OperatorEvent.Timestamp), doc.Timestamp);
+
+        return (OperatorEvent)instance;
     }
+#pragma warning restore SYSLIB0050
 
     /// <summary>
-    /// Reconstructs an event using reflection to call the protected base constructor.
-    /// This allows us to restore events from storage with their original hashes intact.
+    /// Sets a backing field for an auto-property using reflection.
     /// </summary>
-    private static TEvent ReconstructEvent<TEvent>(OperatorId operatorId, OperatorEventDocument doc)
-        where TEvent : OperatorEvent
+    private static void SetBackingField(object instance, string propertyName, object? value)
     {
-        // Use reflection to access the protected constructor
-        var constructor = typeof(OperatorEvent).GetConstructor(
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance,
-            null,
-            new[] { typeof(OperatorId), typeof(long), typeof(string), typeof(string), typeof(string), typeof(DateTimeOffset?) },
-            null);
+        var backingField = typeof(OperatorEvent).GetField($"<{propertyName}>k__BackingField",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
-        if (constructor == null)
-            throw new InvalidOperationException("Could not find OperatorEvent constructor");
+        if (backingField == null)
+            throw new InvalidOperationException($"Could not find backing field for property {propertyName}");
 
-        var evt = (TEvent)constructor.Invoke(new object?[]
-        {
-            operatorId,
-            doc.SequenceNumber,
-            doc.EventType,
-            doc.Payload,
-            doc.PreviousHash,
-            doc.Timestamp
-        });
-
-        return evt;
+        backingField.SetValue(instance, value);
     }
 }

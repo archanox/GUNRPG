@@ -304,6 +304,6 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Equal(150, aggregate.TotalXp);
         Assert.Equal("AK-47", aggregate.EquippedWeaponName);
         Assert.Single(aggregate.UnlockedPerks);
-        Assert.Equal(5, aggregate.Events.Count); // 1 create + 4 operations
+        Assert.Equal(6, aggregate.Events.Count); // 1 create + 5 operations
     }
 }
