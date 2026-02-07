@@ -387,7 +387,7 @@ public sealed class ExfilSucceededEvent : OperatorEvent
 
     /// <summary>
     /// Rehydrates an ExfilSucceededEvent from storage.
-    /// Uses the persisted payload to ensure tampering detection via hash verification.
+    /// Accepts the persisted payload to enable hash chain verification by the caller.
     /// </summary>
     public static ExfilSucceededEvent Rehydrate(
         OperatorId operatorId,
