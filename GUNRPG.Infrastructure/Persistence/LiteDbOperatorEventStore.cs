@@ -111,7 +111,7 @@ public class LiteDbOperatorEventStore : IOperatorEventStore
 /// LiteDB document for storing operator events.
 /// Uses a discriminator pattern to store different event types in the same collection.
 /// </summary>
-internal class OperatorEventDocument
+public class OperatorEventDocument
 {
     public Guid Id { get; set; }
     public Guid OperatorId { get; set; }
@@ -119,7 +119,8 @@ internal class OperatorEventDocument
     public string EventType { get; set; } = string.Empty;
     public string? PreviousHash { get; set; }
     public string Hash { get; set; } = string.Empty;
-    public DateTimeOffset Timestamp { get; set; }
+    // Store timestamp as ISO string to preserve precision
+    public string TimestampUtc { get; set; } = string.Empty;
     
     // Payload fields (union of all event types)
     public string? Name { get; set; }
@@ -140,7 +141,7 @@ internal class OperatorEventDocument
             EventType = @event.EventType,
             PreviousHash = @event.PreviousHash,
             Hash = @event.Hash,
-            Timestamp = @event.Timestamp
+            TimestampUtc = @event.Timestamp.ToString("O")
         };
 
         switch (@event)
@@ -171,6 +172,9 @@ internal class OperatorEventDocument
 
     public OperatorEvent ToEvent()
     {
+        // Parse timestamp from ISO string to preserve precision
+        var timestamp = DateTimeOffset.ParseExact(TimestampUtc, "O", null);
+        
         return EventType switch
         {
             nameof(OperatorCreated) => new OperatorCreated
@@ -181,7 +185,7 @@ internal class OperatorEventDocument
                 SequenceNumber = SequenceNumber,
                 PreviousHash = PreviousHash,
                 Hash = Hash,
-                Timestamp = Timestamp
+                Timestamp = timestamp
             },
             nameof(ExfilSucceeded) => new ExfilSucceeded
             {
@@ -192,7 +196,7 @@ internal class OperatorEventDocument
                 SequenceNumber = SequenceNumber,
                 PreviousHash = PreviousHash,
                 Hash = Hash,
-                Timestamp = Timestamp
+                Timestamp = timestamp
             },
             nameof(ExfilFailed) => new ExfilFailed
             {
@@ -203,7 +207,7 @@ internal class OperatorEventDocument
                 SequenceNumber = SequenceNumber,
                 PreviousHash = PreviousHash,
                 Hash = Hash,
-                Timestamp = Timestamp
+                Timestamp = timestamp
             },
             nameof(OperatorDied) => new OperatorDied
             {
@@ -214,7 +218,7 @@ internal class OperatorEventDocument
                 SequenceNumber = SequenceNumber,
                 PreviousHash = PreviousHash,
                 Hash = Hash,
-                Timestamp = Timestamp
+                Timestamp = timestamp
             },
             _ => throw new InvalidOperationException($"Unknown event type: {EventType}")
         };

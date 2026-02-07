@@ -17,7 +17,14 @@ public class LiteDbOperatorEventStoreTests : IDisposable
     public LiteDbOperatorEventStoreTests()
     {
         _dbPath = Path.Combine(Path.GetTempPath(), $"test_operator_events_{Guid.NewGuid()}.db");
-        _database = new LiteDatabase(_dbPath);
+        
+        // Configure mapper for LiteDB to properly handle OperatorEventDocument
+        var mapper = new BsonMapper();
+        mapper.EnumAsInteger = false;
+        mapper.Entity<OperatorEventDocument>()
+            .Id(x => x.Id);
+        
+        _database = new LiteDatabase(_dbPath, mapper);
         _store = new LiteDbOperatorEventStore(_database);
     }
 

@@ -19,7 +19,14 @@ public class OperatorExfilServiceTests : IDisposable
     public OperatorExfilServiceTests()
     {
         _dbPath = Path.Combine(Path.GetTempPath(), $"test_exfil_service_{Guid.NewGuid()}.db");
-        _database = new LiteDatabase(_dbPath);
+        
+        // Configure mapper for LiteDB to properly handle OperatorEventDocument
+        var mapper = new BsonMapper();
+        mapper.EnumAsInteger = false;
+        mapper.Entity<OperatorEventDocument>()
+            .Id(x => x.Id);
+        
+        _database = new LiteDatabase(_dbPath, mapper);
         _eventStore = new LiteDbOperatorEventStore(_database);
         _service = new OperatorExfilService(_eventStore);
     }

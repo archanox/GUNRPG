@@ -99,7 +99,7 @@ public static class InfrastructureServiceExtensions
     }
 
     /// <summary>
-    /// Configures LiteDB mapper for snapshot types.
+    /// Configures LiteDB mapper for snapshot types and event documents.
     /// Ensures proper serialization of enums and nested objects.
     /// </summary>
     private static void ConfigureLiteDbMapper(BsonMapper mapper)
@@ -118,6 +118,10 @@ public static class InfrastructureServiceExtensions
         
         // Use Id property as the document key
         mapper.Entity<CombatSessionSnapshot>()
+            .Id(x => x.Id);
+        
+        // Configure operator event document with Id as key
+        mapper.Entity<OperatorEventDocument>()
             .Id(x => x.Id);
     }
 }
