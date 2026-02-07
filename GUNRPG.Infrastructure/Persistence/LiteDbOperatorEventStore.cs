@@ -91,7 +91,7 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             .OrderBy(doc => doc.SequenceNumber)
             .ToList();
 
-        // Map to domain events and verify chain
+        // Map to domain events and verify chain, with automatic rollback on corruption
         var events = new List<OperatorEvent>();
         OperatorEvent? previousEvent = null;
 
@@ -101,18 +101,27 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
 
             // Verify the rehydrated event's hash matches what was stored
             if (evt.Hash != doc.Hash)
-                throw new InvalidOperationException(
-                    $"Corrupted event detected at sequence {evt.SequenceNumber}. Stored hash doesn't match recomputed hash.");
+            {
+                // Corruption detected - rollback to last valid event
+                RollbackInvalidEvents(operatorId, doc.SequenceNumber);
+                break;
+            }
 
             // Verify hash computation is correct
             if (!evt.VerifyHash())
-                throw new InvalidOperationException(
-                    $"Corrupted event detected at sequence {evt.SequenceNumber}. Hash verification failed.");
+            {
+                // Corruption detected - rollback to last valid event
+                RollbackInvalidEvents(operatorId, doc.SequenceNumber);
+                break;
+            }
 
             // Verify chain
             if (!evt.VerifyChain(previousEvent))
-                throw new InvalidOperationException(
-                    $"Event chain broken at sequence {evt.SequenceNumber}. Chain verification failed.");
+            {
+                // Chain broken - rollback to last valid event
+                RollbackInvalidEvents(operatorId, doc.SequenceNumber);
+                break;
+            }
 
             events.Add(evt);
             previousEvent = evt;
@@ -120,6 +129,18 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
 
         IReadOnlyList<OperatorEvent> result = events;
         return Task.FromResult(result);
+    }
+
+    /// <summary>
+    /// Rolls back (deletes) all events at or after the specified sequence number.
+    /// This is called when hash chain verification fails to discard corrupted events.
+    /// </summary>
+    private void RollbackInvalidEvents(OperatorId operatorId, long fromSequence)
+    {
+        // Delete all events from this sequence onwards
+        _events.DeleteMany(doc =>
+            doc.OperatorId == operatorId.Value &&
+            doc.SequenceNumber >= fromSequence);
     }
 
     public Task<bool> OperatorExistsAsync(OperatorId operatorId)
@@ -168,6 +189,9 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             "WoundsTreated" => WoundsTreatedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "LoadoutChanged" => LoadoutChangedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "PerkUnlocked" => PerkUnlockedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
+            "ExfilSucceeded" => ExfilSucceededEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.PreviousHash, doc.Timestamp),
+            "ExfilFailed" => ExfilFailedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
+            "OperatorDied" => OperatorDiedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             _ => throw new InvalidOperationException($"Unknown event type: {doc.EventType}")
         };
     }

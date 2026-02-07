@@ -89,6 +89,11 @@ public sealed class OperatorExfilService
             return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
+
+        // Dead operators cannot gain XP
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Cannot apply XP to dead operator");
+
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;
 
@@ -123,6 +128,11 @@ public sealed class OperatorExfilService
             return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
+
+        // Dead operators cannot be healed
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Cannot treat wounds on dead operator");
+
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;
 
@@ -156,6 +166,11 @@ public sealed class OperatorExfilService
             return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
+
+        // Dead operators cannot change loadout
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Cannot change loadout for dead operator");
+
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;
 
@@ -190,6 +205,10 @@ public sealed class OperatorExfilService
 
         var aggregate = loadResult.Value!;
 
+        // Dead operators cannot have perks unlocked
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Cannot unlock perk for dead operator");
+
         // Check if perk already unlocked
         if (aggregate.UnlockedPerks.Contains(perkName))
             return ServiceResult.ValidationError($"Perk '{perkName}' already unlocked");
@@ -211,6 +230,119 @@ public sealed class OperatorExfilService
         catch (Exception ex)
         {
             return ServiceResult.InvalidState($"Failed to unlock perk: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Marks an exfil as successful, incrementing the operator's exfil streak.
+    /// This is the primary way to record successful mission completion.
+    /// </summary>
+    public async Task<ServiceResult> CompleteExfilAsync(OperatorId operatorId)
+    {
+        var loadResult = await LoadOperatorAsync(operatorId);
+        if (!loadResult.IsSuccess)
+            return MapLoadResultStatus(loadResult);
+
+        var aggregate = loadResult.Value!;
+
+        // Dead operators cannot complete exfil
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Dead operators cannot complete exfil");
+
+        var previousHash = aggregate.GetLastEventHash();
+        var sequenceNumber = aggregate.CurrentSequence + 1;
+
+        var exfilEvent = new ExfilSucceededEvent(
+            operatorId,
+            sequenceNumber,
+            previousHash);
+
+        try
+        {
+            await _eventStore.AppendEventAsync(exfilEvent);
+            return ServiceResult.Success();
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult.InvalidState($"Failed to complete exfil: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Marks an exfil as failed, resetting the operator's exfil streak.
+    /// Used when operator retreats, abandons mission, or fails to extract.
+    /// </summary>
+    public async Task<ServiceResult> FailExfilAsync(OperatorId operatorId, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            return ServiceResult.ValidationError("Exfil failure reason cannot be empty");
+
+        var loadResult = await LoadOperatorAsync(operatorId);
+        if (!loadResult.IsSuccess)
+            return MapLoadResultStatus(loadResult);
+
+        var aggregate = loadResult.Value!;
+
+        // Dead operators don't need exfil failure recorded (death event already resets streak)
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Dead operators cannot fail exfil - already dead");
+
+        var previousHash = aggregate.GetLastEventHash();
+        var sequenceNumber = aggregate.CurrentSequence + 1;
+
+        var exfilEvent = new ExfilFailedEvent(
+            operatorId,
+            sequenceNumber,
+            reason,
+            previousHash);
+
+        try
+        {
+            await _eventStore.AppendEventAsync(exfilEvent);
+            return ServiceResult.Success();
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult.InvalidState($"Failed to record exfil failure: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Marks an operator as dead. This is permanent and resets the exfil streak.
+    /// Once dead, no further state changes are allowed for this operator.
+    /// </summary>
+    public async Task<ServiceResult> KillOperatorAsync(OperatorId operatorId, string causeOfDeath)
+    {
+        if (string.IsNullOrWhiteSpace(causeOfDeath))
+            return ServiceResult.ValidationError("Cause of death cannot be empty");
+
+        var loadResult = await LoadOperatorAsync(operatorId);
+        if (!loadResult.IsSuccess)
+            return MapLoadResultStatus(loadResult);
+
+        var aggregate = loadResult.Value!;
+
+        // Cannot kill an already-dead operator
+        if (aggregate.IsDead)
+            return ServiceResult.InvalidState("Operator is already dead");
+
+        var previousHash = aggregate.GetLastEventHash();
+        var sequenceNumber = aggregate.CurrentSequence + 1;
+
+        var deathEvent = new OperatorDiedEvent(
+            operatorId,
+            sequenceNumber,
+            causeOfDeath,
+            previousHash);
+
+        try
+        {
+            await _eventStore.AppendEventAsync(deathEvent);
+            return ServiceResult.Success();
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult.InvalidState($"Failed to record operator death: {ex.Message}");
         }
     }
 
