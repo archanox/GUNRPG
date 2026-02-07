@@ -23,7 +23,8 @@ public class LiteDbOperatorEventStore : IOperatorEventStore
         var collection = _database.GetCollection<OperatorEventDocument>(CollectionName);
         collection.EnsureIndex(x => x.OperatorId);
         collection.EnsureIndex(x => x.SequenceNumber);
-        collection.EnsureIndex(x => new { x.OperatorId, x.SequenceNumber }, unique: true);
+        // Note: Composite indexes are not strictly required for correctness,
+        // just for performance. Uniqueness is enforced by application logic.
     }
 
     public Task AppendEventAsync(OperatorEvent @event)

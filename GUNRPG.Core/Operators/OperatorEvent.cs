@@ -34,7 +34,7 @@ public abstract class OperatorEvent
     /// <summary>
     /// SHA256 hash of this event's content.
     /// </summary>
-    public string Hash { get; init; }
+    public string Hash { get; set; }
 
     /// <summary>
     /// Timestamp when this event was created.
@@ -47,19 +47,20 @@ public abstract class OperatorEvent
         SequenceNumber = sequenceNumber;
         PreviousHash = previousHash;
         Timestamp = DateTimeOffset.UtcNow;
-        Hash = ComputeHash();
+        Hash = string.Empty; // Will be computed by derived class
     }
 
     // Parameterless constructor for deserialization
     protected OperatorEvent()
     {
-        Hash = string.Empty;
+        Hash = string.Empty; // Will be set by init
     }
 
     /// <summary>
     /// Computes the SHA256 hash of this event's content.
+    /// Must be called by derived classes after all properties are set.
     /// </summary>
-    private string ComputeHash()
+    protected string ComputeHash()
     {
         var content = GetHashContent();
         using var sha256 = SHA256.Create();
@@ -104,6 +105,7 @@ public class OperatorCreated : OperatorEvent
     {
         Name = name;
         StartingExfilStreak = 0;
+        Hash = ComputeHash(); // Compute after all properties are set
     }
 
     // Parameterless constructor for deserialization
@@ -134,6 +136,7 @@ public class ExfilSucceeded : OperatorEvent
         CombatSessionId = combatSessionId;
         ExperienceGained = experienceGained;
         NewExfilStreak = newExfilStreak;
+        Hash = ComputeHash(); // Compute after all properties are set
     }
 
     // Parameterless constructor for deserialization
@@ -163,6 +166,7 @@ public class ExfilFailed : OperatorEvent
         CombatSessionId = combatSessionId;
         Reason = reason;
         NewExfilStreak = newExfilStreak;
+        Hash = ComputeHash(); // Compute after all properties are set
     }
 
     // Parameterless constructor for deserialization
@@ -193,6 +197,7 @@ public class OperatorDied : OperatorEvent
         CombatSessionId = combatSessionId;
         CauseOfDeath = causeOfDeath;
         NewExfilStreak = newExfilStreak;
+        Hash = ComputeHash(); // Compute after all properties are set
     }
 
     // Parameterless constructor for deserialization
