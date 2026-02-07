@@ -58,7 +58,7 @@ public abstract class OperatorEvent
         string previousHash,
         DateTimeOffset? timestamp = null)
     {
-        if (operatorId.Value == Guid.Empty)
+        if (operatorId.IsEmpty)
             throw new ArgumentException("Operator ID cannot be empty", nameof(operatorId));
         
         if (sequenceNumber < 0)
