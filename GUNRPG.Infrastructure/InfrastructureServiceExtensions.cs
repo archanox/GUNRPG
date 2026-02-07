@@ -1,3 +1,4 @@
+using GUNRPG.Application.Operators;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Infrastructure.Persistence;
 using LiteDB;
@@ -80,7 +81,27 @@ public static class InfrastructureServiceExtensions
             });
 
             services.AddSingleton<ICombatSessionStore, LiteDbCombatSessionStore>();
+            services.AddSingleton<IOperatorEventStore, LiteDbOperatorEventStore>();
         }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the operator event store for event-sourced operator management.
+    /// Uses the same LiteDB instance as combat session store.
+    /// </summary>
+    public static IServiceCollection AddOperatorEventStore(
+        this IServiceCollection services)
+    {
+        // Event store requires LiteDatabase to already be registered
+        // This is handled by AddCombatSessionStore
+        // Just register the interface -> implementation mapping
+        services.AddSingleton<IOperatorEventStore>(sp =>
+        {
+            var database = sp.GetRequiredService<LiteDatabase>();
+            return new LiteDbOperatorEventStore(database);
+        });
 
         return services;
     }
