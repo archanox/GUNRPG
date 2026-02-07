@@ -48,6 +48,18 @@ public sealed class OperatorAggregate
     public IReadOnlyList<string> UnlockedPerks { get; private set; } = new List<string>();
 
     /// <summary>
+    /// Number of consecutive successful exfils.
+    /// Increments on ExfilSucceeded, resets on ExfilFailed, OperatorDied, or rollback.
+    /// </summary>
+    public int ExfilStreak { get; private set; }
+
+    /// <summary>
+    /// Whether this operator is dead.
+    /// Once dead, no further state changes are allowed (enforced at service level).
+    /// </summary>
+    public bool IsDead { get; private set; }
+
+    /// <summary>
     /// Current sequence number (number of events applied).
     /// </summary>
     public long CurrentSequence => _events.Count - 1;
@@ -70,10 +82,11 @@ public sealed class OperatorAggregate
     /// <summary>
     /// Reconstitutes an operator aggregate by replaying events from the event store.
     /// Verifies hash chain integrity during replay.
+    /// If verification fails, rolls back to the last valid event.
     /// </summary>
     /// <param name="events">Ordered events from the event store</param>
     /// <returns>Reconstituted aggregate</returns>
-    /// <exception cref="InvalidOperationException">If event chain is invalid or corrupted</exception>
+    /// <exception cref="InvalidOperationException">If no valid events exist</exception>
     public static OperatorAggregate FromEvents(IEnumerable<OperatorEvent> events)
     {
         var eventList = events.ToList();
@@ -81,24 +94,34 @@ public sealed class OperatorAggregate
             throw new InvalidOperationException("Cannot create aggregate from empty event list");
 
         var aggregate = new OperatorAggregate();
+        var validEvents = new List<OperatorEvent>();
 
         OperatorEvent? previousEvent = null;
         foreach (var evt in eventList)
         {
             // Verify hash integrity
             if (!evt.VerifyHash())
-                throw new InvalidOperationException(
-                    $"Event hash verification failed at sequence {evt.SequenceNumber}. Possible tampering detected.");
+            {
+                // Hash verification failed - stop here and use only valid events up to this point
+                break;
+            }
 
             // Verify chain integrity
             if (!evt.VerifyChain(previousEvent))
-                throw new InvalidOperationException(
-                    $"Event chain broken at sequence {evt.SequenceNumber}. Expected sequence {(previousEvent?.SequenceNumber + 1 ?? 0)}");
+            {
+                // Chain broken - stop here and use only valid events up to this point
+                break;
+            }
 
-            // Apply the event
+            // Event is valid - apply it
+            validEvents.Add(evt);
             aggregate.ApplyEvent(evt, isNew: false);
             previousEvent = evt;
         }
+
+        // Must have at least one valid event
+        if (validEvents.Count == 0)
+            throw new InvalidOperationException("No valid events found - first event failed verification");
 
         return aggregate;
     }
@@ -120,6 +143,8 @@ public sealed class OperatorAggregate
                 CurrentHealth = MaxHealth;
                 EquippedWeaponName = string.Empty;
                 UnlockedPerks = new List<string>();
+                ExfilStreak = 0;
+                IsDead = false;
                 break;
 
             case XpGainedEvent xpGained:
@@ -140,6 +165,20 @@ public sealed class OperatorAggregate
                 var perkName = perkUnlocked.GetPerkName();
                 var perks = new List<string>(UnlockedPerks) { perkName };
                 UnlockedPerks = perks;
+                break;
+
+            case ExfilSucceededEvent:
+                ExfilStreak++;
+                break;
+
+            case ExfilFailedEvent:
+                ExfilStreak = 0;
+                break;
+
+            case OperatorDiedEvent:
+                IsDead = true;
+                CurrentHealth = 0;
+                ExfilStreak = 0;
                 break;
 
             default:
