@@ -489,3 +489,109 @@ public sealed class OperatorDiedEvent : OperatorEvent
 
     private record OperatorDiedPayload(string CauseOfDeath);
 }
+
+/// <summary>
+/// Event emitted when an operator starts an infil (deploys to the field).
+/// Transitions from Base mode to Infil mode, locks loadout, and starts the 30-minute timer.
+/// </summary>
+public sealed class InfilStartedEvent : OperatorEvent
+{
+    public InfilStartedEvent(
+        OperatorId operatorId,
+        long sequenceNumber,
+        Guid sessionId,
+        string lockedLoadout,
+        DateTimeOffset infilStartTime,
+        string previousHash,
+        DateTimeOffset? timestamp = null)
+        : base(
+            operatorId,
+            sequenceNumber,
+            eventType: "InfilStarted",
+            payload: JsonSerializer.Serialize(new 
+            { 
+                SessionId = sessionId, 
+                LockedLoadout = lockedLoadout,
+                InfilStartTime = infilStartTime
+            }),
+            previousHash: previousHash,
+            timestamp: timestamp)
+    {
+    }
+
+    public (Guid SessionId, string LockedLoadout, DateTimeOffset InfilStartTime) GetPayload()
+    {
+        var data = JsonSerializer.Deserialize<InfilStartedPayload>(Payload)!;
+        return (data.SessionId, data.LockedLoadout, data.InfilStartTime);
+    }
+
+    /// <summary>
+    /// Rehydrates an InfilStartedEvent from storage.
+    /// </summary>
+    public static InfilStartedEvent Rehydrate(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string payload,
+        string previousHash,
+        DateTimeOffset timestamp)
+    {
+        var data = JsonSerializer.Deserialize<InfilStartedPayload>(payload)!;
+        return new InfilStartedEvent(
+            operatorId, 
+            sequenceNumber, 
+            data.SessionId, 
+            data.LockedLoadout,
+            data.InfilStartTime,
+            previousHash, 
+            timestamp);
+    }
+
+    private record InfilStartedPayload(Guid SessionId, string LockedLoadout, DateTimeOffset InfilStartTime);
+}
+
+/// <summary>
+/// Event emitted when an operator ends an infil (returns to base).
+/// Transitions from Infil mode to Base mode.
+/// Records whether the infil was successful or failed, and the reason.
+/// </summary>
+public sealed class InfilEndedEvent : OperatorEvent
+{
+    public InfilEndedEvent(
+        OperatorId operatorId,
+        long sequenceNumber,
+        bool wasSuccessful,
+        string reason,
+        string previousHash,
+        DateTimeOffset? timestamp = null)
+        : base(
+            operatorId,
+            sequenceNumber,
+            eventType: "InfilEnded",
+            payload: JsonSerializer.Serialize(new { WasSuccessful = wasSuccessful, Reason = reason }),
+            previousHash: previousHash,
+            timestamp: timestamp)
+    {
+    }
+
+    public (bool WasSuccessful, string Reason) GetPayload()
+    {
+        var data = JsonSerializer.Deserialize<InfilEndedPayload>(Payload)!;
+        return (data.WasSuccessful, data.Reason);
+    }
+
+    /// <summary>
+    /// Rehydrates an InfilEndedEvent from storage.
+    /// </summary>
+    public static InfilEndedEvent Rehydrate(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string payload,
+        string previousHash,
+        DateTimeOffset timestamp)
+    {
+        var data = JsonSerializer.Deserialize<InfilEndedPayload>(payload)!;
+        return new InfilEndedEvent(operatorId, sequenceNumber, data.WasSuccessful, data.Reason, previousHash, timestamp);
+    }
+
+    private record InfilEndedPayload(bool WasSuccessful, string Reason);
+}

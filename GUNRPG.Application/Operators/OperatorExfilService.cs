@@ -94,6 +94,10 @@ public sealed class OperatorExfilService
         if (aggregate.IsDead)
             return ServiceResult.InvalidState("Cannot apply XP to dead operator");
 
+        // Must be in Base mode
+        if (aggregate.CurrentMode != OperatorMode.Base)
+            return ServiceResult.InvalidState("Cannot apply XP while in Infil mode");
+
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;
 
@@ -133,6 +137,10 @@ public sealed class OperatorExfilService
         if (aggregate.IsDead)
             return ServiceResult.InvalidState("Cannot treat wounds on dead operator");
 
+        // Must be in Base mode
+        if (aggregate.CurrentMode != OperatorMode.Base)
+            return ServiceResult.InvalidState("Cannot treat wounds while in Infil mode");
+
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;
 
@@ -170,6 +178,10 @@ public sealed class OperatorExfilService
         // Dead operators cannot change loadout
         if (aggregate.IsDead)
             return ServiceResult.InvalidState("Cannot change loadout for dead operator");
+
+        // Must be in Base mode - loadout is locked during infil
+        if (aggregate.CurrentMode != OperatorMode.Base)
+            return ServiceResult.InvalidState("Cannot change loadout while in Infil mode - loadout is locked");
 
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;
@@ -209,6 +221,10 @@ public sealed class OperatorExfilService
         if (aggregate.IsDead)
             return ServiceResult.InvalidState("Cannot unlock perk for dead operator");
 
+        // Must be in Base mode
+        if (aggregate.CurrentMode != OperatorMode.Base)
+            return ServiceResult.InvalidState("Cannot unlock perk while in Infil mode");
+
         // Check if perk already unlocked
         if (aggregate.UnlockedPerks.Contains(perkName))
             return ServiceResult.ValidationError($"Perk '{perkName}' already unlocked");
@@ -236,6 +252,8 @@ public sealed class OperatorExfilService
     /// <summary>
     /// Marks an exfil as successful, incrementing the operator's exfil streak.
     /// This is the primary way to record successful mission completion.
+    /// DEPRECATED: Use ProcessCombatOutcomeAsync instead for combat-based exfil.
+    /// This method is kept for backward compatibility and non-combat scenarios.
     /// </summary>
     public async Task<ServiceResult> CompleteExfilAsync(OperatorId operatorId)
     {
@@ -248,6 +266,10 @@ public sealed class OperatorExfilService
         // Dead operators cannot complete exfil
         if (aggregate.IsDead)
             return ServiceResult.InvalidState("Dead operators cannot complete exfil");
+
+        // Must be in Infil mode to complete exfil
+        if (aggregate.CurrentMode != OperatorMode.Infil)
+            return ServiceResult.InvalidState("Cannot complete exfil when not in Infil mode");
 
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;
@@ -308,6 +330,129 @@ public sealed class OperatorExfilService
     }
 
     /// <summary>
+    /// Starts an infil operation, transitioning the operator from Base mode to Infil mode.
+    /// Locks the operator's loadout and starts the 30-minute timer.
+    /// Returns the session ID to associate with the combat session.
+    /// </summary>
+    public async Task<ServiceResult<Guid>> StartInfilAsync(OperatorId operatorId)
+    {
+        var loadResult = await LoadOperatorAsync(operatorId);
+        if (!loadResult.IsSuccess)
+            return ServiceResult<Guid>.FromResult(MapLoadResultStatus(loadResult));
+
+        var aggregate = loadResult.Value!;
+
+        // Dead operators cannot start infil
+        if (aggregate.IsDead)
+            return ServiceResult<Guid>.InvalidState("Dead operators cannot start infil");
+
+        // Must be in Base mode to start infil
+        if (aggregate.CurrentMode != OperatorMode.Base)
+            return ServiceResult<Guid>.InvalidState("Operator is already in Infil mode");
+
+        var sessionId = Guid.NewGuid();
+        var infilStartTime = DateTimeOffset.UtcNow;
+        var lockedLoadout = aggregate.EquippedWeaponName; // Lock current loadout
+
+        var previousHash = aggregate.GetLastEventHash();
+        var sequenceNumber = aggregate.CurrentSequence + 1;
+
+        var infilEvent = new InfilStartedEvent(
+            operatorId,
+            sequenceNumber,
+            sessionId,
+            lockedLoadout,
+            infilStartTime,
+            previousHash);
+
+        try
+        {
+            await _eventStore.AppendEventAsync(infilEvent);
+            return ServiceResult<Guid>.Success(sessionId);
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<Guid>.InvalidState($"Failed to start infil: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Fails an infil operation due to timeout or other reasons.
+    /// Clears the locked loadout (gear loss), resets streak, and returns operator to Base mode.
+    /// </summary>
+    public async Task<ServiceResult> FailInfilAsync(OperatorId operatorId, string reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            return ServiceResult.ValidationError("Infil failure reason cannot be empty");
+
+        var loadResult = await LoadOperatorAsync(operatorId);
+        if (!loadResult.IsSuccess)
+            return MapLoadResultStatus(loadResult);
+
+        var aggregate = loadResult.Value!;
+
+        // Must be in Infil mode to fail infil
+        if (aggregate.CurrentMode != OperatorMode.Infil)
+            return ServiceResult.InvalidState("Cannot fail infil when not in Infil mode");
+
+        var previousHash = aggregate.GetLastEventHash();
+        var sequenceNumber = aggregate.CurrentSequence + 1;
+
+        // Build events to append atomically: ExfilFailed + InfilEnded
+        var eventsToAppend = new List<OperatorEvent>();
+
+        var exfilFailedEvent = new ExfilFailedEvent(
+            operatorId,
+            sequenceNumber,
+            reason,
+            previousHash);
+        eventsToAppend.Add(exfilFailedEvent);
+
+        var infilEndedEvent = new InfilEndedEvent(
+            operatorId,
+            sequenceNumber + 1,
+            wasSuccessful: false,
+            reason: reason,
+            previousHash: exfilFailedEvent.Hash);
+        eventsToAppend.Add(infilEndedEvent);
+
+        try
+        {
+            await _eventStore.AppendEventsAsync(eventsToAppend);
+            return ServiceResult.Success();
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult.InvalidState($"Failed to fail infil: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Checks if the operator's infil has timed out (exceeded 30 minutes).
+    /// Returns true if the operator is in infil mode and the timer has expired.
+    /// </summary>
+    public async Task<ServiceResult<bool>> IsInfilTimedOutAsync(OperatorId operatorId)
+    {
+        var loadResult = await LoadOperatorAsync(operatorId);
+        if (!loadResult.IsSuccess)
+            return ServiceResult<bool>.FromResult(MapLoadResultStatus(loadResult));
+
+        var aggregate = loadResult.Value!;
+
+        // Not in infil mode, so can't be timed out
+        if (aggregate.CurrentMode != OperatorMode.Infil)
+            return ServiceResult<bool>.Success(false);
+
+        if (!aggregate.InfilStartTime.HasValue)
+            return ServiceResult<bool>.Success(false);
+
+        var elapsed = DateTimeOffset.UtcNow - aggregate.InfilStartTime.Value;
+        var isTimedOut = elapsed.TotalMinutes >= 30;
+
+        return ServiceResult<bool>.Success(isTimedOut);
+    }
+
+    /// <summary>
     /// Marks an operator as dead. This is permanent and resets the exfil streak.
     /// Once dead, no further state changes are allowed for this operator.
     /// </summary>
@@ -354,9 +499,11 @@ public sealed class OperatorExfilService
     /// Once committed, this method translates the outcome into operator events atomically.
     /// 
     /// Exfil Semantics:
-    /// - If operator died: Emit OperatorDied event (resets streak, marks IsDead, no XP awarded)
-    /// - If operator survived and is victorious: Apply XP (if any), emit ExfilSucceeded (increments streak)
+    /// - Operator must be in Infil mode to process combat outcome
+    /// - If operator died: Emit OperatorDied + InfilEnded (failure) events (resets streak, marks IsDead, no XP awarded)
+    /// - If operator survived and is victorious: Apply XP (if any), emit ExfilSucceeded + InfilEnded (success) (increments streak)
     /// - If operator survived but retreated/failed: Apply XP (if any), emit no exfil events (neutral outcome)
+    /// - If infil timer expired (30+ minutes), automatically fail the infil
     /// </summary>
     public async Task<ServiceResult> ProcessCombatOutcomeAsync(CombatOutcome outcome, bool playerConfirmed = true)
     {
@@ -376,12 +523,27 @@ public sealed class OperatorExfilService
         if (aggregate.IsDead)
             return ServiceResult.InvalidState("Cannot process combat outcome for dead operator");
 
+        // Must be in Infil mode to process combat outcome
+        if (aggregate.CurrentMode != OperatorMode.Infil)
+            return ServiceResult.InvalidState("Cannot process combat outcome when not in Infil mode");
+
+        // Check if infil timer has expired (30 minutes)
+        if (aggregate.InfilStartTime.HasValue)
+        {
+            var elapsed = DateTimeOffset.UtcNow - aggregate.InfilStartTime.Value;
+            if (elapsed.TotalMinutes >= 30)
+            {
+                // Timer expired - automatically fail the infil
+                return await FailInfilAsync(outcome.OperatorId, "Infil timer expired (30 minutes)");
+            }
+        }
+
         // Build event list to append atomically
         var eventsToAppend = new List<OperatorEvent>();
         var previousHash = aggregate.GetLastEventHash();
         var nextSequence = aggregate.CurrentSequence + 1;
 
-        // If operator died in combat, emit death event only
+        // If operator died in combat, emit death event + infil ended (failure)
         if (outcome.OperatorDied)
         {
             var deathEvent = new OperatorDiedEvent(
@@ -391,6 +553,18 @@ public sealed class OperatorExfilService
                 previousHash);
             
             eventsToAppend.Add(deathEvent);
+            previousHash = deathEvent.Hash;
+            nextSequence++;
+
+            // End infil as failure (death automatically transitions to Base mode in aggregate)
+            var infilEndedEvent = new InfilEndedEvent(
+                outcome.OperatorId,
+                nextSequence,
+                wasSuccessful: false,
+                reason: "Operator died in combat",
+                previousHash: previousHash);
+            
+            eventsToAppend.Add(infilEndedEvent);
         }
         else
         {
@@ -412,7 +586,7 @@ public sealed class OperatorExfilService
                 nextSequence++;
             }
 
-            // If operator achieved victory, emit exfil success event
+            // If operator achieved victory, emit exfil success event and end infil successfully
             if (outcome.IsVictory)
             {
                 var exfilEvent = new ExfilSucceededEvent(
@@ -421,6 +595,18 @@ public sealed class OperatorExfilService
                     previousHash);
                 
                 eventsToAppend.Add(exfilEvent);
+                previousHash = exfilEvent.Hash;
+                nextSequence++;
+
+                // End infil as success
+                var infilEndedEvent = new InfilEndedEvent(
+                    outcome.OperatorId,
+                    nextSequence,
+                    wasSuccessful: true,
+                    reason: "Exfil succeeded",
+                    previousHash: previousHash);
+                
+                eventsToAppend.Add(infilEndedEvent);
             }
         }
 

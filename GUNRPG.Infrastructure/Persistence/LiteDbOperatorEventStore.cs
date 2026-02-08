@@ -286,6 +286,8 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             "ExfilSucceeded" => ExfilSucceededEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "ExfilFailed" => ExfilFailedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "OperatorDied" => OperatorDiedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
+            "InfilStarted" => InfilStartedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
+            "InfilEnded" => InfilEndedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             _ => throw new InvalidOperationException($"Unknown event type: {doc.EventType}")
         };
     }

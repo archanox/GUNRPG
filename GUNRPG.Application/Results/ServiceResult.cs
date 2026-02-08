@@ -45,6 +45,21 @@ public sealed class ServiceResult<T> : ServiceResultBase
     public static ServiceResult<T> NotFound(string? message = null) => new(false, ResultStatus.NotFound, default, message ?? "Resource not found");
     public static ServiceResult<T> InvalidState(string message) => new(false, ResultStatus.InvalidState, default, message);
     public static ServiceResult<T> ValidationError(string message) => new(false, ResultStatus.ValidationError, default, message);
+    
+    /// <summary>
+    /// Creates a ServiceResult&lt;T&gt; from a non-generic ServiceResult, preserving the error state.
+    /// </summary>
+    public static ServiceResult<T> FromResult(ServiceResult result)
+    {
+        return result.Status switch
+        {
+            ResultStatus.Success => Success(default!),
+            ResultStatus.NotFound => NotFound(result.ErrorMessage),
+            ResultStatus.InvalidState => InvalidState(result.ErrorMessage!),
+            ResultStatus.ValidationError => ValidationError(result.ErrorMessage!),
+            _ => InvalidState(result.ErrorMessage!)
+        };
+    }
 }
 
 /// <summary>
