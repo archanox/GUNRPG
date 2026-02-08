@@ -251,9 +251,11 @@ public sealed class OperatorExfilService
 
     /// <summary>
     /// Marks an exfil as successful, incrementing the operator's exfil streak.
-    /// This is the primary way to record successful mission completion.
-    /// DEPRECATED: Use ProcessCombatOutcomeAsync instead for combat-based exfil.
-    /// This method is kept for backward compatibility and non-combat scenarios.
+    /// DEPRECATED for combat-based exfil: Use ProcessCombatOutcomeAsync instead.
+    /// 
+    /// This method is kept for backward compatibility and non-combat exfil scenarios.
+    /// Note: This method does NOT transition the operator back to Base mode.
+    /// For combat exfil, ProcessCombatOutcomeAsync handles the complete workflow including mode transition.
     /// </summary>
     public async Task<ServiceResult> CompleteExfilAsync(OperatorId operatorId)
     {

@@ -280,12 +280,13 @@ public class OperatorModeTests : IDisposable
         // Assert
         Assert.True(exfilResult.IsSuccess);
         
-        // After CompleteExfilAsync, we still need to end infil manually
-        // In a real scenario, ProcessCombatOutcomeAsync handles this
-        // For this test, let's just verify loadout is still there
+        // After CompleteExfilAsync, operator is still in Infil mode (legacy behavior)
+        // ProcessCombatOutcomeAsync handles the full workflow including mode transition
         var loadResult = await _service.LoadOperatorAsync(operatorId);
         var aggregate = loadResult.Value!;
         Assert.Equal("SOKOL 545", aggregate.EquippedWeaponName); // Loadout preserved
+        Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Still in Infil (not ended yet)
+        Assert.Equal(1, aggregate.ExfilStreak); // Streak incremented
     }
 
     [Fact]
