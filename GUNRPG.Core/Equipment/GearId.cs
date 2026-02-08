@@ -8,11 +8,6 @@ public readonly struct GearId : IEquatable<GearId>
 {
     public string Value { get; }
 
-    /// <summary>
-    /// Returns true if this is an empty/default gear ID.
-    /// </summary>
-    public bool IsEmpty => string.IsNullOrWhiteSpace(Value);
-
     public GearId(string value)
     {
         if (string.IsNullOrWhiteSpace(value))

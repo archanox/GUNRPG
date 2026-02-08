@@ -9,7 +9,7 @@ namespace GUNRPG.Application.Combat;
 /// 
 /// CombatOutcome is:
 /// - Explicit: Contains everything Exfil needs
-/// - Immutable: Properties are init-only
+/// - Immutable: Properties are get-only, set via constructor
 /// - Pure data: No domain behavior
 /// - Free of service logic: Just a data contract
 /// 
@@ -21,51 +21,51 @@ public sealed class CombatOutcome
     /// <summary>
     /// The combat session that produced this outcome.
     /// </summary>
-    public Guid SessionId { get; init; }
+    public Guid SessionId { get; }
 
     /// <summary>
     /// The operator ID involved in combat.
     /// </summary>
-    public OperatorId OperatorId { get; init; }
+    public OperatorId OperatorId { get; }
 
     /// <summary>
     /// Whether the operator died during combat.
     /// </summary>
-    public bool OperatorDied { get; init; }
+    public bool OperatorDied { get; }
 
     /// <summary>
     /// Experience points gained during combat.
     /// </summary>
-    public int XpGained { get; init; }
+    public int XpGained { get; }
 
     /// <summary>
     /// Gear lost during combat (empty if none lost).
     /// </summary>
-    public IReadOnlyCollection<GearId> GearLost { get; init; }
+    public IReadOnlyCollection<GearId> GearLost { get; }
 
     /// <summary>
     /// Whether the combat was a victory (operator survived and enemy defeated).
     /// Optional metadata for context.
     /// </summary>
-    public bool IsVictory { get; init; }
+    public bool IsVictory { get; }
 
     /// <summary>
     /// Number of turns the operator survived.
     /// Optional metadata for context.
     /// </summary>
-    public int TurnsSurvived { get; init; }
+    public int TurnsSurvived { get; }
 
     /// <summary>
     /// Amount of damage taken during combat.
     /// Optional metadata for context.
     /// </summary>
-    public float DamageTaken { get; init; }
+    public float DamageTaken { get; }
 
     /// <summary>
     /// When the combat ended.
     /// Optional metadata for context.
     /// </summary>
-    public DateTimeOffset CompletedAt { get; init; }
+    public DateTimeOffset CompletedAt { get; }
 
     public CombatOutcome(
         Guid sessionId,
