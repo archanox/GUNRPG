@@ -138,7 +138,10 @@ public static class SessionMapping
             snapshot.Pet.Hydration,
             snapshot.Pet.LastUpdated);
 
-        var operatorId = OperatorId.FromGuid(snapshot.OperatorId);
+        // Backwards compatibility: fallback to Player.Id if OperatorId is empty
+        var operatorId = snapshot.OperatorId != Guid.Empty 
+            ? OperatorId.FromGuid(snapshot.OperatorId)
+            : OperatorId.FromGuid(snapshot.Player.Id);
 
         return new CombatSession(
             snapshot.Id,

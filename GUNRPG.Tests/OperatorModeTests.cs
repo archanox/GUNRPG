@@ -273,6 +273,7 @@ public class OperatorModeTests : IDisposable
         var operatorId = createResult.Value!;
         await _service.ChangeLoadoutAsync(operatorId, "SOKOL 545");
         var infilResult = await _service.StartInfilAsync(operatorId);
+        Assert.True(infilResult.IsSuccess);
 
         // Act - Complete exfil which should preserve loadout
         var exfilResult = await _service.CompleteExfilAsync(operatorId);
@@ -349,10 +350,11 @@ public class OperatorModeTests : IDisposable
         
         var createResult = await service.CreateOperatorAsync("TestOp");
         var operatorId = createResult.Value!;
-        await service.StartInfilAsync(operatorId);
+        var infilResult = await service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value; // Use the actual session ID
 
         var outcome = new GUNRPG.Application.Combat.CombatOutcome(
-            Guid.NewGuid(),
+            sessionId, // Use the session ID returned by StartInfilAsync
             operatorId,
             operatorDied: false,
             xpGained: 100,
@@ -384,10 +386,11 @@ public class OperatorModeTests : IDisposable
         
         var createResult = await service.CreateOperatorAsync("TestOp");
         var operatorId = createResult.Value!;
-        await service.StartInfilAsync(operatorId);
+        var infilResult = await service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value; // Use the actual session ID
 
         var outcome = new GUNRPG.Application.Combat.CombatOutcome(
-            Guid.NewGuid(),
+            sessionId, // Use the session ID returned by StartInfilAsync
             operatorId,
             operatorDied: true,
             xpGained: 0,
