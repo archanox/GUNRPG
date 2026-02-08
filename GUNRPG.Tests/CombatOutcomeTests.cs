@@ -63,7 +63,7 @@ public class CombatOutcomeTests
     }
 
     [Fact]
-    public async Task GetOutcome_ReportsOperatorDeath_WhenPlayerDies()
+    public async Task GetOutcome_ReportsOperatorDeathCorrectly()
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
@@ -99,7 +99,7 @@ public class CombatOutcomeTests
     }
 
     [Fact]
-    public async Task GetOutcome_CalculatesXpCorrectly_ForVictory()
+    public async Task GetOutcome_CalculatesXpCorrectly_ForAllOutcomes()
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
@@ -186,6 +186,7 @@ public class CombatOutcomeTests
         Assert.Equal(outcome1.IsVictory, outcome2.IsVictory);
         Assert.Equal(outcome1.DamageTaken, outcome2.DamageTaken);
         Assert.Equal(outcome1.TurnsSurvived, outcome2.TurnsSurvived);
+        Assert.Equal(outcome1.CompletedAt, outcome2.CompletedAt);
     }
 
     [Fact]
@@ -258,6 +259,27 @@ public class CombatOutcomeTests
             isVictory: false,
             turnsSurvived: 0,
             damageTaken: 0f));
+    }
+
+    [Fact]
+    public void CombatOutcome_Constructor_RejectsVictoryWhenOperatorDied()
+    {
+        // Arrange
+        var operatorId = OperatorId.NewId();
+
+        // Act & Assert
+        var exception = Assert.Throws<ArgumentException>(() => new Application.Combat.CombatOutcome(
+            sessionId: Guid.NewGuid(),
+            operatorId: operatorId,
+            operatorDied: true, // Operator died
+            xpGained: 0,
+            gearLost: Array.Empty<GearId>(),
+            isVictory: true, // Invalid: can't have victory if operator died
+            turnsSurvived: 5,
+            damageTaken: 100f));
+        
+        Assert.Contains("victory", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("operator", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

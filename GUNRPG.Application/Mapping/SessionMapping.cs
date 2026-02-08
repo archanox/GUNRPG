@@ -97,6 +97,7 @@ public static class SessionMapping
             Seed = session.Seed,
             PostCombatResolved = session.PostCombatResolved,
             CreatedAt = session.CreatedAt,
+            CompletedAt = session.CompletedAt,
             Combat = new CombatStateSnapshot
             {
                 Phase = session.Combat.Phase,
@@ -151,7 +152,8 @@ public static class SessionMapping
             snapshot.Seed,
             snapshot.Phase,
             snapshot.TurnNumber,
-            snapshot.CreatedAt)
+            snapshot.CreatedAt,
+            snapshot.CompletedAt)
         {
             PostCombatResolved = snapshot.PostCombatResolved
         };

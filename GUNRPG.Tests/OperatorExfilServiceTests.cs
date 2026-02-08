@@ -685,7 +685,7 @@ public class OperatorExfilServiceTests : IDisposable
                 operatorDied: false,
                 damageTaken: 10f,
                 xpGained: 100,
-            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
+                gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
                 isVictory: true,
                 completedAt: DateTimeOffset.UtcNow);
 
