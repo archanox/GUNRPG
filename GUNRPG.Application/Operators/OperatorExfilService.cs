@@ -397,11 +397,14 @@ public sealed class OperatorExfilService
             // Operator survived - emit XP event if earned
             if (outcome.XpGained > 0)
             {
+                // Derive XP reason from outcome properties
+                var xpReason = outcome.IsVictory ? "Victory" : "Survival";
+                
                 var xpEvent = new XpGainedEvent(
                     outcome.OperatorId,
                     nextSequence,
                     outcome.XpGained,
-                    "Combat XP",
+                    xpReason,
                     previousHash);
                 
                 eventsToAppend.Add(xpEvent);
