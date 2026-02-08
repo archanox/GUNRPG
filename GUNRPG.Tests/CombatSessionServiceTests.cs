@@ -147,8 +147,7 @@ public class CombatSessionServiceTests
         Assert.Equal(snapshot1.Id, snapshot2.Id);
         Assert.Equal(snapshot1.Phase, snapshot2.Phase);
         Assert.Equal(snapshot1.TurnNumber, snapshot2.TurnNumber);
-        Assert.Equal(snapshot1.PlayerXp, snapshot2.PlayerXp);
-        Assert.Equal(snapshot1.PlayerLevel, snapshot2.PlayerLevel);
+        Assert.Equal(snapshot1.OperatorId, snapshot2.OperatorId);
         Assert.Equal(snapshot1.EnemyLevel, snapshot2.EnemyLevel);
         Assert.Equal(snapshot1.Seed, snapshot2.Seed);
         Assert.Equal(snapshot1.PostCombatResolved, snapshot2.PostCombatResolved);

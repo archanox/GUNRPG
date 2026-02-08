@@ -209,9 +209,10 @@ public sealed class CombatSessionService
         float healthLost = session.Player.MaxHealth - session.Player.Health;
         int hitsTaken = (int)Math.Ceiling(healthLost / 10f);
 
+        // Use enemy level to compute difficulty (no player level available in session)
         float opponentDifficulty = OpponentDifficulty.Compute(
             opponentLevel: session.EnemyLevel,
-            playerLevel: session.PlayerLevel);
+            playerLevel: 0);  // Player level no longer stored in session
 
         if (session.Player.IsAlive && !session.Enemy.IsAlive)
         {
@@ -224,12 +225,7 @@ public sealed class CombatSessionService
 
         session.PetState = PetRules.Apply(session.PetState, new MissionInput(hitsTaken, opponentDifficulty), DateTimeOffset.UtcNow);
 
-        if (session.Player.IsAlive && !session.Enemy.IsAlive)
-        {
-            long xpGained = (long)(opponentDifficulty * XpMultiplier);
-            session.PlayerXp += xpGained;
-            session.PlayerLevel = OpponentDifficulty.ComputeLevelFromXp(session.PlayerXp);
-        }
+        // XP gain is now handled by OperatorExfilService, not in combat sessions
 
         session.Player.Fatigue = session.PetState.Fatigue;
         session.PostCombatResolved = true;
