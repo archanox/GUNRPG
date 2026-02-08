@@ -17,13 +17,12 @@ public static class SessionMapping
         return new CombatSessionDto
         {
             Id = session.Id,
+            OperatorId = session.OperatorId.Value,
             Phase = session.Phase,
             CurrentTimeMs = session.Combat.CurrentTimeMs,
             Player = ToDto(session.Player),
             Enemy = ToDto(session.Enemy),
             Pet = ToDto(session.PetState),
-            PlayerXp = session.PlayerXp,
-            PlayerLevel = session.PlayerLevel,
             EnemyLevel = session.EnemyLevel,
             TurnNumber = session.TurnNumber
         };
@@ -89,10 +88,9 @@ public static class SessionMapping
         return new CombatSessionSnapshot
         {
             Id = session.Id,
+            OperatorId = session.OperatorId.Value,
             Phase = session.Phase,
             TurnNumber = session.TurnNumber,
-            PlayerXp = session.PlayerXp,
-            PlayerLevel = session.PlayerLevel,
             EnemyLevel = session.EnemyLevel,
             Seed = session.Seed,
             PostCombatResolved = session.PostCombatResolved,
@@ -140,14 +138,15 @@ public static class SessionMapping
             snapshot.Pet.Hydration,
             snapshot.Pet.LastUpdated);
 
+        var operatorId = OperatorId.FromGuid(snapshot.OperatorId);
+
         return new CombatSession(
             snapshot.Id,
+            operatorId,
             combat,
             ai,
             operatorManager,
             petState,
-            snapshot.PlayerXp,
-            snapshot.PlayerLevel,
             snapshot.EnemyLevel,
             snapshot.Seed,
             snapshot.Phase,

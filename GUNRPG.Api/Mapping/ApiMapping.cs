@@ -59,13 +59,12 @@ public static class ApiMapping
         return new ApiCombatSessionDto
         {
             Id = appDto.Id,
+            OperatorId = appDto.OperatorId,
             Phase = appDto.Phase.ToString(),
             CurrentTimeMs = appDto.CurrentTimeMs,
             Player = ToApiDto(appDto.Player),
             Enemy = ToApiDto(appDto.Enemy),
             Pet = ToApiDto(appDto.Pet),
-            PlayerXp = appDto.PlayerXp,
-            PlayerLevel = appDto.PlayerLevel,
             EnemyLevel = appDto.EnemyLevel,
             TurnNumber = appDto.TurnNumber
         };

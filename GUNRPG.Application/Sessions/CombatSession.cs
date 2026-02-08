@@ -14,12 +14,11 @@ namespace GUNRPG.Application.Sessions;
 public sealed class CombatSession
 {
     public Guid Id { get; }
+    public OperatorId OperatorId { get; }  // Reference to the operator (does not store progression)
     public CombatSystemV2 Combat { get; }
     public SimpleAIV2 Ai { get; }
     public OperatorManager OperatorManager { get; }
     public PetState PetState { get; set; }
-    public long PlayerXp { get; set; }
-    public int PlayerLevel { get; set; }
     public int EnemyLevel { get; }
     public int Seed { get; }
     public SessionPhase Phase { get; private set; }
@@ -33,12 +32,11 @@ public sealed class CombatSession
 
     public CombatSession(
         Guid id,
+        OperatorId operatorId,
         CombatSystemV2 combat,
         SimpleAIV2 ai,
         OperatorManager operatorManager,
         PetState petState,
-        long playerXp,
-        int playerLevel,
         int enemyLevel,
         int seed,
         SessionPhase phase,
@@ -47,12 +45,11 @@ public sealed class CombatSession
         DateTimeOffset? completedAt = null)
     {
         Id = id;
+        OperatorId = operatorId;
         Combat = combat;
         Ai = ai;
         OperatorManager = operatorManager;
         PetState = petState;
-        PlayerXp = playerXp;
-        PlayerLevel = playerLevel;
         EnemyLevel = enemyLevel;
         Seed = seed;
         Phase = phase;
@@ -88,15 +85,15 @@ public sealed class CombatSession
 
         var petState = new PetState(player.Id, 100f, 0f, 0f, 0f, 100f, 0f, 100f, DateTimeOffset.UtcNow);
         var enemyLevel = Math.Max(0, new Random(resolvedSeed).Next(-2, 3));
+        var operatorId = OperatorId.FromGuid(player.Id);
 
         return new CombatSession(
             Guid.NewGuid(),
+            operatorId,
             combat,
             ai,
             operatorManager,
             petState,
-            0,
-            0,
             enemyLevel,
             resolvedSeed,
             SessionPhase.Planning,

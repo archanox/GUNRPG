@@ -10,14 +10,13 @@ namespace GUNRPG.Application.Sessions;
 public sealed class CombatSessionSnapshot
 {
     public Guid Id { get; init; }
+    public Guid OperatorId { get; init; }  // ID of the operator in this session
     public SessionPhase Phase { get; init; }
     public int TurnNumber { get; init; }
     public CombatStateSnapshot Combat { get; init; } = default!;
     public OperatorSnapshot Player { get; init; } = default!;
     public OperatorSnapshot Enemy { get; init; } = default!;
     public PetStateSnapshot Pet { get; init; } = default!;
-    public long PlayerXp { get; init; }
-    public int PlayerLevel { get; init; }
     public int EnemyLevel { get; init; }
     public int Seed { get; init; }
     public bool PostCombatResolved { get; init; }

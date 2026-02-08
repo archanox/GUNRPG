@@ -315,11 +315,12 @@ static IntentDto PromptForIntents()
 static void PrintState(CombatSessionDto state)
 {
     Console.WriteLine($"Session {state.Id} | Phase: {state.Phase} | Turn: {state.TurnNumber} | Time: {state.CurrentTimeMs}ms");
+    Console.WriteLine($"Operator ID: {state.OperatorId}");
     Console.WriteLine($"Player: {state.Player.Name} HP {state.Player.Health:F0}/{state.Player.MaxHealth:F0} Ammo {state.Player.CurrentAmmo}/{state.Player.MagazineSize}");
     Console.WriteLine($"Enemy : {state.Enemy.Name} HP {state.Enemy.Health:F0}/{state.Enemy.MaxHealth:F0} Ammo {state.Enemy.CurrentAmmo}/{state.Enemy.MagazineSize}");
     Console.WriteLine($"Distance: {state.Player.DistanceToOpponent:F1}m | Cover: {state.Player.CurrentCover} | Movement: {state.Player.CurrentMovement}");
     Console.WriteLine($"Pet: Health {state.Pet.Health:F0} Fatigue {state.Pet.Fatigue:F0} Stress {state.Pet.Stress:F0} Morale {state.Pet.Morale:F0} Hunger {state.Pet.Hunger:F0} Hydration {state.Pet.Hydration:F0}");
-    Console.WriteLine($"XP: {state.PlayerXp:N0} | Level: {state.PlayerLevel} | Enemy Level: {state.EnemyLevel}");
+    Console.WriteLine($"Enemy Level: {state.EnemyLevel}");
 }
 
 static async Task<Guid?> EnsureSession(HttpClient httpClient, JsonSerializerOptions jsonOptions, Guid? current)
