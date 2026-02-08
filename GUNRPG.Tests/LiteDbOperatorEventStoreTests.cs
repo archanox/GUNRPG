@@ -13,8 +13,10 @@ public class LiteDbOperatorEventStoreTests : IDisposable
 
     public LiteDbOperatorEventStoreTests()
     {
-        // Use in-memory database for testing
-        _database = new LiteDatabase(":memory:");
+        // Use in-memory database for testing with custom mapper
+        var mapper = new BsonMapper();
+        mapper.Entity<OperatorEventDocument>().Id(x => x.Id);
+        _database = new LiteDatabase(":memory:", mapper);
         _store = new LiteDbOperatorEventStore(_database);
     }
 

@@ -15,7 +15,10 @@ public class OperatorExfilServiceTests : IDisposable
 
     public OperatorExfilServiceTests()
     {
-        _database = new LiteDatabase(":memory:");
+        // Use in-memory database for testing with custom mapper
+        var mapper = new BsonMapper();
+        mapper.Entity<OperatorEventDocument>().Id(x => x.Id);
+        _database = new LiteDatabase(":memory:", mapper);
         _eventStore = new LiteDbOperatorEventStore(_database);
         _service = new OperatorExfilService(_eventStore);
     }
