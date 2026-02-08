@@ -1,6 +1,8 @@
+using GUNRPG.Application.Combat;
 using GUNRPG.Core;
 using GUNRPG.Core.AI;
 using GUNRPG.Core.Combat;
+using GUNRPG.Core.Equipment;
 using GUNRPG.Core.Operators;
 using GUNRPG.Core.VirtualPet;
 
@@ -112,6 +114,60 @@ public sealed class CombatSession
     public void AdvanceTurnCounter()
     {
         TurnNumber++;
+    }
+
+    /// <summary>
+    /// Gets the combat outcome for this session.
+    /// Can only be called after the session has completed.
+    /// </summary>
+    /// <returns>The combat outcome.</returns>
+    /// <exception cref="InvalidOperationException">Thrown if the session is not yet completed.</exception>
+    public CombatOutcome GetOutcome()
+    {
+        if (Phase != SessionPhase.Completed)
+        {
+            throw new InvalidOperationException(
+                $"Cannot produce outcome: session is not completed (current phase: {Phase})");
+        }
+
+        var player = Player;
+        var enemy = Enemy;
+
+        var operatorDied = !player.IsAlive;
+        var damageTaken = player.MaxHealth - player.Health;
+
+        // Calculate XP based on outcome
+        var isVictory = player.IsAlive && !enemy.IsAlive;
+
+        int xpGained;
+        if (isVictory)
+        {
+            xpGained = 100; // Base XP for victory
+        }
+        else if (!operatorDied)
+        {
+            xpGained = 50; // Partial XP for surviving
+        }
+        else
+        {
+            xpGained = 0; // No XP for death
+        }
+
+        var operatorId = OperatorId.FromGuid(player.Id);
+
+        // For now, no gear is lost (will be expanded later with actual gear system)
+        var gearLost = Array.Empty<GearId>();
+
+        return new CombatOutcome(
+            sessionId: Id,
+            operatorId: operatorId,
+            operatorDied: operatorDied,
+            xpGained: xpGained,
+            gearLost: gearLost,
+            isVictory: isVictory,
+            turnsSurvived: TurnNumber,
+            damageTaken: damageTaken,
+            completedAt: DateTimeOffset.UtcNow);
     }
 
     private static bool IsValidTransition(SessionPhase current, SessionPhase next)

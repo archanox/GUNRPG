@@ -382,7 +382,7 @@ public sealed class OperatorExfilService
         var nextSequence = aggregate.CurrentSequence + 1;
 
         // If operator died in combat, emit death event only
-        if (!outcome.Survived)
+        if (outcome.OperatorDied)
         {
             var deathEvent = new OperatorDiedEvent(
                 outcome.OperatorId,
@@ -395,13 +395,13 @@ public sealed class OperatorExfilService
         else
         {
             // Operator survived - emit XP event if earned
-            if (outcome.XpEarned > 0)
+            if (outcome.XpGained > 0)
             {
                 var xpEvent = new XpGainedEvent(
                     outcome.OperatorId,
                     nextSequence,
-                    outcome.XpEarned,
-                    outcome.XpReason,
+                    outcome.XpGained,
+                    "Combat XP",
                     previousHash);
                 
                 eventsToAppend.Add(xpEvent);

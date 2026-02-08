@@ -502,12 +502,10 @@ public class OperatorExfilServiceTests : IDisposable
         var outcome = new Application.Combat.CombatOutcome(
             sessionId: Guid.NewGuid(),
             operatorId: operatorId,
-            survived: true,
+            operatorDied: false,
             damageTaken: 20f,
-            remainingHealth: 80f,
-            xpEarned: 100,
-            xpReason: "Victory",
-            enemiesEliminated: 1,
+            xpGained: 100,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
             isVictory: true,
             completedAt: DateTimeOffset.UtcNow);
 
@@ -548,12 +546,10 @@ public class OperatorExfilServiceTests : IDisposable
         var outcome = new Application.Combat.CombatOutcome(
             sessionId: Guid.NewGuid(),
             operatorId: operatorId,
-            survived: false,
+            operatorDied: true,
             damageTaken: 100f,
-            remainingHealth: 0f,
-            xpEarned: 10, // Outcome includes XP, but death prevents it from being applied
-            xpReason: "Participation",
-            enemiesEliminated: 0,
+            xpGained: 10, // Outcome includes XP, but death prevents it from being applied
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
             isVictory: false,
             completedAt: DateTimeOffset.UtcNow);
 
@@ -585,12 +581,10 @@ public class OperatorExfilServiceTests : IDisposable
         var outcome = new Application.Combat.CombatOutcome(
             sessionId: Guid.NewGuid(),
             operatorId: operatorId,
-            survived: true,
+            operatorDied: false,
             damageTaken: 50f,
-            remainingHealth: 50f,
-            xpEarned: 50,
-            xpReason: "Survived",
-            enemiesEliminated: 0,
+            xpGained: 50,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
             isVictory: false, // Survived but didn't win
             completedAt: DateTimeOffset.UtcNow);
 
@@ -621,12 +615,10 @@ public class OperatorExfilServiceTests : IDisposable
         var outcome = new Application.Combat.CombatOutcome(
             sessionId: Guid.NewGuid(),
             operatorId: operatorId,
-            survived: true,
+            operatorDied: false,
             damageTaken: 0f,
-            remainingHealth: 100f,
-            xpEarned: 100,
-            xpReason: "Victory",
-            enemiesEliminated: 1,
+            xpGained: 100,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
             isVictory: true,
             completedAt: DateTimeOffset.UtcNow);
 
@@ -661,12 +653,10 @@ public class OperatorExfilServiceTests : IDisposable
         var outcome = new Application.Combat.CombatOutcome(
             sessionId: Guid.NewGuid(),
             operatorId: operatorId,
-            survived: true,
+            operatorDied: false,
             damageTaken: 0f,
-            remainingHealth: 100f,
-            xpEarned: 100,
-            xpReason: "Victory",
-            enemiesEliminated: 1,
+            xpGained: 100,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
             isVictory: true,
             completedAt: DateTimeOffset.UtcNow);
 
@@ -692,12 +682,10 @@ public class OperatorExfilServiceTests : IDisposable
             var outcome = new Application.Combat.CombatOutcome(
                 sessionId: Guid.NewGuid(),
                 operatorId: operatorId,
-                survived: true,
+                operatorDied: false,
                 damageTaken: 10f,
-                remainingHealth: 90f,
-                xpEarned: 100,
-                xpReason: $"Victory {i + 1}",
-                enemiesEliminated: 1,
+                xpGained: 100,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
                 isVictory: true,
                 completedAt: DateTimeOffset.UtcNow);
 
@@ -723,12 +711,10 @@ public class OperatorExfilServiceTests : IDisposable
         var outcome = new Application.Combat.CombatOutcome(
             sessionId: Guid.NewGuid(),
             operatorId: operatorId,
-            survived: true,
+            operatorDied: false,
             damageTaken: 0f,
-            remainingHealth: 100f,
-            xpEarned: 0, // No XP
-            xpReason: "No XP",
-            enemiesEliminated: 0,
+            xpGained: 0, // No XP
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
             isVictory: true, // Still victory, just no XP
             completedAt: DateTimeOffset.UtcNow);
 
@@ -763,12 +749,10 @@ public class OperatorExfilServiceTests : IDisposable
         var combatOutcome = new Application.Combat.CombatOutcome(
             sessionId: Guid.NewGuid(),
             operatorId: operatorId,
-            survived: true,
+            operatorDied: false,
             damageTaken: 30f,
-            remainingHealth: 70f,
-            xpEarned: 150,
-            xpReason: "Mission Victory",
-            enemiesEliminated: 3,
+            xpGained: 150,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
             isVictory: true,
             completedAt: DateTimeOffset.UtcNow);
 
@@ -789,12 +773,10 @@ public class OperatorExfilServiceTests : IDisposable
         var combatOutcome2 = new Application.Combat.CombatOutcome(
             sessionId: Guid.NewGuid(),
             operatorId: operatorId,
-            survived: true,
+            operatorDied: false,
             damageTaken: 20f,
-            remainingHealth: 80f,
-            xpEarned: 200,
-            xpReason: "Flawless Victory",
-            enemiesEliminated: 5,
+            xpGained: 200,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
             isVictory: true,
             completedAt: DateTimeOffset.UtcNow);
 
@@ -817,12 +799,10 @@ public class OperatorExfilServiceTests : IDisposable
         var fatalCombat = new Application.Combat.CombatOutcome(
             sessionId: Guid.NewGuid(),
             operatorId: operatorId,
-            survived: false,
+            operatorDied: true,
             damageTaken: 100f,
-            remainingHealth: 0f,
-            xpEarned: 10, // Outcome has XP but won't be applied due to death
-            xpReason: "Participation",
-            enemiesEliminated: 0,
+            xpGained: 10, // Outcome has XP but won't be applied due to death
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
             isVictory: false,
             completedAt: DateTimeOffset.UtcNow);
 
@@ -851,12 +831,10 @@ public class OperatorExfilServiceTests : IDisposable
         var postMortemOutcome = new Application.Combat.CombatOutcome(
             sessionId: Guid.NewGuid(),
             operatorId: operatorId,
-            survived: true,
+            operatorDied: false,
             damageTaken: 0f,
-            remainingHealth: 100f,
-            xpEarned: 100,
-            xpReason: "Should fail",
-            enemiesEliminated: 1,
+            xpGained: 100,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
             isVictory: true,
             completedAt: DateTimeOffset.UtcNow);
 
