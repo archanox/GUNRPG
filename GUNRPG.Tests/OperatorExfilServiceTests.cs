@@ -318,7 +318,8 @@ public class OperatorExfilServiceTests : IDisposable
         var operatorId = createResult.Value!;
 
         // Act
-        await _service.StartInfilAsync(operatorId);
+        var infilResult = await _service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value;
         await _service.CompleteExfilAsync(operatorId);
         // Note: CompleteExfilAsync doesn't end infil mode, so we can't call StartInfilAsync again
         // This test should probably be updated to use ProcessCombatOutcomeAsync instead
@@ -336,7 +337,8 @@ public class OperatorExfilServiceTests : IDisposable
         // Arrange
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
-        await _service.StartInfilAsync(operatorId);
+        var infilResult = await _service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value;
         await _service.CompleteExfilAsync(operatorId);
         // CompleteExfilAsync doesn't end infil, so we need to manually fail it to test reset
 
@@ -503,9 +505,10 @@ public class OperatorExfilServiceTests : IDisposable
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
 
-        await _service.StartInfilAsync(operatorId);
+        var infilResult = await _service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value;
         var outcome = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(),
+            sessionId: sessionId,
             operatorId: operatorId,
             operatorDied: false,
             damageTaken: 20f,
@@ -540,9 +543,10 @@ public class OperatorExfilServiceTests : IDisposable
         var operatorId = createResult.Value!;
         
         // Build up a streak first using ProcessCombatOutcomeAsync
-        await _service.StartInfilAsync(operatorId);
+        var infilResult = await _service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value;
         var firstOutcome = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(),
+            sessionId: sessionId,
             operatorId: operatorId,
             operatorDied: false,
             damageTaken: 10f,
@@ -553,9 +557,10 @@ public class OperatorExfilServiceTests : IDisposable
         var exfilResult1 = await _service.ProcessCombatOutcomeAsync(firstOutcome, playerConfirmed: true);
         Assert.True(exfilResult1.IsSuccess);
         
-        await _service.StartInfilAsync(operatorId);
+        var infilResult2 = await _service.StartInfilAsync(operatorId);
+        var sessionId2 = infilResult2.Value;
         var secondOutcome = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(),
+            sessionId: sessionId2,
             operatorId: operatorId,
             operatorDied: false,
             damageTaken: 15f,
@@ -569,9 +574,10 @@ public class OperatorExfilServiceTests : IDisposable
         var loadBefore = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(2, loadBefore.Value!.ExfilStreak);
 
-        await _service.StartInfilAsync(operatorId);
+        var infilResult3 = await _service.StartInfilAsync(operatorId);
+        var sessionId3 = infilResult3.Value;
         var outcome = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(),
+            sessionId: sessionId3,
             operatorId: operatorId,
             operatorDied: true,
             damageTaken: 100f,
@@ -604,9 +610,10 @@ public class OperatorExfilServiceTests : IDisposable
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
 
-        await _service.StartInfilAsync(operatorId);
+        var infilResult = await _service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value;
         var outcome = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(),
+            sessionId: sessionId,
             operatorId: operatorId,
             operatorDied: false,
             damageTaken: 50f,
@@ -640,7 +647,7 @@ public class OperatorExfilServiceTests : IDisposable
         var operatorId = createResult.Value!;
 
         var outcome = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(),
+            sessionId: Guid.NewGuid(), // Using random ID as this test doesn't start infil
             operatorId: operatorId,
             operatorDied: false,
             damageTaken: 0f,
@@ -678,7 +685,7 @@ public class OperatorExfilServiceTests : IDisposable
         await _service.KillOperatorAsync(operatorId, "Previous death");
 
         var outcome = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(),
+            sessionId: Guid.NewGuid(), // Using random ID as this test is for a dead operator
             operatorId: operatorId,
             operatorDied: false,
             damageTaken: 0f,
@@ -706,9 +713,10 @@ public class OperatorExfilServiceTests : IDisposable
         // Act - Process multiple successful combat outcomes
         for (int i = 0; i < 5; i++)
         {
-            await _service.StartInfilAsync(operatorId);
+            var infilResult = await _service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value;
             var outcome = new Application.Combat.CombatOutcome(
-                sessionId: Guid.NewGuid(),
+                sessionId: sessionId,
                 operatorId: operatorId,
                 operatorDied: false,
                 damageTaken: 10f,
@@ -736,9 +744,10 @@ public class OperatorExfilServiceTests : IDisposable
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
 
-        await _service.StartInfilAsync(operatorId);
+        var infilResult = await _service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value;
         var outcome = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(),
+            sessionId: sessionId,
             operatorId: operatorId,
             operatorDied: false,
             damageTaken: 0f,
@@ -775,9 +784,10 @@ public class OperatorExfilServiceTests : IDisposable
         var operatorId = createResult.Value!;
 
         // Step 2: Simulate combat producing an outcome
-        await _service.StartInfilAsync(operatorId);
+        var infilResult = await _service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value;
         var combatOutcome = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(),
+            sessionId: sessionId,
             operatorId: operatorId,
             operatorDied: false,
             damageTaken: 30f,
@@ -800,9 +810,10 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.False(aggregate1.IsDead);
 
         // Step 5: Simulate another combat (should increment streak)
-        await _service.StartInfilAsync(operatorId);
+        var infilResult2 = await _service.StartInfilAsync(operatorId);
+        var sessionId2 = infilResult2.Value;
         var combatOutcome2 = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(),
+            sessionId: sessionId2,
             operatorId: operatorId,
             operatorDied: false,
             damageTaken: 20f,
@@ -827,9 +838,10 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Equal(9, aggregate2.Events.Count);
 
         // Step 7: Simulate a fatal combat
-        await _service.StartInfilAsync(operatorId);
+        var infilResult3 = await _service.StartInfilAsync(operatorId);
+        var sessionId3 = infilResult3.Value;
         var fatalCombat = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(),
+            sessionId: sessionId3,
             operatorId: operatorId,
             operatorDied: true,
             damageTaken: 100f,
@@ -861,7 +873,7 @@ public class OperatorExfilServiceTests : IDisposable
 
         // Step 10: Verify dead operator cannot process new outcomes
         var postMortemOutcome = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(),
+            sessionId: sessionId,
             operatorId: operatorId,
             operatorDied: false,
             damageTaken: 0f,

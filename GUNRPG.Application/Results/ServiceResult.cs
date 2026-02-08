@@ -48,12 +48,13 @@ public sealed class ServiceResult<T> : ServiceResultBase
     
     /// <summary>
     /// Creates a ServiceResult&lt;T&gt; from a non-generic ServiceResult, preserving the error state.
+    /// This should only be used to convert error results; Success results should use Success(T value) directly.
     /// </summary>
     public static ServiceResult<T> FromResult(ServiceResult result)
     {
         return result.Status switch
         {
-            ResultStatus.Success => Success(default!),
+            ResultStatus.Success => throw new InvalidOperationException("Cannot convert Success result without a value. Use Success(T value) instead."),
             ResultStatus.NotFound => NotFound(result.ErrorMessage),
             ResultStatus.InvalidState => InvalidState(result.ErrorMessage!),
             ResultStatus.ValidationError => ValidationError(result.ErrorMessage!),

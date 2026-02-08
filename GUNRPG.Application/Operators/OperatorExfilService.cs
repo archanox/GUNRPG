@@ -529,6 +529,13 @@ public sealed class OperatorExfilService
         if (aggregate.CurrentMode != OperatorMode.Infil)
             return ServiceResult.InvalidState("Cannot process combat outcome when not in Infil mode");
 
+        // Session ID must match the active infil session
+        if (aggregate.ActiveSessionId == null)
+            return ServiceResult.InvalidState("Cannot process combat outcome without an active infil session");
+
+        if (!Equals(aggregate.ActiveSessionId, outcome.SessionId))
+            return ServiceResult.ValidationError("Combat outcome session does not match active infil session");
+
         // Check if infil timer has expired (30 minutes)
         if (aggregate.InfilStartTime.HasValue)
         {
