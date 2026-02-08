@@ -84,12 +84,19 @@ public sealed class CombatOutcome
             throw new ArgumentException("Turns survived cannot be negative", nameof(turnsSurvived));
         if (damageTaken < 0)
             throw new ArgumentException("Damage taken cannot be negative", nameof(damageTaken));
+        
+        // Enforce invariant: victory requires operator survival
+        if (isVictory && operatorDied)
+            throw new ArgumentException("Cannot have victory when operator died (victory requires operator survival and enemy defeat)", nameof(isVictory));
 
         SessionId = sessionId;
         OperatorId = operatorId;
         OperatorDied = operatorDied;
         XpGained = xpGained;
-        GearLost = gearLost ?? throw new ArgumentNullException(nameof(gearLost));
+        
+        // Defensive copy to ensure true immutability
+        GearLost = (gearLost ?? throw new ArgumentNullException(nameof(gearLost))).ToArray();
+        
         IsVictory = isVictory;
         TurnsSurvived = turnsSurvived;
         DamageTaken = damageTaken;

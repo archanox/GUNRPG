@@ -25,6 +25,7 @@ public sealed class CombatSession
     public SessionPhase Phase { get; private set; }
     public int TurnNumber { get; private set; }
     public DateTimeOffset CreatedAt { get; }
+    public DateTimeOffset? CompletedAt { get; private set; }
     public bool PostCombatResolved { get; set; }
 
     public Operator Player => Combat.Player;
@@ -42,7 +43,8 @@ public sealed class CombatSession
         int seed,
         SessionPhase phase,
         int turnNumber,
-        DateTimeOffset createdAt)
+        DateTimeOffset createdAt,
+        DateTimeOffset? completedAt = null)
     {
         Id = id;
         Combat = combat;
@@ -56,6 +58,7 @@ public sealed class CombatSession
         Phase = phase;
         TurnNumber = turnNumber;
         CreatedAt = createdAt;
+        CompletedAt = completedAt;
     }
 
     public static CombatSession CreateDefault(string? playerName = null, int? seed = null, float? startingDistance = null, string? enemyName = null)
@@ -109,6 +112,12 @@ public sealed class CombatSession
         }
 
         Phase = nextPhase;
+        
+        // Record completion time when transitioning to Completed phase
+        if (nextPhase == SessionPhase.Completed && CompletedAt == null)
+        {
+            CompletedAt = DateTimeOffset.UtcNow;
+        }
     }
 
     public void AdvanceTurnCounter()
@@ -167,7 +176,7 @@ public sealed class CombatSession
             isVictory: isVictory,
             turnsSurvived: TurnNumber,
             damageTaken: damageTaken,
-            completedAt: DateTimeOffset.UtcNow);
+            completedAt: CompletedAt ?? DateTimeOffset.UtcNow);
     }
 
     private static bool IsValidTransition(SessionPhase current, SessionPhase next)
