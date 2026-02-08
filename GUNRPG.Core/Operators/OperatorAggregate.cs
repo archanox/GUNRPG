@@ -60,6 +60,28 @@ public sealed class OperatorAggregate
     public bool IsDead { get; private set; }
 
     /// <summary>
+    /// Current operational mode (Base or Infil).
+    /// </summary>
+    public OperatorMode CurrentMode { get; private set; }
+
+    /// <summary>
+    /// Time when the current infil started. Null if not in infil mode.
+    /// Used to enforce the 30-minute infil timer.
+    /// </summary>
+    public DateTimeOffset? InfilStartTime { get; private set; }
+
+    /// <summary>
+    /// Active combat session ID when in Infil mode. Null if in Base mode.
+    /// </summary>
+    public Guid? ActiveSessionId { get; private set; }
+
+    /// <summary>
+    /// Locked loadout snapshot when in Infil mode. Empty if in Base mode.
+    /// Loadout is locked during infil to prevent mid-mission changes.
+    /// </summary>
+    public string LockedLoadout { get; private set; } = string.Empty;
+
+    /// <summary>
     /// Current sequence number (number of events applied).
     /// </summary>
     public long CurrentSequence => _events.Count - 1;
@@ -145,6 +167,10 @@ public sealed class OperatorAggregate
                 UnlockedPerks = new List<string>();
                 ExfilStreak = 0;
                 IsDead = false;
+                CurrentMode = OperatorMode.Base; // Operators start in Base mode
+                InfilStartTime = null;
+                ActiveSessionId = null;
+                LockedLoadout = string.Empty;
                 break;
 
             case XpGainedEvent xpGained:
@@ -179,6 +205,40 @@ public sealed class OperatorAggregate
                 IsDead = true;
                 CurrentHealth = 0;
                 ExfilStreak = 0;
+                // Death automatically ends infil if active
+                if (CurrentMode == OperatorMode.Infil)
+                {
+                    CurrentMode = OperatorMode.Base;
+                    InfilStartTime = null;
+                    ActiveSessionId = null;
+                    LockedLoadout = string.Empty;
+                }
+                break;
+
+            case InfilStartedEvent infilStarted:
+                var (sessionId, lockedLoadout, infilStartTime) = infilStarted.GetPayload();
+                CurrentMode = OperatorMode.Infil;
+                InfilStartTime = infilStartTime;
+                ActiveSessionId = sessionId;
+                LockedLoadout = lockedLoadout;
+                break;
+
+            case InfilEndedEvent infilEnded:
+                CurrentMode = OperatorMode.Base;
+                InfilStartTime = null;
+                ActiveSessionId = null;
+                var (wasSuccessful, _) = infilEnded.GetPayload();
+                // On failure, clear loadout (gear loss)
+                if (!wasSuccessful)
+                {
+                    LockedLoadout = string.Empty;
+                    EquippedWeaponName = string.Empty;
+                }
+                else
+                {
+                    // On success, preserve loadout
+                    LockedLoadout = string.Empty;
+                }
                 break;
 
             default:
