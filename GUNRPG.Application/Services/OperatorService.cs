@@ -1,8 +1,10 @@
 using GUNRPG.Application.Combat;
 using GUNRPG.Application.Dtos;
+using GUNRPG.Application.Mapping;
 using GUNRPG.Application.Operators;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Results;
+using GUNRPG.Application.Sessions;
 using GUNRPG.Core.Operators;
 
 namespace GUNRPG.Application.Services;
@@ -13,10 +15,12 @@ namespace GUNRPG.Application.Services;
 public sealed class OperatorService
 {
     private readonly OperatorExfilService _exfilService;
+    private readonly CombatSessionService _sessionService;
 
-    public OperatorService(OperatorExfilService exfilService)
+    public OperatorService(OperatorExfilService exfilService, CombatSessionService sessionService)
     {
         _exfilService = exfilService;
+        _sessionService = sessionService;
     }
 
     public async Task<ServiceResult<OperatorStateDto>> CreateOperatorAsync(OperatorCreateRequest request)
@@ -75,14 +79,14 @@ public sealed class OperatorService
 
     public async Task<ServiceResult<OperatorStateDto>> ProcessCombatOutcomeAsync(Guid operatorId, ProcessOutcomeRequest request)
     {
-        var outcome = new CombatOutcome(
-            sessionId: request.SessionId,
-            operatorId: new OperatorId(operatorId),
-            operatorDied: request.OperatorDied,
-            xpGained: request.XpGained,
-            gearLost: request.GearLost,
-            isVictory: request.IsVictory,
-            completedAt: DateTimeOffset.UtcNow);
+        // Load the combat session and get the authoritative outcome
+        var outcomeResult = await _sessionService.GetCombatOutcomeAsync(request.SessionId);
+        if (outcomeResult.Status != ResultStatus.Success)
+        {
+            return ServiceResult<OperatorStateDto>.FromResult(outcomeResult);
+        }
+
+        var outcome = outcomeResult.Value!;
 
         var result = await _exfilService.ProcessCombatOutcomeAsync(outcome, playerConfirmed: true);
         if (result.Status != ResultStatus.Success)
