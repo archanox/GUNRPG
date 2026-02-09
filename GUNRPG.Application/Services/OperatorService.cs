@@ -16,11 +16,13 @@ public sealed class OperatorService
 {
     private readonly OperatorExfilService _exfilService;
     private readonly CombatSessionService _sessionService;
+    private readonly IOperatorEventStore _eventStore;
 
-    public OperatorService(OperatorExfilService exfilService, CombatSessionService sessionService)
+    public OperatorService(OperatorExfilService exfilService, CombatSessionService sessionService, IOperatorEventStore eventStore)
     {
         _exfilService = exfilService;
         _sessionService = sessionService;
+        _eventStore = eventStore;
     }
 
     public async Task<ServiceResult<OperatorStateDto>> CreateOperatorAsync(OperatorCreateRequest request)
@@ -54,6 +56,33 @@ public sealed class OperatorService
         }
 
         return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
+    }
+
+    public async Task<ServiceResult<List<OperatorSummaryDto>>> ListOperatorsAsync()
+    {
+        var operatorIds = await _eventStore.ListOperatorIdsAsync();
+        var summaries = new List<OperatorSummaryDto>();
+
+        foreach (var operatorId in operatorIds)
+        {
+            var loadResult = await _exfilService.LoadOperatorAsync(operatorId);
+            if (loadResult.IsSuccess)
+            {
+                var aggregate = loadResult.Value!;
+                summaries.Add(new OperatorSummaryDto
+                {
+                    Id = aggregate.Id.Value,
+                    Name = aggregate.Name,
+                    CurrentMode = aggregate.CurrentMode.ToString(),
+                    IsDead = aggregate.IsDead,
+                    TotalXp = aggregate.TotalXp,
+                    CurrentHealth = aggregate.CurrentHealth,
+                    MaxHealth = aggregate.MaxHealth
+                });
+            }
+        }
+
+        return ServiceResult<List<OperatorSummaryDto>>.Success(summaries);
     }
 
     public async Task<ServiceResult<StartInfilResponse>> StartInfilAsync(Guid operatorId)

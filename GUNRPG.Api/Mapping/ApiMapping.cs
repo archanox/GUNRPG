@@ -272,4 +272,18 @@ public static class ApiMapping
             _ => null
         };
     }
+
+    public static ApiOperatorSummaryDto ToApiDto(OperatorSummaryDto dto)
+    {
+        return new ApiOperatorSummaryDto
+        {
+            Id = dto.Id,
+            Name = dto.Name,
+            CurrentMode = dto.CurrentMode,
+            IsDead = dto.IsDead,
+            TotalXp = dto.TotalXp,
+            CurrentHealth = dto.CurrentHealth,
+            MaxHealth = dto.MaxHealth
+        };
+    }
 }
