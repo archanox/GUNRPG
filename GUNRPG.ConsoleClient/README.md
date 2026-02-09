@@ -6,9 +6,9 @@ The GUNRPG console client has been redesigned with a retro Pokemon-style interfa
 ## Features
 
 ### Pokemon-Style Aesthetic
-- Clean box-drawing borders using ASCII characters (┌─┐│└┘)
+- Clean box-drawing borders using hex1b's BorderWidget
 - Button-based navigation with cursor indicators (►)
-- Health bars using block characters (█░)
+- Health bars using block characters (███████░░░)
 - Status displays for operator information
 - Retro color scheme inspired by Pokemon Red/Crystal
 
@@ -20,7 +20,7 @@ The GUNRPG console client has been redesigned with a retro Pokemon-style interfa
 - Exit application
 
 #### 2. Create Operator
-- Enter operator name
+- Generate random operator names (Operative-XXXX format)
 - Create new operator profile
 - Returns to main menu
 
@@ -56,12 +56,13 @@ The GUNRPG console client has been redesigned with a retro Pokemon-style interfa
   - Cover status
   - Movement state
 - Turn-by-turn combat advancement
+- **Automatic outcome processing when combat ends**
 - Returns to base camp when complete
 
 #### 6. Mission Complete
 - Shows combat outcome
-- XP gained
-- Returns operator to Base mode
+- Displays debriefing message
+- **Operator automatically returned to Base mode with XP applied**
 
 #### 7. Message Dialog
 - Generic popup for information and errors
@@ -72,16 +73,26 @@ The GUNRPG console client has been redesigned with a retro Pokemon-style interfa
 The UI respects the operator state machine:
 - **Base Mode**: Full access to loadout, wounds, XP, perks, and mission start
 - **Infil Mode**: Only mission continuation available; other actions disabled
+- **Combat Completion**: Automatically processes outcome via server-side validation
 - Invalid actions are clearly marked as unavailable
 - API calls only happen when actions are valid
 
 ## Technical Details
 
 ### Architecture
-- Uses hex1b declarative widget API
+- Uses hex1b declarative widget API with BorderWidget for proper borders
 - State management via `GameState` class
 - Screen-based navigation system
 - API integration via HttpClient
+
+### Combat Outcome Flow
+1. Combat ends (player or enemy eliminated)
+2. Client calls `POST /operators/{id}/infil/outcome` with session ID
+3. Server loads combat session and computes deterministic outcome
+4. Server applies XP, updates mode, and saves operator state
+5. Client refreshes operator state and returns to Base mode
+
+This ensures outcomes are **server-authoritative** and cannot be manipulated by clients.
 
 ### Dependencies
 - hex1b 0.75.0
@@ -92,6 +103,7 @@ The UI respects the operator state machine:
 - `POST /operators` - Create operator
 - `GET /operators/{id}` - Get operator state
 - `POST /operators/{id}/infil/start` - Start mission
+- `POST /operators/{id}/infil/outcome` - Process combat outcome (server-side validation)
 - `GET /sessions/{id}/state` - Get combat state
 - `POST /sessions/{id}/advance` - Progress combat
 
@@ -115,20 +127,28 @@ The client defaults to connecting to `http://localhost:5209`. You can override t
 - **Enter / Space**: Select button
 - **Ctrl+C**: Exit application
 
-## Known Limitations
+## Current Implementation
 
-1. **Text Input**: The create operator screen uses a placeholder for text input. hex1b's TextBoxWidget needs further investigation for proper keyboard input handling.
+### Working Features
+✅ Operator creation with random name generation
+✅ Base camp with state-aware menus
+✅ Mission start with infil mode transition
+✅ Turn-based combat with stat display
+✅ **Automatic combat outcome processing**
+✅ **Server-side outcome validation (no client manipulation)**
+✅ **Operator mode transitions (Infil → Base after combat)**
+✅ Proper hex1b BorderWidget usage
 
-2. **Intent Submission**: The combat session screen advances turns automatically but doesn't allow manual intent selection yet. This would require a complex multi-choice UI.
-
-3. **Operator Persistence**: The "Continue" option is not yet implemented. Operators are created per-session only.
+### Known Limitations
+- Text input widget not implemented (hex1b TextBoxWidget needs focus management in reactive UI)
+- Intent submission UI not implemented (complex multi-choice system)
+- Operator list/selection screen not yet added
 
 ## Future Enhancements
 
-- Implement proper text input widget
+- Implement focus-aware text input for operator names
 - Add intent submission UI for combat
 - Add operator list/selection screen
 - Add color theming (Game Boy Color palette)
-- Add sound effects (if hex1b supports it)
 - Add animation for health bars
 - Add more detailed status displays
