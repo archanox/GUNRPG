@@ -367,8 +367,9 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 CurrentOperator = ParseOperator(operatorDto);
             }
         }
-        catch
+        catch (Exception)
         {
+            // Silently fail - operator state will be stale but UI remains functional
         }
     }
 
