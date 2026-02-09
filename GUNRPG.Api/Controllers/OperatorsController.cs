@@ -21,6 +21,18 @@ public class OperatorsController : ControllerBase
         _service = service;
     }
 
+    [HttpGet]
+    public async Task<ActionResult<List<ApiOperatorSummaryDto>>> List()
+    {
+        var result = await _service.ListOperatorsAsync();
+        
+        return result.Status switch
+        {
+            ResultStatus.Success => Ok(result.Value!.Select(ApiMapping.ToApiDto).ToList()),
+            _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
+        };
+    }
+
     [HttpPost]
     public async Task<ActionResult<ApiOperatorStateDto>> Create([FromBody] ApiOperatorCreateRequest? request)
     {
