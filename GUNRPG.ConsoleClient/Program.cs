@@ -276,6 +276,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     OperatorName = $"Operative-{Random.Shared.Next(1000, 9999)}";
                     break;
                 case 1: // Create
+                    // NOTE: CreateOperator blocks on HTTP calls due to hex1b's synchronous event handlers.
+                    // This is a known limitation. UI will freeze during API calls.
                     CreateOperator();
                     break;
                 case 2: // Back
@@ -442,6 +444,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     switch (e.ActivatedIndex)
                     {
                         case 0: // BEGIN INFILTRATION
+                            // NOTE: StartMission blocks on HTTP calls due to hex1b's synchronous event handlers.
+                            // This is a known limitation. UI will freeze during API calls.
                             StartMission();
                             break;
                         case 1: // CANCEL
@@ -629,6 +633,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             ReturnScreen = Screen.CombatSession;
                             break;
                         case 1: // ADVANCE TURN
+                            // NOTE: AdvanceCombat blocks on HTTP calls due to hex1b's synchronous event handlers.
+                            // This is a known limitation. UI will freeze during API calls.
                             AdvanceCombat();
                             break;
                         case 2: // VIEW DETAILS
@@ -802,9 +808,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 static class UI
 {
     /// <summary>
-    /// Creates a bordered panel with an optional title.
+    /// Creates a bordered panel with a title.
     /// Uses Hex1b's BorderWidget to properly render box-drawing borders.
-    /// Note: In hex1b 0.76.0, BorderWidget constructor accepts (child, title) parameters.
     /// </summary>
     public static Hex1bWidget CreateBorder(string title, Hex1bWidget? content = null)
     {
@@ -829,8 +834,9 @@ static class UI
     /// </summary>
     public static Hex1bWidget CreateProgressBar(string label, int current, int max, int width = 20)
     {
-        // Calculate percentage for 0-100 range
+        // Calculate percentage for 0-100 range and clamp to valid range
         var percentage = max > 0 ? (int)((float)current / max * 100) : 0;
+        percentage = Math.Clamp(percentage, 0, 100);
         
         var progressWidget = new ProgressWidget
         {
