@@ -1,16 +1,24 @@
 # GUNRPG Console UI - Pokemon Style
 
 ## Overview
-The GUNRPG console client has been redesigned with a retro Pokemon-style interface using the [hex1b](https://hex1b.dev) terminal UI library. The interface is optimized for an 80x43 character viewport.
+The GUNRPG console client has been redesigned with a retro Pokemon-style interface using the [hex1b](https://hex1b.dev) terminal UI library. The interface is optimized for an 80x43 character viewport and uses proper Hex1b widgets for authentic menu navigation.
 
 ## Features
 
 ### Pokemon-Style Aesthetic
-- Clean box-drawing borders using hex1b's BorderWidget
-- Button-based navigation with cursor indicators (►)
+- Clean box-drawing borders with proper titles using hex1b's BorderWidget
+- List-based navigation with Up/Down arrow keys
+- Automatic selection indicators (►) managed by Hex1b theme
 - Health bars using block characters (███████░░░)
 - Status displays for operator information
 - Retro color scheme inspired by Pokemon Red/Crystal
+
+### Navigation
+- **Up/Down Arrows**: Navigate menu items
+- **Enter/Space**: Select current item
+- **Tab**: Move focus between widgets (if multiple)
+- **Escape**: Return to previous screen
+- All navigation is handled by Hex1b's ListWidget - no manual cursor management
 
 ### Screens
 
@@ -95,9 +103,24 @@ The UI respects the operator state machine:
 This ensures outcomes are **server-authoritative** and cannot be manipulated by clients.
 
 ### Dependencies
-- hex1b 0.75.0
+- hex1b 0.76.0
 - .NET 10.0
 - GUNRPG Application layer DTOs
+
+### UI Architecture
+- **ListWidget**: Used for all menu navigation with OnItemActivated event handlers
+- **BorderWidget**: Properly displays titles in border frames
+- **VStackWidget/HStackWidget**: Layout containers for organizing content
+- **TextBlockWidget**: Static text display
+- **TextBoxWidget**: User input (operator name creation)
+
+### Code Structure
+All screens follow a consistent pattern:
+1. Define menu items as string array
+2. Create ListWidget with OnItemActivated handler
+3. Use switch statement on ActivatedIndex for menu actions
+4. Wrap content in BorderWidget with title
+5. Use helper methods from UI class for common patterns
 
 ### API Endpoints Used
 - `POST /operators` - Create operator
@@ -137,12 +160,15 @@ The client defaults to connecting to `http://localhost:5209`. You can override t
 ✅ **Automatic combat outcome processing**
 ✅ **Server-side outcome validation (no client manipulation)**
 ✅ **Operator mode transitions (Infil → Base after combat)**
-✅ Proper hex1b BorderWidget usage
+✅ Proper hex1b BorderWidget usage with titles
+✅ **ListWidget-based menu navigation (no manual ButtonWidgets)**
+✅ **Theme-managed selection indicators**
+✅ **Single focus widget per screen**
 
 ### Known Limitations
-- Text input widget not implemented (hex1b TextBoxWidget needs focus management in reactive UI)
+- Text input widget requires focus management (TextBoxWidget used in CreateOperator)
 - Intent submission UI not implemented (complex multi-choice system)
-- Operator list/selection screen not yet added
+- Manual testing requires TTY (terminal with proper input handling)
 
 ## Future Enhancements
 
