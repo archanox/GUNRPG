@@ -59,23 +59,36 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
     Hex1bWidget BuildMainMenu(CancellationTokenSource cts)
     {
+        var menuItems = new[] {
+            "CREATE NEW OPERATOR",
+            "SELECT OPERATOR",
+            "EXIT"
+        };
+
         return new VStackWidget([
-            UI.CreateBorder("GUNRPG - OPERATOR TERMINAL", 78, 5),
+            UI.CreateBorder("GUNRPG - OPERATOR TERMINAL"),
             new TextBlockWidget(""),
-            UI.CreateBorder("MAIN MENU", 50, 15, [
+            UI.CreateBorder("MAIN MENU", new VStackWidget([
                 new TextBlockWidget("  Select an option:"),
                 new TextBlockWidget(""),
-                new ButtonWidget("  ► CREATE NEW OPERATOR").OnClick(_ => {
-                    CurrentScreen = Screen.CreateOperator;
-                    OperatorName = "";
-                }),
-                new ButtonWidget("  ► SELECT OPERATOR").OnClick(_ => {
-                    ErrorMessage = null; // Clear any previous errors
-                    LoadOperatorList();
-                    CurrentScreen = Screen.SelectOperator;
-                }),
-                new ButtonWidget("  ► EXIT").OnClick(_ => cts.Cancel())
-            ]),
+                new ListWidget(menuItems).OnItemActivated(e => {
+                    switch (e.ActivatedIndex)
+                    {
+                        case 0: // CREATE NEW OPERATOR
+                            CurrentScreen = Screen.CreateOperator;
+                            OperatorName = "";
+                            break;
+                        case 1: // SELECT OPERATOR
+                            ErrorMessage = null;
+                            LoadOperatorList();
+                            CurrentScreen = Screen.SelectOperator;
+                            break;
+                        case 2: // EXIT
+                            cts.Cancel();
+                            break;
+                    }
+                })
+            ])),
             new TextBlockWidget(""),
             UI.CreateStatusBar($"API: {client.BaseAddress}"),
         ]);
@@ -107,42 +120,51 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
     Hex1bWidget BuildSelectOperator()
     {
-        var widgets = new List<Hex1bWidget>
+        var contentWidgets = new List<Hex1bWidget>
         {
             new TextBlockWidget("  Available Operators:"),
             new TextBlockWidget("")
         };
 
+        if (ErrorMessage != null)
+        {
+            contentWidgets.Add(new TextBlockWidget($"  ERROR: {ErrorMessage}"));
+            contentWidgets.Add(new TextBlockWidget(""));
+        }
+
         if (AvailableOperators == null || AvailableOperators.Count == 0)
         {
-            widgets.Add(new TextBlockWidget("  No operators found."));
-            widgets.Add(new TextBlockWidget("  Create one from the main menu."));
+            contentWidgets.Add(new TextBlockWidget("  No operators found."));
+            contentWidgets.Add(new TextBlockWidget("  Create one from the main menu."));
+            contentWidgets.Add(new TextBlockWidget(""));
+            contentWidgets.Add(new ListWidget(new[] { "BACK TO MAIN MENU" })
+                .OnItemActivated(_ => CurrentScreen = Screen.MainMenu));
         }
         else
         {
-            foreach (var op in AvailableOperators)
-            {
+            var operatorItems = AvailableOperators.Select(op => {
                 var status = op.IsDead ? "KIA" : op.CurrentMode;
                 var healthPct = op.MaxHealth > 0 ? (int)(100 * op.CurrentHealth / op.MaxHealth) : 0;
-                widgets.Add(new ButtonWidget($"  ► {op.Name} - {status} (HP: {healthPct}%, XP: {op.TotalXp})").OnClick(_ => {
-                    SelectOperator(op.Id);
-                }));
-            }
-        }
+                return $"{op.Name} - {status} (HP: {healthPct}%, XP: {op.TotalXp})";
+            }).Concat(new[] { "--- BACK TO MAIN MENU ---" }).ToArray();
 
-        widgets.Add(new TextBlockWidget(""));
-        widgets.Add(new ButtonWidget("  ► BACK TO MAIN MENU").OnClick(_ => CurrentScreen = Screen.MainMenu));
-
-        if (ErrorMessage != null)
-        {
-            widgets.Insert(1, new TextBlockWidget($"  ERROR: {ErrorMessage}"));
-            widgets.Insert(2, new TextBlockWidget(""));
+            contentWidgets.Add(new ListWidget(operatorItems).OnItemActivated(e => {
+                if (e.ActivatedIndex == AvailableOperators.Count)
+                {
+                    // Back to main menu
+                    CurrentScreen = Screen.MainMenu;
+                }
+                else
+                {
+                    SelectOperator(AvailableOperators[e.ActivatedIndex].Id);
+                }
+            }));
         }
 
         return new VStackWidget([
-            UI.CreateBorder("SELECT OPERATOR", 78, 5),
+            UI.CreateBorder("SELECT OPERATOR"),
             new TextBlockWidget(""),
-            UI.CreateBorder("OPERATOR LIST", 70, 28, widgets),
+            UI.CreateBorder("OPERATOR LIST", new VStackWidget(contentWidgets)),
             UI.CreateStatusBar("Choose an operator to continue")
         ]);
     }
@@ -217,11 +239,17 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
     Hex1bWidget BuildCreateOperator()
     {
-        var widgets = new List<Hex1bWidget>
+        var contentWidgets = new List<Hex1bWidget>
         {
             new TextBlockWidget("  Enter operator name:"),
             new TextBlockWidget(""),
         };
+
+        if (ErrorMessage != null)
+        {
+            contentWidgets.Add(new TextBlockWidget($"  ERROR: {ErrorMessage}"));
+            contentWidgets.Add(new TextBlockWidget(""));
+        }
 
         // Add text input using TextBoxWidget with OnTextChanged event handler
         var textBox = new TextBoxWidget(OperatorName ?? "")
@@ -229,30 +257,38 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 OperatorName = args.NewText;
                 ErrorMessage = null; // Clear error when user types
             });
-        widgets.Add(textBox);
-        widgets.Add(new TextBlockWidget(""));
-        widgets.Add(new TextBlockWidget($"  Current: {(string.IsNullOrWhiteSpace(OperatorName) ? "(empty)" : OperatorName)}"));
-        widgets.Add(new TextBlockWidget(""));
+        contentWidgets.Add(textBox);
+        contentWidgets.Add(new TextBlockWidget(""));
+        contentWidgets.Add(new TextBlockWidget($"  Current: {(string.IsNullOrWhiteSpace(OperatorName) ? "(empty)" : OperatorName)}"));
+        contentWidgets.Add(new TextBlockWidget(""));
         
-        // Action buttons
-        widgets.Add(new ButtonWidget("  ► GENERATE RANDOM NAME").OnClick(_ => {
-            OperatorName = $"Operative-{Random.Shared.Next(1000, 9999)}";
+        // Action menu using ListWidget
+        var actionItems = new[] {
+            "GENERATE RANDOM NAME",
+            "CREATE",
+            "BACK"
+        };
+        
+        contentWidgets.Add(new ListWidget(actionItems).OnItemActivated(e => {
+            switch (e.ActivatedIndex)
+            {
+                case 0: // Generate Random Name
+                    OperatorName = $"Operative-{Random.Shared.Next(1000, 9999)}";
+                    break;
+                case 1: // Create
+                    CreateOperator();
+                    break;
+                case 2: // Back
+                    CurrentScreen = Screen.MainMenu;
+                    OperatorName = "";
+                    break;
+            }
         }));
-        widgets.Add(new ButtonWidget("  ► CREATE").OnClick(_ => CreateOperator()));
-        widgets.Add(new ButtonWidget("  ► BACK").OnClick(_ => {
-            CurrentScreen = Screen.MainMenu;
-            OperatorName = "";
-        }));
-
-        if (ErrorMessage != null)
-        {
-            widgets.Insert(1, new TextBlockWidget($"  ERROR: {ErrorMessage}"));
-        }
         
         return new VStackWidget([
-            UI.CreateBorder("CREATE NEW OPERATOR", 78, 5),
+            UI.CreateBorder("CREATE NEW OPERATOR"),
             new TextBlockWidget(""),
-            UI.CreateBorder("OPERATOR PROFILE", 60, 28, widgets),
+            UI.CreateBorder("OPERATOR PROFILE", new VStackWidget(contentWidgets)),
             UI.CreateStatusBar("Type name or generate random, then CREATE")
         ]);
     }
@@ -301,47 +337,70 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             return new TextBlockWidget("No operator loaded");
         }
 
-        var menuWidgets = new List<Hex1bWidget>
-        {
-            new TextBlockWidget("  Select action:"),
-            new TextBlockWidget("")
-        };
-
+        var menuItems = new List<string>();
+        
         if (op.CurrentMode == "Base")
         {
-            menuWidgets.Add(new ButtonWidget("  ► START MISSION").OnClick(_ => CurrentScreen = Screen.StartMission));
-            menuWidgets.Add(new ButtonWidget("  ► VIEW STATS").OnClick(_ => {
-                Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nPerks: {string.Join(", ", op.UnlockedPerks)}\n\nPress OK to continue.";
-                CurrentScreen = Screen.Message;
-                ReturnScreen = Screen.BaseCamp;
-            }));
+            menuItems.Add("START MISSION");
+            menuItems.Add("VIEW STATS");
         }
         else
         {
-            menuWidgets.Add(new ButtonWidget("  ► CONTINUE MISSION").OnClick(_ => {
-                if (op.ActiveSessionId.HasValue)
-                {
-                    ActiveSessionId = op.ActiveSessionId;
-                    LoadSession();
-                }
-            }));
-            menuWidgets.Add(new ButtonWidget("  ► VIEW STATS").OnClick(_ => {
-                Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nMission In Progress\n\nPress OK to continue.";
-                CurrentScreen = Screen.Message;
-                ReturnScreen = Screen.BaseCamp;
-            }));
+            menuItems.Add("CONTINUE MISSION");
+            menuItems.Add("VIEW STATS");
         }
         
-        menuWidgets.Add(new ButtonWidget("  ► MAIN MENU").OnClick(_ => CurrentScreen = Screen.MainMenu));
+        menuItems.Add("MAIN MENU");
+
+        var menuWidget = new ListWidget(menuItems.ToArray()).OnItemActivated(e => {
+            if (op.CurrentMode == "Base")
+            {
+                switch (e.ActivatedIndex)
+                {
+                    case 0: // START MISSION
+                        CurrentScreen = Screen.StartMission;
+                        break;
+                    case 1: // VIEW STATS
+                        Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nPerks: {string.Join(", ", op.UnlockedPerks)}\n\nPress OK to continue.";
+                        CurrentScreen = Screen.Message;
+                        ReturnScreen = Screen.BaseCamp;
+                        break;
+                    case 2: // MAIN MENU
+                        CurrentScreen = Screen.MainMenu;
+                        break;
+                }
+            }
+            else
+            {
+                switch (e.ActivatedIndex)
+                {
+                    case 0: // CONTINUE MISSION
+                        if (op.ActiveSessionId.HasValue)
+                        {
+                            ActiveSessionId = op.ActiveSessionId;
+                            LoadSession();
+                        }
+                        break;
+                    case 1: // VIEW STATS
+                        Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nMission In Progress\n\nPress OK to continue.";
+                        CurrentScreen = Screen.Message;
+                        ReturnScreen = Screen.BaseCamp;
+                        break;
+                    case 2: // MAIN MENU
+                        CurrentScreen = Screen.MainMenu;
+                        break;
+                }
+            }
+        });
 
         var healthBar = UI.CreateBar("HP", (int)op.CurrentHealth, (int)op.MaxHealth, 30);
         var xpInfo = $"XP: {op.TotalXp}  STREAK: {op.ExfilStreak}";
         
         return new VStackWidget([
-            UI.CreateBorder($"OPERATOR: {op.Name.ToUpper()}", 78, 5),
+            UI.CreateBorder($"OPERATOR: {op.Name.ToUpper()}"),
             new TextBlockWidget(""),
             new HStackWidget([
-                UI.CreateBorder("STATUS", 38, 12, [
+                UI.CreateBorder("STATUS", new VStackWidget([
                     new TextBlockWidget($"  {healthBar}"),
                     new TextBlockWidget(""),
                     new TextBlockWidget($"  {xpInfo}"),
@@ -349,9 +408,9 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     new TextBlockWidget($"  MODE: {op.CurrentMode}"),
                     new TextBlockWidget($"  PERKS: {op.UnlockedPerks.Count}"),
                     op.IsDead ? new TextBlockWidget("  STATUS: KIA") : new TextBlockWidget("")
-                ]),
+                ])),
                 new TextBlockWidget("  "),
-                UI.CreateBorder("BASE CAMP", 38, 12, menuWidgets)
+                UI.CreateBorder("BASE CAMP", menuWidget)
             ]),
             new TextBlockWidget(""),
             UI.CreateStatusBar($"Operator ID: {op.Id}")
@@ -360,10 +419,15 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
     Hex1bWidget BuildStartMission()
     {
+        var menuItems = new[] {
+            "BEGIN INFILTRATION",
+            "CANCEL"
+        };
+
         return new VStackWidget([
-            UI.CreateBorder("MISSION BRIEFING", 78, 5),
+            UI.CreateBorder("MISSION BRIEFING"),
             new TextBlockWidget(""),
-            UI.CreateBorder("INFILTRATION", 60, 18, [
+            UI.CreateBorder("INFILTRATION", new VStackWidget([
                 new TextBlockWidget("  OBJECTIVE: Engage hostile target"),
                 new TextBlockWidget("  TIME LIMIT: 30 minutes"),
                 new TextBlockWidget("  THREAT LEVEL: Variable"),
@@ -373,9 +437,18 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 new TextBlockWidget(""),
                 new TextBlockWidget("  Select action:"),
                 new TextBlockWidget(""),
-                new ButtonWidget("  ► BEGIN INFILTRATION").OnClick(_ => StartMission()),
-                new ButtonWidget("  ► CANCEL").OnClick(_ => CurrentScreen = Screen.BaseCamp)
-            ]),
+                new ListWidget(menuItems).OnItemActivated(e => {
+                    switch (e.ActivatedIndex)
+                    {
+                        case 0: // BEGIN INFILTRATION
+                            StartMission();
+                            break;
+                        case 1: // CANCEL
+                            CurrentScreen = Screen.BaseCamp;
+                            break;
+                    }
+                })
+            ])),
             UI.CreateStatusBar("Prepare for combat")
         ]);
     }
@@ -514,46 +587,60 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         var playerHpBar = UI.CreateBar("HP", (int)player.Health, (int)player.MaxHealth, 20);
         var enemyHpBar = UI.CreateBar("HP", (int)enemy.Health, (int)enemy.MaxHealth, 20);
         
+        var actionItems = new[] {
+            "SUBMIT INTENTS (Not Implemented)",
+            "ADVANCE TURN",
+            "VIEW DETAILS",
+            "RETURN TO BASE"
+        };
+
         return new VStackWidget([
-            UI.CreateBorder("COMBAT SESSION", 78, 5),
+            UI.CreateBorder("COMBAT SESSION"),
             new TextBlockWidget(""),
             new HStackWidget([
-                UI.CreateBorder("PLAYER", 38, 10, [
+                UI.CreateBorder("PLAYER", new VStackWidget([
                     new TextBlockWidget($"  {player.Name}"),
                     new TextBlockWidget($"  {playerHpBar}"),
                     new TextBlockWidget($"  AMMO: {player.CurrentAmmo}/{player.MagazineSize}"),
                     new TextBlockWidget($"  COVER: {player.CurrentCover}"),
                     new TextBlockWidget($"  MOVE: {player.CurrentMovement}")
-                ]),
+                ])),
                 new TextBlockWidget("  "),
-                UI.CreateBorder("ENEMY", 38, 10, [
+                UI.CreateBorder("ENEMY", new VStackWidget([
                     new TextBlockWidget($"  {enemy.Name} (LVL {session.EnemyLevel})"),
                     new TextBlockWidget($"  {enemyHpBar}"),
                     new TextBlockWidget($"  AMMO: {enemy.CurrentAmmo}/{enemy.MagazineSize}"),
                     new TextBlockWidget($"  DIST: {player.DistanceToOpponent:F1}m")
-                ])
+                ]))
             ]),
             new TextBlockWidget(""),
-            UI.CreateBorder("ACTIONS", 78, 10, [
+            UI.CreateBorder("ACTIONS", new VStackWidget([
                 new TextBlockWidget($"  TURN: {session.TurnNumber}  PHASE: {session.Phase}  TIME: {session.CurrentTimeMs}ms"),
                 new TextBlockWidget(""),
-                new ButtonWidget("  ► SUBMIT INTENTS (Not Implemented)").OnClick(_ => {
-                    Message = "Intent submission not yet implemented in Pokemon UI.\nUse API directly for now.\n\nPress OK to continue.";
-                    CurrentScreen = Screen.Message;
-                    ReturnScreen = Screen.CombatSession;
-                }),
-                new ButtonWidget("  ► ADVANCE TURN").OnClick(_ => AdvanceCombat()),
-                new ButtonWidget("  ► VIEW DETAILS").OnClick(_ => {
-                    var pet = session.Pet;
-                    Message = $"Combat Details:\n\nPlayer: {session.Player.Name}\nHealth: {session.Player.Health:F0}/{session.Player.MaxHealth:F0}\nAmmo: {session.Player.CurrentAmmo}/{session.Player.MagazineSize}\n\nEnemy: {session.Enemy.Name}\nHealth: {session.Enemy.Health:F0}/{session.Enemy.MaxHealth:F0}\n\nPet Health: {pet.Health:F0}\nPet Morale: {pet.Morale:F0}\n\nPress OK to continue.";
-                    CurrentScreen = Screen.Message;
-                    ReturnScreen = Screen.CombatSession;
-                }),
-                new ButtonWidget("  ► RETURN TO BASE").OnClick(_ => {
-                    CurrentScreen = Screen.BaseCamp;
-                    RefreshOperator();
+                new ListWidget(actionItems).OnItemActivated(e => {
+                    switch (e.ActivatedIndex)
+                    {
+                        case 0: // SUBMIT INTENTS
+                            Message = "Intent submission not yet implemented in Pokemon UI.\nUse API directly for now.\n\nPress OK to continue.";
+                            CurrentScreen = Screen.Message;
+                            ReturnScreen = Screen.CombatSession;
+                            break;
+                        case 1: // ADVANCE TURN
+                            AdvanceCombat();
+                            break;
+                        case 2: // VIEW DETAILS
+                            var pet = session.Pet;
+                            Message = $"Combat Details:\n\nPlayer: {session.Player.Name}\nHealth: {session.Player.Health:F0}/{session.Player.MaxHealth:F0}\nAmmo: {session.Player.CurrentAmmo}/{session.Player.MagazineSize}\n\nEnemy: {session.Enemy.Name}\nHealth: {session.Enemy.Health:F0}/{session.Enemy.MaxHealth:F0}\n\nPet Health: {pet.Health:F0}\nPet Morale: {pet.Morale:F0}\n\nPress OK to continue.";
+                            CurrentScreen = Screen.Message;
+                            ReturnScreen = Screen.CombatSession;
+                            break;
+                        case 3: // RETURN TO BASE
+                            CurrentScreen = Screen.BaseCamp;
+                            RefreshOperator();
+                            break;
+                    }
                 })
-            ]),
+            ])),
             UI.CreateStatusBar($"Session: {session.Id}")
         ]);
     }
@@ -637,14 +724,14 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     Hex1bWidget BuildMissionComplete()
     {
         return new VStackWidget([
-            UI.CreateBorder("MISSION COMPLETE", 78, 5),
+            UI.CreateBorder("MISSION COMPLETE"),
             new TextBlockWidget(""),
-            UI.CreateBorder("DEBRIEFING", 60, 15, [
+            UI.CreateBorder("DEBRIEFING", new VStackWidget([
                 new TextBlockWidget(""),
                 new TextBlockWidget(Message ?? "Mission ended."),
                 new TextBlockWidget(""),
-                new ButtonWidget("  ► RETURN TO BASE").OnClick(_ => CurrentScreen = Screen.BaseCamp)
-            ]),
+                new ListWidget(new[] { "RETURN TO BASE" }).OnItemActivated(_ => CurrentScreen = Screen.BaseCamp)
+            ])),
             UI.CreateStatusBar("Mission complete")
         ]);
     }
@@ -652,20 +739,20 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     Hex1bWidget BuildMessage()
     {
         var lines = Message?.Split('\n') ?? [""];
-        var widgets = new List<Hex1bWidget>();
+        var contentWidgets = new List<Hex1bWidget>();
         
         foreach (var line in lines)
         {
-            widgets.Add(new TextBlockWidget($"  {line}"));
+            contentWidgets.Add(new TextBlockWidget($"  {line}"));
         }
         
-        widgets.Add(new TextBlockWidget(""));
-        widgets.Add(new ButtonWidget("  ► OK").OnClick(_ => CurrentScreen = ReturnScreen));
+        contentWidgets.Add(new TextBlockWidget(""));
+        contentWidgets.Add(new ListWidget(new[] { "OK" }).OnItemActivated(_ => CurrentScreen = ReturnScreen));
 
         return new VStackWidget([
-            UI.CreateBorder("MESSAGE", 78, 5),
+            UI.CreateBorder("MESSAGE"),
             new TextBlockWidget(""),
-            UI.CreateBorder("INFO", 70, Math.Max(lines.Length + 6, 12), widgets),
+            UI.CreateBorder("INFO", new VStackWidget(contentWidgets)),
             UI.CreateStatusBar("Press OK to continue")
         ]);
     }
@@ -711,33 +798,30 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
 static class UI
 {
-    public static Hex1bWidget CreateBorder(string title, int width, int height, List<Hex1bWidget>? content = null)
+    /// <summary>
+    /// Creates a bordered panel with an optional title.
+    /// Uses Hex1b's BorderWidget to properly render box-drawing borders.
+    /// </summary>
+    public static Hex1bWidget CreateBorder(string title, Hex1bWidget? content = null)
     {
-        // Use hex1b's BorderWidget for proper border rendering
-        var borderContent = content != null && content.Count > 0 
-            ? new VStackWidget(content)
-            : CreateEmptyContent(height);
-
-        // Try BorderWidget with just content and title
-        // If it doesn't support title in constructor, we'll just use the border
-        return new BorderWidget(borderContent);
+        // If no content provided, use a simple text block for spacing
+        var borderContent = content ?? new TextBlockWidget("");
+        
+        // Use BorderWidget with title as second parameter
+        return new BorderWidget(borderContent, title);
     }
 
-    private static Hex1bWidget CreateEmptyContent(int height)
-    {
-        var emptyContent = new List<Hex1bWidget>();
-        for (int i = 0; i < Math.Max(1, height - 2); i++)
-        {
-            emptyContent.Add(new TextBlockWidget(""));
-        }
-        return new VStackWidget(emptyContent);
-    }
-
+    /// <summary>
+    /// Creates a simple status bar at the bottom of the screen.
+    /// </summary>
     public static Hex1bWidget CreateStatusBar(string text)
     {
         return new TextBlockWidget($"  {text}");
     }
 
+    /// <summary>
+    /// Creates a visual health/progress bar using block characters.
+    /// </summary>
     public static string CreateBar(string label, int current, int max, int barWidth)
     {
         var pct = max > 0 ? (float)current / max : 0;
