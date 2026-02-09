@@ -2,345 +2,499 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GUNRPG.Application.Dtos;
-using GUNRPG.Application.Requests;
-using GUNRPG.Core.Intents;
+using Hex1b;
+using Hex1b.Widgets;
 
 var baseAddress = Environment.GetEnvironmentVariable("GUNRPG_API_BASE") ?? "http://localhost:5209";
 var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 jsonOptions.Converters.Add(new JsonStringEnumConverter());
 
 using var httpClient = new HttpClient { BaseAddress = new Uri(baseAddress) };
+using var cts = new CancellationTokenSource();
 
-Guid? activeSessionId = null;
-Console.WriteLine($"GUNRPG Console Client");
-Console.WriteLine($"API base: {httpClient.BaseAddress}");
-Console.WriteLine();
+var gameState = new GameState(httpClient, jsonOptions);
+Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
-while (true)
+using var app = new Hex1bApp(_ => gameState.BuildUI(cts));
+await app.RunAsync(cts.Token);
+
+class GameState(HttpClient client, JsonSerializerOptions options)
 {
-    ShowMenu(activeSessionId);
-    var key = Console.ReadKey(true);
-    Console.WriteLine();
+    public Screen CurrentScreen { get; set; } = Screen.MainMenu;
+    public Screen ReturnScreen { get; set; } = Screen.MainMenu;
+    
+    public Guid? CurrentOperatorId { get; set; }
+    public OperatorState? CurrentOperator { get; set; }
+    public Guid? ActiveSessionId { get; set; }
+    public CombatSessionDto? CurrentSession { get; set; }
+    
+    public string OperatorName { get; set; } = "";
+    public string? Message { get; set; }
+    public string? ErrorMessage { get; set; }
 
-    switch (key.KeyChar)
+    public Task<Hex1bWidget> BuildUI(CancellationTokenSource cts)
     {
-        case '1':
-            activeSessionId = await CreateSessionAsync(httpClient, jsonOptions);
-            break;
-        case '2':
-            activeSessionId = await ShowStateAsync(httpClient, jsonOptions, activeSessionId);
-            break;
-        case '3':
-            activeSessionId = await SubmitIntentsAsync(httpClient, jsonOptions, activeSessionId);
-            break;
-        case '4':
-            activeSessionId = await AdvanceAsync(httpClient, jsonOptions, activeSessionId);
-            break;
-        case '5':
-            activeSessionId = await ApplyPetActionAsync(httpClient, jsonOptions, activeSessionId);
-            break;
-        case '0':
-            Console.WriteLine("Goodbye.");
-            return;
-        default:
-            Console.WriteLine("Unknown option. Try again.");
-            break;
+        return CurrentScreen switch
+        {
+            Screen.MainMenu => Task.FromResult<Hex1bWidget>(BuildMainMenu(cts)),
+            Screen.CreateOperator => Task.FromResult<Hex1bWidget>(BuildCreateOperator()),
+            Screen.BaseCamp => Task.FromResult<Hex1bWidget>(BuildBaseCamp()),
+            Screen.StartMission => Task.FromResult<Hex1bWidget>(BuildStartMission()),
+            Screen.CombatSession => Task.FromResult<Hex1bWidget>(BuildCombatSession()),
+            Screen.MissionComplete => Task.FromResult<Hex1bWidget>(BuildMissionComplete()),
+            Screen.Message => Task.FromResult<Hex1bWidget>(BuildMessage()),
+            _ => Task.FromResult<Hex1bWidget>(new TextBlockWidget("Unknown screen"))
+        };
     }
 
-    Console.WriteLine();
-}
-
-static void ShowMenu(Guid? sessionId)
-{
-    Console.WriteLine("═══ GUNRPG API CLIENT ═══");
-    Console.WriteLine($"Active session: {(sessionId.HasValue ? sessionId : "none")}");
-    Console.WriteLine("1. Start new session");
-    Console.WriteLine("2. View session state");
-    Console.WriteLine("3. Submit intents (fire/move/stance/cover)");
-    Console.WriteLine("4. Advance execution");
-    Console.WriteLine("5. Apply pet action (rest/eat/drink/mission)");
-    Console.WriteLine("0. Exit");
-    Console.Write("Choose an option: ");
-}
-
-static async Task<Guid?> CreateSessionAsync(HttpClient httpClient, JsonSerializerOptions jsonOptions)
-{
-    Console.Write("Enter player name (or press Enter for default): ");
-    var playerName = Console.ReadLine();
-
-    var request = new SessionCreateRequest
+    Hex1bWidget BuildMainMenu(CancellationTokenSource cts)
     {
-        PlayerName = string.IsNullOrWhiteSpace(playerName) ? null : playerName
-    };
+        return new VStackWidget([
+            UI.CreateBorder("GUNRPG - OPERATOR TERMINAL", 78, 5),
+            new TextBlockWidget(""),
+            UI.CreateBorder("MAIN MENU", 50, 15, [
+                new TextBlockWidget("  Select an option:"),
+                new TextBlockWidget(""),
+                new ButtonWidget("  ► CREATE NEW OPERATOR").OnClick(_ => {
+                    CurrentScreen = Screen.CreateOperator;
+                    OperatorName = "";
+                }),
+                new ButtonWidget("  ► CONTINUE (Not Implemented)").OnClick(_ => {
+                    Message = "Operator loading not yet implemented.\n\nPress OK to continue.";
+                    CurrentScreen = Screen.Message;
+                    ReturnScreen = Screen.MainMenu;
+                }),
+                new ButtonWidget("  ► EXIT").OnClick(_ => cts.Cancel())
+            ]),
+            new TextBlockWidget(""),
+            UI.CreateStatusBar($"API: {client.BaseAddress}"),
+        ]);
+    }
 
-    try
+    Hex1bWidget BuildCreateOperator()
     {
-        var response = await httpClient.PostAsJsonAsync("sessions", request, jsonOptions);
-        if (!response.IsSuccessStatusCode)
+        var widgets = new List<Hex1bWidget>
         {
-            Console.WriteLine($"Failed to create session: {(int)response.StatusCode} {response.ReasonPhrase}");
-            return null;
+            new TextBlockWidget("  Enter operator name:"),
+            new TextBlockWidget(""),
+            new TextBlockWidget($"  Name: {OperatorName}_"),
+            new TextBlockWidget(""),
+            new TextBlockWidget("  (Use external client to create operator for now)"),
+            new TextBlockWidget(""),
+            new ButtonWidget("  ► CREATE").OnClick(_ => CreateOperator()),
+            new ButtonWidget("  ► BACK").OnClick(_ => CurrentScreen = Screen.MainMenu)
+        };
+
+        if (ErrorMessage != null)
+        {
+            widgets.Insert(1, new TextBlockWidget($"  ERROR: {ErrorMessage}"));
+        }
+        
+        return new VStackWidget([
+            UI.CreateBorder("CREATE NEW OPERATOR", 78, 5),
+            new TextBlockWidget(""),
+            UI.CreateBorder("OPERATOR PROFILE", 60, 15, widgets),
+            UI.CreateStatusBar("Create new operator profile")
+        ]);
+    }
+
+    void CreateOperator()
+    {
+        if (string.IsNullOrWhiteSpace(OperatorName))
+        {
+            ErrorMessage = "Name cannot be empty";
+            return;
         }
 
-        var session = await response.Content.ReadFromJsonAsync<CombatSessionDto>(jsonOptions);
+        try
+        {
+            var request = new { Name = OperatorName };
+            var response = client.PostAsJsonAsync("operators", request, options).GetAwaiter().GetResult();
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                ErrorMessage = $"Failed: {response.StatusCode}";
+                return;
+            }
+
+            var operatorDto = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
+            CurrentOperatorId = operatorDto.GetProperty("id").GetGuid();
+            CurrentOperator = ParseOperator(operatorDto);
+            ErrorMessage = null;
+            CurrentScreen = Screen.BaseCamp;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    Hex1bWidget BuildBaseCamp()
+    {
+        var op = CurrentOperator;
+        if (op == null)
+        {
+            return new TextBlockWidget("No operator loaded");
+        }
+
+        var menuWidgets = new List<Hex1bWidget>
+        {
+            new TextBlockWidget("  Select action:"),
+            new TextBlockWidget("")
+        };
+
+        if (op.CurrentMode == "Base")
+        {
+            menuWidgets.Add(new ButtonWidget("  ► START MISSION").OnClick(_ => CurrentScreen = Screen.StartMission));
+            menuWidgets.Add(new ButtonWidget("  ► VIEW STATS").OnClick(_ => {
+                Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nPerks: {string.Join(", ", op.UnlockedPerks)}\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.BaseCamp;
+            }));
+        }
+        else
+        {
+            menuWidgets.Add(new ButtonWidget("  ► CONTINUE MISSION").OnClick(_ => {
+                if (op.ActiveSessionId.HasValue)
+                {
+                    ActiveSessionId = op.ActiveSessionId;
+                    LoadSession();
+                }
+            }));
+            menuWidgets.Add(new ButtonWidget("  ► VIEW STATS").OnClick(_ => {
+                Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nMission In Progress\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.BaseCamp;
+            }));
+        }
+        
+        menuWidgets.Add(new ButtonWidget("  ► MAIN MENU").OnClick(_ => CurrentScreen = Screen.MainMenu));
+
+        var healthBar = UI.CreateBar("HP", (int)op.CurrentHealth, (int)op.MaxHealth, 30);
+        var xpInfo = $"XP: {op.TotalXp}  STREAK: {op.ExfilStreak}";
+        
+        return new VStackWidget([
+            UI.CreateBorder($"OPERATOR: {op.Name.ToUpper()}", 78, 5),
+            new TextBlockWidget(""),
+            new HStackWidget([
+                UI.CreateBorder("STATUS", 38, 12, [
+                    new TextBlockWidget($"  {healthBar}"),
+                    new TextBlockWidget(""),
+                    new TextBlockWidget($"  {xpInfo}"),
+                    new TextBlockWidget($"  WEAPON: {op.EquippedWeaponName}"),
+                    new TextBlockWidget($"  MODE: {op.CurrentMode}"),
+                    new TextBlockWidget($"  PERKS: {op.UnlockedPerks.Count}"),
+                    op.IsDead ? new TextBlockWidget("  STATUS: KIA") : new TextBlockWidget("")
+                ]),
+                new TextBlockWidget("  "),
+                UI.CreateBorder("BASE CAMP", 38, 12, menuWidgets)
+            ]),
+            new TextBlockWidget(""),
+            UI.CreateStatusBar($"Operator ID: {op.Id}")
+        ]);
+    }
+
+    Hex1bWidget BuildStartMission()
+    {
+        return new VStackWidget([
+            UI.CreateBorder("MISSION BRIEFING", 78, 5),
+            new TextBlockWidget(""),
+            UI.CreateBorder("INFILTRATION", 60, 18, [
+                new TextBlockWidget("  OBJECTIVE: Engage hostile target"),
+                new TextBlockWidget("  TIME LIMIT: 30 minutes"),
+                new TextBlockWidget("  THREAT LEVEL: Variable"),
+                new TextBlockWidget(""),
+                new TextBlockWidget("  WARNING: Death is permanent."),
+                new TextBlockWidget("           Health does not regenerate."),
+                new TextBlockWidget(""),
+                new TextBlockWidget("  Select action:"),
+                new TextBlockWidget(""),
+                new ButtonWidget("  ► BEGIN INFILTRATION").OnClick(_ => StartMission()),
+                new ButtonWidget("  ► CANCEL").OnClick(_ => CurrentScreen = Screen.BaseCamp)
+            ]),
+            UI.CreateStatusBar("Prepare for combat")
+        ]);
+    }
+
+    void StartMission()
+    {
+        try
+        {
+            var response = client.PostAsync($"operators/{CurrentOperatorId}/infil/start", null).GetAwaiter().GetResult();
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                ErrorMessage = $"Failed to start mission: {response.StatusCode}";
+                Message = $"Mission start failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.BaseCamp;
+                return;
+            }
+
+            var result = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
+            ActiveSessionId = result.GetProperty("sessionId").GetGuid();
+            CurrentOperator = ParseOperator(result.GetProperty("operator"));
+            
+            LoadSession();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            Message = $"Error: {ex.Message}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+        }
+    }
+
+    void LoadSession()
+    {
+        try
+        {
+            var sessionData = client.GetFromJsonAsync<CombatSessionDto>($"sessions/{ActiveSessionId}/state", options).GetAwaiter().GetResult();
+            if (sessionData != null)
+            {
+                CurrentSession = sessionData;
+                CurrentScreen = Screen.CombatSession;
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            Message = $"Failed to load session.\nError: {ex.Message}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+        }
+    }
+
+    Hex1bWidget BuildCombatSession()
+    {
+        var session = CurrentSession;
         if (session == null)
         {
-            Console.WriteLine("No session payload received.");
-            return null;
+            return new TextBlockWidget("No session loaded");
         }
 
-        Console.WriteLine($"Session created: {session.Id}");
-        PrintState(session);
-        return session.Id;
+        var player = session.Player;
+        var enemy = session.Enemy;
+        
+        var playerHpBar = UI.CreateBar("HP", (int)player.Health, (int)player.MaxHealth, 20);
+        var enemyHpBar = UI.CreateBar("HP", (int)enemy.Health, (int)enemy.MaxHealth, 20);
+        
+        return new VStackWidget([
+            UI.CreateBorder("COMBAT SESSION", 78, 5),
+            new TextBlockWidget(""),
+            new HStackWidget([
+                UI.CreateBorder("PLAYER", 38, 10, [
+                    new TextBlockWidget($"  {player.Name}"),
+                    new TextBlockWidget($"  {playerHpBar}"),
+                    new TextBlockWidget($"  AMMO: {player.CurrentAmmo}/{player.MagazineSize}"),
+                    new TextBlockWidget($"  COVER: {player.CurrentCover}"),
+                    new TextBlockWidget($"  MOVE: {player.CurrentMovement}")
+                ]),
+                new TextBlockWidget("  "),
+                UI.CreateBorder("ENEMY", 38, 10, [
+                    new TextBlockWidget($"  {enemy.Name} (LVL {session.EnemyLevel})"),
+                    new TextBlockWidget($"  {enemyHpBar}"),
+                    new TextBlockWidget($"  AMMO: {enemy.CurrentAmmo}/{enemy.MagazineSize}"),
+                    new TextBlockWidget($"  DIST: {player.DistanceToOpponent:F1}m")
+                ])
+            ]),
+            new TextBlockWidget(""),
+            UI.CreateBorder("ACTIONS", 78, 10, [
+                new TextBlockWidget($"  TURN: {session.TurnNumber}  PHASE: {session.Phase}  TIME: {session.CurrentTimeMs}ms"),
+                new TextBlockWidget(""),
+                new ButtonWidget("  ► SUBMIT INTENTS (Not Implemented)").OnClick(_ => {
+                    Message = "Intent submission not yet implemented in Pokemon UI.\nUse API directly for now.\n\nPress OK to continue.";
+                    CurrentScreen = Screen.Message;
+                    ReturnScreen = Screen.CombatSession;
+                }),
+                new ButtonWidget("  ► ADVANCE TURN").OnClick(_ => AdvanceCombat()),
+                new ButtonWidget("  ► VIEW DETAILS").OnClick(_ => {
+                    var pet = session.Pet;
+                    Message = $"Combat Details:\n\nPlayer: {session.Player.Name}\nHealth: {session.Player.Health:F0}/{session.Player.MaxHealth:F0}\nAmmo: {session.Player.CurrentAmmo}/{session.Player.MagazineSize}\n\nEnemy: {session.Enemy.Name}\nHealth: {session.Enemy.Health:F0}/{session.Enemy.MaxHealth:F0}\n\nPet Health: {pet.Health:F0}\nPet Morale: {pet.Morale:F0}\n\nPress OK to continue.";
+                    CurrentScreen = Screen.Message;
+                    ReturnScreen = Screen.CombatSession;
+                }),
+                new ButtonWidget("  ► RETURN TO BASE").OnClick(_ => {
+                    CurrentScreen = Screen.BaseCamp;
+                    RefreshOperator();
+                })
+            ]),
+            UI.CreateStatusBar($"Session: {session.Id}")
+        ]);
     }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Error creating session: {ex.Message}");
-        return null;
-    }
-}
 
-static async Task<Guid?> ShowStateAsync(HttpClient httpClient, JsonSerializerOptions jsonOptions, Guid? sessionId)
-{
-    var id = await EnsureSession(httpClient, jsonOptions, sessionId);
-    if (id == null)
+    void AdvanceCombat()
     {
-        return sessionId;
-    }
-
-    try
-    {
-        var state = await httpClient.GetFromJsonAsync<CombatSessionDto>($"sessions/{id}/state", jsonOptions);
-        if (state == null)
+        try
         {
-            Console.WriteLine("Session not found.");
-            return sessionId;
-        }
-
-        PrintState(state);
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Error fetching state: {ex.Message}");
-    }
-
-    return id;
-}
-
-static async Task<Guid?> SubmitIntentsAsync(HttpClient httpClient, JsonSerializerOptions jsonOptions, Guid? sessionId)
-{
-    var id = await EnsureSession(httpClient, jsonOptions, sessionId);
-    if (id == null)
-    {
-        return sessionId;
-    }
-
-    var intent = PromptForIntents();
-    var request = new SubmitIntentsRequest { Intents = intent };
-
-    try
-    {
-        var response = await httpClient.PostAsJsonAsync($"sessions/{id}/intent", request, jsonOptions);
-        if (!response.IsSuccessStatusCode)
-        {
-            Console.WriteLine($"Intent rejected: {(int)response.StatusCode} {response.ReasonPhrase}");
-            var error = await response.Content.ReadAsStringAsync();
-            if (!string.IsNullOrWhiteSpace(error))
+            var response = client.PostAsync($"sessions/{ActiveSessionId}/advance", null).GetAwaiter().GetResult();
+            
+            if (!response.IsSuccessStatusCode)
             {
-                Console.WriteLine(error);
+                ErrorMessage = $"Advance failed: {response.StatusCode}";
+                return;
             }
-            return id;
-        }
 
-        var result = await response.Content.ReadFromJsonAsync<IntentSubmissionResultDto>(jsonOptions);
-        if (result?.State != null)
+            var sessionData = response.Content.ReadFromJsonAsync<CombatSessionDto>(options).GetAwaiter().GetResult();
+            if (sessionData != null)
+            {
+                CurrentSession = sessionData;
+                
+                if (sessionData.Player.Health <= 0 || sessionData.Enemy.Health <= 0)
+                {
+                    Message = sessionData.Player.Health <= 0 
+                        ? "MISSION FAILED\n\nYou were eliminated.\n\nPress OK to continue."
+                        : "MISSION SUCCESS\n\nTarget eliminated.\n\nPress OK to continue.";
+                    CurrentScreen = Screen.MissionComplete;
+                }
+            }
+        }
+        catch (Exception ex)
         {
-            Console.WriteLine(result.Accepted ? "Intents accepted." : "Intents rejected.");
-            PrintState(result.State);
+            ErrorMessage = ex.Message;
         }
     }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Error submitting intents: {ex.Message}");
-    }
 
-    return id;
-}
-
-static async Task<Guid?> AdvanceAsync(HttpClient httpClient, JsonSerializerOptions jsonOptions, Guid? sessionId)
-{
-    var id = await EnsureSession(httpClient, jsonOptions, sessionId);
-    if (id == null)
+    void RefreshOperator()
     {
-        return sessionId;
-    }
-
-    try
-    {
-        var response = await httpClient.PostAsync($"sessions/{id}/advance", content: null);
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            Console.WriteLine($"Advance failed: {(int)response.StatusCode} {response.ReasonPhrase}");
-            return id;
+            var response = client.GetAsync($"operators/{CurrentOperatorId}").GetAwaiter().GetResult();
+            if (response.IsSuccessStatusCode)
+            {
+                var operatorDto = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
+                CurrentOperator = ParseOperator(operatorDto);
+            }
         }
-
-        var state = await response.Content.ReadFromJsonAsync<CombatSessionDto>(jsonOptions);
-        if (state != null)
+        catch
         {
-            Console.WriteLine("Advanced session.");
-            PrintState(state);
         }
     }
-    catch (Exception ex)
+
+    Hex1bWidget BuildMissionComplete()
     {
-        Console.WriteLine($"Error advancing session: {ex.Message}");
+        return new VStackWidget([
+            UI.CreateBorder("MISSION COMPLETE", 78, 5),
+            new TextBlockWidget(""),
+            UI.CreateBorder("DEBRIEFING", 60, 15, [
+                new TextBlockWidget(""),
+                new TextBlockWidget(Message ?? "Mission ended."),
+                new TextBlockWidget(""),
+                new ButtonWidget("  ► RETURN TO BASE").OnClick(_ => CurrentScreen = Screen.BaseCamp)
+            ]),
+            UI.CreateStatusBar("Mission complete")
+        ]);
     }
 
-    return id;
-}
-
-static async Task<Guid?> ApplyPetActionAsync(HttpClient httpClient, JsonSerializerOptions jsonOptions, Guid? sessionId)
-{
-    var id = await EnsureSession(httpClient, jsonOptions, sessionId);
-    if (id == null)
+    Hex1bWidget BuildMessage()
     {
-        return sessionId;
-    }
-
-    Console.Write("Choose pet action (rest/eat/drink/mission): ");
-    var action = Console.ReadLine()?.Trim().ToLowerInvariant();
-
-    var request = new PetActionRequest { Action = action ?? "rest" };
-    switch (action)
-    {
-        case "eat":
-            request.Nutrition = PromptFloat("Nutrition amount", 30f);
-            break;
-        case "drink":
-            request.Hydration = PromptFloat("Hydration amount", 40f);
-            break;
-        case "mission":
-            request.HitsTaken = (int)PromptFloat("Hits taken", 0f);
-            request.OpponentDifficulty = PromptFloat("Opponent difficulty (10-100)", 50f);
-            break;
-        default:
-            request.Hours = PromptFloat("Rest hours", 1f);
-            break;
-    }
-
-    try
-    {
-        var response = await httpClient.PostAsJsonAsync($"sessions/{id}/pet", request, jsonOptions);
-        if (!response.IsSuccessStatusCode)
+        var lines = Message?.Split('\n') ?? [""];
+        var widgets = new List<Hex1bWidget>();
+        
+        foreach (var line in lines)
         {
-            Console.WriteLine($"Pet action failed: {(int)response.StatusCode} {response.ReasonPhrase}");
-            return id;
+            widgets.Add(new TextBlockWidget($"  {line}"));
         }
+        
+        widgets.Add(new TextBlockWidget(""));
+        widgets.Add(new ButtonWidget("  ► OK").OnClick(_ => CurrentScreen = ReturnScreen));
 
-        var petState = await response.Content.ReadFromJsonAsync<PetStateDto>(jsonOptions);
-        if (petState != null)
+        return new VStackWidget([
+            UI.CreateBorder("MESSAGE", 78, 5),
+            new TextBlockWidget(""),
+            UI.CreateBorder("INFO", 70, Math.Max(lines.Length + 6, 12), widgets),
+            UI.CreateStatusBar("Press OK to continue")
+        ]);
+    }
+
+    static OperatorState ParseOperator(JsonElement json)
+    {
+        return new OperatorState
         {
-            Console.WriteLine("Pet state updated:");
-            Console.WriteLine($"  Health:   {petState.Health:F0}");
-            Console.WriteLine($"  Fatigue:  {petState.Fatigue:F0}");
-            Console.WriteLine($"  Stress:   {petState.Stress:F0}");
-            Console.WriteLine($"  Morale:   {petState.Morale:F0}");
-            Console.WriteLine($"  Hunger:   {petState.Hunger:F0}");
-            Console.WriteLine($"  Hydration:{petState.Hydration:F0}");
+            Id = json.GetProperty("id").GetGuid(),
+            Name = json.GetProperty("name").GetString() ?? "",
+            TotalXp = json.GetProperty("totalXp").GetInt64(),
+            CurrentHealth = json.GetProperty("currentHealth").GetSingle(),
+            MaxHealth = json.GetProperty("maxHealth").GetSingle(),
+            EquippedWeaponName = json.GetProperty("equippedWeaponName").GetString() ?? "",
+            UnlockedPerks = json.GetProperty("unlockedPerks").EnumerateArray().Select(p => p.GetString() ?? "").ToList(),
+            ExfilStreak = json.GetProperty("exfilStreak").GetInt32(),
+            IsDead = json.GetProperty("isDead").GetBoolean(),
+            CurrentMode = json.GetProperty("currentMode").GetString() ?? "Base",
+            InfilStartTime = json.TryGetProperty("infilStartTime", out var time) && time.ValueKind != JsonValueKind.Null 
+                ? time.GetDateTimeOffset() 
+                : null,
+            ActiveSessionId = json.TryGetProperty("activeSessionId", out var sid) && sid.ValueKind != JsonValueKind.Null 
+                ? sid.GetGuid() 
+                : null,
+            LockedLoadout = json.GetProperty("lockedLoadout").GetString() ?? ""
+        };
+    }
+}
+
+static class UI
+{
+    public static Hex1bWidget CreateBorder(string title, int width, int height, List<Hex1bWidget>? content = null)
+    {
+        var widgets = new List<Hex1bWidget>();
+        var topBorder = $"┌─ {title} " + new string('─', Math.Max(0, width - title.Length - 5)) + "┐";
+        widgets.Add(new TextBlockWidget(topBorder));
+        
+        if (content != null)
+        {
+            widgets.AddRange(content);
         }
-    }
-    catch (Exception ex)
-    {
-        Console.WriteLine($"Error applying pet action: {ex.Message}");
-    }
-
-    return id;
-}
-
-static IntentDto PromptForIntents()
-{
-    Console.WriteLine("Primary action: 1=Fire, 2=Reload, 3=None");
-    var primary = Console.ReadKey(true).KeyChar switch
-    {
-        '1' => PrimaryAction.Fire,
-        '2' => PrimaryAction.Reload,
-        _ => PrimaryAction.None
-    };
-    Console.WriteLine($"Selected {primary}");
-
-    Console.WriteLine("Movement: 1=WalkToward, 2=WalkAway, 3=SprintToward, 4=SprintAway, 5=Stand");
-    var movement = Console.ReadKey(true).KeyChar switch
-    {
-        '1' => MovementAction.WalkToward,
-        '2' => MovementAction.WalkAway,
-        '3' => MovementAction.SprintToward,
-        '4' => MovementAction.SprintAway,
-        _ => MovementAction.Stand
-    };
-    Console.WriteLine($"Selected {movement}");
-
-    Console.WriteLine("Stance: 1=EnterADS, 2=ExitADS, 3=None");
-    var stance = Console.ReadKey(true).KeyChar switch
-    {
-        '1' => StanceAction.EnterADS,
-        '2' => StanceAction.ExitADS,
-        _ => StanceAction.None
-    };
-    Console.WriteLine($"Selected {stance}");
-
-    Console.WriteLine("Cover: 1=EnterPartial, 2=EnterFull, 3=Exit, 4=None");
-    var cover = Console.ReadKey(true).KeyChar switch
-    {
-        '1' => CoverAction.EnterPartial,
-        '2' => CoverAction.EnterFull,
-        '3' => CoverAction.Exit,
-        _ => CoverAction.None
-    };
-    Console.WriteLine($"Selected {cover}");
-
-    Console.Write("Cancel current movement? (y/N): ");
-    var cancelMovement = Console.ReadKey(true).KeyChar is 'y' or 'Y';
-    Console.WriteLine(cancelMovement ? "Will cancel current movement." : "Keep movement if active.");
-
-    return new IntentDto
-    {
-        Primary = primary,
-        Movement = movement,
-        Stance = stance,
-        Cover = cover,
-        CancelMovement = cancelMovement
-    };
-}
-
-static void PrintState(CombatSessionDto state)
-{
-    Console.WriteLine($"Session {state.Id} | Phase: {state.Phase} | Turn: {state.TurnNumber} | Time: {state.CurrentTimeMs}ms");
-    Console.WriteLine($"Operator ID: {state.OperatorId}");
-    Console.WriteLine($"Player: {state.Player.Name} HP {state.Player.Health:F0}/{state.Player.MaxHealth:F0} Ammo {state.Player.CurrentAmmo}/{state.Player.MagazineSize}");
-    Console.WriteLine($"Enemy : {state.Enemy.Name} HP {state.Enemy.Health:F0}/{state.Enemy.MaxHealth:F0} Ammo {state.Enemy.CurrentAmmo}/{state.Enemy.MagazineSize}");
-    Console.WriteLine($"Distance: {state.Player.DistanceToOpponent:F1}m | Cover: {state.Player.CurrentCover} | Movement: {state.Player.CurrentMovement}");
-    Console.WriteLine($"Pet: Health {state.Pet.Health:F0} Fatigue {state.Pet.Fatigue:F0} Stress {state.Pet.Stress:F0} Morale {state.Pet.Morale:F0} Hunger {state.Pet.Hunger:F0} Hydration {state.Pet.Hydration:F0}");
-    Console.WriteLine($"Enemy Level: {state.EnemyLevel}");
-}
-
-static async Task<Guid?> EnsureSession(HttpClient httpClient, JsonSerializerOptions jsonOptions, Guid? current)
-{
-    if (current.HasValue)
-    {
-        return current;
+        else
+        {
+            for (int i = 0; i < height - 2; i++)
+            {
+                widgets.Add(new TextBlockWidget("│" + new string(' ', width - 2) + "│"));
+            }
+        }
+        
+        widgets.Add(new TextBlockWidget("└" + new string('─', width - 2) + "┘"));
+        return new VStackWidget(widgets);
     }
 
-    Console.WriteLine("No session active. Creating one...");
-    return await CreateSessionAsync(httpClient, jsonOptions);
+    public static Hex1bWidget CreateStatusBar(string text)
+    {
+        return new TextBlockWidget($"  {text}");
+    }
+
+    public static string CreateBar(string label, int current, int max, int barWidth)
+    {
+        var pct = max > 0 ? (float)current / max : 0;
+        var filled = (int)(pct * barWidth);
+        var bar = new string('█', Math.Max(0, filled)) + new string('░', Math.Max(0, barWidth - filled));
+        return $"{label}: {bar} {current}/{max}";
+    }
 }
 
-static float PromptFloat(string label, float defaultValue)
+class OperatorState
 {
-    Console.Write($"{label} (default {defaultValue}): ");
-    var input = Console.ReadLine();
-    if (float.TryParse(input, out var value))
-    {
-        return value;
-    }
-    return defaultValue;
+    public Guid Id { get; init; }
+    public string Name { get; init; } = "";
+    public long TotalXp { get; init; }
+    public float CurrentHealth { get; init; }
+    public float MaxHealth { get; init; }
+    public string EquippedWeaponName { get; init; } = "";
+    public List<string> UnlockedPerks { get; init; } = new();
+    public int ExfilStreak { get; init; }
+    public bool IsDead { get; init; }
+    public string CurrentMode { get; init; } = "Base";
+    public DateTimeOffset? InfilStartTime { get; init; }
+    public Guid? ActiveSessionId { get; init; }
+    public string LockedLoadout { get; init; } = "";
+}
+
+enum Screen
+{
+    MainMenu,
+    CreateOperator,
+    BaseCamp,
+    StartMission,
+    CombatSession,
+    MissionComplete,
+    Message
 }
