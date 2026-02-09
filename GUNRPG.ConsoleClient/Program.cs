@@ -382,6 +382,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     {
         try
         {
+            // Step 1: Start the infil (locks operator in Infil mode)
             var response = client.PostAsync($"operators/{CurrentOperatorId}/infil/start", null).GetAwaiter().GetResult();
             
             if (!response.IsSuccessStatusCode)
@@ -396,6 +397,28 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             var result = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
             ActiveSessionId = result.GetProperty("sessionId").GetGuid();
             CurrentOperator = ParseOperator(result.GetProperty("operator"));
+            
+            // Step 2: Create the combat session with the session ID from infil
+            var sessionRequest = new
+            {
+                id = ActiveSessionId,
+                operatorId = CurrentOperatorId,
+                playerName = CurrentOperator!.Name,
+                weaponName = CurrentOperator.EquippedWeaponName,
+                playerLevel = 1,
+                playerMaxHealth = CurrentOperator.MaxHealth,
+                playerCurrentHealth = CurrentOperator.CurrentHealth
+            };
+            
+            var sessionResponse = client.PostAsJsonAsync("sessions", sessionRequest, options).GetAwaiter().GetResult();
+            if (!sessionResponse.IsSuccessStatusCode)
+            {
+                ErrorMessage = $"Failed to create combat session: {sessionResponse.StatusCode}";
+                Message = $"Combat session creation failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.BaseCamp;
+                return;
+            }
             
             LoadSession();
         }
