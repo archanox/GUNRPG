@@ -103,7 +103,7 @@ The UI respects the operator state machine:
 This ensures outcomes are **server-authoritative** and cannot be manipulated by clients.
 
 ### Dependencies
-- hex1b 0.76.0
+- hex1b 0.79.0
 - .NET 10.0
 - GUNRPG Application layer DTOs
 
@@ -164,12 +164,13 @@ The client defaults to connecting to `http://localhost:5209`. You can override t
 ✅ Proper hex1b BorderWidget usage with titles
 ✅ **ListWidget-based menu navigation (no manual ButtonWidgets)**
 ✅ **Theme-managed selection indicators**
-✅ **Single focus widget per screen**
+✅ **Single primary focus widget per screen (CreateOperator uses TextBox + List with Tab focus switching)**
 
 ### Known Limitations
 - Text input widget requires focus management (TextBoxWidget used in CreateOperator)
 - Intent submission UI not implemented (complex multi-choice system)
 - Manual testing requires TTY (terminal with proper input handling)
+- **Synchronous event handlers**: hex1b's ListWidget.OnItemActivated handlers are synchronous, causing UI to freeze during HTTP calls (known framework limitation)
 
 ## Future Enhancements
 
