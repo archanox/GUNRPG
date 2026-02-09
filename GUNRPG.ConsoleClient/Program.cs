@@ -862,21 +862,22 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         }
 
         var maxHeal = op.MaxHealth - op.CurrentHealth;
-        var healOptions = new List<string>();
+        var healOptions = new List<(string display, float amount)>();
         
         if (maxHeal > 0)
         {
-            if (maxHeal >= 25) healOptions.Add("HEAL 25 HP");
-            if (maxHeal >= 50) healOptions.Add("HEAL 50 HP");
-            if (maxHeal >= 100) healOptions.Add("HEAL 100 HP");
-            healOptions.Add($"HEAL ALL ({maxHeal:F0} HP)");
+            if (maxHeal >= 25) healOptions.Add(("HEAL 25 HP", 25f));
+            if (maxHeal >= 50) healOptions.Add(("HEAL 50 HP", 50f));
+            if (maxHeal >= 100) healOptions.Add(("HEAL 100 HP", 100f));
+            healOptions.Add(($"HEAL ALL ({maxHeal:F0} HP)", maxHeal));
         }
         else
         {
-            healOptions.Add("ALREADY AT FULL HEALTH");
+            healOptions.Add(("ALREADY AT FULL HEALTH", 0f));
         }
         
-        healOptions.Add("--- CANCEL ---");
+        healOptions.Add(("--- CANCEL ---", 0f));
+        var displayOptions = healOptions.Select(h => h.display).ToArray();
 
         return new VStackWidget([
             UI.CreateBorder("TREAT WOUNDS"),
@@ -886,32 +887,20 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 new TextBlockWidget(""),
                 new TextBlockWidget("  Select healing amount:"),
                 new TextBlockWidget(""),
-                new ListWidget(healOptions.ToArray()).OnItemActivated(e => {
-                    if (e.ActivatedIndex == healOptions.Count - 1 || maxHeal <= 0)
+                new ListWidget(displayOptions).OnItemActivated(e => {
+                    if (e.ActivatedIndex == healOptions.Count - 1)
                     {
-                        // Cancel or already at full health
+                        // Cancel
                         CurrentScreen = Screen.BaseCamp;
+                    }
+                    else if (healOptions[e.ActivatedIndex].amount > 0)
+                    {
+                        TreatWounds(healOptions[e.ActivatedIndex].amount);
                     }
                     else
                     {
-                        float healAmount;
-                        if (healOptions[e.ActivatedIndex].Contains("ALL"))
-                        {
-                            healAmount = maxHeal;
-                        }
-                        else if (healOptions[e.ActivatedIndex].Contains("25"))
-                        {
-                            healAmount = 25f;
-                        }
-                        else if (healOptions[e.ActivatedIndex].Contains("50"))
-                        {
-                            healAmount = 50f;
-                        }
-                        else
-                        {
-                            healAmount = 100f;
-                        }
-                        TreatWounds(healAmount);
+                        // Already at full health
+                        CurrentScreen = Screen.BaseCamp;
                     }
                 })
             ])),
@@ -1065,6 +1054,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         try
         {
             // Process outcome with current session ID to trigger exfil failed
+            // Note: The /infil/outcome endpoint processes combat outcomes and returns operator to Base mode.
+            // When called with a session ID before combat completes, it treats this as mission abort/failure.
             var request = new { SessionId = ActiveSessionId };
             var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
                 .GetAwaiter().GetResult();
