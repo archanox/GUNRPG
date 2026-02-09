@@ -801,13 +801,14 @@ static class UI
     /// <summary>
     /// Creates a bordered panel with an optional title.
     /// Uses Hex1b's BorderWidget to properly render box-drawing borders.
+    /// Note: In hex1b 0.76.0, BorderWidget constructor accepts (child, title) parameters.
     /// </summary>
     public static Hex1bWidget CreateBorder(string title, Hex1bWidget? content = null)
     {
         // If no content provided, use a simple text block for spacing
         var borderContent = content ?? new TextBlockWidget("");
         
-        // Use BorderWidget with title as second parameter
+        // Use BorderWidget with title as second parameter (hex1b 0.76.0 API)
         return new BorderWidget(borderContent, title);
     }
 
