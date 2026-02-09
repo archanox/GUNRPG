@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Hex1b" Version="0.76.0" />
+    <PackageReference Include="Hex1b" Version="0.79.0" />
   </ItemGroup>
 
 </Project>
