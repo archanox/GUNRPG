@@ -1,3 +1,4 @@
+using GUNRPG.Application.Combat;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Mapping;
 using GUNRPG.Application.Requests;
@@ -246,5 +247,32 @@ public sealed class CombatSessionService
             "mission" => new MissionInput(request.HitsTaken ?? 0, request.OpponentDifficulty ?? 50f),
             _ => new RestInput(TimeSpan.FromHours(request.Hours ?? 1f))
         };
+    }
+    
+    /// <summary>
+    /// Gets the combat outcome for a completed session.
+    /// </summary>
+    public async Task<ServiceResult<CombatOutcome>> GetCombatOutcomeAsync(Guid sessionId)
+    {
+        var session = await LoadAsync(sessionId);
+        if (session == null)
+        {
+            return ServiceResult<CombatOutcome>.NotFound("Session not found");
+        }
+
+        if (session.Phase != SessionPhase.Completed)
+        {
+            return ServiceResult<CombatOutcome>.InvalidState("Combat session is not completed yet");
+        }
+
+        try
+        {
+            var outcome = session.GetOutcome();
+            return ServiceResult<CombatOutcome>.Success(outcome);
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<CombatOutcome>.InvalidState($"Failed to get outcome: {ex.Message}");
+        }
     }
 }

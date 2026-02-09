@@ -76,6 +76,7 @@ public class OperatorsController : ControllerBase
             ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
             ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
             ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
+            ResultStatus.ValidationError => BadRequest(new { error = result.ErrorMessage }),
             _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
         };
     }

@@ -89,18 +89,6 @@ public static class InfrastructureServiceExtensions
     }
 
     /// <summary>
-    /// Registers the operator event store (typically called by AddCombatSessionStore).
-    /// Can be used independently if needed.
-    /// </summary>
-    public static IServiceCollection AddOperatorStore(
-        this IServiceCollection services,
-        IConfiguration configuration)
-    {
-        // Use the same configuration as CombatSessionStore
-        return AddCombatSessionStore(services, configuration);
-    }
-
-    /// <summary>
     /// Configures LiteDB mapper for snapshot types.
     /// Ensures proper serialization of enums and nested objects.
     /// </summary>

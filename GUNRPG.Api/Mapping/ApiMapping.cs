@@ -159,13 +159,30 @@ public static class ApiMapping
 
     public static Application.Requests.ProcessOutcomeRequest ToApplicationRequest(ApiProcessOutcomeRequest apiRequest)
     {
+        // Parse GearLost safely, filtering out any invalid IDs
+        var gearLost = new List<Core.Equipment.GearId>();
+        foreach (var id in apiRequest.GearLost ?? [])
+        {
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                try
+                {
+                    gearLost.Add(new Core.Equipment.GearId(id));
+                }
+                catch
+                {
+                    // Skip invalid gear IDs silently
+                }
+            }
+        }
+
         return new Application.Requests.ProcessOutcomeRequest
         {
             SessionId = apiRequest.SessionId,
             OperatorDied = apiRequest.OperatorDied,
             XpGained = apiRequest.XpGained,
             IsVictory = apiRequest.IsVictory,
-            GearLost = apiRequest.GearLost.Select(id => new Core.Equipment.GearId(id)).ToList()
+            GearLost = gearLost
         };
     }
 
