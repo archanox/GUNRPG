@@ -93,13 +93,14 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             }
             else
             {
-                ErrorMessage = $"Failed to load operators: {response.StatusCode}";
+                var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                ErrorMessage = $"{response.StatusCode}: {errorContent}";
                 AvailableOperators = new List<OperatorSummary>();
             }
         }
         catch (Exception ex)
         {
-            ErrorMessage = ex.Message;
+            ErrorMessage = $"Exception: {ex.Message}";
             AvailableOperators = new List<OperatorSummary>();
         }
     }
