@@ -13,6 +13,14 @@ using var httpClient = new HttpClient { BaseAddress = new Uri(baseAddress) };
 using var cts = new CancellationTokenSource();
 
 var gameState = new GameState(httpClient, jsonOptions);
+
+// Try to auto-load last used operator
+gameState.LoadSavedOperatorId();
+if (gameState.CurrentOperatorId.HasValue && gameState.CurrentOperator != null)
+{
+    gameState.CurrentScreen = Screen.BaseCamp;
+}
+
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
 using var app = new Hex1bApp(_ => gameState.BuildUI(cts));
@@ -27,6 +35,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     public OperatorState? CurrentOperator { get; set; }
     public Guid? ActiveSessionId { get; set; }
     public CombatSessionDto? CurrentSession { get; set; }
+    public List<OperatorSummary>? AvailableOperators { get; set; }
     
     public string OperatorName { get; set; } = "";
     public string? Message { get; set; }
@@ -37,6 +46,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         return CurrentScreen switch
         {
             Screen.MainMenu => Task.FromResult<Hex1bWidget>(BuildMainMenu(cts)),
+            Screen.SelectOperator => Task.FromResult<Hex1bWidget>(BuildSelectOperator()),
             Screen.CreateOperator => Task.FromResult<Hex1bWidget>(BuildCreateOperator()),
             Screen.BaseCamp => Task.FromResult<Hex1bWidget>(BuildBaseCamp()),
             Screen.StartMission => Task.FromResult<Hex1bWidget>(BuildStartMission()),
@@ -59,16 +69,148 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     CurrentScreen = Screen.CreateOperator;
                     OperatorName = "";
                 }),
-                new ButtonWidget("  ► CONTINUE (Not Implemented)").OnClick(_ => {
-                    Message = "Operator loading not yet implemented.\n\nPress OK to continue.";
-                    CurrentScreen = Screen.Message;
-                    ReturnScreen = Screen.MainMenu;
+                new ButtonWidget("  ► SELECT OPERATOR").OnClick(_ => {
+                    LoadOperatorList();
+                    CurrentScreen = Screen.SelectOperator;
                 }),
                 new ButtonWidget("  ► EXIT").OnClick(_ => cts.Cancel())
             ]),
             new TextBlockWidget(""),
             UI.CreateStatusBar($"API: {client.BaseAddress}"),
         ]);
+    }
+
+    void LoadOperatorList()
+    {
+        try
+        {
+            var response = client.GetAsync("operators").GetAwaiter().GetResult();
+            if (response.IsSuccessStatusCode)
+            {
+                var operators = response.Content.ReadFromJsonAsync<List<JsonElement>>(options).GetAwaiter().GetResult();
+                AvailableOperators = operators?.Select(ParseOperatorSummary).ToList();
+            }
+            else
+            {
+                ErrorMessage = $"Failed to load operators: {response.StatusCode}";
+                AvailableOperators = new List<OperatorSummary>();
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            AvailableOperators = new List<OperatorSummary>();
+        }
+    }
+
+    Hex1bWidget BuildSelectOperator()
+    {
+        var widgets = new List<Hex1bWidget>
+        {
+            new TextBlockWidget("  Available Operators:"),
+            new TextBlockWidget("")
+        };
+
+        if (AvailableOperators == null || AvailableOperators.Count == 0)
+        {
+            widgets.Add(new TextBlockWidget("  No operators found."));
+            widgets.Add(new TextBlockWidget("  Create one from the main menu."));
+        }
+        else
+        {
+            foreach (var op in AvailableOperators)
+            {
+                var status = op.IsDead ? "KIA" : op.CurrentMode;
+                var healthPct = op.MaxHealth > 0 ? (int)(100 * op.CurrentHealth / op.MaxHealth) : 0;
+                widgets.Add(new ButtonWidget($"  ► {op.Name} - {status} (HP: {healthPct}%, XP: {op.TotalXp})").OnClick(_ => {
+                    SelectOperator(op.Id);
+                }));
+            }
+        }
+
+        widgets.Add(new TextBlockWidget(""));
+        widgets.Add(new ButtonWidget("  ► BACK TO MAIN MENU").OnClick(_ => CurrentScreen = Screen.MainMenu));
+
+        if (ErrorMessage != null)
+        {
+            widgets.Insert(1, new TextBlockWidget($"  ERROR: {ErrorMessage}"));
+            widgets.Insert(2, new TextBlockWidget(""));
+        }
+
+        return new VStackWidget([
+            UI.CreateBorder("SELECT OPERATOR", 78, 5),
+            new TextBlockWidget(""),
+            UI.CreateBorder("OPERATOR LIST", 70, 28, widgets),
+            UI.CreateStatusBar("Choose an operator to continue")
+        ]);
+    }
+
+    void SelectOperator(Guid operatorId)
+    {
+        try
+        {
+            CurrentOperatorId = operatorId;
+            SaveCurrentOperatorId();
+            LoadOperator(operatorId);
+            CurrentScreen = Screen.BaseCamp;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            Message = $"Failed to load operator.\nError: {ex.Message}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.SelectOperator;
+        }
+    }
+
+    void LoadOperator(Guid operatorId)
+    {
+        var response = client.GetAsync($"operators/{operatorId}").GetAwaiter().GetResult();
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new Exception($"Failed to load operator: {response.StatusCode}");
+        }
+
+        var operatorDto = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
+        CurrentOperator = ParseOperator(operatorDto);
+    }
+
+    void SaveCurrentOperatorId()
+    {
+        try
+        {
+            var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var configDir = Path.Combine(homeDir, ".gunrpg");
+            Directory.CreateDirectory(configDir);
+            var configFile = Path.Combine(configDir, "current_operator.txt");
+            File.WriteAllText(configFile, CurrentOperatorId?.ToString() ?? "");
+        }
+        catch
+        {
+            // Silently fail - not critical
+        }
+    }
+
+    public void LoadSavedOperatorId()
+    {
+        try
+        {
+            var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var configFile = Path.Combine(homeDir, ".gunrpg", "current_operator.txt");
+            if (File.Exists(configFile))
+            {
+                var idText = File.ReadAllText(configFile).Trim();
+                if (Guid.TryParse(idText, out var operatorId))
+                {
+                    CurrentOperatorId = operatorId;
+                    LoadOperator(operatorId);
+                }
+            }
+        }
+        catch
+        {
+            // Silently fail - not critical
+        }
     }
 
     Hex1bWidget BuildCreateOperator()
@@ -139,6 +281,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             var operatorDto = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
             CurrentOperatorId = operatorDto.GetProperty("id").GetGuid();
             CurrentOperator = ParseOperator(operatorDto);
+            SaveCurrentOperatorId();
             ErrorMessage = null;
             CurrentScreen = Screen.BaseCamp;
         }
@@ -478,6 +621,20 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             LockedLoadout = json.GetProperty("lockedLoadout").GetString() ?? ""
         };
     }
+
+    static OperatorSummary ParseOperatorSummary(JsonElement json)
+    {
+        return new OperatorSummary
+        {
+            Id = json.GetProperty("id").GetGuid(),
+            Name = json.GetProperty("name").GetString() ?? "",
+            CurrentMode = json.GetProperty("currentMode").GetString() ?? "Base",
+            IsDead = json.GetProperty("isDead").GetBoolean(),
+            TotalXp = json.GetProperty("totalXp").GetInt64(),
+            CurrentHealth = json.GetProperty("currentHealth").GetSingle(),
+            MaxHealth = json.GetProperty("maxHealth").GetSingle()
+        };
+    }
 }
 
 static class UI
@@ -535,9 +692,21 @@ class OperatorState
     public string LockedLoadout { get; init; } = "";
 }
 
+class OperatorSummary
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = "";
+    public string CurrentMode { get; init; } = "Base";
+    public bool IsDead { get; init; }
+    public long TotalXp { get; init; }
+    public float CurrentHealth { get; init; }
+    public float MaxHealth { get; init; }
+}
+
 enum Screen
 {
     MainMenu,
+    SelectOperator,
     CreateOperator,
     BaseCamp,
     StartMission,
