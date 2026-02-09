@@ -53,6 +53,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             Screen.CombatSession => Task.FromResult<Hex1bWidget>(BuildCombatSession()),
             Screen.MissionComplete => Task.FromResult<Hex1bWidget>(BuildMissionComplete()),
             Screen.Message => Task.FromResult<Hex1bWidget>(BuildMessage()),
+            Screen.ChangeLoadout => Task.FromResult<Hex1bWidget>(BuildChangeLoadout()),
+            Screen.TreatWounds => Task.FromResult<Hex1bWidget>(BuildTreatWounds()),
+            Screen.UnlockPerk => Task.FromResult<Hex1bWidget>(BuildUnlockPerk()),
+            Screen.AbortMission => Task.FromResult<Hex1bWidget>(BuildAbortMission()),
             _ => Task.FromResult<Hex1bWidget>(new TextBlockWidget("Unknown screen"))
         };
     }
@@ -344,11 +348,15 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         if (op.CurrentMode == "Base")
         {
             menuItems.Add("START MISSION");
+            menuItems.Add("CHANGE LOADOUT");
+            menuItems.Add("TREAT WOUNDS");
+            menuItems.Add("UNLOCK PERK");
             menuItems.Add("VIEW STATS");
         }
         else
         {
             menuItems.Add("CONTINUE MISSION");
+            menuItems.Add("ABORT MISSION");
             menuItems.Add("VIEW STATS");
         }
         
@@ -362,12 +370,21 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     case 0: // START MISSION
                         CurrentScreen = Screen.StartMission;
                         break;
-                    case 1: // VIEW STATS
+                    case 1: // CHANGE LOADOUT
+                        CurrentScreen = Screen.ChangeLoadout;
+                        break;
+                    case 2: // TREAT WOUNDS
+                        CurrentScreen = Screen.TreatWounds;
+                        break;
+                    case 3: // UNLOCK PERK
+                        CurrentScreen = Screen.UnlockPerk;
+                        break;
+                    case 4: // VIEW STATS
                         Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nPerks: {string.Join(", ", op.UnlockedPerks)}\n\nPress OK to continue.";
                         CurrentScreen = Screen.Message;
                         ReturnScreen = Screen.BaseCamp;
                         break;
-                    case 2: // MAIN MENU
+                    case 5: // MAIN MENU
                         CurrentScreen = Screen.MainMenu;
                         break;
                 }
@@ -383,12 +400,15 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             LoadSession();
                         }
                         break;
-                    case 1: // VIEW STATS
+                    case 1: // ABORT MISSION
+                        CurrentScreen = Screen.AbortMission;
+                        break;
+                    case 2: // VIEW STATS
                         Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nMission In Progress\n\nPress OK to continue.";
                         CurrentScreen = Screen.Message;
                         ReturnScreen = Screen.BaseCamp;
                         break;
-                    case 2: // MAIN MENU
+                    case 3: // MAIN MENU
                         CurrentScreen = Screen.MainMenu;
                         break;
                 }
@@ -766,6 +786,319 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         ]);
     }
 
+    Hex1bWidget BuildChangeLoadout()
+    {
+        var availableWeapons = new[] {
+            "SOKOL 545",
+            "STURMWOLF 45",
+            "M15 MOD 0",
+            "--- CANCEL ---"
+        };
+
+        return new VStackWidget([
+            UI.CreateBorder("CHANGE LOADOUT"),
+            new TextBlockWidget(""),
+            UI.CreateBorder("AVAILABLE WEAPONS", new VStackWidget([
+                new TextBlockWidget("  Select a weapon to equip:"),
+                new TextBlockWidget(""),
+                new TextBlockWidget($"  Current: {CurrentOperator?.EquippedWeaponName ?? "None"}"),
+                new TextBlockWidget(""),
+                new ListWidget(availableWeapons).OnItemActivated(e => {
+                    if (e.ActivatedIndex == availableWeapons.Length - 1)
+                    {
+                        // Cancel
+                        CurrentScreen = Screen.BaseCamp;
+                    }
+                    else
+                    {
+                        ChangeLoadout(availableWeapons[e.ActivatedIndex]);
+                    }
+                })
+            ])),
+            UI.CreateStatusBar("Choose a weapon")
+        ]);
+    }
+
+    void ChangeLoadout(string weaponName)
+    {
+        try
+        {
+            var request = new { WeaponName = weaponName };
+            var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/loadout", request, options)
+                .GetAwaiter().GetResult();
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                ErrorMessage = $"Failed to change loadout: {response.StatusCode} - {errorContent}";
+                Message = $"Loadout change failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.BaseCamp;
+                return;
+            }
+
+            // Refresh operator state
+            RefreshOperator();
+            
+            Message = $"Loadout changed successfully.\nNew weapon: {weaponName}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            Message = $"Error changing loadout: {ex.Message}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+        }
+    }
+
+    Hex1bWidget BuildTreatWounds()
+    {
+        var op = CurrentOperator;
+        if (op == null)
+        {
+            return new TextBlockWidget("No operator loaded");
+        }
+
+        var maxHeal = op.MaxHealth - op.CurrentHealth;
+        var healOptions = new List<string>();
+        
+        if (maxHeal > 0)
+        {
+            if (maxHeal >= 25) healOptions.Add("HEAL 25 HP");
+            if (maxHeal >= 50) healOptions.Add("HEAL 50 HP");
+            if (maxHeal >= 100) healOptions.Add("HEAL 100 HP");
+            healOptions.Add($"HEAL ALL ({maxHeal:F0} HP)");
+        }
+        else
+        {
+            healOptions.Add("ALREADY AT FULL HEALTH");
+        }
+        
+        healOptions.Add("--- CANCEL ---");
+
+        return new VStackWidget([
+            UI.CreateBorder("TREAT WOUNDS"),
+            new TextBlockWidget(""),
+            UI.CreateBorder("MEDICAL", new VStackWidget([
+                new TextBlockWidget($"  Current Health: {op.CurrentHealth:F0}/{op.MaxHealth:F0}"),
+                new TextBlockWidget(""),
+                new TextBlockWidget("  Select healing amount:"),
+                new TextBlockWidget(""),
+                new ListWidget(healOptions.ToArray()).OnItemActivated(e => {
+                    if (e.ActivatedIndex == healOptions.Count - 1 || maxHeal <= 0)
+                    {
+                        // Cancel or already at full health
+                        CurrentScreen = Screen.BaseCamp;
+                    }
+                    else
+                    {
+                        float healAmount;
+                        if (healOptions[e.ActivatedIndex].Contains("ALL"))
+                        {
+                            healAmount = maxHeal;
+                        }
+                        else if (healOptions[e.ActivatedIndex].Contains("25"))
+                        {
+                            healAmount = 25f;
+                        }
+                        else if (healOptions[e.ActivatedIndex].Contains("50"))
+                        {
+                            healAmount = 50f;
+                        }
+                        else
+                        {
+                            healAmount = 100f;
+                        }
+                        TreatWounds(healAmount);
+                    }
+                })
+            ])),
+            UI.CreateStatusBar("Choose healing amount")
+        ]);
+    }
+
+    void TreatWounds(float healthAmount)
+    {
+        try
+        {
+            var request = new { HealthAmount = healthAmount };
+            var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/wounds/treat", request, options)
+                .GetAwaiter().GetResult();
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                ErrorMessage = $"Failed to treat wounds: {response.StatusCode} - {errorContent}";
+                Message = $"Wound treatment failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.BaseCamp;
+                return;
+            }
+
+            // Refresh operator state
+            RefreshOperator();
+            
+            Message = $"Wounds treated successfully.\nHealed: {healthAmount:F0} HP\nNew Health: {CurrentOperator?.CurrentHealth:F0}/{CurrentOperator?.MaxHealth:F0}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            Message = $"Error treating wounds: {ex.Message}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+        }
+    }
+
+    Hex1bWidget BuildUnlockPerk()
+    {
+        var availablePerks = new[] {
+            "Iron Lungs",
+            "Quick Draw",
+            "Toughness",
+            "Fast Reload",
+            "Steady Aim",
+            "--- CANCEL ---"
+        };
+
+        var op = CurrentOperator;
+        var unlockedPerks = op?.UnlockedPerks ?? new List<string>();
+
+        return new VStackWidget([
+            UI.CreateBorder("UNLOCK PERK"),
+            new TextBlockWidget(""),
+            UI.CreateBorder("AVAILABLE PERKS", new VStackWidget([
+                new TextBlockWidget("  Select a perk to unlock:"),
+                new TextBlockWidget(""),
+                new TextBlockWidget($"  Unlocked: {string.Join(", ", unlockedPerks)}"),
+                new TextBlockWidget(""),
+                new ListWidget(availablePerks).OnItemActivated(e => {
+                    if (e.ActivatedIndex == availablePerks.Length - 1)
+                    {
+                        // Cancel
+                        CurrentScreen = Screen.BaseCamp;
+                    }
+                    else
+                    {
+                        UnlockPerk(availablePerks[e.ActivatedIndex]);
+                    }
+                })
+            ])),
+            UI.CreateStatusBar("Choose a perk")
+        ]);
+    }
+
+    void UnlockPerk(string perkName)
+    {
+        try
+        {
+            var request = new { PerkName = perkName };
+            var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/perks", request, options)
+                .GetAwaiter().GetResult();
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                ErrorMessage = $"Failed to unlock perk: {response.StatusCode} - {errorContent}";
+                Message = $"Perk unlock failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.BaseCamp;
+                return;
+            }
+
+            // Refresh operator state
+            RefreshOperator();
+            
+            Message = $"Perk unlocked successfully.\nNew perk: {perkName}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            Message = $"Error unlocking perk: {ex.Message}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+        }
+    }
+
+    Hex1bWidget BuildAbortMission()
+    {
+        var menuItems = new[] {
+            "CONFIRM ABORT",
+            "CANCEL"
+        };
+
+        return new VStackWidget([
+            UI.CreateBorder("ABORT MISSION"),
+            new TextBlockWidget(""),
+            UI.CreateBorder("WARNING", new VStackWidget([
+                new TextBlockWidget("  Are you sure you want to abort the mission?"),
+                new TextBlockWidget(""),
+                new TextBlockWidget("  - Mission will be failed"),
+                new TextBlockWidget("  - Exfil streak will be reset"),
+                new TextBlockWidget("  - No XP will be awarded"),
+                new TextBlockWidget(""),
+                new TextBlockWidget("  Select action:"),
+                new TextBlockWidget(""),
+                new ListWidget(menuItems).OnItemActivated(e => {
+                    switch (e.ActivatedIndex)
+                    {
+                        case 0: // CONFIRM ABORT
+                            AbortMission();
+                            break;
+                        case 1: // CANCEL
+                            CurrentScreen = Screen.BaseCamp;
+                            break;
+                    }
+                })
+            ])),
+            UI.CreateStatusBar("Confirm mission abort")
+        ]);
+    }
+
+    void AbortMission()
+    {
+        try
+        {
+            // Process outcome with current session ID to trigger exfil failed
+            var request = new { SessionId = ActiveSessionId };
+            var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
+                .GetAwaiter().GetResult();
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                ErrorMessage = $"Failed to abort mission: {response.StatusCode} - {errorContent}";
+                Message = $"Mission abort failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.BaseCamp;
+                return;
+            }
+
+            // Clear session
+            ActiveSessionId = null;
+            CurrentSession = null;
+            
+            // Refresh operator state
+            RefreshOperator();
+            
+            Message = "Mission aborted.\nReturning to base.\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            Message = $"Error aborting mission: {ex.Message}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+        }
+    }
+
     static OperatorState ParseOperator(JsonElement json)
     {
         return new OperatorState
@@ -888,5 +1221,9 @@ enum Screen
     StartMission,
     CombatSession,
     MissionComplete,
-    Message
+    Message,
+    ChangeLoadout,
+    TreatWounds,
+    UnlockPerk,
+    AbortMission
 }
