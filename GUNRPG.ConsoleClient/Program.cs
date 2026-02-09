@@ -444,6 +444,35 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 CurrentScreen = Screen.CombatSession;
             }
         }
+        catch (HttpRequestException ex) when (ex.Message.Contains("404"))
+        {
+            // Session doesn't exist - this can happen if operator was created before session creation was implemented
+            // Force end the infil by processing a failed outcome to reset the operator to Base mode
+            ErrorMessage = "Combat session not found - forcing mission abort";
+            Message = $"Mission session not found in database.\n\nThis can happen with operators created before the latest updates.\nForcing mission abort to reset operator state.\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+            
+            // Try to force-end the infil by processing a "died" outcome
+            if (CurrentOperator?.Id != null)
+            {
+                try
+                {
+                    var request = new { SessionId = ActiveSessionId };
+                    client.PostAsJsonAsync($"operators/{CurrentOperator.Id}/infil/outcome", request).GetAwaiter().GetResult();
+                    LoadOperator(CurrentOperator.Id);  // Reload operator to get updated state
+                }
+                catch
+                {
+                    // If that fails, just clear the local session ID
+                    ActiveSessionId = null;
+                }
+            }
+            else
+            {
+                ActiveSessionId = null;
+            }
+        }
         catch (Exception ex)
         {
             ErrorMessage = ex.Message;
