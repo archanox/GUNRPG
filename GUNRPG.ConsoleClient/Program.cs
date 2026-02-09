@@ -79,15 +79,15 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             new TextBlockWidget(""),
         };
 
-        // Add text input using TextBoxWidget
-        // Note: In hex1b's current architecture, TextBoxWidget maintains internal state
-        // but doesn't provide easy bidirectional binding for reactive rebuilds.
-        // For now, we provide the textbox for manual entry, and the Generate button
-        // as an alternative that updates our state directly.
-        var textBox = new TextBoxWidget(OperatorName ?? "");
+        // Add text input using TextBoxWidget with OnTextChanged event handler
+        var textBox = new TextBoxWidget(OperatorName ?? "")
+            .OnTextChanged(args => {
+                OperatorName = args.NewText;
+                ErrorMessage = null; // Clear error when user types
+            });
         widgets.Add(textBox);
         widgets.Add(new TextBlockWidget(""));
-        widgets.Add(new TextBlockWidget($"  Current name: {(string.IsNullOrWhiteSpace(OperatorName) ? "(use Generate or type above)" : OperatorName)}"));
+        widgets.Add(new TextBlockWidget($"  Current: {(string.IsNullOrWhiteSpace(OperatorName) ? "(empty)" : OperatorName)}"));
         widgets.Add(new TextBlockWidget(""));
         
         // Action buttons
@@ -108,8 +108,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         return new VStackWidget([
             UI.CreateBorder("CREATE NEW OPERATOR", 78, 5),
             new TextBlockWidget(""),
-            UI.CreateBorder("OPERATOR PROFILE", 60, 26, widgets),
-            UI.CreateStatusBar("Generate random name, then CREATE")
+            UI.CreateBorder("OPERATOR PROFILE", 60, 28, widgets),
+            UI.CreateStatusBar("Type name or generate random, then CREATE")
         ]);
     }
 
