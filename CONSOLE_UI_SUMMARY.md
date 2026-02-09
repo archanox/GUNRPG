@@ -72,7 +72,8 @@ Built 7 complete screens with authentic Pokemon Red/Crystal aesthetic:
 - **Base Mode**: Full access to equipment, healing, XP, perks, mission start
 - **Infil Mode**: Only mission continuation; all other actions disabled
 - **UI-Level Validation**: Invalid actions are hidden or marked unavailable
-- **No Server Errors**: Impossible to make invalid API calls from UI
+- **Server-Side Outcome**: Combat outcomes computed by server using CombatSession.GetOutcome()
+- **Automatic Processing**: Outcome automatically applied when combat ends
 
 ### 4. Quality Metrics
 - ✅ Zero build errors
@@ -80,6 +81,8 @@ Built 7 complete screens with authentic Pokemon Red/Crystal aesthetic:
 - ✅ All existing tests passing (21 operator mode tests)
 - ✅ Code review completed with feedback addressed
 - ✅ Full documentation (README in ConsoleClient)
+- ✅ Proper hex1b BorderWidget usage
+- ✅ Server-authoritative combat outcomes
 
 ## Technical Architecture
 

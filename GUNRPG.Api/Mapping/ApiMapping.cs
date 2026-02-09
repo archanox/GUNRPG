@@ -149,14 +149,6 @@ public static class ApiMapping
         };
     }
 
-    public static Application.Requests.StartInfilRequest ToApplicationRequest(ApiStartInfilRequest apiRequest)
-    {
-        return new Application.Requests.StartInfilRequest
-        {
-            SessionId = apiRequest.SessionId
-        };
-    }
-
     public static Application.Requests.ProcessOutcomeRequest ToApplicationRequest(ApiProcessOutcomeRequest apiRequest)
     {
         // Parse GearLost safely, filtering out any invalid IDs
