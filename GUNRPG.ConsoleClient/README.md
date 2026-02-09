@@ -9,7 +9,7 @@ The GUNRPG console client has been redesigned with a retro Pokemon-style interfa
 - Clean box-drawing borders with proper titles using hex1b's BorderWidget
 - List-based navigation with Up/Down arrow keys
 - Automatic selection indicators (►) managed by Hex1b theme
-- Health bars using block characters (███████░░░)
+- Native progress bars using hex1b's ProgressWidget
 - Status displays for operator information
 - Retro color scheme inspired by Pokemon Red/Crystal
 
@@ -110,6 +110,7 @@ This ensures outcomes are **server-authoritative** and cannot be manipulated by 
 ### UI Architecture
 - **ListWidget**: Used for all menu navigation with OnItemActivated event handlers
 - **BorderWidget**: Properly displays titles in border frames
+- **ProgressWidget**: Native progress bars for health/status displays
 - **VStackWidget/HStackWidget**: Layout containers for organizing content
 - **TextBlockWidget**: Static text display
 - **TextBoxWidget**: User input (operator name creation)

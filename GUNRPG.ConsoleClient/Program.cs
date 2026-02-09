@@ -393,7 +393,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             }
         });
 
-        var healthBar = UI.CreateBar("HP", (int)op.CurrentHealth, (int)op.MaxHealth, 30);
+        var healthBar = UI.CreateProgressBar("HP", (int)op.CurrentHealth, (int)op.MaxHealth, 30);
         var xpInfo = $"XP: {op.TotalXp}  STREAK: {op.ExfilStreak}";
         
         return new VStackWidget([
@@ -401,7 +401,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             new TextBlockWidget(""),
             new HStackWidget([
                 UI.CreateBorder("STATUS", new VStackWidget([
-                    new TextBlockWidget($"  {healthBar}"),
+                    new TextBlockWidget("  "),
+                    healthBar,
                     new TextBlockWidget(""),
                     new TextBlockWidget($"  {xpInfo}"),
                     new TextBlockWidget($"  WEAPON: {op.EquippedWeaponName}"),
@@ -584,8 +585,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         var player = session.Player;
         var enemy = session.Enemy;
         
-        var playerHpBar = UI.CreateBar("HP", (int)player.Health, (int)player.MaxHealth, 20);
-        var enemyHpBar = UI.CreateBar("HP", (int)enemy.Health, (int)enemy.MaxHealth, 20);
+        var playerHpBar = UI.CreateProgressBar("HP", (int)player.Health, (int)player.MaxHealth, 20);
+        var enemyHpBar = UI.CreateProgressBar("HP", (int)enemy.Health, (int)enemy.MaxHealth, 20);
         
         var actionItems = new[] {
             "SUBMIT INTENTS (Not Implemented)",
@@ -600,7 +601,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             new HStackWidget([
                 UI.CreateBorder("PLAYER", new VStackWidget([
                     new TextBlockWidget($"  {player.Name}"),
-                    new TextBlockWidget($"  {playerHpBar}"),
+                    new TextBlockWidget("  "),
+                    playerHpBar,
                     new TextBlockWidget($"  AMMO: {player.CurrentAmmo}/{player.MagazineSize}"),
                     new TextBlockWidget($"  COVER: {player.CurrentCover}"),
                     new TextBlockWidget($"  MOVE: {player.CurrentMovement}")
@@ -608,7 +610,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 new TextBlockWidget("  "),
                 UI.CreateBorder("ENEMY", new VStackWidget([
                     new TextBlockWidget($"  {enemy.Name} (LVL {session.EnemyLevel})"),
-                    new TextBlockWidget($"  {enemyHpBar}"),
+                    new TextBlockWidget("  "),
+                    enemyHpBar,
                     new TextBlockWidget($"  AMMO: {enemy.CurrentAmmo}/{enemy.MagazineSize}"),
                     new TextBlockWidget($"  DIST: {player.DistanceToOpponent:F1}m")
                 ]))
@@ -821,14 +824,24 @@ static class UI
     }
 
     /// <summary>
-    /// Creates a visual health/progress bar using block characters.
+    /// Creates a visual progress bar widget with label.
+    /// Uses hex1b's ProgressWidget for proper rendering.
     /// </summary>
-    public static string CreateBar(string label, int current, int max, int barWidth)
+    public static Hex1bWidget CreateProgressBar(string label, int current, int max, int width = 20)
     {
-        var pct = max > 0 ? (float)current / max : 0;
-        var filled = (int)(pct * barWidth);
-        var bar = new string('█', Math.Max(0, filled)) + new string('░', Math.Max(0, barWidth - filled));
-        return $"{label}: {bar} {current}/{max}";
+        // Calculate percentage for 0-100 range
+        var percentage = max > 0 ? (int)((float)current / max * 100) : 0;
+        
+        var progressWidget = new ProgressWidget
+        {
+            Value = percentage
+        };
+        
+        return new HStackWidget([
+            new TextBlockWidget($"{label}: "),
+            progressWidget.FixedWidth(width),
+            new TextBlockWidget($" {current}/{max}")
+        ]);
     }
 }
 
