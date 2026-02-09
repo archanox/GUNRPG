@@ -108,6 +108,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
         try
         {
+            // NOTE: Using GetAwaiter().GetResult() here because hex1b's ButtonWidget.OnClick
+            // handlers are synchronous (Action<MouseEvent>). This is a known limitation of the
+            // hex1b library. In a real application, consider using a different UI framework
+            // with async event handler support.
             var request = new { Name = OperatorName };
             var response = client.PostAsJsonAsync("operators", request, options).GetAwaiter().GetResult();
             
