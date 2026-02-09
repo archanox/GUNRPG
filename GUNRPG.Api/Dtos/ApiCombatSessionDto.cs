@@ -9,8 +9,8 @@ public sealed class ApiCombatSessionDto
     public Guid OperatorId { get; init; }
     public string Phase { get; init; } = "";
     public long CurrentTimeMs { get; init; }
-    public ApiOperatorStateDto Player { get; init; } = default!;
-    public ApiOperatorStateDto Enemy { get; init; } = default!;
+    public ApiPlayerStateDto Player { get; init; } = default!;
+    public ApiPlayerStateDto Enemy { get; init; } = default!;
     public ApiPetStateDto Pet { get; init; } = default!;
     public int EnemyLevel { get; init; }
     public int TurnNumber { get; init; }

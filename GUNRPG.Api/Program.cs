@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using GUNRPG.Application.Services;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Infrastructure;
 
@@ -15,6 +16,8 @@ builder.Services.AddSwaggerGen();
 
 builder.Services.AddCombatSessionStore(builder.Configuration);
 builder.Services.AddSingleton<CombatSessionService>();
+builder.Services.AddOperatorStore(builder.Configuration);
+builder.Services.AddSingleton<OperatorService>();
 
 var app = builder.Build();
 

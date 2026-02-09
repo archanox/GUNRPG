@@ -61,6 +61,22 @@ public sealed class ServiceResult<T> : ServiceResultBase
             _ => InvalidState(result.ErrorMessage!)
         };
     }
+
+    /// <summary>
+    /// Creates a ServiceResult&lt;T&gt; from another ServiceResult&lt;TOther&gt;, preserving the error state.
+    /// This should only be used to convert error results; Success results should use Success(T value) directly.
+    /// </summary>
+    public static ServiceResult<T> FromResult<TOther>(ServiceResult<TOther> result)
+    {
+        return result.Status switch
+        {
+            ResultStatus.Success => throw new InvalidOperationException("Cannot convert Success result without a value. Use Success(T value) instead."),
+            ResultStatus.NotFound => NotFound(result.ErrorMessage),
+            ResultStatus.InvalidState => InvalidState(result.ErrorMessage!),
+            ResultStatus.ValidationError => ValidationError(result.ErrorMessage!),
+            _ => InvalidState(result.ErrorMessage!)
+        };
+    }
 }
 
 /// <summary>

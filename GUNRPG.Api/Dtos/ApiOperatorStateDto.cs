@@ -1,26 +1,21 @@
 namespace GUNRPG.Api.Dtos;
 
 /// <summary>
-/// API-specific operator state DTO.
+/// API-specific operator aggregate state DTO.
 /// </summary>
 public sealed class ApiOperatorStateDto
 {
     public Guid Id { get; init; }
     public string Name { get; init; } = "";
-    public float Health { get; init; }
+    public long TotalXp { get; init; }
+    public float CurrentHealth { get; init; }
     public float MaxHealth { get; init; }
-    public float Stamina { get; init; }
-    public float Fatigue { get; init; }
-    public float SuppressionLevel { get; init; }
-    public bool IsSuppressed { get; init; }
-    public float DistanceToOpponent { get; init; }
-    public int CurrentAmmo { get; init; }
-    public int? MagazineSize { get; init; }
-    public string AimState { get; init; } = "";
-    public string MovementState { get; init; } = "";
-    public string CurrentMovement { get; init; } = "";
-    public string CurrentDirection { get; init; } = "";
-    public string CurrentCover { get; init; } = "";
-    public bool IsMoving { get; init; }
-    public bool IsAlive { get; init; }
+    public string EquippedWeaponName { get; init; } = "";
+    public List<string> UnlockedPerks { get; init; } = new();
+    public int ExfilStreak { get; init; }
+    public bool IsDead { get; init; }
+    public string CurrentMode { get; init; } = "";
+    public DateTimeOffset? InfilStartTime { get; init; }
+    public Guid? ActiveSessionId { get; init; }
+    public string LockedLoadout { get; init; } = "";
 }

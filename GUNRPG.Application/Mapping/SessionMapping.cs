@@ -28,9 +28,9 @@ public static class SessionMapping
         };
     }
 
-    public static OperatorStateDto ToDto(Operator op)
+    public static PlayerStateDto ToDto(Operator op)
     {
-        return new OperatorStateDto
+        return new PlayerStateDto
         {
             Id = op.Id,
             Name = op.Name,

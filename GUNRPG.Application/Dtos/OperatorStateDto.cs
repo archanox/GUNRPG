@@ -4,24 +4,23 @@ using GUNRPG.Core.Operators;
 
 namespace GUNRPG.Application.Dtos;
 
+/// <summary>
+/// DTO representing operator aggregate state (for UI display).
+/// This differs from player state in combat sessions.
+/// </summary>
 public sealed class OperatorStateDto
 {
     public Guid Id { get; init; }
     public string Name { get; init; } = string.Empty;
-    public float Health { get; init; }
+    public long TotalXp { get; init; }
+    public float CurrentHealth { get; init; }
     public float MaxHealth { get; init; }
-    public float Stamina { get; init; }
-    public float Fatigue { get; init; }
-    public float SuppressionLevel { get; init; }
-    public bool IsSuppressed { get; init; }
-    public float DistanceToOpponent { get; init; }
-    public int CurrentAmmo { get; init; }
-    public int? MagazineSize { get; init; }
-    public AimState AimState { get; init; }
-    public MovementState MovementState { get; init; }
-    public MovementState CurrentMovement { get; init; }
-    public MovementDirection CurrentDirection { get; init; }
-    public CoverState CurrentCover { get; init; }
-    public bool IsMoving { get; init; }
-    public bool IsAlive { get; init; }
+    public string EquippedWeaponName { get; init; } = string.Empty;
+    public List<string> UnlockedPerks { get; init; } = new();
+    public int ExfilStreak { get; init; }
+    public bool IsDead { get; init; }
+    public OperatorMode CurrentMode { get; init; }
+    public DateTimeOffset? InfilStartTime { get; init; }
+    public Guid? ActiveSessionId { get; init; }
+    public string LockedLoadout { get; init; } = string.Empty;
 }
