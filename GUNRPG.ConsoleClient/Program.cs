@@ -77,13 +77,18 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         {
             new TextBlockWidget("  Enter operator name:"),
             new TextBlockWidget(""),
-            new TextBlockWidget($"  Name: {OperatorName}_"),
-            new TextBlockWidget(""),
-            new TextBlockWidget("  (Use external client to create operator for now)"),
-            new TextBlockWidget(""),
-            new ButtonWidget("  ► CREATE").OnClick(_ => CreateOperator()),
-            new ButtonWidget("  ► BACK").OnClick(_ => CurrentScreen = Screen.MainMenu)
         };
+
+        // Display current name
+        widgets.Add(new TextBlockWidget($"  Current: {(string.IsNullOrWhiteSpace(OperatorName) ? "(empty)" : OperatorName)}"));
+        widgets.Add(new TextBlockWidget(""));
+        
+        // Action buttons
+        widgets.Add(new ButtonWidget("  ► GENERATE RANDOM NAME").OnClick(_ => {
+            OperatorName = $"Operative-{Random.Shared.Next(1000, 9999)}";
+        }));
+        widgets.Add(new ButtonWidget("  ► CREATE").OnClick(_ => CreateOperator()));
+        widgets.Add(new ButtonWidget("  ► BACK").OnClick(_ => CurrentScreen = Screen.MainMenu));
 
         if (ErrorMessage != null)
         {
@@ -93,8 +98,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         return new VStackWidget([
             UI.CreateBorder("CREATE NEW OPERATOR", 78, 5),
             new TextBlockWidget(""),
-            UI.CreateBorder("OPERATOR PROFILE", 60, 15, widgets),
-            UI.CreateStatusBar("Create new operator profile")
+            UI.CreateBorder("OPERATOR PROFILE", 60, 20, widgets),
+            UI.CreateStatusBar("Generate a random name or use external tool")
         ]);
     }
 
@@ -347,6 +352,9 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 
                 if (sessionData.Player.Health <= 0 || sessionData.Enemy.Health <= 0)
                 {
+                    // Combat has ended - process the outcome
+                    ProcessCombatOutcome();
+                    
                     Message = sessionData.Player.Health <= 0 
                         ? "MISSION FAILED\n\nYou were eliminated.\n\nPress OK to continue."
                         : "MISSION SUCCESS\n\nTarget eliminated.\n\nPress OK to continue.";
@@ -357,6 +365,30 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         catch (Exception ex)
         {
             ErrorMessage = ex.Message;
+        }
+    }
+
+    void ProcessCombatOutcome()
+    {
+        try
+        {
+            // NOTE: Using empty request body - server will load session and compute outcome
+            var request = new { SessionId = ActiveSessionId };
+            var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
+                .GetAwaiter().GetResult();
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                ErrorMessage = $"Failed to process outcome: {response.StatusCode}";
+                return;
+            }
+
+            // Refresh operator state to reflect outcome (XP, mode change, etc.)
+            RefreshOperator();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Outcome processing error: {ex.Message}";
         }
     }
 
@@ -442,24 +474,24 @@ static class UI
 {
     public static Hex1bWidget CreateBorder(string title, int width, int height, List<Hex1bWidget>? content = null)
     {
-        var widgets = new List<Hex1bWidget>();
-        var topBorder = $"┌─ {title} " + new string('─', Math.Max(0, width - title.Length - 5)) + "┐";
-        widgets.Add(new TextBlockWidget(topBorder));
-        
-        if (content != null)
+        // Use hex1b's BorderWidget for proper border rendering
+        var borderContent = content != null && content.Count > 0 
+            ? new VStackWidget(content)
+            : CreateEmptyContent(height);
+
+        // Try BorderWidget with just content and title
+        // If it doesn't support title in constructor, we'll just use the border
+        return new BorderWidget(borderContent);
+    }
+
+    private static Hex1bWidget CreateEmptyContent(int height)
+    {
+        var emptyContent = new List<Hex1bWidget>();
+        for (int i = 0; i < Math.Max(1, height - 2); i++)
         {
-            widgets.AddRange(content);
+            emptyContent.Add(new TextBlockWidget(""));
         }
-        else
-        {
-            for (int i = 0; i < height - 2; i++)
-            {
-                widgets.Add(new TextBlockWidget("│" + new string(' ', width - 2) + "│"));
-            }
-        }
-        
-        widgets.Add(new TextBlockWidget("└" + new string('─', width - 2) + "┘"));
-        return new VStackWidget(widgets);
+        return new VStackWidget(emptyContent);
     }
 
     public static Hex1bWidget CreateStatusBar(string text)
