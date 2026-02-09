@@ -70,6 +70,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     OperatorName = "";
                 }),
                 new ButtonWidget("  ► SELECT OPERATOR").OnClick(_ => {
+                    ErrorMessage = null; // Clear any previous errors
                     LoadOperatorList();
                     CurrentScreen = Screen.SelectOperator;
                 }),
