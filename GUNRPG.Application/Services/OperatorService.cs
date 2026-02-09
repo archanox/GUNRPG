@@ -68,7 +68,7 @@ public sealed class OperatorService
 
         return ServiceResult<StartInfilResponse>.Success(new StartInfilResponse
         {
-            SessionId = result.Value,
+            SessionId = result.Value!,
             Operator = ToDto(loadResult.Value!)
         });
     }
