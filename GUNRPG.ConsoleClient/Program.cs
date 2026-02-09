@@ -79,8 +79,15 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             new TextBlockWidget(""),
         };
 
-        // Display current name
-        widgets.Add(new TextBlockWidget($"  Current: {(string.IsNullOrWhiteSpace(OperatorName) ? "(empty)" : OperatorName)}"));
+        // Add text input using TextBoxWidget
+        // Note: In hex1b's current architecture, TextBoxWidget maintains internal state
+        // but doesn't provide easy bidirectional binding for reactive rebuilds.
+        // For now, we provide the textbox for manual entry, and the Generate button
+        // as an alternative that updates our state directly.
+        var textBox = new TextBoxWidget(OperatorName ?? "");
+        widgets.Add(textBox);
+        widgets.Add(new TextBlockWidget(""));
+        widgets.Add(new TextBlockWidget($"  Current name: {(string.IsNullOrWhiteSpace(OperatorName) ? "(use Generate or type above)" : OperatorName)}"));
         widgets.Add(new TextBlockWidget(""));
         
         // Action buttons
@@ -88,7 +95,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             OperatorName = $"Operative-{Random.Shared.Next(1000, 9999)}";
         }));
         widgets.Add(new ButtonWidget("  ► CREATE").OnClick(_ => CreateOperator()));
-        widgets.Add(new ButtonWidget("  ► BACK").OnClick(_ => CurrentScreen = Screen.MainMenu));
+        widgets.Add(new ButtonWidget("  ► BACK").OnClick(_ => {
+            CurrentScreen = Screen.MainMenu;
+            OperatorName = "";
+        }));
 
         if (ErrorMessage != null)
         {
@@ -98,8 +108,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         return new VStackWidget([
             UI.CreateBorder("CREATE NEW OPERATOR", 78, 5),
             new TextBlockWidget(""),
-            UI.CreateBorder("OPERATOR PROFILE", 60, 20, widgets),
-            UI.CreateStatusBar("Generate a random name or use external tool")
+            UI.CreateBorder("OPERATOR PROFILE", 60, 26, widgets),
+            UI.CreateStatusBar("Generate random name, then CREATE")
         ]);
     }
 
