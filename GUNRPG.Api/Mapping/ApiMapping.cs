@@ -76,6 +76,26 @@ public static class ApiMapping
         {
             Id = appDto.Id,
             Name = appDto.Name,
+            TotalXp = appDto.TotalXp,
+            CurrentHealth = appDto.CurrentHealth,
+            MaxHealth = appDto.MaxHealth,
+            EquippedWeaponName = appDto.EquippedWeaponName,
+            UnlockedPerks = appDto.UnlockedPerks,
+            ExfilStreak = appDto.ExfilStreak,
+            IsDead = appDto.IsDead,
+            CurrentMode = appDto.CurrentMode.ToString(),
+            InfilStartTime = appDto.InfilStartTime,
+            ActiveSessionId = appDto.ActiveSessionId,
+            LockedLoadout = appDto.LockedLoadout
+        };
+    }
+
+    public static ApiPlayerStateDto ToApiDto(PlayerStateDto appDto)
+    {
+        return new ApiPlayerStateDto
+        {
+            Id = appDto.Id,
+            Name = appDto.Name,
             Health = appDto.Health,
             MaxHealth = appDto.MaxHealth,
             Stamina = appDto.Stamina,
@@ -117,6 +137,68 @@ public static class ApiMapping
             Accepted = appDto.Accepted,
             Error = appDto.Error,
             State = appDto.State != null ? ToApiDto(appDto.State) : null
+        };
+    }
+
+    // Operator request mappings
+    public static Application.Requests.OperatorCreateRequest ToApplicationRequest(ApiOperatorCreateRequest apiRequest)
+    {
+        return new Application.Requests.OperatorCreateRequest
+        {
+            Name = apiRequest.Name
+        };
+    }
+
+    public static Application.Requests.StartInfilRequest ToApplicationRequest(ApiStartInfilRequest apiRequest)
+    {
+        return new Application.Requests.StartInfilRequest
+        {
+            SessionId = apiRequest.SessionId
+        };
+    }
+
+    public static Application.Requests.ProcessOutcomeRequest ToApplicationRequest(ApiProcessOutcomeRequest apiRequest)
+    {
+        return new Application.Requests.ProcessOutcomeRequest
+        {
+            SessionId = apiRequest.SessionId,
+            OperatorDied = apiRequest.OperatorDied,
+            XpGained = apiRequest.XpGained,
+            IsVictory = apiRequest.IsVictory,
+            GearLost = apiRequest.GearLost.Select(id => new Core.Equipment.GearId(id)).ToList()
+        };
+    }
+
+    public static Application.Requests.ChangeLoadoutRequest ToApplicationRequest(ApiChangeLoadoutRequest apiRequest)
+    {
+        return new Application.Requests.ChangeLoadoutRequest
+        {
+            WeaponName = apiRequest.WeaponName
+        };
+    }
+
+    public static Application.Requests.TreatWoundsRequest ToApplicationRequest(ApiTreatWoundsRequest apiRequest)
+    {
+        return new Application.Requests.TreatWoundsRequest
+        {
+            HealthAmount = apiRequest.HealthAmount
+        };
+    }
+
+    public static Application.Requests.ApplyXpRequest ToApplicationRequest(ApiApplyXpRequest apiRequest)
+    {
+        return new Application.Requests.ApplyXpRequest
+        {
+            XpAmount = apiRequest.XpAmount,
+            Reason = apiRequest.Reason
+        };
+    }
+
+    public static Application.Requests.UnlockPerkRequest ToApplicationRequest(ApiUnlockPerkRequest apiRequest)
+    {
+        return new Application.Requests.UnlockPerkRequest
+        {
+            PerkName = apiRequest.PerkName
         };
     }
 

@@ -82,9 +82,22 @@ public static class InfrastructureServiceExtensions
 
             services.AddSingleton<ICombatSessionStore, LiteDbCombatSessionStore>();
             services.AddSingleton<IOperatorEventStore, LiteDbOperatorEventStore>();
+            services.AddSingleton<OperatorExfilService>();
         }
 
         return services;
+    }
+
+    /// <summary>
+    /// Registers the operator event store (typically called by AddCombatSessionStore).
+    /// Can be used independently if needed.
+    /// </summary>
+    public static IServiceCollection AddOperatorStore(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        // Use the same configuration as CombatSessionStore
+        return AddCombatSessionStore(services, configuration);
     }
 
     /// <summary>
