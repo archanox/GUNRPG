@@ -415,13 +415,31 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             var sessionResponse = client.PostAsJsonAsync("sessions", sessionRequest, options).GetAwaiter().GetResult();
             if (!sessionResponse.IsSuccessStatusCode)
             {
-                ErrorMessage = $"Failed to create combat session: {sessionResponse.StatusCode}";
+                var errorContent = sessionResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                ErrorMessage = $"Failed to create combat session: {sessionResponse.StatusCode} - {errorContent}";
                 Message = $"Combat session creation failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
+                
+                // If session creation failed, try to abort the infil to reset operator state
+                if (CurrentOperatorId.HasValue)
+                {
+                    try
+                    {
+                        var abortRequest = new { SessionId = ActiveSessionId };
+                        client.PostAsJsonAsync($"operators/{CurrentOperatorId.Value}/infil/outcome", abortRequest).GetAwaiter().GetResult();
+                        LoadOperator(CurrentOperatorId.Value);  // Reload operator
+                        ActiveSessionId = null;
+                    }
+                    catch
+                    {
+                        // Silently fail - user will see the original error
+                    }
+                }
                 return;
             }
             
+            // Verify session was created successfully by checking if we can retrieve it
             LoadSession();
         }
         catch (Exception ex)
