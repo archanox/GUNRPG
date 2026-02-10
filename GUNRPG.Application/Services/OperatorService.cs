@@ -202,7 +202,19 @@ public sealed class OperatorService
 
     public async Task<ServiceResult<OperatorStateDto>> ApplyPetActionAsync(Guid operatorId, PetActionRequest request)
     {
-        return await _exfilService.ApplyPetActionAsync(operatorId, request);
+        var result = await _exfilService.ApplyPetActionAsync(new OperatorId(operatorId), request);
+        if (result.Status != ResultStatus.Success)
+        {
+            return ServiceResult<OperatorStateDto>.FromResult(result);
+        }
+
+        var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+        if (!loadResult.IsSuccess)
+        {
+            return ServiceResult<OperatorStateDto>.FromResult(loadResult);
+        }
+
+        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
     }
 
     private static OperatorStateDto ToDto(OperatorAggregate aggregate)

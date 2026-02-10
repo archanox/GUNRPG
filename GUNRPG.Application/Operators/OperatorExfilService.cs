@@ -667,40 +667,32 @@ public sealed class OperatorExfilService
     /// Applies a pet action to an operator's virtual pet.
     /// Only allowed in Base mode. Updates pet state via event sourcing.
     /// </summary>
-    public async Task<ServiceResult<OperatorStateDto>> ApplyPetActionAsync(
-        Guid operatorId,
+    public async Task<ServiceResult> ApplyPetActionAsync(
+        OperatorId operatorId,
         PetActionRequest request)
     {
-        var loadResult = await LoadOperatorAsync(OperatorId.FromGuid(operatorId));
+        var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
-        {
-            return loadResult.Status switch
-            {
-                ResultStatus.NotFound => ServiceResult<OperatorStateDto>.NotFound(loadResult.ErrorMessage!),
-                ResultStatus.ValidationError => ServiceResult<OperatorStateDto>.ValidationError(loadResult.ErrorMessage!),
-                ResultStatus.InvalidState => ServiceResult<OperatorStateDto>.InvalidState(loadResult.ErrorMessage!),
-                _ => ServiceResult<OperatorStateDto>.InvalidState(loadResult.ErrorMessage!)
-            };
-        }
+            return MapLoadResultStatus(loadResult);
 
         var aggregate = loadResult.Value!;
 
         // Validate operator state
         if (aggregate.CurrentMode != OperatorMode.Base)
         {
-            return ServiceResult<OperatorStateDto>.ValidationError(
+            return ServiceResult.ValidationError(
                 "Pet actions can only be performed in Base mode, not during infil");
         }
 
         if (aggregate.IsDead)
         {
-            return ServiceResult<OperatorStateDto>.ValidationError(
+            return ServiceResult.ValidationError(
                 "Cannot apply pet actions to a dead operator");
         }
 
         if (aggregate.PetState == null)
         {
-            return ServiceResult<OperatorStateDto>.InvalidState(
+            return ServiceResult.InvalidState(
                 "Operator has no pet state");
         }
 
@@ -710,9 +702,13 @@ public sealed class OperatorExfilService
         {
             petInput = ParsePetInput(request);
         }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            return ServiceResult.ValidationError(ex.Message);
+        }
         catch (ArgumentException ex)
         {
-            return ServiceResult<OperatorStateDto>.ValidationError(ex.Message);
+            return ServiceResult.ValidationError(ex.Message);
         }
 
         // Apply the pet action to the aggregate (creates event)
@@ -723,11 +719,10 @@ public sealed class OperatorExfilService
         }
         catch (InvalidOperationException ex)
         {
-            return ServiceResult<OperatorStateDto>.InvalidState(ex.Message);
+            return ServiceResult.InvalidState(ex.Message);
         }
 
-        // Return updated operator state
-        return ServiceResult<OperatorStateDto>.Success(ToDto(aggregate));
+        return ServiceResult.Success();
     }
 
     private static PetInput ParsePetInput(PetActionRequest request)
@@ -735,42 +730,65 @@ public sealed class OperatorExfilService
         var action = request.Action?.Trim().ToLowerInvariant() ?? "rest";
         return action switch
         {
-            "rest" => new RestInput(TimeSpan.FromHours(request.Hours ?? 1f)),
-            "eat" => new EatInput(request.Nutrition ?? 30f),
-            "drink" => new DrinkInput(request.Hydration ?? 30f),
+            "rest" => CreateRestInput(request),
+            "eat" => CreateEatInput(request),
+            "drink" => CreateDrinkInput(request),
             _ => throw new ArgumentException($"Unknown pet action: {request.Action}")
         };
     }
 
-    private static OperatorStateDto ToDto(OperatorAggregate aggregate)
+    private static RestInput CreateRestInput(PetActionRequest request)
     {
-        return new OperatorStateDto
+        var hours = request.Hours ?? 1f;
+
+        if (hours <= 0f)
         {
-            Id = aggregate.Id.Value,
-            Name = aggregate.Name,
-            TotalXp = aggregate.TotalXp,
-            CurrentHealth = aggregate.CurrentHealth,
-            MaxHealth = aggregate.MaxHealth,
-            EquippedWeaponName = aggregate.EquippedWeaponName,
-            UnlockedPerks = aggregate.UnlockedPerks.ToList(),
-            ExfilStreak = aggregate.ExfilStreak,
-            IsDead = aggregate.IsDead,
-            CurrentMode = aggregate.CurrentMode,
-            InfilStartTime = aggregate.InfilStartTime,
-            ActiveSessionId = aggregate.ActiveSessionId,
-            LockedLoadout = aggregate.LockedLoadout,
-            Pet = aggregate.PetState != null ? new PetStateDto
-            {
-                Health = aggregate.PetState.Health,
-                Fatigue = aggregate.PetState.Fatigue,
-                Injury = aggregate.PetState.Injury,
-                Stress = aggregate.PetState.Stress,
-                Morale = aggregate.PetState.Morale,
-                Hunger = aggregate.PetState.Hunger,
-                Hydration = aggregate.PetState.Hydration,
-                LastUpdated = aggregate.PetState.LastUpdated
-            } : null
-        };
+            throw new ArgumentOutOfRangeException(nameof(request.Hours), hours, "Rest hours must be greater than zero.");
+        }
+
+        // Optionally cap the maximum rest duration to a reasonable upper bound.
+        if (hours > 24f)
+        {
+            hours = 24f;
+        }
+
+        return new RestInput(TimeSpan.FromHours(hours));
+    }
+
+    private static EatInput CreateEatInput(PetActionRequest request)
+    {
+        var nutrition = request.Nutrition ?? 30f;
+
+        if (nutrition <= 0f)
+        {
+            throw new ArgumentOutOfRangeException(nameof(request.Nutrition), nutrition, "Nutrition amount must be greater than zero.");
+        }
+
+        // Optionally cap the maximum nutrition amount to prevent unrealistic changes.
+        if (nutrition > 100f)
+        {
+            nutrition = 100f;
+        }
+
+        return new EatInput(nutrition);
+    }
+
+    private static DrinkInput CreateDrinkInput(PetActionRequest request)
+    {
+        var hydration = request.Hydration ?? 30f;
+
+        if (hydration <= 0f)
+        {
+            throw new ArgumentOutOfRangeException(nameof(request.Hydration), hydration, "Hydration amount must be greater than zero.");
+        }
+
+        // Optionally cap the maximum hydration amount to prevent unrealistic changes.
+        if (hydration > 100f)
+        {
+            hydration = 100f;
+        }
+
+        return new DrinkInput(hydration);
     }
 
     /// <summary>
