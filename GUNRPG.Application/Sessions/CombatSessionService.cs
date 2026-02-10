@@ -32,7 +32,8 @@ public sealed class CombatSessionService
             playerName: request.PlayerName,
             seed: request.Seed,
             startingDistance: request.StartingDistance,
-            enemyName: request.EnemyName);
+            enemyName: request.EnemyName,
+            id: request.Id);
 
         await _store.SaveAsync(SessionMapping.ToSnapshot(session));
         return SessionMapping.ToDto(session);
