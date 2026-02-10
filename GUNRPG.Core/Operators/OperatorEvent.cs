@@ -595,3 +595,84 @@ public sealed class InfilEndedEvent : OperatorEvent
 
     private record InfilEndedPayload(bool WasSuccessful, string Reason);
 }
+
+/// <summary>
+/// Event recording that a pet action was applied to the operator's virtual pet.
+/// Stores the complete resulting pet state after applying the action.
+/// </summary>
+public sealed class PetActionAppliedEvent : OperatorEvent
+{
+    private const string TypeName = "PetActionApplied";
+
+    public PetActionAppliedEvent(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string action,
+        float health,
+        float fatigue,
+        float injury,
+        float stress,
+        float morale,
+        float hunger,
+        float hydration,
+        DateTimeOffset lastUpdated,
+        string previousHash,
+        DateTimeOffset? timestamp = null)
+        : base(
+            operatorId,
+            sequenceNumber,
+            TypeName,
+            payload: JsonSerializer.Serialize(new PetActionPayload(
+                action, health, fatigue, injury, stress, morale, hunger, hydration, lastUpdated)),
+            previousHash,
+            timestamp)
+    {
+    }
+
+    /// <summary>
+    /// Gets the action name and resulting pet state from the payload.
+    /// </summary>
+    public (string action, float health, float fatigue, float injury, float stress, float morale, float hunger, float hydration, DateTimeOffset lastUpdated) GetPayload()
+    {
+        var data = JsonSerializer.Deserialize<PetActionPayload>(Payload)!;
+        return (data.Action, data.Health, data.Fatigue, data.Injury, data.Stress, data.Morale, data.Hunger, data.Hydration, data.LastUpdated);
+    }
+
+    /// <summary>
+    /// Rehydrates a PetActionAppliedEvent from storage.
+    /// </summary>
+    public static PetActionAppliedEvent Rehydrate(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string payload,
+        string previousHash,
+        DateTimeOffset timestamp)
+    {
+        var data = JsonSerializer.Deserialize<PetActionPayload>(payload)!;
+        return new PetActionAppliedEvent(
+            operatorId,
+            sequenceNumber,
+            data.Action,
+            data.Health,
+            data.Fatigue,
+            data.Injury,
+            data.Stress,
+            data.Morale,
+            data.Hunger,
+            data.Hydration,
+            data.LastUpdated,
+            previousHash,
+            timestamp);
+    }
+
+    private record PetActionPayload(
+        string Action,
+        float Health,
+        float Fatigue,
+        float Injury,
+        float Stress,
+        float Morale,
+        float Hunger,
+        float Hydration,
+        DateTimeOffset LastUpdated);
+}
