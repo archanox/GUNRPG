@@ -18,4 +18,5 @@ public sealed class ApiOperatorStateDto
     public DateTimeOffset? InfilStartTime { get; init; }
     public Guid? ActiveSessionId { get; init; }
     public string LockedLoadout { get; init; } = "";
+    public ApiPetStateDto? Pet { get; init; }
 }
