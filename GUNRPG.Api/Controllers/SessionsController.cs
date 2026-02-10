@@ -25,9 +25,14 @@ public class SessionsController : ControllerBase
     public async Task<ActionResult<ApiCombatSessionDto>> Create([FromBody] ApiSessionCreateRequest? request)
     {
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiSessionCreateRequest());
-        var dto = await _service.CreateSessionAsync(appRequest);
-        var apiDto = ApiMapping.ToApiDto(dto);
-        return CreatedAtAction(nameof(GetState), new { id = apiDto.Id }, apiDto);
+        var result = await _service.CreateSessionAsync(appRequest);
+        return result.Status switch
+        {
+            ResultStatus.Success => CreatedAtAction(nameof(GetState), new { id = result.Value!.Id }, ApiMapping.ToApiDto(result.Value)),
+            ResultStatus.ValidationError => BadRequest(new { error = result.ErrorMessage }),
+            ResultStatus.InvalidState => Conflict(new { error = result.ErrorMessage }),
+            _ => StatusCode(500, new { error = "Unexpected error" })
+        };
     }
 
     [HttpGet("{id:guid}/state")]
