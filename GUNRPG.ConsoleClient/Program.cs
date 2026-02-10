@@ -57,6 +57,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             Screen.TreatWounds => Task.FromResult<Hex1bWidget>(BuildTreatWounds()),
             Screen.UnlockPerk => Task.FromResult<Hex1bWidget>(BuildUnlockPerk()),
             Screen.AbortMission => Task.FromResult<Hex1bWidget>(BuildAbortMission()),
+            Screen.PetActions => Task.FromResult<Hex1bWidget>(BuildPetActions()),
             _ => Task.FromResult<Hex1bWidget>(new TextBlockWidget("Unknown screen"))
         };
     }
@@ -351,6 +352,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             menuItems.Add("CHANGE LOADOUT");
             menuItems.Add("TREAT WOUNDS");
             menuItems.Add("UNLOCK PERK");
+            menuItems.Add("PET ACTIONS");
             menuItems.Add("VIEW STATS");
         }
         else
@@ -379,12 +381,15 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     case 3: // UNLOCK PERK
                         CurrentScreen = Screen.UnlockPerk;
                         break;
-                    case 4: // VIEW STATS
+                    case 4: // PET ACTIONS
+                        CurrentScreen = Screen.PetActions;
+                        break;
+                    case 5: // VIEW STATS
                         Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nPerks: {string.Join(", ", op.UnlockedPerks)}\n\nPress OK to continue.";
                         CurrentScreen = Screen.Message;
                         ReturnScreen = Screen.BaseCamp;
                         break;
-                    case 5: // MAIN MENU
+                    case 6: // MAIN MENU
                         CurrentScreen = Screen.MainMenu;
                         break;
                 }
@@ -1090,8 +1095,137 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         }
     }
 
+    Hex1bWidget BuildPetActions()
+    {
+        var op = CurrentOperator;
+        if (op?.Pet == null)
+        {
+            return new VStackWidget([
+                UI.CreateBorder("PET ACTIONS"),
+                new TextBlockWidget(""),
+                new TextBlockWidget("  No pet data available."),
+                new TextBlockWidget(""),
+                new ListWidget(new[] { "BACK" }).OnItemActivated(_ => CurrentScreen = Screen.BaseCamp),
+                UI.CreateStatusBar("No pet available")
+            ]);
+        }
+
+        var pet = op.Pet;
+        
+        // Create pet stat progress bars (using 100 as max for percentages)
+        var healthBar = UI.CreateProgressBar("Health", (int)pet.Health, 100, 20);
+        var fatigueBar = UI.CreateProgressBar("Fatigue", (int)pet.Fatigue, 100, 20);
+        var stressBar = UI.CreateProgressBar("Stress", (int)pet.Stress, 100, 20);
+        var moraleBar = UI.CreateProgressBar("Morale", (int)pet.Morale, 100, 20);
+        var hungerBar = UI.CreateProgressBar("Hunger", (int)pet.Hunger, 100, 20);
+        var hydrationBar = UI.CreateProgressBar("Hydration", (int)pet.Hydration, 100, 20);
+
+        var menuItems = new[] {
+            "REST (Reduce Fatigue)",
+            "EAT (Reduce Hunger)",
+            "DRINK (Reduce Thirst)",
+            "BACK"
+        };
+
+        return new VStackWidget([
+            UI.CreateBorder("PET ACTIONS"),
+            new TextBlockWidget(""),
+            UI.CreateBorder("PET STATUS", new VStackWidget([
+                new TextBlockWidget("  "),
+                healthBar,
+                fatigueBar,
+                stressBar,
+                moraleBar,
+                hungerBar,
+                hydrationBar,
+                new TextBlockWidget("  ")
+            ])),
+            new TextBlockWidget(""),
+            UI.CreateBorder("ACTIONS", new VStackWidget([
+                new TextBlockWidget("  Select an action:"),
+                new TextBlockWidget(""),
+                new ListWidget(menuItems).OnItemActivated(e => {
+                    switch (e.ActivatedIndex)
+                    {
+                        case 0: // REST
+                            ApplyPetAction("rest", hours: 8);
+                            break;
+                        case 1: // EAT
+                            ApplyPetAction("eat", nutrition: 50);
+                            break;
+                        case 2: // DRINK
+                            ApplyPetAction("drink", hydration: 50);
+                            break;
+                        case 3: // BACK
+                            CurrentScreen = Screen.BaseCamp;
+                            break;
+                    }
+                })
+            ])),
+            UI.CreateStatusBar("Choose a pet action")
+        ]);
+    }
+
+    void ApplyPetAction(string action, float? hours = null, float? nutrition = null, float? hydration = null)
+    {
+        try
+        {
+            var request = new
+            {
+                Action = action,
+                Hours = hours,
+                Nutrition = nutrition,
+                Hydration = hydration
+            };
+
+            var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/pet", request, options)
+                .GetAwaiter().GetResult();
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                ErrorMessage = $"Failed to apply pet action: {response.StatusCode} - {errorContent}";
+                Message = $"Pet action failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.PetActions;
+                return;
+            }
+
+            // Refresh operator state
+            RefreshOperator();
+            
+            var actionText = action.ToUpper();
+            Message = $"Pet action completed.\nAction: {actionText}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.PetActions;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            Message = $"Error applying pet action: {ex.Message}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.PetActions;
+        }
+    }
+
     static OperatorState ParseOperator(JsonElement json)
     {
+        PetState? pet = null;
+        if (json.TryGetProperty("pet", out var petJson) && petJson.ValueKind != JsonValueKind.Null)
+        {
+            pet = new PetState
+            {
+                Health = petJson.GetProperty("health").GetSingle(),
+                Fatigue = petJson.GetProperty("fatigue").GetSingle(),
+                Injury = petJson.GetProperty("injury").GetSingle(),
+                Stress = petJson.GetProperty("stress").GetSingle(),
+                Morale = petJson.GetProperty("morale").GetSingle(),
+                Hunger = petJson.GetProperty("hunger").GetSingle(),
+                Hydration = petJson.GetProperty("hydration").GetSingle(),
+                LastUpdated = petJson.GetProperty("lastUpdated").GetDateTimeOffset()
+            };
+        }
+
         return new OperatorState
         {
             Id = json.GetProperty("id").GetGuid(),
@@ -1110,7 +1244,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             ActiveSessionId = json.TryGetProperty("activeSessionId", out var sid) && sid.ValueKind != JsonValueKind.Null 
                 ? sid.GetGuid() 
                 : null,
-            LockedLoadout = json.GetProperty("lockedLoadout").GetString() ?? ""
+            LockedLoadout = json.GetProperty("lockedLoadout").GetString() ?? "",
+            Pet = pet
         };
     }
 
@@ -1190,6 +1325,19 @@ class OperatorState
     public DateTimeOffset? InfilStartTime { get; init; }
     public Guid? ActiveSessionId { get; init; }
     public string LockedLoadout { get; init; } = "";
+    public PetState? Pet { get; init; }
+}
+
+class PetState
+{
+    public float Health { get; init; }
+    public float Fatigue { get; init; }
+    public float Injury { get; init; }
+    public float Stress { get; init; }
+    public float Morale { get; init; }
+    public float Hunger { get; init; }
+    public float Hydration { get; init; }
+    public DateTimeOffset LastUpdated { get; init; }
 }
 
 class OperatorSummary
@@ -1216,5 +1364,6 @@ enum Screen
     ChangeLoadout,
     TreatWounds,
     UnlockPerk,
-    AbortMission
+    AbortMission,
+    PetActions
 }
