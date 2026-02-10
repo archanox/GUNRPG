@@ -26,8 +26,22 @@ public sealed class CombatSessionService
         _store = store;
     }
 
-    public async Task<CombatSessionDto> CreateSessionAsync(SessionCreateRequest request)
+    public async Task<ServiceResult<CombatSessionDto>> CreateSessionAsync(SessionCreateRequest request)
     {
+        if (request.Id == Guid.Empty)
+        {
+            return ServiceResult<CombatSessionDto>.ValidationError("Session ID cannot be empty");
+        }
+
+        if (request.Id.HasValue)
+        {
+            var existing = await _store.LoadAsync(request.Id.Value);
+            if (existing != null)
+            {
+                return ServiceResult<CombatSessionDto>.InvalidState("A session with the provided ID already exists");
+            }
+        }
+
         var session = CombatSession.CreateDefault(
             playerName: request.PlayerName,
             seed: request.Seed,
@@ -36,7 +50,7 @@ public sealed class CombatSessionService
             id: request.Id);
 
         await _store.SaveAsync(SessionMapping.ToSnapshot(session));
-        return SessionMapping.ToDto(session);
+        return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
     }
 
     public async Task<ServiceResult<CombatSessionDto>> GetStateAsync(Guid sessionId)
