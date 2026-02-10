@@ -23,4 +23,5 @@ public sealed class OperatorStateDto
     public DateTimeOffset? InfilStartTime { get; init; }
     public Guid? ActiveSessionId { get; init; }
     public string LockedLoadout { get; init; } = string.Empty;
+    public PetStateDto? Pet { get; init; }
 }
