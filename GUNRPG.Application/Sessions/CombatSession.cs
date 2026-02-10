@@ -58,7 +58,7 @@ public sealed class CombatSession
         CompletedAt = completedAt;
     }
 
-    public static CombatSession CreateDefault(string? playerName = null, int? seed = null, float? startingDistance = null, string? enemyName = null)
+    public static CombatSession CreateDefault(string? playerName = null, int? seed = null, float? startingDistance = null, string? enemyName = null, Guid? id = null)
     {
         var resolvedSeed = seed ?? Random.Shared.Next();
         var name = string.IsNullOrWhiteSpace(playerName) ? "Player" : playerName.Trim();
@@ -88,7 +88,7 @@ public sealed class CombatSession
         var operatorId = OperatorId.FromGuid(player.Id);
 
         return new CombatSession(
-            Guid.NewGuid(),
+            id ?? Guid.NewGuid(),
             operatorId,
             combat,
             ai,

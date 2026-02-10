@@ -5,6 +5,7 @@ namespace GUNRPG.Api.Dtos;
 /// </summary>
 public sealed class ApiSessionCreateRequest
 {
+    public Guid? Id { get; init; }
     public string? PlayerName { get; init; }
     public int? Seed { get; init; }
     public float? StartingDistance { get; init; }

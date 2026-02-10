@@ -14,6 +14,7 @@ public static class ApiMapping
     {
         return new SessionCreateRequest
         {
+            Id = apiRequest.Id,
             PlayerName = apiRequest.PlayerName,
             Seed = apiRequest.Seed,
             StartingDistance = apiRequest.StartingDistance,
