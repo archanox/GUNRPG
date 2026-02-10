@@ -1180,7 +1180,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 Hydration = hydration
             };
 
-            var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/pet", request, options)
+            using var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/pet", request, options)
                 .GetAwaiter().GetResult();
             
             if (!response.IsSuccessStatusCode)
@@ -1196,7 +1196,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Refresh operator state
             RefreshOperator();
             
-            var actionText = action.ToUpper();
+            var actionText = action.ToUpperInvariant();
             Message = $"Pet action completed.\nAction: {actionText}\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.PetActions;
