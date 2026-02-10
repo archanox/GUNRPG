@@ -28,13 +28,13 @@ public sealed class CombatSessionService
 
     public async Task<ServiceResult<CombatSessionDto>> CreateSessionAsync(SessionCreateRequest request)
     {
-        if (request.Id == Guid.Empty)
-        {
-            return ServiceResult<CombatSessionDto>.ValidationError("Session ID cannot be empty");
-        }
-
         if (request.Id.HasValue)
         {
+            if (request.Id.Value == Guid.Empty)
+            {
+                return ServiceResult<CombatSessionDto>.ValidationError("Session ID cannot be empty");
+            }
+
             var existing = await _store.LoadAsync(request.Id.Value);
             if (existing != null)
             {
