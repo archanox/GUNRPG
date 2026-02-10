@@ -86,7 +86,8 @@ public static class ApiMapping
             CurrentMode = appDto.CurrentMode.ToString(),
             InfilStartTime = appDto.InfilStartTime,
             ActiveSessionId = appDto.ActiveSessionId,
-            LockedLoadout = appDto.LockedLoadout
+            LockedLoadout = appDto.LockedLoadout,
+            Pet = appDto.Pet != null ? ToApiDto(appDto.Pet) : null
         };
     }
 

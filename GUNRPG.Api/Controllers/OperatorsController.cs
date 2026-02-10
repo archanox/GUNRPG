@@ -156,4 +156,20 @@ public class OperatorsController : ControllerBase
             _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
         };
     }
+
+    [HttpPost("{id:guid}/pet")]
+    public async Task<ActionResult<ApiOperatorStateDto>> ApplyPetAction(Guid id, [FromBody] ApiPetActionRequest? request)
+    {
+        var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiPetActionRequest());
+        var result = await _service.ApplyPetActionAsync(id, appRequest);
+        
+        return result.Status switch
+        {
+            ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
+            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
+            ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
+            ResultStatus.ValidationError => BadRequest(new { error = result.ErrorMessage }),
+            _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
+        };
+    }
 }
