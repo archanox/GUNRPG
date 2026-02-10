@@ -1,5 +1,7 @@
 namespace GUNRPG.Core.Operators;
 
+using GUNRPG.Core.VirtualPet;
+
 /// <summary>
 /// Event-sourced aggregate representing a long-lived operator character.
 /// State is derived entirely by replaying events from the event store.
@@ -80,6 +82,13 @@ public sealed class OperatorAggregate
     /// Loadout is locked during infil to prevent mid-mission changes.
     /// </summary>
     public string LockedLoadout { get; private set; } = string.Empty;
+
+    /// <summary>
+    /// Virtual pet state for this operator.
+    /// Tracks health, fatigue, stress, morale, hunger, and hydration.
+    /// Updated through pet actions and background decay.
+    /// </summary>
+    public PetState? PetState { get; private set; }
 
     /// <summary>
     /// Current sequence number (number of events applied).
@@ -171,6 +180,18 @@ public sealed class OperatorAggregate
                 InfilStartTime = null;
                 ActiveSessionId = null;
                 LockedLoadout = string.Empty;
+                // Initialize pet state with healthy defaults
+                PetState = new PetState(
+                    OperatorId: Id.Value,
+                    Health: 100f,
+                    Fatigue: 0f,
+                    Injury: 0f,
+                    Stress: 0f,
+                    Morale: 100f,
+                    Hunger: 0f,
+                    Hydration: 100f,
+                    LastUpdated: created.Timestamp
+                );
                 break;
 
             case XpGainedEvent xpGained:
@@ -241,6 +262,21 @@ public sealed class OperatorAggregate
                 }
                 break;
 
+            case PetActionAppliedEvent petAction:
+                var (action, health, fatigue, injury, stress, morale, hunger, hydration, lastUpdated) = petAction.GetPayload();
+                PetState = new PetState(
+                    OperatorId: Id.Value,
+                    Health: health,
+                    Fatigue: fatigue,
+                    Injury: injury,
+                    Stress: stress,
+                    Morale: morale,
+                    Hunger: hunger,
+                    Hydration: hydration,
+                    LastUpdated: lastUpdated
+                );
+                break;
+
             default:
                 throw new InvalidOperationException($"Unknown event type: {evt.EventType}");
         }
@@ -256,6 +292,63 @@ public sealed class OperatorAggregate
     public string GetLastEventHash()
     {
         return _events.Count > 0 ? _events[^1].Hash : string.Empty;
+    }
+
+    /// <summary>
+    /// Applies a pet action to the operator's virtual pet.
+    /// Only allowed in Base mode. Updates pet state via event sourcing.
+    /// </summary>
+    /// <param name="input">The pet action to apply (Rest, Eat, Drink)</param>
+    /// <param name="now">Current timestamp for calculating decay and tracking update time</param>
+    /// <returns>The new pet action applied event</returns>
+    public PetActionAppliedEvent ApplyPetAction(PetInput input, DateTimeOffset now)
+    {
+        if (CurrentMode != OperatorMode.Base)
+        {
+            throw new InvalidOperationException("Pet actions can only be applied in Base mode");
+        }
+
+        if (IsDead)
+        {
+            throw new InvalidOperationException("Cannot apply pet actions to a dead operator");
+        }
+
+        if (PetState == null)
+        {
+            throw new InvalidOperationException("Operator has no pet state");
+        }
+
+        // Apply the pet action using the pure rules engine
+        var newPetState = PetRules.Apply(PetState, input, now);
+
+        // Determine action name for event tracking
+        string actionName = input switch
+        {
+            RestInput => "rest",
+            EatInput => "eat",
+            DrinkInput => "drink",
+            _ => "unknown"
+        };
+
+        // Create and apply the event
+        var evt = new PetActionAppliedEvent(
+            Id,
+            CurrentSequence + 1,
+            actionName,
+            newPetState.Health,
+            newPetState.Fatigue,
+            newPetState.Injury,
+            newPetState.Stress,
+            newPetState.Morale,
+            newPetState.Hunger,
+            newPetState.Hydration,
+            newPetState.LastUpdated,
+            GetLastEventHash(),
+            now
+        );
+
+        ApplyEvent(evt, isNew: true);
+        return evt;
     }
 
     /// <summary>
