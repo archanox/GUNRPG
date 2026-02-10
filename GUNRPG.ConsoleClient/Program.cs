@@ -1115,6 +1115,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         // Create pet stat progress bars (using 100 as max for percentages)
         var healthBar = UI.CreateProgressBar("Health", (int)pet.Health, 100, 20);
         var fatigueBar = UI.CreateProgressBar("Fatigue", (int)pet.Fatigue, 100, 20);
+        var injuryBar = UI.CreateProgressBar("Injury", (int)pet.Injury, 100, 20);
         var stressBar = UI.CreateProgressBar("Stress", (int)pet.Stress, 100, 20);
         var moraleBar = UI.CreateProgressBar("Morale", (int)pet.Morale, 100, 20);
         var hungerBar = UI.CreateProgressBar("Hunger", (int)pet.Hunger, 100, 20);
@@ -1123,7 +1124,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         var menuItems = new[] {
             "REST (Reduce Fatigue)",
             "EAT (Reduce Hunger)",
-            "DRINK (Reduce Thirst)",
+            "DRINK (Increase Hydration)",
             "BACK"
         };
 
@@ -1134,6 +1135,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 new TextBlockWidget("  "),
                 healthBar,
                 fatigueBar,
+                injuryBar,
                 stressBar,
                 moraleBar,
                 hungerBar,
