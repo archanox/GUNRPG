@@ -216,7 +216,8 @@ public sealed class OperatorService
             CurrentMode = aggregate.CurrentMode,
             InfilStartTime = aggregate.InfilStartTime,
             ActiveSessionId = aggregate.ActiveSessionId,
-            LockedLoadout = aggregate.LockedLoadout
+            LockedLoadout = aggregate.LockedLoadout,
+            Pet = aggregate.PetState != null ? SessionMapping.ToDto(aggregate.PetState) : null
         };
     }
 }

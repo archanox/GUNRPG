@@ -1,6 +1,9 @@
 using GUNRPG.Application.Combat;
+using GUNRPG.Application.Dtos;
+using GUNRPG.Application.Requests;
 using GUNRPG.Application.Results;
 using GUNRPG.Core.Operators;
+using GUNRPG.Core.VirtualPet;
 
 namespace GUNRPG.Application.Operators;
 
@@ -658,6 +661,116 @@ public sealed class OperatorExfilService
     public async Task<bool> OperatorExistsAsync(OperatorId operatorId)
     {
         return await _eventStore.OperatorExistsAsync(operatorId);
+    }
+
+    /// <summary>
+    /// Applies a pet action to an operator's virtual pet.
+    /// Only allowed in Base mode. Updates pet state via event sourcing.
+    /// </summary>
+    public async Task<ServiceResult<OperatorStateDto>> ApplyPetActionAsync(
+        Guid operatorId,
+        PetActionRequest request)
+    {
+        var loadResult = await LoadOperatorAsync(OperatorId.FromGuid(operatorId));
+        if (!loadResult.IsSuccess)
+        {
+            return loadResult.Status switch
+            {
+                ResultStatus.NotFound => ServiceResult<OperatorStateDto>.NotFound(loadResult.ErrorMessage!),
+                ResultStatus.ValidationError => ServiceResult<OperatorStateDto>.ValidationError(loadResult.ErrorMessage!),
+                ResultStatus.InvalidState => ServiceResult<OperatorStateDto>.InvalidState(loadResult.ErrorMessage!),
+                _ => ServiceResult<OperatorStateDto>.InvalidState(loadResult.ErrorMessage!)
+            };
+        }
+
+        var aggregate = loadResult.Value!;
+
+        // Validate operator state
+        if (aggregate.CurrentMode != OperatorMode.Base)
+        {
+            return ServiceResult<OperatorStateDto>.ValidationError(
+                "Pet actions can only be performed in Base mode, not during infil");
+        }
+
+        if (aggregate.IsDead)
+        {
+            return ServiceResult<OperatorStateDto>.ValidationError(
+                "Cannot apply pet actions to a dead operator");
+        }
+
+        if (aggregate.PetState == null)
+        {
+            return ServiceResult<OperatorStateDto>.InvalidState(
+                "Operator has no pet state");
+        }
+
+        // Parse the pet action from the request
+        PetInput petInput;
+        try
+        {
+            petInput = ParsePetInput(request);
+        }
+        catch (ArgumentException ex)
+        {
+            return ServiceResult<OperatorStateDto>.ValidationError(ex.Message);
+        }
+
+        // Apply the pet action to the aggregate (creates event)
+        try
+        {
+            var evt = aggregate.ApplyPetAction(petInput, DateTimeOffset.UtcNow);
+            await _eventStore.AppendEventAsync(evt);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return ServiceResult<OperatorStateDto>.InvalidState(ex.Message);
+        }
+
+        // Return updated operator state
+        return ServiceResult<OperatorStateDto>.Success(ToDto(aggregate));
+    }
+
+    private static PetInput ParsePetInput(PetActionRequest request)
+    {
+        var action = request.Action?.Trim().ToLowerInvariant() ?? "rest";
+        return action switch
+        {
+            "rest" => new RestInput(TimeSpan.FromHours(request.Hours ?? 1f)),
+            "eat" => new EatInput(request.Nutrition ?? 30f),
+            "drink" => new DrinkInput(request.Hydration ?? 30f),
+            _ => throw new ArgumentException($"Unknown pet action: {request.Action}")
+        };
+    }
+
+    private static OperatorStateDto ToDto(OperatorAggregate aggregate)
+    {
+        return new OperatorStateDto
+        {
+            Id = aggregate.Id.Value,
+            Name = aggregate.Name,
+            TotalXp = aggregate.TotalXp,
+            CurrentHealth = aggregate.CurrentHealth,
+            MaxHealth = aggregate.MaxHealth,
+            EquippedWeaponName = aggregate.EquippedWeaponName,
+            UnlockedPerks = aggregate.UnlockedPerks.ToList(),
+            ExfilStreak = aggregate.ExfilStreak,
+            IsDead = aggregate.IsDead,
+            CurrentMode = aggregate.CurrentMode,
+            InfilStartTime = aggregate.InfilStartTime,
+            ActiveSessionId = aggregate.ActiveSessionId,
+            LockedLoadout = aggregate.LockedLoadout,
+            Pet = aggregate.PetState != null ? new PetStateDto
+            {
+                Health = aggregate.PetState.Health,
+                Fatigue = aggregate.PetState.Fatigue,
+                Injury = aggregate.PetState.Injury,
+                Stress = aggregate.PetState.Stress,
+                Morale = aggregate.PetState.Morale,
+                Hunger = aggregate.PetState.Hunger,
+                Hydration = aggregate.PetState.Hydration,
+                LastUpdated = aggregate.PetState.LastUpdated
+            } : null
+        };
     }
 
     /// <summary>
