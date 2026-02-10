@@ -85,8 +85,8 @@ public sealed class OperatorAggregate
 
     /// <summary>
     /// Virtual pet state for this operator.
-    /// Tracks health, fatigue, stress, morale, hunger, and hydration.
-    /// Updated through pet actions and background decay.
+    /// Tracks health, fatigue, stress, morale, hunger, hydration, and injury,
+    /// along with the last updated timestamp. Updated through pet actions and background decay.
     /// </summary>
     public PetState? PetState { get; private set; }
 
@@ -263,7 +263,7 @@ public sealed class OperatorAggregate
                 break;
 
             case PetActionAppliedEvent petAction:
-                var (action, health, fatigue, injury, stress, morale, hunger, hydration, lastUpdated) = petAction.GetPayload();
+                var (_, health, fatigue, injury, stress, morale, hunger, hydration, lastUpdated) = petAction.GetPayload();
                 PetState = new PetState(
                     OperatorId: Id.Value,
                     Health: health,
@@ -327,7 +327,7 @@ public sealed class OperatorAggregate
             RestInput => "rest",
             EatInput => "eat",
             DrinkInput => "drink",
-            _ => "unknown"
+            _ => throw new InvalidOperationException("Unsupported pet input type for pet action")
         };
 
         // Create and apply the event
