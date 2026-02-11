@@ -367,27 +367,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         }
         else // Infil mode
         {
-            // Check if active session exists and is not completed
-            var canContinueMission = op.ActiveSessionId.HasValue;
-            if (canContinueMission)
-            {
-                // Try to load session to check if it's completed
-                try
-                {
-                    var sessionData = client.GetFromJsonAsync<CombatSessionDto>($"sessions/{op.ActiveSessionId}/state", options).GetAwaiter().GetResult();
-                    if (sessionData != null && sessionData.Phase == "Completed")
-                    {
-                        canContinueMission = false;
-                    }
-                }
-                catch
-                {
-                    // If session doesn't exist or can't be loaded, can't continue
-                    canContinueMission = false;
-                }
-            }
-
-            if (canContinueMission)
+            // If there is an active session, always allow continuing it.
+            // The continuation flow (LoadSession) is responsible for handling completed sessions
+            // (e.g., by showing a completion screen and processing the outcome).
+            if (op.ActiveSessionId.HasValue)
             {
                 menuItems.Add("CONTINUE MISSION");
             }
@@ -606,7 +589,17 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             if (sessionData != null)
             {
                 CurrentSession = sessionData;
-                CurrentScreen = Screen.CombatSession;
+                
+                // If session is completed, route to MissionComplete screen for outcome processing
+                if (sessionData.Phase == "Completed")
+                {
+                    Message = "Mission completed. Processing outcome...";
+                    CurrentScreen = Screen.MissionComplete;
+                }
+                else
+                {
+                    CurrentScreen = Screen.CombatSession;
+                }
             }
         }
         catch (HttpRequestException ex) when (ex.Message.Contains("404"))
@@ -751,7 +744,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             break;
                         case "RETURN TO BASE":
                             // If combat has ended, process outcome first
-                            if (combatEnded && session.Phase != "Completed")
+                            if (combatEnded)
                             {
                                 ProcessCombatOutcome();
                             }
@@ -804,13 +797,24 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     {
         try
         {
+            // Use authoritative session ID with fallback
+            var sessionId = ActiveSessionId ?? CurrentOperator?.ActiveSessionId;
+            
             // NOTE: Using empty request body - server will load session and compute outcome
-            var request = new { SessionId = ActiveSessionId };
+            var request = new { SessionId = sessionId };
             var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
                 .GetAwaiter().GetResult();
             
             if (!response.IsSuccessStatusCode)
             {
+                // Check if this is an InvalidState error (operator already in Base mode)
+                var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                if (errorContent.Contains("InvalidState") || errorContent.Contains("already in Base mode"))
+                {
+                    // Silently ignore - operator is already in the correct state
+                    return;
+                }
+                
                 ErrorMessage = $"Failed to process outcome: {response.StatusCode}";
                 return;
             }
@@ -1344,13 +1348,16 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     {
         try
         {
+            // Use authoritative session ID with fallback
+            var sessionId = ActiveSessionId ?? CurrentOperator?.ActiveSessionId;
+            
             // Check if session exists and its phase
             CombatSessionDto? sessionData = null;
-            if (ActiveSessionId.HasValue)
+            if (sessionId.HasValue)
             {
                 try
                 {
-                    sessionData = client.GetFromJsonAsync<CombatSessionDto>($"sessions/{ActiveSessionId}/state", options).GetAwaiter().GetResult();
+                    sessionData = client.GetFromJsonAsync<CombatSessionDto>($"sessions/{sessionId}/state", options).GetAwaiter().GetResult();
                 }
                 catch
                 {
@@ -1358,9 +1365,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 }
             }
 
-            // If session is already completed, just clear local state and refresh
+            // If session is already completed, process outcome to ensure proper mode transition
             if (sessionData?.Phase == "Completed")
             {
+                ProcessCombatOutcome();
                 ActiveSessionId = null;
                 CurrentSession = null;
                 RefreshOperator();
@@ -1373,7 +1381,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Process outcome with current session ID to trigger exfil failed
             // Note: The /infil/outcome endpoint processes combat outcomes and returns operator to Base mode.
             // When called with a session ID before combat completes, it treats this as mission abort/failure.
-            var request = new { SessionId = ActiveSessionId };
+            var request = new { SessionId = sessionId };
             var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
                 .GetAwaiter().GetResult();
 
@@ -1589,8 +1597,8 @@ static class UI
         // If no content provided, use a simple text block for spacing
         var borderContent = content ?? new TextBlockWidget("");
         
-        // Use BorderWidget with title as second parameter (hex1b 0.76.0 API)
-        return new BorderWidget(borderContent, title);
+        // Use BorderWidget with Title() method (hex1b 0.83.0 API)
+        return new BorderWidget(borderContent).Title(title);
     }
 
     /// <summary>
