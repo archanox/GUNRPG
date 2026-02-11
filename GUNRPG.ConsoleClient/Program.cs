@@ -995,7 +995,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 new TextBlockWidget(""),
                 new TextBlockWidget(Message ?? "Mission ended."),
                 new TextBlockWidget(""),
-                new ListWidget(new[] { "RETURN TO BASE" }).OnItemActivated(_ => CurrentScreen = Screen.BaseCamp)
+                new ListWidget(new[] { "RETURN TO BASE" }).OnItemActivated(_ => {
+                    RefreshOperator();
+                    CurrentScreen = Screen.BaseCamp;
+                })
             ])),
             UI.CreateStatusBar("Mission complete")
         ]);
