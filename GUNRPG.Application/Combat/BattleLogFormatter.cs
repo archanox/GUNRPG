@@ -13,16 +13,16 @@ public static class BattleLogFormatter
 
     public static List<BattleLogEntryDto> FormatEvents(IReadOnlyList<ISimulationEvent> events, Operator player, Operator enemy)
     {
-        var entries = new List<BattleLogEntryDto>();
-
-        foreach (var evt in events)
-        {
-            var entry = FormatEvent(evt, player, enemy);
-            if (entry != null)
-            {
-                entries.Add(entry);
-            }
-        }
+        // Only process the last MaxLogEntries + buffer to handle filtered events
+        // This keeps response time O(MaxLogEntries) instead of O(total events)
+        var startIndex = Math.Max(0, events.Count - MaxLogEntries - 10);
+        var eventsToProcess = events.Skip(startIndex).ToList();
+        
+        var entries = eventsToProcess
+            .Select(evt => FormatEvent(evt, player, enemy))
+            .Where(entry => entry != null)
+            .Cast<BattleLogEntryDto>()
+            .ToList();
 
         // Return only the most recent entries
         return entries.Count > MaxLogEntries 
@@ -73,7 +73,7 @@ public static class BattleLogFormatter
             {
                 EventType = "Movement",
                 TimeMs = moveEvent.EventTimeMs,
-                Message = $"started {moveEvent.MovementType.ToString().ToLower()}.",
+                Message = $"started {FormatMovementType(moveEvent.MovementType)}.",
                 ActorName = moveEvent.Operator.Name
             },
             MovementEndedEvent moveEndEvent => new BattleLogEntryDto
@@ -87,7 +87,7 @@ public static class BattleLogFormatter
             {
                 EventType = "Cover",
                 TimeMs = coverEvent.EventTimeMs,
-                Message = $"took {coverEvent.CoverType.ToString().ToLower()} cover.",
+                Message = $"took {FormatCoverType(coverEvent.CoverType)} cover.",
                 ActorName = coverEvent.Operator.Name
             },
             CoverExitedEvent coverExitEvent => new BattleLogEntryDto
@@ -116,5 +116,29 @@ public static class BattleLogFormatter
             return enemy.Name;
         else
             return "Unknown";
+    }
+
+    private static string FormatMovementType(MovementState movementType)
+    {
+        return movementType switch
+        {
+            MovementState.Walking => "walking",
+            MovementState.Sprinting => "sprinting",
+            MovementState.Crouching => "crouching",
+            MovementState.Sliding => "sliding",
+            MovementState.Stationary => "stationary",
+            _ => movementType.ToString().ToLowerInvariant()
+        };
+    }
+
+    private static string FormatCoverType(CoverState coverType)
+    {
+        return coverType switch
+        {
+            CoverState.Partial => "partial",
+            CoverState.Full => "full",
+            CoverState.None => "no",
+            _ => coverType.ToString().ToLowerInvariant()
+        };
     }
 }

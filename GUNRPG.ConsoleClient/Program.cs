@@ -632,7 +632,13 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         var playerStaminaBar = UI.CreateProgressBar("STA", (int)player.Stamina, 100, 15);
         
         // Create ADS progress indicator (showing aim state)
-        var adsStatus = player.AimState == "ADS" ? "[ADS]" : "[HIP]";
+        var adsStatus = player.AimState switch
+        {
+            "ADS" => "[ADS]",
+            "Hip" or "HIP" => "[HIP]",
+            "TransitioningToADS" or "TransitioningToHip" => "[TRANS]",
+            _ => $"[{player.AimState}]"
+        };
         
         // Create cover visual representation
         var coverVisual = UI.CreateCoverVisual(player.CurrentCover);
@@ -1549,7 +1555,7 @@ static class UI
     /// Creates a Pokemon Red-style battle log display widget.
     /// Shows the most recent battle events in a bordered dialog box.
     /// </summary>
-    public static Hex1bWidget CreateBattleLogDisplay(List<BattleLogEntryDto> battleLog)
+    public static Hex1bWidget CreateBattleLogDisplay(List<BattleLogEntryDto>? battleLog)
     {
         if (battleLog == null || battleLog.Count == 0)
         {
