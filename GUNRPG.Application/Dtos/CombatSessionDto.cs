@@ -13,4 +13,5 @@ public sealed class CombatSessionDto
     public PetStateDto Pet { get; init; } = default!;
     public int EnemyLevel { get; init; }
     public int TurnNumber { get; init; }
+    public List<BattleLogEntryDto> BattleLog { get; init; } = new();
 }
