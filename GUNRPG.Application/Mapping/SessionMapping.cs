@@ -1,3 +1,4 @@
+using GUNRPG.Application.Combat;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Core.AI;
@@ -14,6 +15,11 @@ public static class SessionMapping
 {
     public static CombatSessionDto ToDto(CombatSession session)
     {
+        var battleLog = BattleLogFormatter.FormatEvents(
+            session.Combat.ExecutedEvents, 
+            session.Player, 
+            session.Enemy);
+
         return new CombatSessionDto
         {
             Id = session.Id,
@@ -24,7 +30,8 @@ public static class SessionMapping
             Enemy = ToDto(session.Enemy),
             Pet = ToDto(session.PetState),
             EnemyLevel = session.EnemyLevel,
-            TurnNumber = session.TurnNumber
+            TurnNumber = session.TurnNumber,
+            BattleLog = battleLog
         };
     }
 
