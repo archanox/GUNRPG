@@ -1,0 +1,35 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                          ⚔ COMBAT MISSION ⚔                                   ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+┌────────── 🎮 PLAYER ────────────┐    ┌────────── 💀 ENEMY ─────────────┐
+│  Operator Alpha                  │    │  Hostile Bravo (LVL 2)          │
+│                                  │    │                                 │
+│  HP:  [██████████████████  ] 90 │    │  HP:  [███████████████    ] 70  │
+│  STA: [███████████████     ] 75 │    │  AMMO: 25/30                    │
+│  AMMO: 28/30 [ADS]               │    │  DIST: 15.0m                    │
+│                                  │    │  COVER: Partial                 │
+│  COVER: [ ▄ PARTIAL ▄ ]          │    │                                 │
+│  MOVE: Stationary                │    │                                 │
+└──────────────────────────────────┘    └─────────────────────────────────┘
+
+┌──────────────────── 📋 BATTLE LOG ─────────────────────┐
+│  Operator Alpha fired a shot!                          │
+│  Hostile Bravo took 15 damage (Torso)!                 │
+│  Hostile Bravo fired a shot!                           │
+│  Operator Alpha missed!                                │
+│  Hostile Bravo started moving closer.                  │
+│  Operator Alpha reloaded.                              │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────── ACTIONS ────────────────────────┐
+│  TURN: 5  PHASE: Planning  TIME: 4250ms                │
+│                                                         │
+│    SUBMIT INTENTS (Not Implemented)                    │
+│  ► ADVANCE TURN                                        │
+│    VIEW DETAILS                                        │
+│    RETURN TO BASE                                      │
+└─────────────────────────────────────────────────────────┘
+
+  Session: a1b2c3d4-e5f6-7890-abcd-ef1234567890
