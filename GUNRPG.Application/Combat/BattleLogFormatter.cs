@@ -45,7 +45,7 @@ public static class BattleLogFormatter
             {
                 EventType = "Damage",
                 TimeMs = damageEvent.EventTimeMs,
-                Message = $"{damageEvent.TargetName} took {GetDamageValue(damageEvent):F0} damage ({damageEvent.BodyPart})!",
+                Message = $"{damageEvent.TargetName} took {damageEvent.Damage:F0} damage ({damageEvent.BodyPart})!",
                 ActorName = null // Shooter name will be prepended if needed
             },
             ShotMissedEvent missEvent => new BattleLogEntryDto
@@ -116,13 +116,5 @@ public static class BattleLogFormatter
             return enemy.Name;
         else
             return "Unknown";
-    }
-
-    // Use reflection to get the damage value from the private field
-    private static float GetDamageValue(DamageAppliedEvent evt)
-    {
-        var field = typeof(DamageAppliedEvent).GetField("_damage", 
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        return field != null ? (float)field.GetValue(evt)! : 0f;
     }
 }

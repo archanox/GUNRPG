@@ -1336,7 +1336,7 @@ static class UI
     /// Creates a Pokemon Red-style battle log display widget.
     /// Shows the most recent battle events in a bordered dialog box.
     /// </summary>
-    public static Hex1bWidget CreateBattleLogDisplay(List<BattleLogEntry> battleLog)
+    public static Hex1bWidget CreateBattleLogDisplay(List<BattleLogEntryDto> battleLog)
     {
         if (battleLog == null || battleLog.Count == 0)
         {
@@ -1393,7 +1393,7 @@ class CombatSessionDto
     public PetStateDto Pet { get; init; } = default!;
     public int EnemyLevel { get; init; }
     public int TurnNumber { get; init; }
-    public List<BattleLogEntry> BattleLog { get; init; } = new();
+    public List<BattleLogEntryDto> BattleLog { get; init; } = new();
 }
 
 class PlayerStateDto
@@ -1460,7 +1460,7 @@ class PetState
     public DateTimeOffset LastUpdated { get; init; }
 }
 
-class BattleLogEntry
+class BattleLogEntryDto
 {
     public string EventType { get; init; } = "";
     public long TimeMs { get; init; }
