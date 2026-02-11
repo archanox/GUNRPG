@@ -355,7 +355,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         }
 
         var menuItems = new List<string>();
-        
+
         if (op.CurrentMode == "Base")
         {
             menuItems.Add("START MISSION");
@@ -365,65 +365,89 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             menuItems.Add("PET ACTIONS");
             menuItems.Add("VIEW STATS");
         }
-        else
+        else // Infil mode
         {
-            menuItems.Add("CONTINUE MISSION");
+            // Check if active session exists and is not completed
+            var canContinueMission = op.ActiveSessionId.HasValue;
+            if (canContinueMission)
+            {
+                // Try to load session to check if it's completed
+                try
+                {
+                    var sessionData = client.GetFromJsonAsync<CombatSessionDto>($"sessions/{op.ActiveSessionId}/state", options).GetAwaiter().GetResult();
+                    if (sessionData != null && sessionData.Phase == "Completed")
+                    {
+                        canContinueMission = false;
+                    }
+                }
+                catch
+                {
+                    // If session doesn't exist or can't be loaded, can't continue
+                    canContinueMission = false;
+                }
+            }
+
+            if (canContinueMission)
+            {
+                menuItems.Add("CONTINUE MISSION");
+            }
             menuItems.Add("ABORT MISSION");
             menuItems.Add("VIEW STATS");
         }
-        
+
         menuItems.Add("MAIN MENU");
 
         var menuWidget = new ListWidget(menuItems.ToArray()).OnItemActivated(e => {
+            var selectedItem = menuItems[e.ActivatedIndex];
             if (op.CurrentMode == "Base")
             {
-                switch (e.ActivatedIndex)
+                switch (selectedItem)
                 {
-                    case 0: // START MISSION
+                    case "START MISSION":
                         CurrentScreen = Screen.StartMission;
                         break;
-                    case 1: // CHANGE LOADOUT
+                    case "CHANGE LOADOUT":
                         CurrentScreen = Screen.ChangeLoadout;
                         break;
-                    case 2: // TREAT WOUNDS
+                    case "TREAT WOUNDS":
                         CurrentScreen = Screen.TreatWounds;
                         break;
-                    case 3: // UNLOCK PERK
+                    case "UNLOCK PERK":
                         CurrentScreen = Screen.UnlockPerk;
                         break;
-                    case 4: // PET ACTIONS
+                    case "PET ACTIONS":
                         CurrentScreen = Screen.PetActions;
                         break;
-                    case 5: // VIEW STATS
+                    case "VIEW STATS":
                         Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nPerks: {string.Join(", ", op.UnlockedPerks)}\n\nPress OK to continue.";
                         CurrentScreen = Screen.Message;
                         ReturnScreen = Screen.BaseCamp;
                         break;
-                    case 6: // MAIN MENU
+                    case "MAIN MENU":
                         CurrentScreen = Screen.MainMenu;
                         break;
                 }
             }
-            else
+            else // Infil mode
             {
-                switch (e.ActivatedIndex)
+                switch (selectedItem)
                 {
-                    case 0: // CONTINUE MISSION
+                    case "CONTINUE MISSION":
                         if (op.ActiveSessionId.HasValue)
                         {
                             ActiveSessionId = op.ActiveSessionId;
                             LoadSession();
                         }
                         break;
-                    case 1: // ABORT MISSION
+                    case "ABORT MISSION":
                         CurrentScreen = Screen.AbortMission;
                         break;
-                    case 2: // VIEW STATS
+                    case "VIEW STATS":
                         Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nMission In Progress\n\nPress OK to continue.";
                         CurrentScreen = Screen.Message;
                         ReturnScreen = Screen.BaseCamp;
                         break;
-                    case 3: // MAIN MENU
+                    case "MAIN MENU":
                         CurrentScreen = Screen.MainMenu;
                         break;
                 }
@@ -432,7 +456,13 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
         var healthBar = UI.CreateProgressBar("HP", (int)op.CurrentHealth, (int)op.MaxHealth, 30);
         var xpInfo = $"XP: {op.TotalXp}  STREAK: {op.ExfilStreak}";
-        
+
+        // Create mode-specific title
+        var modeTitle = op.CurrentMode == "Base" ? "BASE CAMP" : "FIELD OPS (INFIL)";
+        var modeDescription = op.CurrentMode == "Base"
+            ? "  Ready for new missions and maintenance"
+            : "  Mission in progress - limited actions available";
+
         return new VStackWidget([
             UI.CreateBorder($"OPERATOR: {op.Name.ToUpper()}"),
             new TextBlockWidget(""),
@@ -448,7 +478,11 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     op.IsDead ? new TextBlockWidget("  STATUS: KIA") : new TextBlockWidget("")
                 ])),
                 new TextBlockWidget("  "),
-                UI.CreateBorder("BASE CAMP", menuWidget)
+                UI.CreateBorder(modeTitle, new VStackWidget([
+                    new TextBlockWidget(modeDescription),
+                    new TextBlockWidget(""),
+                    menuWidget
+                ]))
             ]),
             new TextBlockWidget(""),
             UI.CreateStatusBar($"Operator ID: {op.Id}")
@@ -623,14 +657,17 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
         var player = session.Player;
         var enemy = session.Enemy;
-        
+
+        // Check if combat has ended
+        var combatEnded = player.Health <= 0 || enemy.Health <= 0 || session.Phase == "Completed";
+
         // Create progress bars for HP
         var playerHpBar = UI.CreateProgressBar("HP", (int)player.Health, (int)player.MaxHealth, 20);
         var enemyHpBar = UI.CreateProgressBar("HP", (int)enemy.Health, (int)enemy.MaxHealth, 20);
-        
+
         // Create progress bars for stamina
         var playerStaminaBar = UI.CreateProgressBar("STA", (int)player.Stamina, 100, 15);
-        
+
         // Create ADS progress indicator (showing aim state)
         var adsStatus = player.AimState switch
         {
@@ -639,19 +676,22 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             "TransitioningToADS" or "TransitioningToHip" => "[TRANS]",
             _ => $"[{player.AimState}]"
         };
-        
+
         // Create cover visual representation
         var coverVisual = UI.CreateCoverVisual(player.CurrentCover);
-        
+
         // Create battle log display (Pokemon-style)
         var battleLogWidget = UI.CreateBattleLogDisplay(session.BattleLog);
-        
-        var actionItems = new[] {
-            "SUBMIT INTENTS",
-            "ADVANCE TURN",
-            "VIEW DETAILS",
-            "RETURN TO BASE"
-        };
+
+        // Build action menu based on combat state
+        var actionItems = new List<string>();
+        if (!combatEnded)
+        {
+            actionItems.Add("SUBMIT INTENTS");
+            actionItems.Add("ADVANCE TURN");
+        }
+        actionItems.Add("VIEW DETAILS");
+        actionItems.Add("RETURN TO BASE");
 
         return new VStackWidget([
             UI.CreateBorder("⚔ COMBAT MISSION ⚔"),
@@ -686,10 +726,11 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             UI.CreateBorder("ACTIONS", new VStackWidget([
                 new TextBlockWidget($"  TURN: {session.TurnNumber}  PHASE: {session.Phase}  TIME: {session.CurrentTimeMs}ms"),
                 new TextBlockWidget(""),
-                new ListWidget(actionItems).OnItemActivated(e => {
-                    switch (e.ActivatedIndex)
+                new ListWidget(actionItems.ToArray()).OnItemActivated(e => {
+                    var selectedAction = actionItems[e.ActivatedIndex];
+                    switch (selectedAction)
                     {
-                        case 0: // SUBMIT INTENTS
+                        case "SUBMIT INTENTS":
                             // Reset intent selections to defaults
                             SelectedPrimary = "None";
                             SelectedMovement = "Stand";
@@ -697,18 +738,23 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             SelectedCover = "None";
                             CurrentScreen = Screen.SubmitIntents;
                             break;
-                        case 1: // ADVANCE TURN
+                        case "ADVANCE TURN":
                             // NOTE: AdvanceCombat blocks on HTTP calls due to hex1b's synchronous event handlers.
                             // This is a known limitation. UI will freeze during API calls.
                             AdvanceCombat();
                             break;
-                        case 2: // VIEW DETAILS
+                        case "VIEW DETAILS":
                             var pet = session.Pet;
                             Message = $"Combat Details:\n\nPlayer: {session.Player.Name}\nHealth: {session.Player.Health:F0}/{session.Player.MaxHealth:F0}\nAmmo: {session.Player.CurrentAmmo}/{session.Player.MagazineSize}\n\nEnemy: {session.Enemy.Name}\nHealth: {session.Enemy.Health:F0}/{session.Enemy.MaxHealth:F0}\n\nPet Health: {pet.Health:F0}\nPet Morale: {pet.Morale:F0}\n\nPress OK to continue.";
                             CurrentScreen = Screen.Message;
                             ReturnScreen = Screen.CombatSession;
                             break;
-                        case 3: // RETURN TO BASE
+                        case "RETURN TO BASE":
+                            // If combat has ended, process outcome first
+                            if (combatEnded && session.Phase != "Completed")
+                            {
+                                ProcessCombatOutcome();
+                            }
                             CurrentScreen = Screen.BaseCamp;
                             RefreshOperator();
                             break;
@@ -1298,13 +1344,39 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     {
         try
         {
+            // Check if session exists and its phase
+            CombatSessionDto? sessionData = null;
+            if (ActiveSessionId.HasValue)
+            {
+                try
+                {
+                    sessionData = client.GetFromJsonAsync<CombatSessionDto>($"sessions/{ActiveSessionId}/state", options).GetAwaiter().GetResult();
+                }
+                catch
+                {
+                    // Session might not exist
+                }
+            }
+
+            // If session is already completed, just clear local state and refresh
+            if (sessionData?.Phase == "Completed")
+            {
+                ActiveSessionId = null;
+                CurrentSession = null;
+                RefreshOperator();
+                Message = "Mission already completed.\nReturning to base.\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.BaseCamp;
+                return;
+            }
+
             // Process outcome with current session ID to trigger exfil failed
             // Note: The /infil/outcome endpoint processes combat outcomes and returns operator to Base mode.
             // When called with a session ID before combat completes, it treats this as mission abort/failure.
             var request = new { SessionId = ActiveSessionId };
             var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
                 .GetAwaiter().GetResult();
-            
+
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
@@ -1318,10 +1390,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Clear session
             ActiveSessionId = null;
             CurrentSession = null;
-            
+
             // Refresh operator state
             RefreshOperator();
-            
+
             Message = "Mission aborted.\nReturning to base.\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
