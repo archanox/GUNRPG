@@ -14,4 +14,5 @@ public sealed class ApiCombatSessionDto
     public ApiPetStateDto Pet { get; init; } = default!;
     public int EnemyLevel { get; init; }
     public int TurnNumber { get; init; }
+    public List<ApiBattleLogEntryDto> BattleLog { get; init; } = new();
 }

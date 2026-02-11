@@ -614,8 +614,21 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         var player = session.Player;
         var enemy = session.Enemy;
         
+        // Create progress bars for HP
         var playerHpBar = UI.CreateProgressBar("HP", (int)player.Health, (int)player.MaxHealth, 20);
         var enemyHpBar = UI.CreateProgressBar("HP", (int)enemy.Health, (int)enemy.MaxHealth, 20);
+        
+        // Create progress bars for stamina
+        var playerStaminaBar = UI.CreateProgressBar("STA", (int)player.Stamina, 100, 15);
+        
+        // Create ADS progress indicator (showing aim state)
+        var adsStatus = player.AimState == "ADS" ? "[ADS]" : "[HIP]";
+        
+        // Create cover visual representation
+        var coverVisual = UI.CreateCoverVisual(player.CurrentCover);
+        
+        // Create battle log display (Pokemon-style)
+        var battleLogWidget = UI.CreateBattleLogDisplay(session.BattleLog);
         
         var actionItems = new[] {
             "SUBMIT INTENTS (Not Implemented)",
@@ -625,26 +638,34 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         };
 
         return new VStackWidget([
-            UI.CreateBorder("COMBAT SESSION"),
+            UI.CreateBorder("⚔ COMBAT MISSION ⚔"),
             new TextBlockWidget(""),
             new HStackWidget([
-                UI.CreateBorder("PLAYER", new VStackWidget([
+                // Player column
+                UI.CreateBorder("🎮 PLAYER", new VStackWidget([
                     new TextBlockWidget($"  {player.Name}"),
                     new TextBlockWidget("  "),
                     playerHpBar,
-                    new TextBlockWidget($"  AMMO: {player.CurrentAmmo}/{player.MagazineSize}"),
-                    new TextBlockWidget($"  COVER: {player.CurrentCover}"),
+                    playerStaminaBar,
+                    new TextBlockWidget($"  AMMO: {player.CurrentAmmo}/{player.MagazineSize} {adsStatus}"),
+                    new TextBlockWidget("  "),
+                    new TextBlockWidget($"  {coverVisual}"),
                     new TextBlockWidget($"  MOVE: {player.CurrentMovement}")
                 ])),
-                new TextBlockWidget("  "),
-                UI.CreateBorder("ENEMY", new VStackWidget([
+                new TextBlockWidget("    "),
+                // Enemy column
+                UI.CreateBorder("💀 ENEMY", new VStackWidget([
                     new TextBlockWidget($"  {enemy.Name} (LVL {session.EnemyLevel})"),
                     new TextBlockWidget("  "),
                     enemyHpBar,
                     new TextBlockWidget($"  AMMO: {enemy.CurrentAmmo}/{enemy.MagazineSize}"),
-                    new TextBlockWidget($"  DIST: {player.DistanceToOpponent:F1}m")
+                    new TextBlockWidget($"  DIST: {player.DistanceToOpponent:F1}m"),
+                    new TextBlockWidget($"  COVER: {enemy.CurrentCover}")
                 ]))
             ]),
+            new TextBlockWidget(""),
+            // Battle log display - Pokemon Red style
+            battleLogWidget,
             new TextBlockWidget(""),
             UI.CreateBorder("ACTIONS", new VStackWidget([
                 new TextBlockWidget($"  TURN: {session.TurnNumber}  PHASE: {session.Phase}  TIME: {session.CurrentTimeMs}ms"),
@@ -1310,6 +1331,103 @@ static class UI
             new TextBlockWidget($" {current}/{max}")
         ]);
     }
+
+    /// <summary>
+    /// Creates a Pokemon Red-style battle log display widget.
+    /// Shows the most recent battle events in a bordered dialog box.
+    /// </summary>
+    public static Hex1bWidget CreateBattleLogDisplay(List<BattleLogEntry> battleLog)
+    {
+        if (battleLog == null || battleLog.Count == 0)
+        {
+            return CreateBorder("📋 BATTLE LOG", new VStackWidget([
+                new TextBlockWidget("  No events yet. Press ADVANCE TURN to begin combat."),
+                new TextBlockWidget("")
+            ]));
+        }
+
+        // Take last 6 entries to fit in a reasonable display area
+        var recentEntries = battleLog.TakeLast(6).ToList();
+        
+        var logWidgets = new List<Hex1bWidget>();
+        foreach (var entry in recentEntries)
+        {
+            var actorPrefix = !string.IsNullOrEmpty(entry.ActorName) 
+                ? $"{entry.ActorName} " 
+                : "";
+            
+            // Format message in Pokemon style
+            var message = $"  {actorPrefix}{entry.Message}";
+            logWidgets.Add(new TextBlockWidget(message));
+        }
+        
+        // Add empty line for spacing
+        logWidgets.Add(new TextBlockWidget(""));
+
+        return CreateBorder("📋 BATTLE LOG", new VStackWidget(logWidgets.ToArray()));
+    }
+
+    /// <summary>
+    /// Creates an ASCII art visualization of the cover state.
+    /// </summary>
+    public static string CreateCoverVisual(string coverState)
+    {
+        return coverState?.ToUpper() switch
+        {
+            "NONE" => "COVER: [   EXPOSED   ]",
+            "PARTIAL" => "COVER: [ ▄ PARTIAL ▄ ]",
+            "FULL" => "COVER: [███  FULL  ███]",
+            _ => $"COVER: {coverState}"
+        };
+    }
+}
+
+class CombatSessionDto
+{
+    public Guid Id { get; init; }
+    public Guid OperatorId { get; init; }
+    public string Phase { get; init; } = "";
+    public long CurrentTimeMs { get; init; }
+    public PlayerStateDto Player { get; init; } = default!;
+    public PlayerStateDto Enemy { get; init; } = default!;
+    public PetStateDto Pet { get; init; } = default!;
+    public int EnemyLevel { get; init; }
+    public int TurnNumber { get; init; }
+    public List<BattleLogEntry> BattleLog { get; init; } = new();
+}
+
+class PlayerStateDto
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = "";
+    public float Health { get; init; }
+    public float MaxHealth { get; init; }
+    public float Stamina { get; init; }
+    public float Fatigue { get; init; }
+    public float SuppressionLevel { get; init; }
+    public bool IsSuppressed { get; init; }
+    public float DistanceToOpponent { get; init; }
+    public int CurrentAmmo { get; init; }
+    public int? MagazineSize { get; init; }
+    public string AimState { get; init; } = "";
+    public string MovementState { get; init; } = "";
+    public string CurrentMovement { get; init; } = "";
+    public string CurrentDirection { get; init; } = "";
+    public string CurrentCover { get; init; } = "";
+    public bool IsMoving { get; init; }
+    public bool IsAlive { get; init; }
+}
+
+class PetStateDto
+{
+    public float Health { get; init; }
+    public float Fatigue { get; init; }
+    public float Injury { get; init; }
+    public float Stress { get; init; }
+    public float Morale { get; init; }
+    public float Hunger { get; init; }
+    public float Hydration { get; init; }
+    public DateTimeOffset LastUpdated { get; init; }
 }
 
 class OperatorState
@@ -1340,6 +1458,14 @@ class PetState
     public float Hunger { get; init; }
     public float Hydration { get; init; }
     public DateTimeOffset LastUpdated { get; init; }
+}
+
+class BattleLogEntry
+{
+    public string EventType { get; init; } = "";
+    public long TimeMs { get; init; }
+    public string Message { get; init; } = "";
+    public string? ActorName { get; init; }
 }
 
 class OperatorSummary

@@ -67,7 +67,8 @@ public static class ApiMapping
             Enemy = ToApiDto(appDto.Enemy),
             Pet = ToApiDto(appDto.Pet),
             EnemyLevel = appDto.EnemyLevel,
-            TurnNumber = appDto.TurnNumber
+            TurnNumber = appDto.TurnNumber,
+            BattleLog = appDto.BattleLog.Select(ToApiDto).ToList()
         };
     }
 
@@ -129,6 +130,17 @@ public static class ApiMapping
             Hunger = appDto.Hunger,
             Hydration = appDto.Hydration,
             LastUpdated = appDto.LastUpdated
+        };
+    }
+
+    public static ApiBattleLogEntryDto ToApiDto(BattleLogEntryDto appDto)
+    {
+        return new ApiBattleLogEntryDto
+        {
+            EventType = appDto.EventType,
+            TimeMs = appDto.TimeMs,
+            Message = appDto.Message,
+            ActorName = appDto.ActorName
         };
     }
 
