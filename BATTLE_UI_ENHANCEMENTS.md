@@ -99,7 +99,7 @@ Shows current aiming mode:
 ### Frontend Changes
 
 1. **ConsoleClient DTO Classes**
-   - Added `CombatSessionDto`, `PlayerStateDto`, `PetStateDto`, `BattleLogEntry`
+   - Added `CombatSessionDto`, `PlayerStateDto`, `PetStateDto`, `BattleLogEntryDto`
    - Enables proper JSON deserialization of API responses
 
 2. **UI Helper Methods** (`UI` class)

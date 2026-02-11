@@ -26,7 +26,7 @@
 ┌─────────────────────── ACTIONS ────────────────────────┐
 │  TURN: 5  PHASE: Planning  TIME: 4250ms                │
 │                                                         │
-│    SUBMIT INTENTS (Not Implemented)                    │
+│    SUBMIT INTENTS                                      │
 │  ► ADVANCE TURN                                        │
 │    VIEW DETAILS                                        │
 │    RETURN TO BASE                                      │
