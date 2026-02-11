@@ -40,6 +40,14 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     public string OperatorName { get; set; } = "";
     public string? Message { get; set; }
     public string? ErrorMessage { get; set; }
+    
+    // Intent selection state
+    public string SelectedPrimary { get; set; } = "None";
+    public string SelectedMovement { get; set; } = "Stand";
+    public string SelectedStance { get; set; } = "None";
+    public string SelectedCover { get; set; } = "None";
+    public string IntentCategory { get; set; } = "";
+    public string[] IntentOptions { get; set; } = Array.Empty<string>();
 
     public Task<Hex1bWidget> BuildUI(CancellationTokenSource cts)
     {
@@ -58,6 +66,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             Screen.UnlockPerk => Task.FromResult<Hex1bWidget>(BuildUnlockPerk()),
             Screen.AbortMission => Task.FromResult<Hex1bWidget>(BuildAbortMission()),
             Screen.PetActions => Task.FromResult<Hex1bWidget>(BuildPetActions()),
+            Screen.SubmitIntents => Task.FromResult<Hex1bWidget>(BuildSubmitIntents()),
+            Screen.SelectIntentCategory => Task.FromResult<Hex1bWidget>(BuildSelectIntentCategory()),
             _ => Task.FromResult<Hex1bWidget>(new TextBlockWidget("Unknown screen"))
         };
     }
@@ -631,7 +641,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         var battleLogWidget = UI.CreateBattleLogDisplay(session.BattleLog);
         
         var actionItems = new[] {
-            "SUBMIT INTENTS (Not Implemented)",
+            "SUBMIT INTENTS",
             "ADVANCE TURN",
             "VIEW DETAILS",
             "RETURN TO BASE"
@@ -674,9 +684,12 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     switch (e.ActivatedIndex)
                     {
                         case 0: // SUBMIT INTENTS
-                            Message = "Intent submission not yet implemented in Pokemon UI.\nUse API directly for now.\n\nPress OK to continue.";
-                            CurrentScreen = Screen.Message;
-                            ReturnScreen = Screen.CombatSession;
+                            // Reset intent selections to defaults
+                            SelectedPrimary = "None";
+                            SelectedMovement = "Stand";
+                            SelectedStance = "None";
+                            SelectedCover = "None";
+                            CurrentScreen = Screen.SubmitIntents;
                             break;
                         case 1: // ADVANCE TURN
                             // NOTE: AdvanceCombat blocks on HTTP calls due to hex1b's synchronous event handlers.
@@ -773,6 +786,203 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         catch (Exception)
         {
             // Silently fail - operator state will be stale but UI remains functional
+        }
+    }
+
+    Hex1bWidget BuildSubmitIntents()
+    {
+        var session = CurrentSession;
+        if (session == null)
+        {
+            return new TextBlockWidget("No session loaded");
+        }
+
+        var player = session.Player;
+
+        // Build action selection lists
+        var primaryActions = new[] { "None", "Fire", "Reload" };
+        var movementActions = new[] { "Stand", "WalkToward", "WalkAway", "SprintToward", "SprintAway", "SlideToward", "SlideAway", "Crouch" };
+        var stanceActions = new[] { "None", "EnterADS", "ExitADS" };
+        var coverActions = new[] { "None", "EnterPartial", "EnterFull", "Exit" };
+
+        return new VStackWidget([
+            UI.CreateBorder("⚡ SUBMIT INTENTS ⚡"),
+            new TextBlockWidget(""),
+            new HStackWidget([
+                // Left column - Current selections
+                UI.CreateBorder("CURRENT SELECTIONS", new VStackWidget([
+                    new TextBlockWidget($"  PRIMARY:  {SelectedPrimary}"),
+                    new TextBlockWidget($"  MOVEMENT: {SelectedMovement}"),
+                    new TextBlockWidget($"  STANCE:   {SelectedStance}"),
+                    new TextBlockWidget($"  COVER:    {SelectedCover}"),
+                    new TextBlockWidget(""),
+                    new TextBlockWidget($"  Player HP: {player.Health:F0}/{player.MaxHealth:F0}"),
+                    new TextBlockWidget($"  Ammo: {player.CurrentAmmo}/{player.MagazineSize}"),
+                    new TextBlockWidget($"  Stamina: {player.Stamina:F0}"),
+                    new TextBlockWidget($"  Current Cover: {player.CurrentCover}"),
+                    new TextBlockWidget($"  Aim State: {player.AimState}")
+                ])),
+                new TextBlockWidget("  "),
+                // Right column - Action categories
+                UI.CreateBorder("SELECT ACTIONS", new VStackWidget([
+                    new TextBlockWidget("  Choose action category:"),
+                    new TextBlockWidget(""),
+                    new ListWidget(new[] {
+                        "PRIMARY ACTION",
+                        "MOVEMENT",
+                        "STANCE",
+                        "COVER",
+                        "",
+                        "CONFIRM & SUBMIT",
+                        "CANCEL"
+                    }).OnItemActivated(e => {
+                        switch (e.ActivatedIndex)
+                        {
+                            case 0: // PRIMARY ACTION
+                                SelectIntent("Primary", primaryActions);
+                                break;
+                            case 1: // MOVEMENT
+                                SelectIntent("Movement", movementActions);
+                                break;
+                            case 2: // STANCE
+                                SelectIntent("Stance", stanceActions);
+                                break;
+                            case 3: // COVER
+                                SelectIntent("Cover", coverActions);
+                                break;
+                            case 5: // CONFIRM & SUBMIT
+                                SubmitPlayerIntents();
+                                break;
+                            case 6: // CANCEL
+                                CurrentScreen = Screen.CombatSession;
+                                break;
+                        }
+                    })
+                ]))
+            ]),
+            UI.CreateStatusBar($"Turn: {session.TurnNumber} | Phase: {session.Phase}")
+        ]);
+    }
+
+    void SelectIntent(string category, string[] options)
+    {
+        // Store the category and options for the selection screen
+        IntentCategory = category;
+        IntentOptions = options;
+        CurrentScreen = Screen.SelectIntentCategory;
+    }
+
+    Hex1bWidget BuildSelectIntentCategory()
+    {
+        var session = CurrentSession;
+        if (session == null)
+        {
+            return new TextBlockWidget("No session loaded");
+        }
+
+        var currentSelection = IntentCategory switch
+        {
+            "Primary" => SelectedPrimary,
+            "Movement" => SelectedMovement,
+            "Stance" => SelectedStance,
+            "Cover" => SelectedCover,
+            _ => "None"
+        };
+
+        var optionsWithBack = IntentOptions.Concat(new[] { "", "BACK TO INTENTS" }).ToArray();
+
+        return new VStackWidget([
+            UI.CreateBorder($"⚡ SELECT {IntentCategory.ToUpper()} ⚡"),
+            new TextBlockWidget(""),
+            UI.CreateBorder("CURRENT SELECTION", new VStackWidget([
+                new TextBlockWidget($"  {IntentCategory}: {currentSelection}"),
+                new TextBlockWidget("")
+            ])),
+            new TextBlockWidget(""),
+            UI.CreateBorder("OPTIONS", new VStackWidget([
+                new TextBlockWidget("  Select an option:"),
+                new TextBlockWidget(""),
+                new ListWidget(optionsWithBack).OnItemActivated(e => {
+                    if (e.ActivatedIndex >= IntentOptions.Length)
+                    {
+                        // Back button
+                        CurrentScreen = Screen.SubmitIntents;
+                        return;
+                    }
+
+                    var selected = IntentOptions[e.ActivatedIndex];
+                    
+                    // Update the appropriate selection
+                    switch (IntentCategory)
+                    {
+                        case "Primary":
+                            SelectedPrimary = selected;
+                            break;
+                        case "Movement":
+                            SelectedMovement = selected;
+                            break;
+                        case "Stance":
+                            SelectedStance = selected;
+                            break;
+                        case "Cover":
+                            SelectedCover = selected;
+                            break;
+                    }
+                    
+                    CurrentScreen = Screen.SubmitIntents;
+                })
+            ])),
+            UI.CreateStatusBar($"Selecting {IntentCategory}")
+        ]);
+    }
+
+    void SubmitPlayerIntents()
+    {
+        try
+        {
+            var request = new
+            {
+                intents = new
+                {
+                    primary = SelectedPrimary,
+                    movement = SelectedMovement,
+                    stance = SelectedStance,
+                    cover = SelectedCover,
+                    cancelMovement = false
+                }
+            };
+
+            using var response = client.PostAsJsonAsync($"sessions/{ActiveSessionId}/intent", request, options)
+                .GetAwaiter().GetResult();
+            
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                ErrorMessage = $"Intent submission failed: {response.StatusCode} - {errorContent}";
+                Message = $"Intent submission failed:\n\n{errorContent}\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.SubmitIntents;
+                return;
+            }
+
+            // Reload session state
+            var sessionData = response.Content.ReadFromJsonAsync<CombatSessionDto>(options).GetAwaiter().GetResult();
+            if (sessionData != null)
+            {
+                CurrentSession = sessionData;
+            }
+
+            // Success - return to combat screen
+            Message = "Intents submitted successfully!\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.CombatSession;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            Message = $"Error submitting intents:\n\n{ex.Message}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.SubmitIntents;
         }
     }
 
@@ -1493,5 +1703,7 @@ enum Screen
     TreatWounds,
     UnlockPerk,
     AbortMission,
-    PetActions
+    PetActions,
+    SubmitIntents,
+    SelectIntentCategory
 }

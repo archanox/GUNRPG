@@ -1,0 +1,66 @@
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                        ⚡ SUBMIT INTENTS SCREEN ⚡                              ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────── CURRENT SELECTIONS ───────────┐    ┌──────── SELECT ACTIONS ────────┐
+│  PRIMARY:  Fire                            │    │  Choose action category:       │
+│  MOVEMENT: Stand                           │    │                                │
+│  STANCE:   EnterADS                        │    │  ► PRIMARY ACTION              │
+│  COVER:    None                            │    │    MOVEMENT                    │
+│                                            │    │    STANCE                      │
+│  Player HP: 90/100                         │    │    COVER                       │
+│  Ammo: 28/30                               │    │                                │
+│  Stamina: 75                               │    │    CONFIRM & SUBMIT            │
+│  Current Cover: None                       │    │    CANCEL                      │
+│  Aim State: Hip                            │    │                                │
+└────────────────────────────────────────────┘    └────────────────────────────────┘
+
+  Turn: 5 | Phase: Planning
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+When selecting an action category (e.g., PRIMARY ACTION):
+
+╔════════════════════════════════════════════════════════════════════════════════╗
+║                         ⚡ SELECT PRIMARY ⚡                                    ║
+╚════════════════════════════════════════════════════════════════════════════════╝
+
+┌──────────── CURRENT SELECTION ────────────┐
+│  Primary: None                             │
+│                                            │
+└────────────────────────────────────────────┘
+
+┌────────────────── OPTIONS ────────────────┐
+│  Select an option:                         │
+│                                            │
+│  ► None                                    │
+│    Fire                                    │
+│    Reload                                  │
+│                                            │
+│    BACK TO INTENTS                         │
+└────────────────────────────────────────────┘
+
+  Selecting Primary
+
+═══════════════════════════════════════════════════════════════════════════════════
+
+FEATURES:
+✅ Select PRIMARY actions: None, Fire, Reload
+✅ Select MOVEMENT: Stand, WalkToward, WalkAway, SprintToward, SprintAway, SlideToward, SlideAway, Crouch
+✅ Select STANCE: None, EnterADS, ExitADS
+✅ Select COVER: None, EnterPartial, EnterFull, Exit
+✅ View current player state (HP, Ammo, Stamina, Cover, Aim State)
+✅ Real-time selection display
+✅ Submit intents to combat system via POST /sessions/{id}/intent
+✅ Validation and error handling
+✅ Success/error messages
+✅ Returns to combat screen after submission
+
+FLOW:
+1. From Combat Session → Select "SUBMIT INTENTS"
+2. Choose action categories and set each intent
+3. Review selections in "CURRENT SELECTIONS" panel
+4. Select "CONFIRM & SUBMIT"
+5. Intents sent to API
+6. Return to Combat Session screen
+7. Use "ADVANCE TURN" to resolve combat
