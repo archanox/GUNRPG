@@ -348,6 +348,7 @@ public sealed class DamageAppliedEvent : ISimulationEvent
     public string TargetName { get; }
     public int SequenceNumber { get; }
     public BodyPart BodyPart => _bodyPart;
+    public float Damage => _damage;
 
     private readonly Operator _shooter;
     private readonly Operator _target;
