@@ -590,9 +590,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             {
                 CurrentSession = sessionData;
                 
-                // If session is completed, route to MissionComplete screen for outcome processing
+                // If session is completed, process outcome before showing completion screen
                 if (sessionData.Phase == "Completed")
                 {
+                    ProcessCombatOutcome();
                     Message = "Mission completed. Processing outcome...";
                     CurrentScreen = Screen.MissionComplete;
                 }
@@ -800,9 +801,16 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Use authoritative session ID with fallback
             var sessionId = ActiveSessionId ?? CurrentOperator?.ActiveSessionId;
             
+            // Guard against null sessionId - API requires non-null Guid
+            if (!sessionId.HasValue)
+            {
+                ErrorMessage = "No active session found to process outcome";
+                return;
+            }
+            
             // NOTE: Using empty request body - server will load session and compute outcome
-            var request = new { SessionId = sessionId };
-            var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
+            var request = new { SessionId = sessionId.Value };
+            using var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
                 .GetAwaiter().GetResult();
             
             if (!response.IsSuccessStatusCode)
@@ -1351,18 +1359,26 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Use authoritative session ID with fallback
             var sessionId = ActiveSessionId ?? CurrentOperator?.ActiveSessionId;
             
+            // Guard against null sessionId - API requires non-null Guid
+            if (!sessionId.HasValue)
+            {
+                ErrorMessage = "No active session found to abort";
+                Message = "No active mission to abort.\nRefreshing operator state.\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.BaseCamp;
+                RefreshOperator();
+                return;
+            }
+            
             // Check if session exists and its phase
             CombatSessionDto? sessionData = null;
-            if (sessionId.HasValue)
+            try
             {
-                try
-                {
-                    sessionData = client.GetFromJsonAsync<CombatSessionDto>($"sessions/{sessionId}/state", options).GetAwaiter().GetResult();
-                }
-                catch
-                {
-                    // Session might not exist
-                }
+                sessionData = client.GetFromJsonAsync<CombatSessionDto>($"sessions/{sessionId}/state", options).GetAwaiter().GetResult();
+            }
+            catch
+            {
+                // Session might not exist
             }
 
             // If session is already completed, process outcome to ensure proper mode transition
@@ -1381,8 +1397,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Process outcome with current session ID to trigger exfil failed
             // Note: The /infil/outcome endpoint processes combat outcomes and returns operator to Base mode.
             // When called with a session ID before combat completes, it treats this as mission abort/failure.
-            var request = new { SessionId = sessionId };
-            var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
+            var request = new { SessionId = sessionId.Value };
+            using var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
                 .GetAwaiter().GetResult();
 
             if (!response.IsSuccessStatusCode)
