@@ -749,7 +749,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             {
                                 ProcessCombatOutcome();
                             }
-                            RefreshOperator();
+                            else
+                            {
+                                RefreshOperator();
+                            }
                             CurrentScreen = Screen.BaseCamp;
                             break;
                     }
@@ -840,7 +843,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     {
         try
         {
-            var response = client.GetAsync($"operators/{CurrentOperatorId}").GetAwaiter().GetResult();
+            using var response = client.GetAsync($"operators/{CurrentOperatorId}").GetAwaiter().GetResult();
             if (response.IsSuccessStatusCode)
             {
                 var operatorDto = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
