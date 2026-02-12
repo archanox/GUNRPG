@@ -604,7 +604,7 @@ public class OperatorExfilServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ProcessCombatOutcome_SurvivalWithoutVictory_ShouldApplyXpButNotExfil()
+    public async Task ProcessCombatOutcome_SurvivalWithoutVictory_ShouldApplyXpAndFailExfil()
     {
         // Arrange
         var createResult = await _service.CreateOperatorAsync("TestOperator");
@@ -632,7 +632,7 @@ public class OperatorExfilServiceTests : IDisposable
         var aggregate = loadResult.Value!;
         
         Assert.Equal(50, aggregate.TotalXp);
-        Assert.Equal(0, aggregate.ExfilStreak); // No exfil event = no streak increment
+        Assert.Equal(0, aggregate.ExfilStreak); // ExfilFailed resets streak
         Assert.False(aggregate.IsDead);
         Assert.Equal(OperatorMode.Base, aggregate.CurrentMode); // Should return to Base mode
         
