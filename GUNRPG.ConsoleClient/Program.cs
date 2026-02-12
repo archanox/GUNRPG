@@ -749,8 +749,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             {
                                 ProcessCombatOutcome();
                             }
-                            CurrentScreen = Screen.BaseCamp;
                             RefreshOperator();
+                            CurrentScreen = Screen.BaseCamp;
                             break;
                     }
                 })
@@ -1079,7 +1079,14 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         }
         
         contentWidgets.Add(new TextBlockWidget(""));
-        contentWidgets.Add(new ListWidget(new[] { "OK" }).OnItemActivated(_ => CurrentScreen = ReturnScreen));
+        contentWidgets.Add(new ListWidget(new[] { "OK" }).OnItemActivated(_ => {
+            // Refresh operator state before returning to BaseCamp to ensure menu shows correct mode
+            if (ReturnScreen == Screen.BaseCamp)
+            {
+                RefreshOperator();
+            }
+            CurrentScreen = ReturnScreen;
+        }));
 
         return new VStackWidget([
             UI.CreateBorder("MESSAGE"),
