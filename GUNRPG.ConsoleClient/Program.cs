@@ -1380,40 +1380,26 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 return;
             }
             
-            // Check if session exists and its phase
-            CombatSessionDto? sessionData = null;
-            try
-            {
-                sessionData = client.GetFromJsonAsync<CombatSessionDto>($"sessions/{sessionId}/state", options).GetAwaiter().GetResult();
-            }
-            catch
-            {
-                // Session might not exist
-            }
-
-            // If session is already completed, process outcome to ensure proper mode transition
-            if (sessionData?.Phase == "Completed")
-            {
-                ProcessCombatOutcome();
-                ActiveSessionId = null;
-                CurrentSession = null;
-                RefreshOperator();
-                Message = "Mission already completed.\nReturning to base.\n\nPress OK to continue.";
-                CurrentScreen = Screen.Message;
-                ReturnScreen = Screen.BaseCamp;
-                return;
-            }
-
-            // Process outcome with current session ID to trigger exfil failed
-            // Note: The /infil/outcome endpoint processes combat outcomes and returns operator to Base mode.
-            // When called with a session ID before combat completes, it treats this as mission abort/failure.
-            var request = new { SessionId = sessionId.Value };
-            using var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
+            // Call the dedicated abort endpoint which uses FailInfilAsync to transition operator to Base mode
+            using var response = client.PostAsync($"operators/{CurrentOperatorId}/infil/abort", null)
                 .GetAwaiter().GetResult();
 
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                
+                // If operator is already in Base mode, treat as success
+                if (errorContent.Contains("InvalidState") || errorContent.Contains("not in Infil mode"))
+                {
+                    ActiveSessionId = null;
+                    CurrentSession = null;
+                    RefreshOperator();
+                    Message = "Mission already ended.\nReturning to base.\n\nPress OK to continue.";
+                    CurrentScreen = Screen.Message;
+                    ReturnScreen = Screen.BaseCamp;
+                    return;
+                }
+                
                 ErrorMessage = $"Failed to abort mission: {response.StatusCode} - {errorContent}";
                 Message = $"Mission abort failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;

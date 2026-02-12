@@ -462,4 +462,41 @@ public class OperatorModeTests : IDisposable
         Assert.True(result.IsSuccess);
         Assert.False(result.Value);
     }
+
+    [Fact]
+    public async Task ProcessCombatOutcome_NonVictorySurvival_ReturnsToBaseMode()
+    {
+        // Arrange
+        var mapper = new BsonMapper();
+        mapper.Entity<OperatorEventDocument>().Id(x => x.Id);
+        using var db = new LiteDatabase(":memory:", mapper);
+        var eventStore = new LiteDbOperatorEventStore(db);
+        var service = new OperatorExfilService(eventStore);
+        
+        var createResult = await service.CreateOperatorAsync("TestOp");
+        var operatorId = createResult.Value!;
+        var infilResult = await service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value;
+
+        // Operator survived but did not win
+        var outcome = new GUNRPG.Application.Combat.CombatOutcome(
+            sessionId,
+            operatorId,
+            operatorDied: false,
+            xpGained: 0,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
+            isVictory: false);
+
+        // Act
+        var result = await service.ProcessCombatOutcomeAsync(outcome, playerConfirmed: true);
+
+        // Assert
+        Assert.True(result.IsSuccess);
+        
+        var loadResult = await service.LoadOperatorAsync(operatorId);
+        var aggregate = loadResult.Value!;
+        Assert.Equal(OperatorMode.Base, aggregate.CurrentMode);
+        Assert.Equal(0, aggregate.ExfilStreak);
+        Assert.Null(aggregate.ActiveSessionId);
+    }
 }

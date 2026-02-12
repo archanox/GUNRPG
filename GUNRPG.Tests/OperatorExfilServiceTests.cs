@@ -634,9 +634,10 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Equal(50, aggregate.TotalXp);
         Assert.Equal(0, aggregate.ExfilStreak); // No exfil event = no streak increment
         Assert.False(aggregate.IsDead);
+        Assert.Equal(OperatorMode.Base, aggregate.CurrentMode); // Should return to Base mode
         
-        // Should have: OperatorCreated + InfilStarted + XpGained = 3 events (no exfil or infil ended since not victory)
-        Assert.Equal(3, aggregate.Events.Count);
+        // Should have: OperatorCreated + InfilStarted + XpGained + ExfilFailed + InfilEnded = 5 events
+        Assert.Equal(5, aggregate.Events.Count);
     }
 
     [Fact]

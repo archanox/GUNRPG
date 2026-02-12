@@ -106,6 +106,23 @@ public sealed class OperatorService
         });
     }
 
+    public async Task<ServiceResult<OperatorStateDto>> AbortInfilAsync(Guid operatorId)
+    {
+        var result = await _exfilService.FailInfilAsync(new OperatorId(operatorId), "Mission aborted by operator");
+        if (result.Status != ResultStatus.Success)
+        {
+            return ServiceResult<OperatorStateDto>.FromResult(result);
+        }
+
+        var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+        if (!loadResult.IsSuccess)
+        {
+            return ServiceResult<OperatorStateDto>.FromResult(loadResult);
+        }
+
+        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
+    }
+
     public async Task<ServiceResult<OperatorStateDto>> ProcessCombatOutcomeAsync(Guid operatorId, ProcessOutcomeRequest request)
     {
         // Load the combat session and get the authoritative outcome

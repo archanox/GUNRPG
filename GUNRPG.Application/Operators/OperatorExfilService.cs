@@ -620,6 +620,28 @@ public sealed class OperatorExfilService
                 
                 eventsToAppend.Add(infilEndedEvent);
             }
+            else
+            {
+                // Operator survived but didn't win - end infil as failure
+                var exfilFailedEvent = new ExfilFailedEvent(
+                    outcome.OperatorId,
+                    nextSequence,
+                    "Mission failed",
+                    previousHash);
+                
+                eventsToAppend.Add(exfilFailedEvent);
+                previousHash = exfilFailedEvent.Hash;
+                nextSequence++;
+
+                var infilEndedEvent = new InfilEndedEvent(
+                    outcome.OperatorId,
+                    nextSequence,
+                    wasSuccessful: false,
+                    reason: "Mission failed",
+                    previousHash: previousHash);
+                
+                eventsToAppend.Add(infilEndedEvent);
+            }
         }
 
         // Append all events atomically
