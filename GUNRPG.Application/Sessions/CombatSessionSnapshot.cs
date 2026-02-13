@@ -22,7 +22,7 @@ public sealed class CombatSessionSnapshot
     public bool PostCombatResolved { get; init; }
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
-    public DateTimeOffset LastActionTimestamp { get; init; }
+    public DateTimeOffset? LastActionTimestamp { get; init; }
 }
 
 public sealed class CombatStateSnapshot
