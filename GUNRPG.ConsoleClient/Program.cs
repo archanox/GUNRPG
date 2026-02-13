@@ -759,12 +759,13 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             if (combatEnded)
                             {
                                 ProcessCombatOutcome();
+                                CurrentScreen = Screen.BaseCamp;
                             }
                             else
                             {
-                                RefreshOperator();
+                                // Retreat mid-combat: abort the infil and return to base
+                                AbortMission();
                             }
-                            CurrentScreen = Screen.BaseCamp;
                             break;
                     }
                 })
