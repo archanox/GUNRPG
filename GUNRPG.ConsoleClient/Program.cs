@@ -751,13 +751,25 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             ReturnScreen = Screen.CombatSession;
                             break;
                         case "RETREAT":
-                            // Process combat outcome if ended, then return to infil mode
+                            // Process combat outcome if ended
                             if (combatEnded)
                             {
                                 ProcessCombatOutcome();
                             }
-                            // Retreat: abandon combat session, return to Infil mode
-                            // Clear the combat session locally - operator stays in Infil mode
+                            // Retreat: delete combat session server-side and return to Infil mode
+                            if (ActiveSessionId.HasValue)
+                            {
+                                try
+                                {
+                                    // Delete the session server-side so it won't auto-resume
+                                    var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult();
+                                    deleteResponse.Dispose();
+                                }
+                                catch
+                                {
+                                    // If delete fails, still clear locally - better than nothing
+                                }
+                            }
                             ActiveSessionId = null;
                             CurrentSession = null;
                             RefreshOperator();
