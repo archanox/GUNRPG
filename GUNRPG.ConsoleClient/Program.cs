@@ -759,9 +759,14 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             }
                             else
                             {
-                                // Retreat mid-combat: abort the infil and return to base
-                                // Note: AbortMission() handles screen transition via Message screen
-                                AbortMission();
+                                // Retreat mid-combat: abandon combat session, return to Infil mode
+                                // Clear the combat session locally - operator stays in Infil mode
+                                ActiveSessionId = null;
+                                CurrentSession = null;
+                                RefreshOperator();
+                                Message = "Retreated from combat.\nYou remain in infil mode.\n\nPress OK to continue.";
+                                CurrentScreen = Screen.Message;
+                                ReturnScreen = Screen.BaseCamp;
                             }
                             break;
                     }
