@@ -755,7 +755,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             ReturnScreen = Screen.CombatSession;
                             break;
                         case "RETREAT":
-                            // If combat has ended, process outcome first
+                            // If combat has ended, process outcome first, then go to base camp
                             if (combatEnded)
                             {
                                 ProcessCombatOutcome();
@@ -764,6 +764,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             else
                             {
                                 // Retreat mid-combat: abort the infil and return to base
+                                // Note: AbortMission() handles screen transition via Message screen
                                 AbortMission();
                             }
                             break;
