@@ -373,7 +373,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
         if (op.CurrentMode == "Base")
         {
-            menuItems.Add("ENGAGE COMBAT");
+            menuItems.Add("INFIL");
             menuItems.Add("CHANGE LOADOUT");
             menuItems.Add("TREAT WOUNDS");
             menuItems.Add("UNLOCK PERK");
@@ -387,8 +387,9 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // (e.g., by showing a completion screen and processing the outcome).
             if (op.ActiveSessionId.HasValue)
             {
-                menuItems.Add("CONTINUE MISSION");
+                menuItems.Add("ENGAGE COMBAT");
             }
+            menuItems.Add("EXFIL");
             menuItems.Add("VIEW STATS");
         }
 
@@ -400,7 +401,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             {
                 switch (selectedItem)
                 {
-                    case "ENGAGE COMBAT":
+                    case "INFIL":
                         CurrentScreen = Screen.StartMission;
                         break;
                     case "CHANGE LOADOUT":
@@ -429,12 +430,15 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             {
                 switch (selectedItem)
                 {
-                    case "CONTINUE MISSION":
+                    case "ENGAGE COMBAT":
                         if (op.ActiveSessionId.HasValue)
                         {
                             ActiveSessionId = op.ActiveSessionId;
                             LoadSession();
                         }
+                        break;
+                    case "EXFIL":
+                        CurrentScreen = Screen.AbortMission;
                         break;
                     case "VIEW STATS":
                         Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nMission In Progress\n\nPress OK to continue.";
@@ -580,8 +584,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 return;
             }
             
-            // Verify session was created successfully by checking if we can retrieve it
-            LoadSession();
+            // Stay in Field Ops after infil; let player decide when to engage combat.
+            CurrentScreen = Screen.BaseCamp;
         }
         catch (Exception ex)
         {
