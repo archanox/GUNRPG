@@ -1378,27 +1378,26 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     Hex1bWidget BuildAbortMission()
     {
         var menuItems = new[] {
-            "CONFIRM RETREAT",
+            "CONFIRM EXFIL",
             "CANCEL"
         };
 
         return new VStackWidget([
-            UI.CreateBorder("RETREAT FROM BATTLE"),
+            UI.CreateBorder("EXFIL FROM INFIL"),
             new TextBlockWidget(""),
             UI.CreateBorder("WARNING", new VStackWidget([
-                new TextBlockWidget("  Are you sure you want to retreat from battle?"),
+                new TextBlockWidget("  Are you sure you want to exfil from infil?"),
                 new TextBlockWidget(""),
-                new TextBlockWidget("  - Mission will be failed"),
-                new TextBlockWidget("  - Exfil streak will be reset"),
-                new TextBlockWidget("  - No XP will be awarded"),
+                new TextBlockWidget("  - Mission outcome will be processed"),
+                new TextBlockWidget("  - EXFIL streak and XP will reflect that outcome"),
                 new TextBlockWidget(""),
                 new TextBlockWidget("  Select action:"),
                 new TextBlockWidget(""),
                 new ListWidget(menuItems).OnItemActivated(e => {
                     switch (e.ActivatedIndex)
                     {
-                        case 0: // CONFIRM RETREAT
-                            AbortMission();
+                        case 0: // CONFIRM EXFIL
+                            ProcessExfil();
                             break;
                         case 1: // CANCEL
                             CurrentScreen = Screen.BaseCamp;
@@ -1406,11 +1405,11 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     }
                 })
             ])),
-            UI.CreateStatusBar("Confirm retreat")
+            UI.CreateStatusBar("Confirm exfil")
         ]);
     }
 
-    void AbortMission()
+    void ProcessExfil()
     {
         try
         {
@@ -1420,16 +1419,17 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Guard against null sessionId - API requires non-null Guid
             if (!sessionId.HasValue)
             {
-                ErrorMessage = "No active session found to retreat from";
-                Message = "No active infil to retreat from.\nRefreshing operator state.\n\nPress OK to continue.";
+                ErrorMessage = "No active session found to exfil from";
+                Message = "No active infil to exfil from.\nRefreshing operator state.\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
                 RefreshOperator();
                 return;
             }
             
-            // Call the dedicated abort endpoint which uses FailInfilAsync to transition operator to Base mode
-            using var response = client.PostAsync($"operators/{CurrentOperatorId}/infil/abort", null)
+            // Process infil outcome using the current session state
+            var request = new { SessionId = sessionId.Value };
+            using var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
                 .GetAwaiter().GetResult();
 
             if (!response.IsSuccessStatusCode)
@@ -1448,8 +1448,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     return;
                 }
                 
-                ErrorMessage = $"Failed to retreat from infil: {response.StatusCode} - {errorContent}";
-                Message = $"Infil retreat failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
+                ErrorMessage = $"Failed to exfil from infil: {response.StatusCode} - {errorContent}";
+                Message = $"Exfil failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
                 return;
@@ -1462,14 +1462,14 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Refresh operator state
             RefreshOperator();
 
-            Message = "Retreated from infil.\nReturning to base.\n\nPress OK to continue.";
+            Message = "Exfil processed.\nReturning to base.\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
         }
         catch (Exception ex)
         {
             ErrorMessage = ex.Message;
-            Message = $"Error aborting mission: {ex.Message}\n\nPress OK to continue.";
+            Message = $"Error processing exfil: {ex.Message}\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
         }
