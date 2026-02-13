@@ -358,7 +358,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
         if (op.CurrentMode == "Base")
         {
-            menuItems.Add("START MISSION");
+            menuItems.Add("ENGAGE COMBAT");
             menuItems.Add("CHANGE LOADOUT");
             menuItems.Add("TREAT WOUNDS");
             menuItems.Add("UNLOCK PERK");
@@ -374,7 +374,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             {
                 menuItems.Add("CONTINUE MISSION");
             }
-            menuItems.Add("ABORT MISSION");
+            menuItems.Add("RETREAT");
             menuItems.Add("VIEW STATS");
         }
 
@@ -386,7 +386,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             {
                 switch (selectedItem)
                 {
-                    case "START MISSION":
+                    case "ENGAGE COMBAT":
                         CurrentScreen = Screen.StartMission;
                         break;
                     case "CHANGE LOADOUT":
@@ -422,7 +422,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             LoadSession();
                         }
                         break;
-                    case "ABORT MISSION":
+                    case "RETREAT":
                         CurrentScreen = Screen.AbortMission;
                         break;
                     case "VIEW STATS":
@@ -475,14 +475,14 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     Hex1bWidget BuildStartMission()
     {
         var menuItems = new[] {
-            "BEGIN INFILTRATION",
+            "BEGIN INFIL",
             "CANCEL"
         };
 
         return new VStackWidget([
-            UI.CreateBorder("MISSION BRIEFING"),
+            UI.CreateBorder("COMBAT BRIEFING"),
             new TextBlockWidget(""),
-            UI.CreateBorder("INFILTRATION", new VStackWidget([
+            UI.CreateBorder("INFIL", new VStackWidget([
                 new TextBlockWidget("  OBJECTIVE: Engage hostile target"),
                 new TextBlockWidget("  TIME LIMIT: 30 minutes"),
                 new TextBlockWidget("  THREAT LEVEL: Variable"),
@@ -495,7 +495,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 new ListWidget(menuItems).OnItemActivated(e => {
                     switch (e.ActivatedIndex)
                     {
-                        case 0: // BEGIN INFILTRATION
+                        case 0: // BEGIN INFIL
                             // NOTE: StartMission blocks on HTTP calls due to hex1b's synchronous event handlers.
                             // This is a known limitation. UI will freeze during API calls.
                             StartMission();
@@ -519,8 +519,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             
             if (!response.IsSuccessStatusCode)
             {
-                ErrorMessage = $"Failed to start mission: {response.StatusCode}";
-                Message = $"Mission start failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
+                ErrorMessage = $"Failed to engage combat: {response.StatusCode}";
+                Message = $"Combat engagement failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
                 return;
@@ -607,8 +607,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         {
             // Session doesn't exist - this can happen if operator was created before session creation was implemented
             // Force end the infil by processing a failed outcome to reset the operator to Base mode
-            ErrorMessage = "Combat session not found - forcing mission abort";
-            Message = $"Mission session not found in database.\n\nThis can happen with operators created before the latest updates.\nForcing mission abort to reset operator state.\n\nPress OK to continue.";
+            ErrorMessage = "Combat session not found - forcing infil retreat";
+            Message = $"Combat session not found in database.\n\nThis can happen with operators created before the latest updates.\nForcing infil retreat to reset operator state.\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
             
@@ -685,7 +685,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             actionItems.Add("ADVANCE TURN");
         }
         actionItems.Add("VIEW DETAILS");
-        actionItems.Add("RETURN TO BASE");
+        actionItems.Add("RETREAT");
 
         return new VStackWidget([
             UI.CreateBorder("⚔ COMBAT MISSION ⚔"),
@@ -743,7 +743,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             CurrentScreen = Screen.Message;
                             ReturnScreen = Screen.CombatSession;
                             break;
-                        case "RETURN TO BASE":
+                        case "RETREAT":
                             // If combat has ended, process outcome first
                             if (combatEnded)
                             {
@@ -1062,7 +1062,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 new TextBlockWidget(""),
                 new TextBlockWidget(Message ?? "Mission ended."),
                 new TextBlockWidget(""),
-                new ListWidget(new[] { "RETURN TO BASE" }).OnItemActivated(_ => {
+                new ListWidget(new[] { "RETREAT" }).OnItemActivated(_ => {
                     RefreshOperator();
                     CurrentScreen = Screen.BaseCamp;
                 })
@@ -1330,15 +1330,15 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     Hex1bWidget BuildAbortMission()
     {
         var menuItems = new[] {
-            "CONFIRM ABORT",
+            "CONFIRM RETREAT",
             "CANCEL"
         };
 
         return new VStackWidget([
-            UI.CreateBorder("ABORT MISSION"),
+            UI.CreateBorder("RETREAT FROM INFIL"),
             new TextBlockWidget(""),
             UI.CreateBorder("WARNING", new VStackWidget([
-                new TextBlockWidget("  Are you sure you want to abort the mission?"),
+                new TextBlockWidget("  Are you sure you want to retreat from infil?"),
                 new TextBlockWidget(""),
                 new TextBlockWidget("  - Mission will be failed"),
                 new TextBlockWidget("  - Exfil streak will be reset"),
@@ -1349,7 +1349,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 new ListWidget(menuItems).OnItemActivated(e => {
                     switch (e.ActivatedIndex)
                     {
-                        case 0: // CONFIRM ABORT
+                        case 0: // CONFIRM RETREAT
                             AbortMission();
                             break;
                         case 1: // CANCEL
@@ -1358,7 +1358,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     }
                 })
             ])),
-            UI.CreateStatusBar("Confirm mission abort")
+            UI.CreateStatusBar("Confirm retreat")
         ]);
     }
 
@@ -1372,8 +1372,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Guard against null sessionId - API requires non-null Guid
             if (!sessionId.HasValue)
             {
-                ErrorMessage = "No active session found to abort";
-                Message = "No active mission to abort.\nRefreshing operator state.\n\nPress OK to continue.";
+                ErrorMessage = "No active session found to retreat from";
+                Message = "No active infil to retreat from.\nRefreshing operator state.\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
                 RefreshOperator();
@@ -1394,14 +1394,14 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     ActiveSessionId = null;
                     CurrentSession = null;
                     RefreshOperator();
-                    Message = "Mission already ended.\nReturning to base.\n\nPress OK to continue.";
+                    Message = "Infil already ended.\nReturning to base.\n\nPress OK to continue.";
                     CurrentScreen = Screen.Message;
                     ReturnScreen = Screen.BaseCamp;
                     return;
                 }
                 
-                ErrorMessage = $"Failed to abort mission: {response.StatusCode} - {errorContent}";
-                Message = $"Mission abort failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
+                ErrorMessage = $"Failed to retreat from infil: {response.StatusCode} - {errorContent}";
+                Message = $"Infil retreat failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
                 return;
@@ -1414,7 +1414,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Refresh operator state
             RefreshOperator();
 
-            Message = "Mission aborted.\nReturning to base.\n\nPress OK to continue.";
+            Message = "Retreated from infil.\nReturning to base.\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
         }
