@@ -103,6 +103,7 @@ public static class SessionMapping
             PostCombatResolved = session.PostCombatResolved,
             CreatedAt = session.CreatedAt,
             CompletedAt = session.CompletedAt,
+            LastActionTimestamp = session.LastActionTimestamp,
             Combat = new CombatStateSnapshot
             {
                 Phase = session.Combat.Phase,
@@ -162,7 +163,8 @@ public static class SessionMapping
             snapshot.Phase,
             snapshot.TurnNumber,
             snapshot.CreatedAt,
-            snapshot.CompletedAt)
+            snapshot.CompletedAt,
+            snapshot.LastActionTimestamp)
         {
             PostCombatResolved = snapshot.PostCombatResolved
         };

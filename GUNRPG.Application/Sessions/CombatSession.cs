@@ -25,6 +25,7 @@ public sealed class CombatSession
     public int TurnNumber { get; private set; }
     public DateTimeOffset CreatedAt { get; }
     public DateTimeOffset? CompletedAt { get; private set; }
+    public DateTimeOffset LastActionTimestamp { get; private set; }
     public bool PostCombatResolved { get; set; }
 
     public Operator Player => Combat.Player;
@@ -42,7 +43,8 @@ public sealed class CombatSession
         SessionPhase phase,
         int turnNumber,
         DateTimeOffset createdAt,
-        DateTimeOffset? completedAt = null)
+        DateTimeOffset? completedAt = null,
+        DateTimeOffset? lastActionTimestamp = null)
     {
         Id = id;
         OperatorId = operatorId;
@@ -56,6 +58,7 @@ public sealed class CombatSession
         TurnNumber = turnNumber;
         CreatedAt = createdAt;
         CompletedAt = completedAt;
+        LastActionTimestamp = lastActionTimestamp ?? createdAt;
     }
 
     public static CombatSession CreateDefault(string? playerName = null, int? seed = null, float? startingDistance = null, string? enemyName = null, Guid? id = null)
@@ -109,6 +112,7 @@ public sealed class CombatSession
         }
 
         Phase = nextPhase;
+        LastActionTimestamp = DateTimeOffset.UtcNow;
         
         // Record completion time when transitioning to Completed phase
         if (nextPhase == SessionPhase.Completed && CompletedAt == null)
@@ -120,6 +124,12 @@ public sealed class CombatSession
     public void AdvanceTurnCounter()
     {
         TurnNumber++;
+        LastActionTimestamp = DateTimeOffset.UtcNow;
+    }
+
+    public void RecordAction()
+    {
+        LastActionTimestamp = DateTimeOffset.UtcNow;
     }
 
     /// <summary>

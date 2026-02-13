@@ -97,6 +97,7 @@ public sealed class CombatSessionService
             session.Combat.SubmitIntents(session.Enemy, SimultaneousIntents.CreateStop(session.Enemy.Id));
         }
 
+        session.RecordAction();
         await SaveAsync(session);
         return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
     }
@@ -155,6 +156,7 @@ public sealed class CombatSessionService
             session.AdvanceTurnCounter();
         }
 
+        session.RecordAction();
         await SaveAsync(session);
         return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
     }
@@ -169,6 +171,7 @@ public sealed class CombatSessionService
 
         session.PetState = PetRules.Apply(session.PetState, input, now);
         session.Player.Fatigue = session.PetState.Fatigue;
+        session.RecordAction();
         await SaveAsync(session);
         return ServiceResult<PetStateDto>.Success(SessionMapping.ToDto(session.PetState));
     }
