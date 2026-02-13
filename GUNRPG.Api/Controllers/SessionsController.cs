@@ -89,4 +89,15 @@ public class SessionsController : ControllerBase
             _ => StatusCode(500, new { error = "Unexpected error" })
         };
     }
+
+    [HttpDelete("{id:guid}")]
+    public async Task<ActionResult> Delete(Guid id)
+    {
+        var result = await _service.DeleteSessionAsync(id);
+        return result.Status switch
+        {
+            ResultStatus.Success => NoContent(),
+            _ => StatusCode(500, new { error = "Unexpected error" })
+        };
+    }
 }

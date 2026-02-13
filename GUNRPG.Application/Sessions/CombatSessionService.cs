@@ -293,4 +293,13 @@ public sealed class CombatSessionService
             return ServiceResult<CombatOutcome>.InvalidState($"Failed to get outcome: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Deletes a combat session. This is used when retreating from combat.
+    /// </summary>
+    public async Task<ServiceResult> DeleteSessionAsync(Guid sessionId)
+    {
+        await _store.DeleteAsync(sessionId);
+        return ServiceResult.Success();
+    }
 }
