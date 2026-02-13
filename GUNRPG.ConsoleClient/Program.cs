@@ -374,7 +374,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         }
 
         var menuItems = new List<string>();
-        var hasActiveSession = op.ActiveSessionId.HasValue || ActiveSessionId.HasValue;
+        var hasSessionReference = op.ActiveSessionId.HasValue || ActiveSessionId.HasValue;
 
         if (op.CurrentMode == "Base")
         {
@@ -390,7 +390,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // If there is an active session, always allow continuing it.
             // The continuation flow (LoadSession) is responsible for handling completed sessions
             // (e.g., by showing a completion screen and processing the outcome).
-            if (hasActiveSession)
+            if (hasSessionReference)
             {
                 menuItems.Add(InfilActionEngageCombat);
                 menuItems.Add(InfilActionExfil);
@@ -436,14 +436,14 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 switch (selectedItem)
                 {
                     case InfilActionEngageCombat:
-                        if (hasActiveSession)
+                        if (hasSessionReference)
                         {
-                            ActiveSessionId = op.ActiveSessionId ?? ActiveSessionId;
+                            ActiveSessionId ??= op.ActiveSessionId;
                             LoadSession();
                         }
                         break;
                     case InfilActionExfil:
-                        if (hasActiveSession)
+                        if (hasSessionReference)
                         {
                             CurrentScreen = Screen.AbortMission;
                         }
