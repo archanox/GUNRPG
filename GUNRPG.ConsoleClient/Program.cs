@@ -188,7 +188,11 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             CurrentOperatorId = operatorId;
             SaveCurrentOperatorId();
             LoadOperator(operatorId);
-            CurrentScreen = Screen.BaseCamp;
+            // LoadOperator may set screen to CombatSession if auto-resuming, so only set BaseCamp if not already set
+            if (CurrentScreen != Screen.CombatSession)
+            {
+                CurrentScreen = Screen.BaseCamp;
+            }
         }
         catch (Exception ex)
         {
