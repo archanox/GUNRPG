@@ -363,6 +363,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
     Hex1bWidget BuildBaseCamp()
     {
+        const string BaseActionInfil = "INFIL";
+        const string InfilActionEngageCombat = "ENGAGE COMBAT";
+        const string InfilActionExfil = "EXFIL";
+
         var op = CurrentOperator;
         if (op == null)
         {
@@ -370,10 +374,11 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         }
 
         var menuItems = new List<string>();
+        var hasActiveSession = op.ActiveSessionId.HasValue || ActiveSessionId.HasValue;
 
         if (op.CurrentMode == "Base")
         {
-            menuItems.Add("INFIL");
+            menuItems.Add(BaseActionInfil);
             menuItems.Add("CHANGE LOADOUT");
             menuItems.Add("TREAT WOUNDS");
             menuItems.Add("UNLOCK PERK");
@@ -385,11 +390,11 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // If there is an active session, always allow continuing it.
             // The continuation flow (LoadSession) is responsible for handling completed sessions
             // (e.g., by showing a completion screen and processing the outcome).
-            if (op.ActiveSessionId.HasValue)
+            if (hasActiveSession)
             {
-                menuItems.Add("ENGAGE COMBAT");
+                menuItems.Add(InfilActionEngageCombat);
+                menuItems.Add(InfilActionExfil);
             }
-            menuItems.Add("EXFIL");
             menuItems.Add("VIEW STATS");
         }
 
@@ -401,7 +406,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             {
                 switch (selectedItem)
                 {
-                    case "INFIL":
+                    case BaseActionInfil:
                         CurrentScreen = Screen.StartMission;
                         break;
                     case "CHANGE LOADOUT":
@@ -430,15 +435,18 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             {
                 switch (selectedItem)
                 {
-                    case "ENGAGE COMBAT":
-                        if (op.ActiveSessionId.HasValue)
+                    case InfilActionEngageCombat:
+                        if (hasActiveSession)
                         {
-                            ActiveSessionId = op.ActiveSessionId;
+                            ActiveSessionId = op.ActiveSessionId ?? ActiveSessionId;
                             LoadSession();
                         }
                         break;
-                    case "EXFIL":
-                        CurrentScreen = Screen.AbortMission;
+                    case InfilActionExfil:
+                        if (hasActiveSession)
+                        {
+                            CurrentScreen = Screen.AbortMission;
+                        }
                         break;
                     case "VIEW STATS":
                         Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nMission In Progress\n\nPress OK to continue.";
