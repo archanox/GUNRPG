@@ -55,7 +55,37 @@ public sealed class OperatorService
             return ServiceResult<OperatorStateDto>.FromResult(loadResult);
         }
 
-        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
+        var operatorDto = ToDto(loadResult.Value!);
+        
+        // If operator has an active session, load and include it
+        if (operatorDto.ActiveSessionId.HasValue)
+        {
+            var sessionResult = await _sessionService.GetStateAsync(operatorDto.ActiveSessionId.Value);
+            if (sessionResult.Status == ResultStatus.Success)
+            {
+                // Create a new DTO with the active session included
+                operatorDto = new OperatorStateDto
+                {
+                    Id = operatorDto.Id,
+                    Name = operatorDto.Name,
+                    TotalXp = operatorDto.TotalXp,
+                    CurrentHealth = operatorDto.CurrentHealth,
+                    MaxHealth = operatorDto.MaxHealth,
+                    EquippedWeaponName = operatorDto.EquippedWeaponName,
+                    UnlockedPerks = operatorDto.UnlockedPerks,
+                    ExfilStreak = operatorDto.ExfilStreak,
+                    IsDead = operatorDto.IsDead,
+                    CurrentMode = operatorDto.CurrentMode,
+                    InfilStartTime = operatorDto.InfilStartTime,
+                    ActiveSessionId = operatorDto.ActiveSessionId,
+                    ActiveCombatSession = sessionResult.Value,
+                    LockedLoadout = operatorDto.LockedLoadout,
+                    Pet = operatorDto.Pet
+                };
+            }
+        }
+
+        return ServiceResult<OperatorStateDto>.Success(operatorDto);
     }
 
     public async Task<ServiceResult<List<OperatorSummaryDto>>> ListOperatorsAsync()
