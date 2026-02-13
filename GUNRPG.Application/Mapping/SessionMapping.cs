@@ -164,7 +164,7 @@ public static class SessionMapping
             snapshot.TurnNumber,
             snapshot.CreatedAt,
             snapshot.CompletedAt,
-            snapshot.LastActionTimestamp)
+            snapshot.LastActionTimestamp ?? snapshot.CreatedAt)  // Fallback to CreatedAt for old snapshots
         {
             PostCombatResolved = snapshot.PostCombatResolved
         };

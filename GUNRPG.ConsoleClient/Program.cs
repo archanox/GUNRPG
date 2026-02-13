@@ -201,7 +201,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
     void LoadOperator(Guid operatorId)
     {
-        var response = client.GetAsync($"operators/{operatorId}").GetAwaiter().GetResult();
+        using var response = client.GetAsync($"operators/{operatorId}").GetAwaiter().GetResult();
         if (!response.IsSuccessStatusCode)
         {
             throw new Exception($"Failed to load operator: {response.StatusCode}");
@@ -526,8 +526,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             
             if (!response.IsSuccessStatusCode)
             {
-                ErrorMessage = $"Failed to engage combat: {response.StatusCode}";
-                Message = $"Combat engagement failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
+                ErrorMessage = $"Failed to infil: {response.StatusCode}";
+                Message = $"Infil failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
                 return;
@@ -614,8 +614,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         {
             // Session doesn't exist - this can happen if operator was created before session creation was implemented
             // Force end the infil by processing a failed outcome to reset the operator to Base mode
-            ErrorMessage = "Combat session not found - forcing infil retreat";
-            Message = $"Combat session not found in database.\n\nThis can happen with operators created before the latest updates.\nForcing infil retreat to reset operator state.\n\nPress OK to continue.";
+            ErrorMessage = "Combat session not found - forcing exfil";
+            Message = $"Infil session not found in database.\n\nThis can happen with operators created before the latest updates.\nForcing exfil to reset operator state.\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
             
@@ -751,23 +751,19 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             ReturnScreen = Screen.CombatSession;
                             break;
                         case "RETREAT":
-                            // If combat has ended, process outcome first, then go to base camp
+                            // Process combat outcome if ended, then return to infil mode
                             if (combatEnded)
                             {
                                 ProcessCombatOutcome();
-                                CurrentScreen = Screen.BaseCamp;
                             }
-                            else
-                            {
-                                // Retreat mid-combat: abandon combat session, return to Infil mode
-                                // Clear the combat session locally - operator stays in Infil mode
-                                ActiveSessionId = null;
-                                CurrentSession = null;
-                                RefreshOperator();
-                                Message = "Retreated from combat.\nYou remain in infil mode.\n\nPress OK to continue.";
-                                CurrentScreen = Screen.Message;
-                                ReturnScreen = Screen.BaseCamp;
-                            }
+                            // Retreat: abandon combat session, return to Infil mode
+                            // Clear the combat session locally - operator stays in Infil mode
+                            ActiveSessionId = null;
+                            CurrentSession = null;
+                            RefreshOperator();
+                            Message = "Retreated from combat.\nYou remain in infil mode.\n\nPress OK to continue.";
+                            CurrentScreen = Screen.Message;
+                            ReturnScreen = Screen.BaseCamp;
                             break;
                     }
                 })
@@ -1359,10 +1355,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         };
 
         return new VStackWidget([
-            UI.CreateBorder("RETREAT FROM INFIL"),
+            UI.CreateBorder("RETREAT FROM BATTLE"),
             new TextBlockWidget(""),
             UI.CreateBorder("WARNING", new VStackWidget([
-                new TextBlockWidget("  Are you sure you want to retreat from infil?"),
+                new TextBlockWidget("  Are you sure you want to retreat from battle?"),
                 new TextBlockWidget(""),
                 new TextBlockWidget("  - Mission will be failed"),
                 new TextBlockWidget("  - Exfil streak will be reset"),
