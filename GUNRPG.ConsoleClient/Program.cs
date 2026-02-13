@@ -385,7 +385,6 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             {
                 menuItems.Add("CONTINUE MISSION");
             }
-            menuItems.Add("RETREAT");
             menuItems.Add("VIEW STATS");
         }
 
@@ -432,9 +431,6 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                             ActiveSessionId = op.ActiveSessionId;
                             LoadSession();
                         }
-                        break;
-                    case "RETREAT":
-                        CurrentScreen = Screen.AbortMission;
                         break;
                     case "VIEW STATS":
                         Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nMission In Progress\n\nPress OK to continue.";
