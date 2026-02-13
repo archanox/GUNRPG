@@ -17,6 +17,7 @@ public sealed class ApiOperatorStateDto
     public string CurrentMode { get; init; } = "";
     public DateTimeOffset? InfilStartTime { get; init; }
     public Guid? ActiveSessionId { get; init; }
+    public ApiCombatSessionDto? ActiveCombatSession { get; init; }
     public string LockedLoadout { get; init; } = "";
     public ApiPetStateDto? Pet { get; init; }
 }
