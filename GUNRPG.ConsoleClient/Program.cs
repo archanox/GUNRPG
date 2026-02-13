@@ -16,10 +16,7 @@ var gameState = new GameState(httpClient, jsonOptions);
 
 // Try to auto-load last used operator
 gameState.LoadSavedOperatorId();
-if (gameState.CurrentOperatorId.HasValue && gameState.CurrentOperator != null)
-{
-    gameState.CurrentScreen = Screen.BaseCamp;
-}
+// LoadSavedOperatorId will set the appropriate screen (CombatSession or BaseCamp)
 
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
@@ -212,6 +209,14 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
         var operatorDto = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
         CurrentOperator = ParseOperator(operatorDto);
+        
+        // Auto-resume combat if operator has active session
+        if (operatorDto.TryGetProperty("activeCombatSession", out var sessionJson) && sessionJson.ValueKind != JsonValueKind.Null)
+        {
+            CurrentSession = ParseSession(sessionJson, options);
+            ActiveSessionId = CurrentSession?.Id;
+            CurrentScreen = Screen.CombatSession;
+        }
     }
 
     void SaveCurrentOperatorId()
@@ -243,6 +248,12 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 {
                     CurrentOperatorId = operatorId;
                     LoadOperator(operatorId);
+                    // LoadOperator will auto-transition to combat screen if session is active
+                    // Otherwise, ensure we show BaseCamp
+                    if (CurrentScreen != Screen.CombatSession)
+                    {
+                        CurrentScreen = Screen.BaseCamp;
+                    }
                 }
             }
         }
@@ -848,6 +859,16 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             {
                 var operatorDto = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
                 CurrentOperator = ParseOperator(operatorDto);
+                
+                // Auto-resume combat if operator has active session and we're not already in combat
+                if (CurrentScreen != Screen.CombatSession && 
+                    operatorDto.TryGetProperty("activeCombatSession", out var sessionJson) && 
+                    sessionJson.ValueKind != JsonValueKind.Null)
+                {
+                    CurrentSession = ParseSession(sessionJson, options);
+                    ActiveSessionId = CurrentSession?.Id;
+                    CurrentScreen = Screen.CombatSession;
+                }
             }
         }
         catch (Exception)
@@ -1595,6 +1616,12 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             CurrentHealth = json.GetProperty("currentHealth").GetSingle(),
             MaxHealth = json.GetProperty("maxHealth").GetSingle()
         };
+    }
+
+    static CombatSessionDto? ParseSession(JsonElement json, JsonSerializerOptions jsonOptions)
+    {
+        // Deserialize directly from JsonElement
+        return JsonSerializer.Deserialize<CombatSessionDto>(json.GetRawText(), jsonOptions);
     }
 }
 
