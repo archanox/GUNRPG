@@ -1419,16 +1419,31 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Guard against null sessionId - API requires non-null Guid
             if (!sessionId.HasValue)
             {
-                ErrorMessage = "No active session found to exfil from";
-                Message = "No active infil.\nRefreshing operator state.\n\nPress OK to continue.";
-                CurrentScreen = Screen.Message;
-                ReturnScreen = Screen.BaseCamp;
                 RefreshOperator();
+                CurrentScreen = Screen.BaseCamp;
                 return;
             }
             
-            // Process infil outcome using the current session state
+            // Process EXFIL for the current infil session state
             var request = new { SessionId = sessionId.Value };
+            using (var sessionStateResponse = client.GetAsync($"sessions/{sessionId.Value}/state").GetAwaiter().GetResult())
+            {
+                if (!sessionStateResponse.IsSuccessStatusCode)
+                {
+                    RefreshOperator();
+                    CurrentScreen = Screen.BaseCamp;
+                    return;
+                }
+
+                var sessionState = sessionStateResponse.Content.ReadFromJsonAsync<CombatSessionDto>(options).GetAwaiter().GetResult();
+                if (sessionState?.Phase != "Completed")
+                {
+                    RefreshOperator();
+                    CurrentScreen = Screen.BaseCamp;
+                    return;
+                }
+            }
+
             using var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
                 .GetAwaiter().GetResult();
 
@@ -1447,7 +1462,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     ReturnScreen = Screen.BaseCamp;
                     return;
                 }
-                
+
                 ErrorMessage = $"Failed to exfil: {response.StatusCode} - {errorContent}";
                 Message = $"Exfil failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
