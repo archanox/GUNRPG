@@ -1383,10 +1383,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         };
 
         return new VStackWidget([
-            UI.CreateBorder("EXFIL FROM INFIL"),
+            UI.CreateBorder("EXFIL BACK TO BASE"),
             new TextBlockWidget(""),
             UI.CreateBorder("WARNING", new VStackWidget([
-                new TextBlockWidget("  Are you sure you want to exfil from infil?"),
+                new TextBlockWidget("  Are you sure you want to exfil?"),
                 new TextBlockWidget(""),
                 new TextBlockWidget("  - Mission outcome will be processed"),
                 new TextBlockWidget("  - EXFIL streak and XP will reflect that outcome"),
@@ -1420,7 +1420,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             if (!sessionId.HasValue)
             {
                 ErrorMessage = "No active session found to exfil from";
-                Message = "No active infil to exfil from.\nRefreshing operator state.\n\nPress OK to continue.";
+                Message = "No active infil.\nRefreshing operator state.\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
                 RefreshOperator();
@@ -1448,7 +1448,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     return;
                 }
                 
-                ErrorMessage = $"Failed to exfil from infil: {response.StatusCode} - {errorContent}";
+                ErrorMessage = $"Failed to exfil: {response.StatusCode} - {errorContent}";
                 Message = $"Exfil failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
