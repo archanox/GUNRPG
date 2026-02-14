@@ -613,12 +613,19 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             {
                 CurrentSession = sessionData;
                 
-                // If session is completed, process outcome before showing completion screen
+                // If session is completed, either continue infil with a fresh target or show completion screen.
                 if (sessionData.Phase == "Completed")
                 {
-                    ProcessCombatOutcome();
-                    Message = "Mission completed. Processing outcome...";
-                    CurrentScreen = Screen.MissionComplete;
+                    // In infil mode, completed combat can continue with a fresh target in the same infil session.
+                    if (CurrentOperator?.CurrentMode == "Infil" && StartNextCombatInInfil())
+                    {
+                        CurrentScreen = Screen.CombatSession;
+                    }
+                    else
+                    {
+                        Message = "Mission completed.";
+                        CurrentScreen = Screen.MissionComplete;
+                    }
                 }
                 else
                 {
@@ -661,6 +668,43 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             Message = $"Failed to load session.\nError: {ex.Message}\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
+        }
+    }
+
+    bool StartNextCombatInInfil()
+    {
+        if (!ActiveSessionId.HasValue || CurrentOperatorId == null || CurrentOperator == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId.Value}").GetAwaiter().GetResult();
+
+            var sessionRequest = new
+            {
+                id = ActiveSessionId.Value,
+                operatorId = CurrentOperatorId,
+                playerName = CurrentOperator.Name,
+                weaponName = CurrentOperator.EquippedWeaponName,
+                playerLevel = 1,
+                playerMaxHealth = CurrentOperator.MaxHealth,
+                playerCurrentHealth = CurrentOperator.CurrentHealth
+            };
+
+            using var sessionResponse = client.PostAsJsonAsync("sessions", sessionRequest, options).GetAwaiter().GetResult();
+            if (!sessionResponse.IsSuccessStatusCode)
+            {
+                return false;
+            }
+
+            CurrentSession = sessionResponse.Content.ReadFromJsonAsync<CombatSessionDto>(options).GetAwaiter().GetResult();
+            return CurrentSession != null;
+        }
+        catch
+        {
+            return false;
         }
     }
 
