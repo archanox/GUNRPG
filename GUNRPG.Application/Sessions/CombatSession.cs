@@ -61,7 +61,7 @@ public sealed class CombatSession
         LastActionTimestamp = lastActionTimestamp ?? createdAt;
     }
 
-    public static CombatSession CreateDefault(string? playerName = null, int? seed = null, float? startingDistance = null, string? enemyName = null, Guid? id = null)
+    public static CombatSession CreateDefault(string? playerName = null, int? seed = null, float? startingDistance = null, string? enemyName = null, Guid? id = null, Guid? operatorId = null)
     {
         var resolvedSeed = seed ?? Random.Shared.Next();
         var name = string.IsNullOrWhiteSpace(playerName) ? "Player" : playerName.Trim();
@@ -88,11 +88,13 @@ public sealed class CombatSession
 
         var petState = new PetState(player.Id, 100f, 0f, 0f, 0f, 100f, 0f, 100f, DateTimeOffset.UtcNow);
         var enemyLevel = Math.Max(0, new Random(resolvedSeed).Next(-2, 3));
-        var operatorId = OperatorId.FromGuid(player.Id);
+        var resolvedOperatorId = operatorId.HasValue
+            ? OperatorId.FromGuid(operatorId.Value)
+            : OperatorId.FromGuid(player.Id);
 
         return new CombatSession(
             id ?? Guid.NewGuid(),
-            operatorId,
+            resolvedOperatorId,
             combat,
             ai,
             operatorManager,

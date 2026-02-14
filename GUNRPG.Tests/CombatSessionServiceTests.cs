@@ -25,6 +25,21 @@ public class CombatSessionServiceTests
     }
 
     [Fact]
+    public async Task CreateSession_WithOperatorId_PreservesOperatorId()
+    {
+        var service = new CombatSessionService(new InMemoryCombatSessionStore());
+        var operatorId = Guid.NewGuid();
+
+        var state = (await service.CreateSessionAsync(new SessionCreateRequest
+        {
+            OperatorId = operatorId,
+            Seed = 123
+        })).Value!;
+
+        Assert.Equal(operatorId, state.OperatorId);
+    }
+
+    [Fact]
     public async Task SubmitIntents_RecordsWithoutAdvancing()
     {
         var store = new InMemoryCombatSessionStore();
