@@ -28,6 +28,11 @@ public sealed class CombatSessionService
 
     public async Task<ServiceResult<CombatSessionDto>> CreateSessionAsync(SessionCreateRequest request)
     {
+        if (request.OperatorId.HasValue && request.OperatorId.Value == Guid.Empty)
+        {
+            return ServiceResult<CombatSessionDto>.ValidationError("Operator ID cannot be empty");
+        }
+
         if (request.Id.HasValue)
         {
             if (request.Id.Value == Guid.Empty)
@@ -47,7 +52,8 @@ public sealed class CombatSessionService
             seed: request.Seed,
             startingDistance: request.StartingDistance,
             enemyName: request.EnemyName,
-            id: request.Id);
+            id: request.Id,
+            operatorId: request.OperatorId);
 
         await _store.SaveAsync(SessionMapping.ToSnapshot(session));
         return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
