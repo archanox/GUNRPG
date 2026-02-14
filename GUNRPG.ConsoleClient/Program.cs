@@ -393,8 +393,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             if (hasSessionReference)
             {
                 menuItems.Add(InfilActionEngageCombat);
-                menuItems.Add(InfilActionExfil);
             }
+            menuItems.Add(InfilActionExfil);
             menuItems.Add("VIEW STATS");
         }
 
@@ -443,10 +443,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                         }
                         break;
                     case InfilActionExfil:
-                        if (hasSessionReference)
-                        {
-                            CurrentScreen = Screen.AbortMission;
-                        }
+                        CurrentScreen = Screen.AbortMission;
                         break;
                     case "VIEW STATS":
                         Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nMission In Progress\n\nPress OK to continue.";
@@ -623,7 +620,9 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     }
                     else
                     {
-                        Message = "Mission completed.";
+                        Message = string.IsNullOrWhiteSpace(ErrorMessage)
+                            ? "Mission completed."
+                            : $"Unable to start next combat session.\nError: {ErrorMessage}";
                         CurrentScreen = Screen.MissionComplete;
                     }
                 }
@@ -673,6 +672,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
     bool StartNextCombatInInfil()
     {
+        ErrorMessage = null;
+
         if (!ActiveSessionId.HasValue || CurrentOperatorId == null || CurrentOperator == null)
         {
             return false;
@@ -680,6 +681,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
         try
         {
+            // ActiveSessionId is the persistent infil session ID from /operators/{id}/infil/start.
+            // It is intentionally reused across combats in one infil.
             using var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId.Value}").GetAwaiter().GetResult();
             if (!deleteResponse.IsSuccessStatusCode)
             {
@@ -694,7 +697,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 weaponName = CurrentOperator.EquippedWeaponName,
                 playerLevel = 1,
                 playerMaxHealth = CurrentOperator.MaxHealth,
-                playerCurrentHealth = CurrentOperator.CurrentHealth
+                playerCurrentHealth = CurrentOperator.MaxHealth
             };
 
             using var sessionResponse = client.PostAsJsonAsync("sessions", sessionRequest, options).GetAwaiter().GetResult();
@@ -1474,8 +1477,31 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Guard against null sessionId - API requires non-null Guid
             if (!sessionId.HasValue)
             {
-                RefreshOperator();
-                CurrentScreen = Screen.BaseCamp;
+                if (CurrentOperatorId.HasValue)
+                {
+                    using var abortResponse = client.PostAsync($"operators/{CurrentOperatorId.Value}/infil/abort", null).GetAwaiter().GetResult();
+                    if (abortResponse.IsSuccessStatusCode)
+                    {
+                        ActiveSessionId = null;
+                        CurrentSession = null;
+                        RefreshOperator();
+                        Message = "Exfil processed.\nReturning to base.\n\nPress OK to continue.";
+                        CurrentScreen = Screen.Message;
+                        ReturnScreen = Screen.BaseCamp;
+                        return;
+                    }
+
+                    var failedMessage = $"Failed to exfil: {abortResponse.StatusCode} {abortResponse.ReasonPhrase}";
+                    ErrorMessage = failedMessage;
+                    Message = failedMessage;
+                    CurrentScreen = Screen.Message;
+                    ReturnScreen = Screen.BaseCamp;
+                    return;
+                }
+
+                Message = "Unable to exfil: operator state is invalid.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.BaseCamp;
                 return;
             }
             
