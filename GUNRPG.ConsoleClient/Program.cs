@@ -681,6 +681,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         try
         {
             using var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId.Value}").GetAwaiter().GetResult();
+            if (!deleteResponse.IsSuccessStatusCode)
+            {
+                return false;
+            }
 
             var sessionRequest = new
             {
@@ -700,10 +704,17 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             }
 
             CurrentSession = sessionResponse.Content.ReadFromJsonAsync<CombatSessionDto>(options).GetAwaiter().GetResult();
-            return CurrentSession != null;
+            if (CurrentSession == null)
+            {
+                ErrorMessage = $"Failed to deserialize replacement combat session for {ActiveSessionId.Value}";
+                return false;
+            }
+
+            return true;
         }
-        catch
+        catch (Exception ex)
         {
+            ErrorMessage = ex.Message;
             return false;
         }
     }
