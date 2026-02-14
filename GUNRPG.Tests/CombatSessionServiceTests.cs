@@ -40,6 +40,21 @@ public class CombatSessionServiceTests
     }
 
     [Fact]
+    public async Task CreateSession_WithEmptyOperatorId_ReturnsValidationError()
+    {
+        var service = new CombatSessionService(new InMemoryCombatSessionStore());
+
+        var result = await service.CreateSessionAsync(new SessionCreateRequest
+        {
+            OperatorId = Guid.Empty,
+            Seed = 123
+        });
+
+        Assert.False(result.IsSuccess);
+        Assert.Null(result.Value);
+    }
+
+    [Fact]
     public async Task SubmitIntents_RecordsWithoutAdvancing()
     {
         var store = new InMemoryCombatSessionStore();
