@@ -16,7 +16,12 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddCombatSessionStore(builder.Configuration);
-builder.Services.AddSingleton<CombatSessionService>();
+builder.Services.AddSingleton<CombatSessionService>(sp =>
+{
+    var sessionStore = sp.GetRequiredService<ICombatSessionStore>();
+    var operatorEventStore = sp.GetRequiredService<IOperatorEventStore>();
+    return new CombatSessionService(sessionStore, operatorEventStore);
+});
 builder.Services.AddSingleton<OperatorService>(sp =>
 {
     var exfilService = sp.GetRequiredService<OperatorExfilService>();
