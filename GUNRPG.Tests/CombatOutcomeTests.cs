@@ -10,6 +10,9 @@ using GUNRPG.Core.Operators;
 
 namespace GUNRPG.Tests;
 
+// NOTE: Tests pass null! for IOperatorEventStore parameter to CombatSessionService constructor.
+// This is safe because ValidateOperatorInInfilModeAsync has fail-open behavior when operator
+// event store is not available, allowing session-level validations to protect operations.
 public class CombatOutcomeTests
 {
     [Fact]

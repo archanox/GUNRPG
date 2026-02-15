@@ -224,7 +224,7 @@ public sealed class CombatSessionService
     private async Task<ServiceResult?> ValidateOperatorInInfilModeAsync(CombatSession session)
     {
         // If session has no operator ID, skip validation (legacy sessions or test data)
-        if (session.OperatorId.Value == Guid.Empty)
+        if (session.OperatorId.IsEmpty)
         {
             return null;
         }
@@ -246,9 +246,16 @@ public sealed class CombatSessionService
 
             return null;
         }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("hash") || ex.Message.Contains("chain") || ex.Message.Contains("corrupted"))
+        {
+            // Event stream corruption - fail closed (reject action)
+            return ServiceResult.InvalidState($"Operator data corrupted: {ex.Message}");
+        }
         catch (Exception)
         {
-            // If we can't load operator, allow the action (fail open for compatibility)
+            // Fail open for compatibility: if operator event store is not available (e.g., in tests with null store),
+            // or if there's an unexpected error, allow the action to proceed. The session-level validations
+            // (phase checks, intent requirements) will still protect against invalid operations.
             return null;
         }
     }
