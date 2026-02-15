@@ -171,7 +171,7 @@ public sealed class CombatSession
             xpGained = 0; // No XP for death
         }
 
-        var operatorId = OperatorId.FromGuid(player.Id);
+        var operatorId = OperatorId;
 
         // For now, no gear is lost (will be expanded later with actual gear system)
         var gearLost = Array.Empty<GearId>();
