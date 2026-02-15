@@ -35,6 +35,9 @@ public static class InfrastructureServiceExtensions
         {
             // In-memory store for testing
             services.AddSingleton<ICombatSessionStore, InMemoryCombatSessionStore>();
+            // Register a no-op operator event store so CombatSessionService can be resolved
+            // Validation will be skipped when the store is present but returns no events
+            services.AddSingleton<IOperatorEventStore, InMemoryOperatorEventStore>();
         }
         else
         {

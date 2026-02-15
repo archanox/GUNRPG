@@ -21,9 +21,9 @@ public sealed class CombatSessionService
     private const int XpMultiplier = 20;
 
     private readonly ICombatSessionStore _store;
-    private readonly IOperatorEventStore _operatorEventStore;
+    private readonly IOperatorEventStore? _operatorEventStore;
 
-    public CombatSessionService(ICombatSessionStore store, IOperatorEventStore operatorEventStore)
+    public CombatSessionService(ICombatSessionStore store, IOperatorEventStore? operatorEventStore = null)
     {
         _store = store;
         _operatorEventStore = operatorEventStore;
@@ -223,6 +223,12 @@ public sealed class CombatSessionService
     /// </summary>
     private async Task<ServiceResult?> ValidateOperatorInInfilModeAsync(CombatSession session)
     {
+        // If operator event store is not available, skip validation (e.g., in-memory mode or tests)
+        if (_operatorEventStore == null)
+        {
+            return null;
+        }
+
         // If session has no operator ID, skip validation (legacy sessions or test data)
         if (session.OperatorId.IsEmpty)
         {
@@ -251,12 +257,10 @@ public sealed class CombatSessionService
             // Event stream corruption - fail closed (reject action)
             return ServiceResult.InvalidState($"Operator data corrupted: {ex.Message}");
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Fail open for compatibility: if operator event store is not available (e.g., in tests with null store),
-            // or if there's an unexpected error, allow the action to proceed. The session-level validations
-            // (phase checks, intent requirements) will still protect against invalid operations.
-            return null;
+            // For any other unexpected error, fail closed (reject action) to ensure security
+            return ServiceResult.InvalidState($"Failed to validate operator mode: {ex.Message}");
         }
     }
 
