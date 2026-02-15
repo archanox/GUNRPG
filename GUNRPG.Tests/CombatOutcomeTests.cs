@@ -358,5 +358,6 @@ public class CombatOutcomeTests
         // Assert - outcome should use session's OperatorId, not Player.Id
         Assert.Equal(explicitOperatorId, outcome.OperatorId.Value);
         Assert.NotEqual(loadedSession.Player.Id, explicitOperatorId); // Verify they differ
+        Assert.NotEqual(loadedSession.Player.Id, outcome.OperatorId.Value); // Verify bug is fixed
     }
 }
