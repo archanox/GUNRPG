@@ -882,6 +882,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     // Combat has ended - process the outcome
                     ProcessCombatOutcome();
                     
+                    // Clear local session state to prevent auto-resume after death
+                    ActiveSessionId = null;
+                    CurrentSession = null;
+                    
                     Message = sessionData.Player.Health <= 0 
                         ? "MISSION FAILED\n\nYou were eliminated.\n\nPress OK to continue."
                         : "MISSION SUCCESS\n\nTarget eliminated.\n\nPress OK to continue.";
@@ -1171,7 +1175,9 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 new TextBlockWidget(""),
                 new TextBlockWidget(Message ?? "Mission ended."),
                 new TextBlockWidget(""),
-                new ListWidget(new[] { "RETREAT" }).OnItemActivated(_ => {
+                new ListWidget(new[] { "OK" }).OnItemActivated(_ => {
+                    ActiveSessionId = null;
+                    CurrentSession = null;
                     RefreshOperator();
                     CurrentScreen = Screen.BaseCamp;
                 })

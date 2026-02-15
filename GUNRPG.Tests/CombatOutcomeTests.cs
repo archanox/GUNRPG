@@ -319,4 +319,44 @@ public class CombatOutcomeTests
         Assert.False(result.IsSuccess);
         Assert.Equal(ResultStatus.InvalidState, result.Status);
     }
+
+    [Fact]
+    public async Task GetOutcome_UsesSessionOperatorId_NotPlayerId()
+    {
+        // Arrange - create session with an explicit operator ID
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+        var explicitOperatorId = Guid.NewGuid();
+
+        var session = (await service.CreateSessionAsync(new SessionCreateRequest
+        {
+            Seed = 42,
+            OperatorId = explicitOperatorId
+        })).Value!;
+
+        // Advance session until completion
+        for (int i = 0; i < 100; i++)
+        {
+            var state = await service.GetStateAsync(session.Id);
+            if (state.Value!.Phase == SessionPhase.Completed)
+                break;
+
+            await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+            {
+                Intents = new IntentDto { Primary = PrimaryAction.Fire }
+            });
+
+            await service.AdvanceAsync(session.Id);
+        }
+
+        var loadedSession = SessionMapping.FromSnapshot(await store.LoadAsync(session.Id));
+        Assert.Equal(SessionPhase.Completed, loadedSession!.Phase);
+
+        // Act
+        var outcome = loadedSession.GetOutcome();
+
+        // Assert - outcome should use session's OperatorId, not Player.Id
+        Assert.Equal(explicitOperatorId, outcome.OperatorId.Value);
+        Assert.NotEqual(loadedSession.Player.Id, explicitOperatorId); // Verify they differ
+    }
 }
