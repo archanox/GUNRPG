@@ -5,18 +5,17 @@ using GUNRPG.Application.Results;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Intents;
+using GUNRPG.Core.Operators;
+using GUNRPG.Tests.Stubs;
 
 namespace GUNRPG.Tests;
 
-// NOTE: Tests pass null! for IOperatorEventStore parameter to CombatSessionService constructor.
-// This is safe because ValidateOperatorInInfilModeAsync has fail-open behavior when operator
-// event store is not available, allowing session-level validations to protect operations.
 public class CombatSessionServiceTests
 {
     [Fact]
     public async Task CreateSession_ReturnsPlanningState()
     {
-        var service = new CombatSessionService(new InMemoryCombatSessionStore(), null!);
+        var service = new CombatSessionService(new InMemoryCombatSessionStore());
 
         var state = (await service.CreateSessionAsync(new SessionCreateRequest { PlayerName = "Tester", Seed = 123, StartingDistance = 10 })).Value!;
 
@@ -30,7 +29,7 @@ public class CombatSessionServiceTests
     [Fact]
     public async Task CreateSession_WithOperatorId_PreservesOperatorId()
     {
-        var service = new CombatSessionService(new InMemoryCombatSessionStore(), null!);
+        var service = new CombatSessionService(new InMemoryCombatSessionStore());
         var operatorId = Guid.NewGuid();
 
         var state = (await service.CreateSessionAsync(new SessionCreateRequest
@@ -45,7 +44,7 @@ public class CombatSessionServiceTests
     [Fact]
     public async Task CreateSession_WithEmptyOperatorId_ReturnsValidationError()
     {
-        var service = new CombatSessionService(new InMemoryCombatSessionStore(), null!);
+        var service = new CombatSessionService(new InMemoryCombatSessionStore());
 
         var result = await service.CreateSessionAsync(new SessionCreateRequest
         {
@@ -61,7 +60,7 @@ public class CombatSessionServiceTests
     public async Task SubmitIntents_RecordsWithoutAdvancing()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
 
         var result = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
@@ -81,7 +80,7 @@ public class CombatSessionServiceTests
     public async Task Advance_ProgressesCombatTurn()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
 
         // Submit intents first
@@ -104,7 +103,7 @@ public class CombatSessionServiceTests
     [Fact]
     public async Task Advance_WithoutIntents_IsInvalid()
     {
-        var service = new CombatSessionService(new InMemoryCombatSessionStore(), null!);
+        var service = new CombatSessionService(new InMemoryCombatSessionStore());
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 5 })).Value!;
 
         var result = await service.AdvanceAsync(session.Id);
@@ -117,7 +116,7 @@ public class CombatSessionServiceTests
     public async Task Snapshot_RoundTripsThroughStore()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var created = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 11 })).Value!;
 
         var snapshot = await store.LoadAsync(created.Id);
@@ -133,7 +132,7 @@ public class CombatSessionServiceTests
     public async Task ApplyPetAction_MissionUpdatesStress()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 7 })).Value!;
 
         var petStateResult = await service.ApplyPetActionAsync(session.Id, new PetActionRequest
@@ -152,7 +151,7 @@ public class CombatSessionServiceTests
     public async Task Snapshot_RoundTrip_IsIdempotent()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var created = (await service.CreateSessionAsync(new SessionCreateRequest 
         { 
             PlayerName = "TestPlayer", 
@@ -209,7 +208,7 @@ public class CombatSessionServiceTests
     public async Task Snapshot_RehydrationWithPendingIntents_PreservesIntentData()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 123 })).Value!;
 
         // Submit player intents
@@ -261,7 +260,7 @@ public class CombatSessionServiceTests
     public async Task Snapshot_RehydrationWithRngState_PreservesDeterminism()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 999 })).Value!;
 
         // Submit and advance to modify RNG state
@@ -292,7 +291,7 @@ public class CombatSessionServiceTests
     public async Task PhaseTransition_Planning_To_Resolving_IsValid()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 50 })).Value!;
 
         Assert.Equal(SessionPhase.Planning, session.Phase);
@@ -314,7 +313,7 @@ public class CombatSessionServiceTests
     public async Task PhaseTransition_Completed_CannotAdvance()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 100 })).Value!;
 
         // Advance combat until it completes (simulate multiple rounds)
@@ -361,7 +360,7 @@ public class CombatSessionServiceTests
     public async Task Advance_WithoutIntents_ReturnsInvalidState()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 200 })).Value!;
 
         var result = await service.AdvanceAsync(session.Id);
@@ -375,7 +374,7 @@ public class CombatSessionServiceTests
     public async Task SubmitIntents_WhenNotInPlanningPhase_IsRejected()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 300 })).Value!;
 
         // Submit initial intents and advance
@@ -409,7 +408,7 @@ public class CombatSessionServiceTests
     public async Task CreateSession_WithProvidedId_PreservesId()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var expectedId = Guid.NewGuid();
 
         var result = await service.CreateSessionAsync(new SessionCreateRequest { Id = expectedId, Seed = 42 });
@@ -425,7 +424,7 @@ public class CombatSessionServiceTests
     [Fact]
     public async Task CreateSession_WithEmptyGuid_ReturnsValidationError()
     {
-        var service = new CombatSessionService(new InMemoryCombatSessionStore(), null!);
+        var service = new CombatSessionService(new InMemoryCombatSessionStore());
 
         var result = await service.CreateSessionAsync(new SessionCreateRequest { Id = Guid.Empty, Seed = 42 });
 
@@ -437,7 +436,7 @@ public class CombatSessionServiceTests
     public async Task CreateSession_WithDuplicateId_ReturnsError()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var id = Guid.NewGuid();
 
         var first = await service.CreateSessionAsync(new SessionCreateRequest { Id = id, Seed = 42 });
@@ -446,5 +445,173 @@ public class CombatSessionServiceTests
         var second = await service.CreateSessionAsync(new SessionCreateRequest { Id = id, Seed = 99 });
         Assert.False(second.IsSuccess);
         Assert.Equal(ResultStatus.InvalidState, second.Status);
+    }
+
+    [Fact]
+    public async Task SubmitIntents_WithOperatorInBaseMode_ReturnsInvalidStateError()
+    {
+        // Arrange
+        var store = new InMemoryCombatSessionStore();
+        var operatorEventStore = new StubOperatorEventStore();
+        var operatorId = Guid.NewGuid();
+        
+        // Setup operator in Base mode
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Base);
+        
+        var service = new CombatSessionService(store, operatorEventStore);
+        
+        // Create a session with this operator
+        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
+        { 
+            OperatorId = operatorId,
+            Seed = 123 
+        });
+        Assert.True(sessionResult.IsSuccess);
+        var session = sessionResult.Value!;
+
+        // Act - try to submit intents while operator is in Base mode
+        var result = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire, Movement = MovementAction.WalkToward }
+        });
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("Combat actions are only allowed when operator is in Infil mode", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task SubmitIntents_WithOperatorInInfilMode_Succeeds()
+    {
+        // Arrange
+        var store = new InMemoryCombatSessionStore();
+        var operatorEventStore = new StubOperatorEventStore();
+        var operatorId = Guid.NewGuid();
+        
+        // Setup operator in Infil mode
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil);
+        
+        var service = new CombatSessionService(store, operatorEventStore);
+        
+        // Create a session with this operator
+        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
+        { 
+            OperatorId = operatorId,
+            Seed = 123 
+        });
+        Assert.True(sessionResult.IsSuccess);
+        var session = sessionResult.Value!;
+
+        // Act - submit intents while operator is in Infil mode
+        var result = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire, Movement = MovementAction.WalkToward }
+        });
+
+        // Assert
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task Advance_WithOperatorInBaseMode_ReturnsInvalidStateError()
+    {
+        // Arrange
+        var store = new InMemoryCombatSessionStore();
+        var operatorEventStore = new StubOperatorEventStore();
+        var operatorId = Guid.NewGuid();
+        
+        // Setup operator in Base mode
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Base);
+        
+        var service = new CombatSessionService(store, operatorEventStore);
+        
+        // Create a session and submit intents without validation (simulate session created while in Infil, then operator died)
+        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
+        { 
+            OperatorId = operatorId,
+            Seed = 123 
+        });
+        Assert.True(sessionResult.IsSuccess);
+        var session = sessionResult.Value!;
+
+        // Change operator to Infil temporarily to submit intents
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil);
+        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire, Movement = MovementAction.WalkToward }
+        });
+
+        // Change operator back to Base mode (simulating death)
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Base);
+
+        // Act - try to advance while operator is in Base mode
+        var result = await service.AdvanceAsync(session.Id);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("Combat actions are only allowed when operator is in Infil mode", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task SubmitIntents_WithNonExistentOperator_ReturnsNotFoundError()
+    {
+        // Arrange
+        var store = new InMemoryCombatSessionStore();
+        var operatorEventStore = new StubOperatorEventStore();
+        var operatorId = Guid.NewGuid();
+        
+        // Setup operator as non-existent
+        operatorEventStore.SetupNonExistentOperator(OperatorId.FromGuid(operatorId));
+        
+        var service = new CombatSessionService(store, operatorEventStore);
+        
+        // Create a session with this operator
+        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
+        { 
+            OperatorId = operatorId,
+            Seed = 123 
+        });
+        Assert.True(sessionResult.IsSuccess);
+        var session = sessionResult.Value!;
+
+        // Act - try to submit intents with non-existent operator
+        var result = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire, Movement = MovementAction.WalkToward }
+        });
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.NotFound, result.Status);
+        Assert.Contains("Operator not found", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task SubmitIntents_WithoutOperatorEventStore_SkipsValidation()
+    {
+        // Arrange - no operator event store provided
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+        var operatorId = Guid.NewGuid();
+        
+        // Create a session with this operator
+        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
+        { 
+            OperatorId = operatorId,
+            Seed = 123 
+        });
+        Assert.True(sessionResult.IsSuccess);
+        var session = sessionResult.Value!;
+
+        // Act - submit intents without operator event store (validation should be skipped)
+        var result = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire, Movement = MovementAction.WalkToward }
+        });
+
+        // Assert - succeeds because validation is skipped
+        Assert.True(result.IsSuccess);
     }
 }

@@ -7,12 +7,10 @@ using GUNRPG.Core.Combat;
 using GUNRPG.Core.Equipment;
 using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
+using GUNRPG.Tests.Stubs;
 
 namespace GUNRPG.Tests;
 
-// NOTE: Tests pass null! for IOperatorEventStore parameter to CombatSessionService constructor.
-// This is safe because ValidateOperatorInInfilModeAsync has fail-open behavior when operator
-// event store is not available, allowing session-level validations to protect operations.
 public class CombatOutcomeTests
 {
     [Fact]
@@ -20,7 +18,7 @@ public class CombatOutcomeTests
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
         
         var loadedSession = SessionMapping.FromSnapshot(await store.LoadAsync(session.Id));
@@ -35,7 +33,7 @@ public class CombatOutcomeTests
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
 
         // Advance session until completion
@@ -70,7 +68,7 @@ public class CombatOutcomeTests
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         
         // Create session and force combat until completion
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 123 })).Value!;
@@ -106,7 +104,7 @@ public class CombatOutcomeTests
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 50 })).Value!;
 
         // Advance session until completion
@@ -156,7 +154,7 @@ public class CombatOutcomeTests
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 999 })).Value!;
 
         // Advance session until completion
@@ -290,7 +288,7 @@ public class CombatOutcomeTests
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store, null!);
+        var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 200 })).Value!;
 
         // Advance session until completion
