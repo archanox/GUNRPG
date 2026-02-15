@@ -214,8 +214,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         var operatorDto = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
         CurrentOperator = ParseOperator(operatorDto);
         
-        // Auto-resume combat if operator has active session
-        if (operatorDto.TryGetProperty("activeCombatSession", out var sessionJson) && sessionJson.ValueKind != JsonValueKind.Null)
+        // Auto-resume combat if operator has active session and is still in Infil mode
+        if (CurrentOperator?.CurrentMode == "Infil" &&
+            operatorDto.TryGetProperty("activeCombatSession", out var sessionJson) && 
+            sessionJson.ValueKind != JsonValueKind.Null)
         {
             CurrentSession = ParseSession(sessionJson, options);
             ActiveSessionId = CurrentSession?.Id;
@@ -945,8 +947,9 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 var operatorDto = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
                 CurrentOperator = ParseOperator(operatorDto);
                 
-                // Auto-resume combat if operator has active session and we're not already in combat
+                // Auto-resume combat if operator has active session, is still in Infil mode, and we're not already in combat
                 if (CurrentScreen != Screen.CombatSession && 
+                    CurrentOperator?.CurrentMode == "Infil" &&
                     operatorDto.TryGetProperty("activeCombatSession", out var sessionJson) && 
                     sessionJson.ValueKind != JsonValueKind.Null)
                 {
