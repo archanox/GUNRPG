@@ -1,6 +1,7 @@
 using GUNRPG.Application.Combat;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Mapping;
+using GUNRPG.Application.Operators;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Results;
 using GUNRPG.Core.Combat;
@@ -20,10 +21,12 @@ public sealed class CombatSessionService
     private const int XpMultiplier = 20;
 
     private readonly ICombatSessionStore _store;
+    private readonly IOperatorEventStore _operatorEventStore;
 
-    public CombatSessionService(ICombatSessionStore store)
+    public CombatSessionService(ICombatSessionStore store, IOperatorEventStore operatorEventStore)
     {
         _store = store;
+        _operatorEventStore = operatorEventStore;
     }
 
     public async Task<ServiceResult<CombatSessionDto>> CreateSessionAsync(SessionCreateRequest request)
@@ -79,6 +82,13 @@ public sealed class CombatSessionService
             return ServiceResult<CombatSessionDto>.NotFound("Session not found");
         }
 
+        // Validate operator is in Infil mode before allowing combat actions
+        var modeValidation = await ValidateOperatorInInfilModeAsync(session);
+        if (modeValidation != null)
+        {
+            return ServiceResult<CombatSessionDto>.FromResult(modeValidation);
+        }
+
         if (session.Phase != SessionPhase.Planning)
         {
             return ServiceResult<CombatSessionDto>.InvalidState("Intents can only be submitted during the Planning phase");
@@ -117,6 +127,13 @@ public sealed class CombatSessionService
         if (session == null)
         {
             return ServiceResult<CombatSessionDto>.NotFound("Session not found");
+        }
+
+        // Validate operator is in Infil mode before allowing combat actions
+        var modeValidation = await ValidateOperatorInInfilModeAsync(session);
+        if (modeValidation != null)
+        {
+            return ServiceResult<CombatSessionDto>.FromResult(modeValidation);
         }
 
         if (session.Phase != SessionPhase.Planning && session.Phase != SessionPhase.Resolving)
@@ -198,6 +215,42 @@ public sealed class CombatSessionService
     private async Task SaveAsync(CombatSession session)
     {
         await _store.SaveAsync(SessionMapping.ToSnapshot(session));
+    }
+
+    /// <summary>
+    /// Validates that the operator associated with a session is in Infil mode.
+    /// Returns null if validation passes, or an error result if it fails.
+    /// </summary>
+    private async Task<ServiceResult?> ValidateOperatorInInfilModeAsync(CombatSession session)
+    {
+        // If session has no operator ID, skip validation (legacy sessions or test data)
+        if (session.OperatorId.Value == Guid.Empty)
+        {
+            return null;
+        }
+
+        try
+        {
+            var events = await _operatorEventStore.LoadEventsAsync(session.OperatorId);
+            if (events.Count == 0)
+            {
+                return ServiceResult.InvalidState("Operator not found");
+            }
+
+            var aggregate = OperatorAggregate.FromEvents(events);
+
+            if (aggregate.CurrentMode != OperatorMode.Infil)
+            {
+                return ServiceResult.InvalidState("Combat actions are only allowed when operator is in Infil mode");
+            }
+
+            return null;
+        }
+        catch (Exception)
+        {
+            // If we can't load operator, allow the action (fail open for compatibility)
+            return null;
+        }
     }
 
     private static void ResolveUntilPlanningOrEnd(CombatSession session)

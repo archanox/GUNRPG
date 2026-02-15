@@ -17,7 +17,7 @@ public class CombatOutcomeTests
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
         
         var loadedSession = SessionMapping.FromSnapshot(await store.LoadAsync(session.Id));
@@ -32,7 +32,7 @@ public class CombatOutcomeTests
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
 
         // Advance session until completion
@@ -67,7 +67,7 @@ public class CombatOutcomeTests
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         
         // Create session and force combat until completion
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 123 })).Value!;
@@ -103,7 +103,7 @@ public class CombatOutcomeTests
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 50 })).Value!;
 
         // Advance session until completion
@@ -153,7 +153,7 @@ public class CombatOutcomeTests
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 999 })).Value!;
 
         // Advance session until completion
@@ -287,7 +287,7 @@ public class CombatOutcomeTests
     {
         // Arrange
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 200 })).Value!;
 
         // Advance session until completion

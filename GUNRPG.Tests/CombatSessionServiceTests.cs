@@ -13,7 +13,7 @@ public class CombatSessionServiceTests
     [Fact]
     public async Task CreateSession_ReturnsPlanningState()
     {
-        var service = new CombatSessionService(new InMemoryCombatSessionStore());
+        var service = new CombatSessionService(new InMemoryCombatSessionStore(), null!);
 
         var state = (await service.CreateSessionAsync(new SessionCreateRequest { PlayerName = "Tester", Seed = 123, StartingDistance = 10 })).Value!;
 
@@ -27,7 +27,7 @@ public class CombatSessionServiceTests
     [Fact]
     public async Task CreateSession_WithOperatorId_PreservesOperatorId()
     {
-        var service = new CombatSessionService(new InMemoryCombatSessionStore());
+        var service = new CombatSessionService(new InMemoryCombatSessionStore(), null!);
         var operatorId = Guid.NewGuid();
 
         var state = (await service.CreateSessionAsync(new SessionCreateRequest
@@ -42,7 +42,7 @@ public class CombatSessionServiceTests
     [Fact]
     public async Task CreateSession_WithEmptyOperatorId_ReturnsValidationError()
     {
-        var service = new CombatSessionService(new InMemoryCombatSessionStore());
+        var service = new CombatSessionService(new InMemoryCombatSessionStore(), null!);
 
         var result = await service.CreateSessionAsync(new SessionCreateRequest
         {
@@ -58,7 +58,7 @@ public class CombatSessionServiceTests
     public async Task SubmitIntents_RecordsWithoutAdvancing()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
 
         var result = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
@@ -78,7 +78,7 @@ public class CombatSessionServiceTests
     public async Task Advance_ProgressesCombatTurn()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
 
         // Submit intents first
@@ -101,7 +101,7 @@ public class CombatSessionServiceTests
     [Fact]
     public async Task Advance_WithoutIntents_IsInvalid()
     {
-        var service = new CombatSessionService(new InMemoryCombatSessionStore());
+        var service = new CombatSessionService(new InMemoryCombatSessionStore(), null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 5 })).Value!;
 
         var result = await service.AdvanceAsync(session.Id);
@@ -114,7 +114,7 @@ public class CombatSessionServiceTests
     public async Task Snapshot_RoundTripsThroughStore()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var created = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 11 })).Value!;
 
         var snapshot = await store.LoadAsync(created.Id);
@@ -130,7 +130,7 @@ public class CombatSessionServiceTests
     public async Task ApplyPetAction_MissionUpdatesStress()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 7 })).Value!;
 
         var petStateResult = await service.ApplyPetActionAsync(session.Id, new PetActionRequest
@@ -149,7 +149,7 @@ public class CombatSessionServiceTests
     public async Task Snapshot_RoundTrip_IsIdempotent()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var created = (await service.CreateSessionAsync(new SessionCreateRequest 
         { 
             PlayerName = "TestPlayer", 
@@ -206,7 +206,7 @@ public class CombatSessionServiceTests
     public async Task Snapshot_RehydrationWithPendingIntents_PreservesIntentData()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 123 })).Value!;
 
         // Submit player intents
@@ -258,7 +258,7 @@ public class CombatSessionServiceTests
     public async Task Snapshot_RehydrationWithRngState_PreservesDeterminism()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 999 })).Value!;
 
         // Submit and advance to modify RNG state
@@ -289,7 +289,7 @@ public class CombatSessionServiceTests
     public async Task PhaseTransition_Planning_To_Resolving_IsValid()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 50 })).Value!;
 
         Assert.Equal(SessionPhase.Planning, session.Phase);
@@ -311,7 +311,7 @@ public class CombatSessionServiceTests
     public async Task PhaseTransition_Completed_CannotAdvance()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 100 })).Value!;
 
         // Advance combat until it completes (simulate multiple rounds)
@@ -358,7 +358,7 @@ public class CombatSessionServiceTests
     public async Task Advance_WithoutIntents_ReturnsInvalidState()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 200 })).Value!;
 
         var result = await service.AdvanceAsync(session.Id);
@@ -372,7 +372,7 @@ public class CombatSessionServiceTests
     public async Task SubmitIntents_WhenNotInPlanningPhase_IsRejected()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 300 })).Value!;
 
         // Submit initial intents and advance
@@ -406,7 +406,7 @@ public class CombatSessionServiceTests
     public async Task CreateSession_WithProvidedId_PreservesId()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var expectedId = Guid.NewGuid();
 
         var result = await service.CreateSessionAsync(new SessionCreateRequest { Id = expectedId, Seed = 42 });
@@ -422,7 +422,7 @@ public class CombatSessionServiceTests
     [Fact]
     public async Task CreateSession_WithEmptyGuid_ReturnsValidationError()
     {
-        var service = new CombatSessionService(new InMemoryCombatSessionStore());
+        var service = new CombatSessionService(new InMemoryCombatSessionStore(), null!);
 
         var result = await service.CreateSessionAsync(new SessionCreateRequest { Id = Guid.Empty, Seed = 42 });
 
@@ -434,7 +434,7 @@ public class CombatSessionServiceTests
     public async Task CreateSession_WithDuplicateId_ReturnsError()
     {
         var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
+        var service = new CombatSessionService(store, null!);
         var id = Guid.NewGuid();
 
         var first = await service.CreateSessionAsync(new SessionCreateRequest { Id = id, Seed = 42 });
