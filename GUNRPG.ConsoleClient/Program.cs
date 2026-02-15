@@ -781,7 +781,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     new TextBlockWidget($"  AMMO: {player.CurrentAmmo}/{player.MagazineSize} {adsStatus}"),
                     new TextBlockWidget("  "),
                     new TextBlockWidget($"  {coverVisual}"),
-                    new TextBlockWidget($"  MOVE: {player.CurrentMovement}")
+                    new TextBlockWidget($"  MOVE: {player.MovementState}")
                 ])),
                 new TextBlockWidget("    "),
                 // Enemy column
@@ -790,7 +790,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                     new TextBlockWidget("  "),
                     enemyHpBar,
                     new TextBlockWidget($"  AMMO: {enemy.CurrentAmmo}/{enemy.MagazineSize}"),
-                    new TextBlockWidget($"  DIST: {player.DistanceToOpponent:F1}m"),
+                    new TextBlockWidget($"  DIST: {player.DistanceToOpponent:F2}m"),
                     new TextBlockWidget($"  COVER: {enemy.CurrentCover}")
                 ]))
             ]),
