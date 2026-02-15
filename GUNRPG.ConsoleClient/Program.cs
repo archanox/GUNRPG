@@ -637,31 +637,33 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         catch (HttpRequestException ex) when (ex.Message.Contains("404"))
         {
             // Session doesn't exist - this can happen if operator was created before session creation was implemented
-            // Force end the infil by processing a failed outcome to reset the operator to Base mode
+            // or if the session was deleted/corrupted. Force end the infil to reset the operator to Base mode.
             ErrorMessage = "Combat session not found - forcing exfil";
             Message = $"Infil session not found in database.\n\nThis can happen with operators created before the latest updates.\nForcing exfil to reset operator state.\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
             
-            // Try to force-end the infil by processing a "died" outcome
+            // Use /infil/abort instead of /infil/outcome because abort doesn't require the session to exist.
+            // /infil/outcome requires loading the session to get the combat outcome, which would fail with 404.
             if (CurrentOperator?.Id != null)
             {
                 try
                 {
-                    var request = new { SessionId = ActiveSessionId };
-                    client.PostAsJsonAsync($"operators/{CurrentOperator.Id}/infil/outcome", request).GetAwaiter().GetResult();
-                    LoadOperator(CurrentOperator.Id);  // Reload operator to get updated state
+                    using var abortResponse = client.PostAsync($"operators/{CurrentOperator.Id}/infil/abort", null).GetAwaiter().GetResult();
+                    if (abortResponse.IsSuccessStatusCode)
+                    {
+                        LoadOperator(CurrentOperator.Id);  // Reload operator to get updated state
+                    }
                 }
                 catch
                 {
-                    // If that fails, just clear the local session ID
-                    ActiveSessionId = null;
+                    // If abort fails, operator may already be in Base mode or something else went wrong
                 }
             }
-            else
-            {
-                ActiveSessionId = null;
-            }
+            
+            // Clear local session state regardless of abort success
+            ActiveSessionId = null;
+            CurrentSession = null;
         }
         catch (Exception ex)
         {
@@ -1520,6 +1522,35 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             {
                 if (!sessionStateResponse.IsSuccessStatusCode)
                 {
+                    // Session doesn't exist - use /infil/abort to end the infil without requiring the session
+                    if (CurrentOperatorId.HasValue)
+                    {
+                        try
+                        {
+                            using var abortResponse = client.PostAsync($"operators/{CurrentOperatorId.Value}/infil/abort", null).GetAwaiter().GetResult();
+                            ActiveSessionId = null;
+                            CurrentSession = null;
+                            RefreshOperator();
+                            
+                            if (abortResponse.IsSuccessStatusCode)
+                            {
+                                Message = "Session not found.\nInfil aborted.\nReturning to base.\n\nPress OK to continue.";
+                            }
+                            else
+                            {
+                                Message = "Session not found.\nReturning to base.\n\nPress OK to continue.";
+                            }
+                            CurrentScreen = Screen.Message;
+                            ReturnScreen = Screen.BaseCamp;
+                            return;
+                        }
+                        catch
+                        {
+                            // If abort fails, just refresh and go to BaseCamp
+                        }
+                    }
+                    ActiveSessionId = null;
+                    CurrentSession = null;
                     RefreshOperator();
                     CurrentScreen = Screen.BaseCamp;
                     return;
