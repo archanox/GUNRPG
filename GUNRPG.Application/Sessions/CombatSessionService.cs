@@ -234,7 +234,7 @@ public sealed class CombatSessionService
             var events = await _operatorEventStore.LoadEventsAsync(session.OperatorId);
             if (events.Count == 0)
             {
-                return ServiceResult.InvalidState("Operator not found");
+                return ServiceResult.NotFound("Operator not found");
             }
 
             var aggregate = OperatorAggregate.FromEvents(events);
