@@ -77,20 +77,6 @@ public class OperatorsController : ControllerBase
         };
     }
 
-    [HttpPost("{id:guid}/infil/abort")]
-    public async Task<ActionResult<ApiOperatorStateDto>> AbortInfil(Guid id)
-    {
-        var result = await _service.AbortInfilAsync(id);
-        
-        return result.Status switch
-        {
-            ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
-            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
-            ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
-            _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
-        };
-    }
-
     [HttpPost("{id:guid}/infil/outcome")]
     public async Task<ActionResult<ApiOperatorStateDto>> ProcessOutcome(Guid id, [FromBody] ApiProcessOutcomeRequest? request)
     {

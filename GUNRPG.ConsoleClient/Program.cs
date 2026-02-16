@@ -536,12 +536,13 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     {
         try
         {
-            // Step 1: Start the infil (locks operator in Infil mode)
+            // Start the infil - server now creates the combat session atomically
             var response = client.PostAsync($"operators/{CurrentOperatorId}/infil/start", null).GetAwaiter().GetResult();
             
             if (!response.IsSuccessStatusCode)
             {
-                ErrorMessage = $"Failed to infil: {response.StatusCode}";
+                var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                ErrorMessage = $"Failed to infil: {response.StatusCode} - {errorContent}";
                 Message = $"Infil failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
@@ -551,45 +552,6 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             var result = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
             ActiveSessionId = result.GetProperty("sessionId").GetGuid();
             CurrentOperator = ParseOperator(result.GetProperty("operator"));
-            
-            // Step 2: Create the combat session with the session ID from infil
-            var sessionRequest = new
-            {
-                id = ActiveSessionId,
-                operatorId = CurrentOperatorId,
-                playerName = CurrentOperator!.Name,
-                weaponName = CurrentOperator.EquippedWeaponName,
-                playerLevel = 1,
-                playerMaxHealth = CurrentOperator.MaxHealth,
-                playerCurrentHealth = CurrentOperator.CurrentHealth
-            };
-            
-            var sessionResponse = client.PostAsJsonAsync("sessions", sessionRequest, options).GetAwaiter().GetResult();
-            if (!sessionResponse.IsSuccessStatusCode)
-            {
-                var errorContent = sessionResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                ErrorMessage = $"Failed to create combat session: {sessionResponse.StatusCode} - {errorContent}";
-                Message = $"Combat session creation failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
-                CurrentScreen = Screen.Message;
-                ReturnScreen = Screen.BaseCamp;
-                
-                // If session creation failed, try to abort the infil to reset operator state
-                if (CurrentOperatorId.HasValue)
-                {
-                    try
-                    {
-                        var abortRequest = new { SessionId = ActiveSessionId };
-                        client.PostAsJsonAsync($"operators/{CurrentOperatorId.Value}/infil/outcome", abortRequest).GetAwaiter().GetResult();
-                        LoadOperator(CurrentOperatorId.Value);  // Reload operator
-                        ActiveSessionId = null;
-                    }
-                    catch
-                    {
-                        // Silently fail - user will see the original error
-                    }
-                }
-                return;
-            }
             
             // Stay in Field Ops after infil; let player decide when to engage combat.
             CurrentScreen = Screen.BaseCamp;
@@ -1486,29 +1448,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Guard against null sessionId - API requires non-null Guid
             if (!sessionId.HasValue)
             {
-                if (CurrentOperatorId.HasValue)
-                {
-                    using var abortResponse = client.PostAsync($"operators/{CurrentOperatorId.Value}/infil/abort", null).GetAwaiter().GetResult();
-                    if (abortResponse.IsSuccessStatusCode)
-                    {
-                        ActiveSessionId = null;
-                        CurrentSession = null;
-                        RefreshOperator();
-                        Message = "Exfil processed.\nReturning to base.\n\nPress OK to continue.";
-                        CurrentScreen = Screen.Message;
-                        ReturnScreen = Screen.BaseCamp;
-                        return;
-                    }
-
-                    var failedMessage = $"Failed to exfil: {abortResponse.StatusCode} {abortResponse.ReasonPhrase}";
-                    ErrorMessage = failedMessage;
-                    Message = failedMessage;
-                    CurrentScreen = Screen.Message;
-                    ReturnScreen = Screen.BaseCamp;
-                    return;
-                }
-
-                Message = "Unable to exfil: operator state is invalid.";
+                Message = "Unable to exfil: no active mission session found.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
                 return;
