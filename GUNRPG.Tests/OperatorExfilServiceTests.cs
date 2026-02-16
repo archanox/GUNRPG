@@ -596,7 +596,7 @@ public class OperatorExfilServiceTests : IDisposable
         var aggregate = loadAfter.Value!;
         
         Assert.True(aggregate.IsDead);
-        Assert.Equal(0, aggregate.CurrentHealth);
+        Assert.Equal(aggregate.MaxHealth, aggregate.CurrentHealth); // Health restored to full after death
         Assert.Equal(0, aggregate.ExfilStreak); // Streak should be reset
         
         // Should have: OperatorCreated + (InfilStarted + XpGained + ExfilSucceeded + InfilEnded) x 2 + InfilStarted + OperatorDied + InfilEnded = 12 events
@@ -859,7 +859,7 @@ public class OperatorExfilServiceTests : IDisposable
         var aggregate3 = loadResult3.Value!;
         
         Assert.True(aggregate3.IsDead);
-        Assert.Equal(0, aggregate3.CurrentHealth);
+        Assert.Equal(aggregate3.MaxHealth, aggregate3.CurrentHealth); // Health restored to full after death
         Assert.Equal(0, aggregate3.ExfilStreak); // Reset on death
         Assert.Equal(350, aggregate3.TotalXp); // Total from previous outcomes (150 + 200); death event doesn't apply XP
         
