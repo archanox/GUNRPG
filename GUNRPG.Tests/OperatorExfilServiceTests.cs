@@ -367,105 +367,115 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.True(result.IsSuccess);
         var loadResult = await _service.LoadOperatorAsync(operatorId);
         var aggregate = loadResult.Value!;
-        Assert.True(aggregate.IsDead);
+        Assert.False(aggregate.IsDead); // Operator respawns after death
         Assert.Equal(aggregate.MaxHealth, aggregate.CurrentHealth); // Health restored to full after death
         Assert.Equal(0, aggregate.ExfilStreak);
     }
 
     [Fact]
-    public async Task DeadOperator_CannotGainXp()
+    public async Task RespawnedOperator_CanGainXp()
     {
-        // Arrange
+        // Arrange - operator dies and respawns
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
         await _service.KillOperatorAsync(operatorId, "Combat casualty");
 
-        // Act
-        var result = await _service.ApplyXpAsync(operatorId, 100, "Should fail");
+        // Act - respawned operator can gain XP
+        var result = await _service.ApplyXpAsync(operatorId, 100, "Post-respawn XP");
 
         // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Contains("dead operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.IsSuccess);
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(100, loadResult.Value!.TotalXp);
     }
 
     [Fact]
-    public async Task DeadOperator_CannotBeHealed()
+    public async Task RespawnedOperator_DoesNotNeedHealing()
     {
-        // Arrange
+        // Arrange - operator dies and respawns with full health
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
         await _service.KillOperatorAsync(operatorId, "Combat casualty");
 
-        // Act
-        var result = await _service.TreatWoundsAsync(operatorId, 50f);
+        // Act - check health after respawn
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        var aggregate = loadResult.Value!;
 
-        // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Contains("dead operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        // Assert - respawned at full health
+        Assert.Equal(aggregate.MaxHealth, aggregate.CurrentHealth);
+        Assert.False(aggregate.IsDead);
     }
 
     [Fact]
-    public async Task DeadOperator_CannotChangeLoadout()
+    public async Task RespawnedOperator_CanChangeLoadout()
     {
-        // Arrange
+        // Arrange - operator dies and respawns
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
         await _service.KillOperatorAsync(operatorId, "Combat casualty");
 
-        // Act
+        // Act - respawned operator can change loadout
         var result = await _service.ChangeLoadoutAsync(operatorId, "AK-47");
 
         // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Contains("dead operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.IsSuccess);
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal("AK-47", loadResult.Value!.EquippedWeaponName);
     }
 
     [Fact]
-    public async Task DeadOperator_CannotUnlockPerks()
+    public async Task RespawnedOperator_CanUnlockPerks()
     {
-        // Arrange
+        // Arrange - operator dies and respawns
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
         await _service.KillOperatorAsync(operatorId, "Combat casualty");
 
-        // Act
+        // Act - respawned operator can unlock perks
         var result = await _service.UnlockPerkAsync(operatorId, "Fast Reload");
 
         // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Contains("dead operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.IsSuccess);
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        Assert.Contains("Fast Reload", loadResult.Value!.UnlockedPerks);
     }
 
     [Fact]
-    public async Task DeadOperator_CannotCompleteExfil()
+    public async Task RespawnedOperator_CanCompleteExfil()
     {
-        // Arrange
+        // Arrange - operator dies, respawns, and goes on another mission
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
         await _service.KillOperatorAsync(operatorId, "Combat casualty");
 
-        // Act
+        // Start a new infil after respawn
+        await _service.StartInfilAsync(operatorId);
+
+        // Act - respawned operator can complete exfil
         var result = await _service.CompleteExfilAsync(operatorId);
 
         // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Contains("dead", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.IsSuccess);
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(1, loadResult.Value!.ExfilStreak); // New streak starts
     }
 
     [Fact]
-    public async Task KillOperatorAsync_CannotKillAlreadyDead()
+    public async Task KillOperatorAsync_CanKillRespawnedOperator()
     {
         // Arrange
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
         await _service.KillOperatorAsync(operatorId, "First death");
 
-        // Act
+        // Act - respawned operator can be killed again
         var result = await _service.KillOperatorAsync(operatorId, "Second death");
 
         // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Contains("already dead", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.IsSuccess);
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        Assert.False(loadResult.Value!.IsDead); // Respawns again after second death
+        Assert.Equal(0, loadResult.Value!.ExfilStreak); // Streak reset
     }
 
     [Fact]
@@ -595,7 +605,7 @@ public class OperatorExfilServiceTests : IDisposable
         var loadAfter = await _service.LoadOperatorAsync(operatorId);
         var aggregate = loadAfter.Value!;
         
-        Assert.True(aggregate.IsDead);
+        Assert.False(aggregate.IsDead); // Operator respawns after death
         Assert.Equal(aggregate.MaxHealth, aggregate.CurrentHealth); // Health restored to full after death
         Assert.Equal(0, aggregate.ExfilStreak); // Streak should be reset
         
@@ -678,15 +688,19 @@ public class OperatorExfilServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ProcessCombatOutcome_RejectsOutcomeForDeadOperator()
+    public async Task ProcessCombatOutcome_RespawnedOperator_CanProcessNewOutcome()
     {
-        // Arrange
+        // Arrange - operator dies, respawns, and goes on a new mission
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
         await _service.KillOperatorAsync(operatorId, "Previous death");
+        
+        // Respawned operator can start new infil
+        var infilResult = await _service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value!;
 
         var outcome = new Application.Combat.CombatOutcome(
-            sessionId: Guid.NewGuid(), // Using random ID as this test is for a dead operator
+            sessionId: sessionId,
             operatorId: operatorId,
             operatorDied: false,
             damageTaken: 0f,
@@ -695,13 +709,13 @@ public class OperatorExfilServiceTests : IDisposable
             isVictory: true,
             completedAt: DateTimeOffset.UtcNow);
 
-        // Act
+        // Act - respawned operator can process outcomes
         var result = await _service.ProcessCombatOutcomeAsync(outcome, playerConfirmed: true);
 
         // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Equal(ResultStatus.InvalidState, result.Status);
-        Assert.Contains("dead operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.True(result.IsSuccess);
+        var loadResult = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(100, loadResult.Value!.TotalXp); // XP from new mission
     }
 
     [Fact]
@@ -853,12 +867,12 @@ public class OperatorExfilServiceTests : IDisposable
 
         await _service.ProcessCombatOutcomeAsync(fatalCombat, playerConfirmed: true);
 
-        // Step 8: Final reload - operator should be dead with reset streak
+        // Step 8: Final reload - operator should be respawned with full health and reset streak
         var loadResult3 = await _service.LoadOperatorAsync(operatorId);
         Assert.True(loadResult3.IsSuccess);
         var aggregate3 = loadResult3.Value!;
         
-        Assert.True(aggregate3.IsDead);
+        Assert.False(aggregate3.IsDead); // Operator respawns after death
         Assert.Equal(aggregate3.MaxHealth, aggregate3.CurrentHealth); // Health restored to full after death
         Assert.Equal(0, aggregate3.ExfilStreak); // Reset on death
         Assert.Equal(350, aggregate3.TotalXp); // Total from previous outcomes (150 + 200); death event doesn't apply XP

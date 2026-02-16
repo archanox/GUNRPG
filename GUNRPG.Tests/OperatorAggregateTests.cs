@@ -257,7 +257,7 @@ public class OperatorAggregateTests
         var aggregate = OperatorAggregate.FromEvents(events);
 
         // Assert
-        Assert.True(aggregate.IsDead);
+        Assert.False(aggregate.IsDead); // Operator respawns after death
         Assert.Equal(aggregate.MaxHealth, aggregate.CurrentHealth); // Health restored to full after death
         Assert.Equal(0, aggregate.ExfilStreak);
     }
