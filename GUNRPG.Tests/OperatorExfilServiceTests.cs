@@ -368,7 +368,7 @@ public class OperatorExfilServiceTests : IDisposable
         var loadResult = await _service.LoadOperatorAsync(operatorId);
         var aggregate = loadResult.Value!;
         Assert.True(aggregate.IsDead);
-        Assert.Equal(0, aggregate.CurrentHealth);
+        Assert.Equal(aggregate.MaxHealth, aggregate.CurrentHealth); // Health restored to full after death
         Assert.Equal(0, aggregate.ExfilStreak);
     }
 

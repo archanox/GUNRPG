@@ -224,7 +224,7 @@ public sealed class OperatorAggregate
 
             case OperatorDiedEvent:
                 IsDead = true;
-                CurrentHealth = 0;
+                CurrentHealth = MaxHealth; // Restore health when returning to base after death
                 ExfilStreak = 0;
                 // Death automatically ends infil if active
                 if (CurrentMode == OperatorMode.Infil)
