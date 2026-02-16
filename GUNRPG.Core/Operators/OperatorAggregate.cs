@@ -223,7 +223,9 @@ public sealed class OperatorAggregate
                 break;
 
             case OperatorDiedEvent:
-                IsDead = true;
+                // Operator "died" in mission but is revived/respawned at base with full health
+                // This allows continued gameplay after mission failure
+                IsDead = false; // Allow operator to continue after respawn
                 CurrentHealth = MaxHealth; // Restore health when returning to base after death
                 ExfilStreak = 0;
                 // Death automatically ends infil if active
