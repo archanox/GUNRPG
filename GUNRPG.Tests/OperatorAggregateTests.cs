@@ -244,7 +244,7 @@ public class OperatorAggregateTests
     }
 
     [Fact]
-    public void OperatorDied_ShouldMarkDeadAndResetStreak()
+    public void OperatorDied_ShouldRespawnWithFullHealthAndResetStreak()
     {
         // Arrange
         var operatorId = OperatorId.NewId();
