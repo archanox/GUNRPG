@@ -510,7 +510,6 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 new TextBlockWidget("  THREAT LEVEL: Variable"),
                 new TextBlockWidget(""),
                 new TextBlockWidget("  WARNING: Death is permanent."),
-                new TextBlockWidget("           Health does not regenerate."),
                 new TextBlockWidget(""),
                 new TextBlockWidget("  Select action:"),
                 new TextBlockWidget(""),

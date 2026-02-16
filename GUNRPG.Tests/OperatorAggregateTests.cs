@@ -258,7 +258,7 @@ public class OperatorAggregateTests
 
         // Assert
         Assert.True(aggregate.IsDead);
-        Assert.Equal(0, aggregate.CurrentHealth);
+        Assert.Equal(aggregate.MaxHealth, aggregate.CurrentHealth); // Health restored to full after death
         Assert.Equal(0, aggregate.ExfilStreak);
     }
 
