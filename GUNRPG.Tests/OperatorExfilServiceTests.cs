@@ -353,7 +353,7 @@ public class OperatorExfilServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task KillOperatorAsync_ShouldMarkDead()
+    public async Task KillOperatorAsync_ShouldRespawnWithFullHealthAndResetStreak()
     {
         // Arrange
         var createResult = await _service.CreateOperatorAsync("TestOperator");

@@ -509,7 +509,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 new TextBlockWidget("  TIME LIMIT: 30 minutes"),
                 new TextBlockWidget("  THREAT LEVEL: Variable"),
                 new TextBlockWidget(""),
-                new TextBlockWidget("  WARNING: Death is permanent."),
+                new TextBlockWidget("  WARNING: On death, your streak resets and you are returned to base."),
                 new TextBlockWidget(""),
                 new TextBlockWidget("  Select action:"),
                 new TextBlockWidget(""),
