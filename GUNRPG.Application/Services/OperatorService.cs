@@ -130,6 +130,14 @@ public sealed class OperatorService
         var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
         if (!loadResult.IsSuccess)
         {
+            // Operator load failed after infil was started - fail the infil to keep state consistent
+            var loadErrorDetails = loadResult.ErrorMessage ?? "Unknown error";
+            var failLoadResult = await _exfilService.FailInfilAsync(new OperatorId(operatorId), $"Operator load failed: {loadErrorDetails}");
+            if (failLoadResult.Status != ResultStatus.Success)
+            {
+                var cleanupError = failLoadResult.ErrorMessage ?? "Unknown error while failing infil";
+                Console.Error.WriteLine($"Failed to fail infil for operator {operatorId}: {cleanupError}");
+            }
             return ServiceResult<StartInfilResponse>.FromResult(loadResult);
         }
 
@@ -147,10 +155,14 @@ public sealed class OperatorService
         if (sessionResult.Status != ResultStatus.Success)
         {
             // Session creation failed - we need to fail the infil to keep state consistent
-            // Note: This is a best-effort cleanup; if this also fails, operator will be stuck
-            // but this is better than silently leaving them in a broken state
             var errorDetails = sessionResult.ErrorMessage ?? "Unknown error";
-            await _exfilService.FailInfilAsync(new OperatorId(operatorId), $"Session creation failed: {errorDetails}");
+            var failInfilResult = await _exfilService.FailInfilAsync(new OperatorId(operatorId), $"Session creation failed: {errorDetails}");
+            if (failInfilResult.Status != ResultStatus.Success)
+            {
+                // Log the failure to roll back infil so operators can be manually recovered
+                var cleanupError = failInfilResult.ErrorMessage ?? "Unknown error while failing infil";
+                Console.Error.WriteLine($"Failed to fail infil for operator {operatorId}: {cleanupError}");
+            }
             return ServiceResult<StartInfilResponse>.FromResult(sessionResult);
         }
 
