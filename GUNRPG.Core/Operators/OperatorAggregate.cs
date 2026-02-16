@@ -223,10 +223,10 @@ public sealed class OperatorAggregate
                 break;
 
             case OperatorDiedEvent:
-                // Operator "died" in mission but is revived/respawned at base with full health
+                // Operator "died" in mission but is respawned at base with full health
                 // This allows continued gameplay after mission failure
                 IsDead = false; // Allow operator to continue after respawn
-                CurrentHealth = MaxHealth; // Restore health when returning to base after death
+                CurrentHealth = MaxHealth;
                 ExfilStreak = 0;
                 // Death automatically ends infil if active
                 if (CurrentMode == OperatorMode.Infil)
