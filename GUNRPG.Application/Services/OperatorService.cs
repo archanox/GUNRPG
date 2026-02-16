@@ -117,40 +117,48 @@ public sealed class OperatorService
 
     public async Task<ServiceResult<StartInfilResponse>> StartInfilAsync(Guid operatorId)
     {
+        // Start the infil first to get the session ID and transition operator to Infil mode
         var result = await _exfilService.StartInfilAsync(new OperatorId(operatorId));
         if (result.Status != ResultStatus.Success)
         {
             return ServiceResult<StartInfilResponse>.FromResult(result);
         }
 
+        var sessionId = result.Value!;
+
+        // Load the operator to get session creation parameters
         var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
         if (!loadResult.IsSuccess)
         {
             return ServiceResult<StartInfilResponse>.FromResult(loadResult);
         }
 
+        var operatorAggregate = loadResult.Value!;
+
+        // Create the combat session atomically with the infil
+        var sessionRequest = new SessionCreateRequest
+        {
+            Id = sessionId,
+            OperatorId = operatorId,
+            PlayerName = operatorAggregate.Name
+        };
+
+        var sessionResult = await _sessionService.CreateSessionAsync(sessionRequest);
+        if (sessionResult.Status != ResultStatus.Success)
+        {
+            // Session creation failed - we need to fail the infil to keep state consistent
+            // Note: This is a best-effort cleanup; if this also fails, operator will be stuck
+            // but this is better than silently leaving them in a broken state
+            var errorDetails = sessionResult.ErrorMessage ?? "Unknown error";
+            await _exfilService.FailInfilAsync(new OperatorId(operatorId), $"Session creation failed: {errorDetails}");
+            return ServiceResult<StartInfilResponse>.FromResult(sessionResult);
+        }
+
         return ServiceResult<StartInfilResponse>.Success(new StartInfilResponse
         {
-            SessionId = result.Value!,
-            Operator = ToDto(loadResult.Value!)
+            SessionId = sessionId,
+            Operator = ToDto(operatorAggregate)
         });
-    }
-
-    public async Task<ServiceResult<OperatorStateDto>> AbortInfilAsync(Guid operatorId)
-    {
-        var result = await _exfilService.FailInfilAsync(new OperatorId(operatorId), "Mission aborted by operator");
-        if (result.Status != ResultStatus.Success)
-        {
-            return ServiceResult<OperatorStateDto>.FromResult(result);
-        }
-
-        var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
-        if (!loadResult.IsSuccess)
-        {
-            return ServiceResult<OperatorStateDto>.FromResult(loadResult);
-        }
-
-        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
     }
 
     public async Task<ServiceResult<OperatorStateDto>> ProcessCombatOutcomeAsync(Guid operatorId, ProcessOutcomeRequest request)
