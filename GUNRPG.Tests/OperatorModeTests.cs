@@ -372,6 +372,7 @@ public class OperatorModeTests : IDisposable
         Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Should stay in Infil mode
         Assert.Equal(1, aggregate.ExfilStreak);
         Assert.Equal(100, aggregate.TotalXp);
+        Assert.Null(aggregate.ActiveSessionId); // Should clear ActiveSessionId after victory to prevent auto-resume
     }
 
     [Fact]

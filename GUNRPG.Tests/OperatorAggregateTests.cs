@@ -263,6 +263,26 @@ public class OperatorAggregateTests
     }
 
     [Fact]
+    public void ExfilSucceeded_ShouldClearActiveSessionId()
+    {
+        // Arrange
+        var operatorId = OperatorId.NewId();
+        var sessionId = Guid.NewGuid();
+        var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
+        var evt2 = new InfilStartedEvent(operatorId, 1, sessionId, "AK-47", DateTimeOffset.UtcNow, evt1.Hash);
+        var evt3 = new ExfilSucceededEvent(operatorId, 2, evt2.Hash);
+
+        // Act
+        var events = new List<OperatorEvent> { evt1, evt2, evt3 };
+        var aggregate = OperatorAggregate.FromEvents(events);
+
+        // Assert
+        Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Should stay in Infil mode
+        Assert.Equal(1, aggregate.ExfilStreak); // Streak incremented
+        Assert.Null(aggregate.ActiveSessionId); // ActiveSessionId cleared to prevent auto-resume of completed session
+    }
+
+    [Fact]
     public void FromEvents_ShouldRollbackOnHashFailure()
     {
         // Arrange
