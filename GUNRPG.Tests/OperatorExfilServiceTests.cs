@@ -540,9 +540,10 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Equal(100, aggregate.TotalXp);
         Assert.Equal(1, aggregate.ExfilStreak);
         Assert.False(aggregate.IsDead);
+        Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Still in Infil after victory
         
-        // Should have: OperatorCreated + InfilStarted + XpGained + ExfilSucceeded + InfilEnded = 5 events
-        Assert.Equal(5, aggregate.Events.Count);
+        // Should have: OperatorCreated + InfilStarted + XpGained + ExfilSucceeded = 4 events (no InfilEnded after victory)
+        Assert.Equal(4, aggregate.Events.Count);
     }
 
     [Fact]
