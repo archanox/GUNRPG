@@ -505,9 +505,9 @@ public sealed class OperatorExfilService
     /// 
     /// Exfil Semantics:
     /// - Operator must be in Infil mode to process combat outcome
-    /// - If operator died: Emit OperatorDied + InfilEnded (failure) events (resets streak, marks IsDead, no XP awarded)
-    /// - If operator survived and is victorious: Apply XP (if any), emit ExfilSucceeded + InfilEnded (success) (increments streak)
-    /// - If operator survived but retreated/failed: Apply XP (if any), emit no exfil events (neutral outcome)
+    /// - If operator died: Emit OperatorDied + InfilEnded (failure) events (resets streak, marks IsDead, returns to Base mode)
+    /// - If operator survived and is victorious: Apply XP (if any), emit ExfilSucceeded (increments streak), STAY in Infil mode for next combat
+    /// - If operator survived but retreated/failed: Apply XP (if any), emit ExfilFailed + InfilEnded (resets streak, returns to Base mode)
     /// - If infil timer expired (30+ minutes), automatically fail the infil
     /// </summary>
     public async Task<ServiceResult> ProcessCombatOutcomeAsync(CombatOutcome outcome, bool playerConfirmed = true)
@@ -532,12 +532,8 @@ public sealed class OperatorExfilService
         if (aggregate.CurrentMode != OperatorMode.Infil)
             return ServiceResult.InvalidState("Cannot process combat outcome when not in Infil mode");
 
-        // Session ID must match the active infil session
-        if (aggregate.ActiveSessionId == null)
-            return ServiceResult.InvalidState("Cannot process combat outcome without an active infil session");
-
-        if (!Equals(aggregate.ActiveSessionId, outcome.SessionId))
-            return ServiceResult.ValidationError("Combat outcome session does not match active infil session");
+        // Note: We don't validate ActiveSessionId matches outcome.SessionId because multiple
+        // combat sessions can occur during a single infil (after victories, operator stays in Infil mode)
 
         // Check if infil timer has expired (30 minutes)
         if (aggregate.InfilStartTime.HasValue)
@@ -598,7 +594,8 @@ public sealed class OperatorExfilService
                 nextSequence++;
             }
 
-            // If operator achieved victory, emit exfil success event and end infil successfully
+            // If operator achieved victory, emit exfil success event but keep operator in Infil mode
+            // This allows them to continue fighting additional enemies
             if (outcome.IsVictory)
             {
                 var exfilEvent = new ExfilSucceededEvent(
@@ -607,18 +604,7 @@ public sealed class OperatorExfilService
                     previousHash);
                 
                 eventsToAppend.Add(exfilEvent);
-                previousHash = exfilEvent.Hash;
-                nextSequence++;
-
-                // End infil as success
-                var infilEndedEvent = new InfilEndedEvent(
-                    outcome.OperatorId,
-                    nextSequence,
-                    wasSuccessful: true,
-                    reason: "Exfil succeeded",
-                    previousHash: previousHash);
-                
-                eventsToAppend.Add(infilEndedEvent);
+                // Do NOT emit InfilEndedEvent - operator stays in Infil mode to fight next enemy
             }
             else
             {
