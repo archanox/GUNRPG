@@ -533,7 +533,9 @@ public sealed class OperatorExfilService
             return ServiceResult.InvalidState("Cannot process combat outcome when not in Infil mode");
 
         // Note: We don't validate ActiveSessionId matches outcome.SessionId because multiple
-        // combat sessions can occur during a single infil (after victories, operator stays in Infil mode)
+        // combat sessions can occur during a single infil (after victories, operator stays in Infil mode).
+        // The fact that the operator is in Infil mode is the key validation - this ensures they have
+        // an active infil and prevents processing outcomes when in Base mode.
 
         // Check if infil timer has expired (30 minutes)
         if (aggregate.InfilStartTime.HasValue)
