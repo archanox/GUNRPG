@@ -268,4 +268,58 @@ public sealed class OperatorServiceTests : IDisposable
         Assert.Equal(SessionPhase.Planning, op.ActiveCombatSession.Phase);
         Assert.Equal(0, op.ExfilStreak); // No streak increment
     }
+
+    [Fact]
+    public async Task CleanupCompletedSessionAsync_WhenGetOutcomeFails_ReturnsSuccessWithoutProcessing()
+    {
+        // Arrange: Create operator with completed session
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
+        var operatorId = createResult.Value!.Id;
+
+        var infilResult = await _operatorService.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value!.SessionId;
+
+        // Complete combat
+        for (int i = 0; i < 20; i++)
+        {
+            await _sessionService.SubmitPlayerIntentsAsync(sessionId, new SubmitIntentsRequest
+            {
+                Intents = new IntentDto { Primary = PrimaryAction.Fire }
+            });
+            var advanceResult = await _sessionService.AdvanceAsync(sessionId);
+            if (advanceResult.Value!.Phase == SessionPhase.Completed)
+                break;
+        }
+
+        // Delete the session to simulate GetCombatOutcomeAsync failure
+        await _sessionStore.DeleteAsync(sessionId);
+
+        // Act: Cleanup should succeed gracefully without processing
+        var cleanupResult = await _operatorService.CleanupCompletedSessionAsync(operatorId);
+        
+        // Assert: Cleanup returns success (non-blocking) even though outcome retrieval failed
+        Assert.True(cleanupResult.IsSuccess);
+
+        // Operator state should be unchanged (outcome not processed)
+        var operatorResult = await _operatorService.GetOperatorAsync(operatorId);
+        Assert.True(operatorResult.IsSuccess);
+        
+        // ActiveSessionId cleared by GetOperatorAsync due to missing session
+        Assert.Null(operatorResult.Value!.ActiveSessionId);
+        Assert.Equal(0, operatorResult.Value.ExfilStreak); // No streak increment
+    }
+
+    [Fact]
+    public async Task CleanupCompletedSessionAsync_WithNoActiveSession_ReturnsSuccessImmediately()
+    {
+        // Arrange: Create operator in Base mode (no active session)
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
+        var operatorId = createResult.Value!.Id;
+
+        // Act: Cleanup when there's no active session
+        var cleanupResult = await _operatorService.CleanupCompletedSessionAsync(operatorId);
+
+        // Assert: Should return success immediately without any processing
+        Assert.True(cleanupResult.IsSuccess);
+    }
 }
