@@ -552,9 +552,11 @@ public class OperatorExfilServiceTests : IDisposable
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
         
-        // Build up a streak first using ProcessCombatOutcomeAsync
+        // Start infil once
         var infilResult = await _service.StartInfilAsync(operatorId);
         var sessionId = infilResult.Value;
+        
+        // First victory - operator stays in Infil mode
         var firstOutcome = new Application.Combat.CombatOutcome(
             sessionId: sessionId,
             operatorId: operatorId,
@@ -567,8 +569,8 @@ public class OperatorExfilServiceTests : IDisposable
         var exfilResult1 = await _service.ProcessCombatOutcomeAsync(firstOutcome, playerConfirmed: true);
         Assert.True(exfilResult1.IsSuccess);
         
-        var infilResult2 = await _service.StartInfilAsync(operatorId);
-        var sessionId2 = infilResult2.Value;
+        // Second victory - operator still in Infil mode, use different session ID
+        var sessionId2 = Guid.NewGuid();
         var secondOutcome = new Application.Combat.CombatOutcome(
             sessionId: sessionId2,
             operatorId: operatorId,
@@ -584,8 +586,8 @@ public class OperatorExfilServiceTests : IDisposable
         var loadBefore = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(2, loadBefore.Value!.ExfilStreak);
 
-        var infilResult3 = await _service.StartInfilAsync(operatorId);
-        var sessionId3 = infilResult3.Value;
+        // Third combat - operator dies
+        var sessionId3 = Guid.NewGuid();
         var outcome = new Application.Combat.CombatOutcome(
             sessionId: sessionId3,
             operatorId: operatorId,
@@ -609,8 +611,8 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Equal(aggregate.MaxHealth, aggregate.CurrentHealth); // Health restored to full after death
         Assert.Equal(0, aggregate.ExfilStreak); // Streak should be reset
         
-        // Should have: OperatorCreated + (InfilStarted + XpGained + ExfilSucceeded + InfilEnded) x 2 + InfilStarted + OperatorDied + InfilEnded = 12 events
-        Assert.Equal(12, aggregate.Events.Count);
+        // Should have: OperatorCreated + InfilStarted + (XpGained + ExfilSucceeded) x 2 + OperatorDied + InfilEnded = 8 events
+        Assert.Equal(8, aggregate.Events.Count);
     }
 
     [Fact]
@@ -725,11 +727,14 @@ public class OperatorExfilServiceTests : IDisposable
         var createResult = await _service.CreateOperatorAsync("TestOperator");
         var operatorId = createResult.Value!;
 
-        // Act - Process multiple successful combat outcomes
+        // Start infil once - operator stays in Infil mode after victories
+        var infilResult = await _service.StartInfilAsync(operatorId);
+        
+        // Act - Process multiple successful combat outcomes during the same infil
         for (int i = 0; i < 5; i++)
         {
-            var infilResult = await _service.StartInfilAsync(operatorId);
-        var sessionId = infilResult.Value;
+            // Each combat uses a new session ID (simulating consecutive fights during one infil)
+            var sessionId = i == 0 ? infilResult.Value : Guid.NewGuid();
             var outcome = new Application.Combat.CombatOutcome(
                 sessionId: sessionId,
                 operatorId: operatorId,
@@ -750,6 +755,7 @@ public class OperatorExfilServiceTests : IDisposable
         
         Assert.Equal(5, aggregate.ExfilStreak);
         Assert.Equal(500, aggregate.TotalXp);
+        Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Still in Infil mode after victories
     }
 
     [Fact]
@@ -782,9 +788,10 @@ public class OperatorExfilServiceTests : IDisposable
         
         Assert.Equal(0, aggregate.TotalXp);
         Assert.Equal(1, aggregate.ExfilStreak); // Exfil still succeeds
+        Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Still in Infil after victory
         
-        // Should have: OperatorCreated + InfilStarted + ExfilSucceeded + InfilEnded = 4 events (no XpGained)
-        Assert.Equal(4, aggregate.Events.Count);
+        // Should have: OperatorCreated + InfilStarted + ExfilSucceeded = 3 events (no XpGained, no InfilEnded)
+        Assert.Equal(3, aggregate.Events.Count);
     }
 
     [Fact]
@@ -823,10 +830,10 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Equal(150, aggregate1.TotalXp);
         Assert.Equal(1, aggregate1.ExfilStreak);
         Assert.False(aggregate1.IsDead);
+        Assert.Equal(OperatorMode.Infil, aggregate1.CurrentMode); // Still in Infil after victory
 
-        // Step 5: Simulate another combat (should increment streak)
-        var infilResult2 = await _service.StartInfilAsync(operatorId);
-        var sessionId2 = infilResult2.Value;
+        // Step 5: Simulate another combat during the same infil (operator stayed in Infil mode)
+        var sessionId2 = Guid.NewGuid(); // New combat session during same infil
         var combatOutcome2 = new Application.Combat.CombatOutcome(
             sessionId: sessionId2,
             operatorId: operatorId,
@@ -848,13 +855,13 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Equal(350, aggregate2.TotalXp); // 150 + 200
         Assert.Equal(2, aggregate2.ExfilStreak); // Both exfils succeeded
         Assert.False(aggregate2.IsDead);
+        Assert.Equal(OperatorMode.Infil, aggregate2.CurrentMode); // Still in Infil after victories
         
-        // Should have: OperatorCreated + (InfilStarted + XpGained + ExfilSucceeded + InfilEnded) x 2 = 9 events
-        Assert.Equal(9, aggregate2.Events.Count);
+        // Should have: OperatorCreated + InfilStarted + (XpGained + ExfilSucceeded) x 2 = 6 events
+        Assert.Equal(6, aggregate2.Events.Count);
 
-        // Step 7: Simulate a fatal combat
-        var infilResult3 = await _service.StartInfilAsync(operatorId);
-        var sessionId3 = infilResult3.Value;
+        // Step 7: Simulate a fatal combat during the same infil
+        var sessionId3 = Guid.NewGuid(); // New combat session during same infil
         var fatalCombat = new Application.Combat.CombatOutcome(
             sessionId: sessionId3,
             operatorId: operatorId,
@@ -877,8 +884,8 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Equal(0, aggregate3.ExfilStreak); // Reset on death
         Assert.Equal(350, aggregate3.TotalXp); // Total from previous outcomes (150 + 200); death event doesn't apply XP
         
-        // Should have: previous 9 + InfilStarted + OperatorDied + InfilEnded = 12 events
-        Assert.Equal(12, aggregate3.Events.Count);
+        // Should have: OperatorCreated + InfilStarted + (XpGained + ExfilSucceeded) x 2 + OperatorDied + InfilEnded = 8 events
+        Assert.Equal(8, aggregate3.Events.Count);
 
         // Step 9: Verify hash chain integrity on all events
         foreach (var evt in aggregate3.Events)

@@ -339,7 +339,7 @@ public class OperatorModeTests : IDisposable
     }
 
     [Fact]
-    public async Task ProcessCombatOutcome_Victory_ReturnsToBaseMode()
+    public async Task ProcessCombatOutcome_Victory_StaysInInfilMode()
     {
         // Arrange
         var mapper = new BsonMapper();
@@ -369,7 +369,7 @@ public class OperatorModeTests : IDisposable
         
         var loadResult = await service.LoadOperatorAsync(operatorId);
         var aggregate = loadResult.Value!;
-        Assert.Equal(OperatorMode.Base, aggregate.CurrentMode);
+        Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Should stay in Infil mode
         Assert.Equal(1, aggregate.ExfilStreak);
         Assert.Equal(100, aggregate.TotalXp);
     }
