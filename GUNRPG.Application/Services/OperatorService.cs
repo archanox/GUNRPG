@@ -63,25 +63,48 @@ public sealed class OperatorService
             var sessionResult = await _sessionService.GetStateAsync(operatorDto.ActiveSessionId.Value);
             if (sessionResult.Status == ResultStatus.Success)
             {
-                // Create a new DTO with the active session included
-                operatorDto = new OperatorStateDto
+                var session = sessionResult.Value!;
+                
+                // If session is completed, auto-process the outcome to clean up the operator state
+                if (session.Phase == SessionPhase.Completed)
                 {
-                    Id = operatorDto.Id,
-                    Name = operatorDto.Name,
-                    TotalXp = operatorDto.TotalXp,
-                    CurrentHealth = operatorDto.CurrentHealth,
-                    MaxHealth = operatorDto.MaxHealth,
-                    EquippedWeaponName = operatorDto.EquippedWeaponName,
-                    UnlockedPerks = operatorDto.UnlockedPerks,
-                    ExfilStreak = operatorDto.ExfilStreak,
-                    IsDead = operatorDto.IsDead,
-                    CurrentMode = operatorDto.CurrentMode,
-                    InfilStartTime = operatorDto.InfilStartTime,
-                    ActiveSessionId = operatorDto.ActiveSessionId,
-                    ActiveCombatSession = sessionResult.Value,
-                    LockedLoadout = operatorDto.LockedLoadout,
-                    Pet = operatorDto.Pet
-                };
+                    var outcomeResult = await _sessionService.GetCombatOutcomeAsync(operatorDto.ActiveSessionId.Value);
+                    if (outcomeResult.Status == ResultStatus.Success)
+                    {
+                        // Process the outcome automatically (this will clear ActiveSessionId and update operator state)
+                        await _exfilService.ProcessCombatOutcomeAsync(outcomeResult.Value!, playerConfirmed: true);
+                        
+                        // Reload operator to get updated state after outcome processing
+                        var reloadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+                        if (reloadResult.IsSuccess)
+                        {
+                            operatorDto = ToDto(reloadResult.Value!);
+                        }
+                    }
+                }
+                else
+                {
+                    // Session is still active (Planning phase), include it in the response
+                    // Create a new DTO with the active session included
+                    operatorDto = new OperatorStateDto
+                    {
+                        Id = operatorDto.Id,
+                        Name = operatorDto.Name,
+                        TotalXp = operatorDto.TotalXp,
+                        CurrentHealth = operatorDto.CurrentHealth,
+                        MaxHealth = operatorDto.MaxHealth,
+                        EquippedWeaponName = operatorDto.EquippedWeaponName,
+                        UnlockedPerks = operatorDto.UnlockedPerks,
+                        ExfilStreak = operatorDto.ExfilStreak,
+                        IsDead = operatorDto.IsDead,
+                        CurrentMode = operatorDto.CurrentMode,
+                        InfilStartTime = operatorDto.InfilStartTime,
+                        ActiveSessionId = operatorDto.ActiveSessionId,
+                        ActiveCombatSession = session,
+                        LockedLoadout = operatorDto.LockedLoadout,
+                        Pet = operatorDto.Pet
+                    };
+                }
             }
         }
 
