@@ -407,7 +407,8 @@ public class OperatorModeTests : IDisposable
         var aggregate = loadResult.Value!;
         Assert.Equal(OperatorMode.Base, aggregate.CurrentMode);
         Assert.Equal(0, aggregate.ExfilStreak);
-        Assert.True(aggregate.IsDead);
+        Assert.False(aggregate.IsDead); // Operator respawns after death
+        Assert.Equal(aggregate.MaxHealth, aggregate.CurrentHealth); // Health restored after respawn
     }
 
     [Fact]
