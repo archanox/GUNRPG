@@ -105,6 +105,20 @@ public class OperatorsController : ControllerBase
         };
     }
 
+    [HttpPost("{id:guid}/infil/retreat")]
+    public async Task<ActionResult<ApiOperatorStateDto>> RetreatFromInfil(Guid id)
+    {
+        var result = await _service.RetreatFromInfilAsync(id);
+        
+        return result.Status switch
+        {
+            ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
+            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
+            ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
+            _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
+        };
+    }
+
     [HttpPost("{id:guid}/loadout")]
     public async Task<ActionResult<ApiOperatorStateDto>> ChangeLoadout(Guid id, [FromBody] ApiChangeLoadoutRequest? request)
     {

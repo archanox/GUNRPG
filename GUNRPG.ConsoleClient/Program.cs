@@ -400,13 +400,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         }
         else // Infil mode
         {
-            // If there is an active session, always allow continuing it.
-            // The continuation flow (LoadSession) is responsible for handling completed sessions
-            // (e.g., by showing a completion screen and processing the outcome).
-            if (hasSessionReference)
-            {
-                menuItems.Add(InfilActionEngageCombat);
-            }
+            // In Infil mode, always allow engaging in combat
+            // After a victory, ActiveSessionId is cleared but operator stays in Infil mode
+            // In this case, we need to create a new session for the next combat
+            menuItems.Add(InfilActionEngageCombat);
             menuItems.Add(InfilActionExfil);
             menuItems.Add("VIEW STATS");
         }
@@ -449,10 +446,27 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 switch (selectedItem)
                 {
                     case InfilActionEngageCombat:
+                        // If we have a session reference, load it
+                        // If not, create a new combat session for the next fight
                         if (hasSessionReference)
                         {
                             ActiveSessionId ??= op.ActiveSessionId;
                             LoadSession();
+                        }
+                        else
+                        {
+                            // After a victory, ActiveSessionId is cleared but operator stays in Infil
+                            // Create a new combat session for the next enemy
+                            if (CreateFreshCombatSession())
+                            {
+                                CurrentScreen = Screen.CombatSession;
+                            }
+                            else
+                            {
+                                Message = "Failed to start next combat.\n\nPress OK to continue.";
+                                CurrentScreen = Screen.Message;
+                                ReturnScreen = Screen.BaseCamp;
+                            }
                         }
                         break;
                     case InfilActionExfil:
@@ -686,6 +700,56 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 ErrorMessage = $"Failed to deserialize replacement combat session for {ActiveSessionId.Value}";
                 return false;
             }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            return false;
+        }
+    }
+
+    bool CreateFreshCombatSession()
+    {
+        ErrorMessage = null;
+
+        if (CurrentOperatorId == null || CurrentOperator == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            // Create a new combat session with a fresh ID
+            // This is used after a victory when ActiveSessionId has been cleared
+            var newSessionId = Guid.NewGuid();
+            var sessionRequest = new
+            {
+                id = newSessionId,
+                operatorId = CurrentOperatorId,
+                playerName = CurrentOperator.Name,
+                weaponName = CurrentOperator.EquippedWeaponName,
+                playerLevel = 1,
+                playerMaxHealth = CurrentOperator.MaxHealth,
+                playerCurrentHealth = CurrentOperator.CurrentHealth
+            };
+
+            using var sessionResponse = client.PostAsJsonAsync("sessions", sessionRequest, options).GetAwaiter().GetResult();
+            if (!sessionResponse.IsSuccessStatusCode)
+            {
+                return false;
+            }
+
+            CurrentSession = sessionResponse.Content.ReadFromJsonAsync<CombatSessionDto>(options).GetAwaiter().GetResult();
+            if (CurrentSession == null)
+            {
+                ErrorMessage = $"Failed to deserialize new combat session for {newSessionId}";
+                return false;
+            }
+
+            // Update ActiveSessionId to point to the new session
+            ActiveSessionId = newSessionId;
 
             return true;
         }
@@ -1466,10 +1530,41 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             // Use authoritative session ID with fallback
             var sessionId = ActiveSessionId ?? CurrentOperator?.ActiveSessionId;
             
-            // Guard against null sessionId - API requires non-null Guid
+            // If in Infil mode but no active session (e.g., after a victory),
+            // allow retreat by calling the retreat endpoint
             if (!sessionId.HasValue)
             {
-                Message = "Unable to exfil: no active mission session found.";
+                using var retreatResponse = client.PostAsync($"operators/{CurrentOperatorId}/infil/retreat", null).GetAwaiter().GetResult();
+                
+                if (!retreatResponse.IsSuccessStatusCode)
+                {
+                    var errorContent = retreatResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                    
+                    // If operator is already in Base mode, treat as success
+                    if (errorContent.Contains("InvalidState") || errorContent.Contains("not in Infil mode"))
+                    {
+                        RefreshOperator();
+                        Message = "Infil already ended.\nReturning to base.\n\nPress OK to continue.";
+                        CurrentScreen = Screen.Message;
+                        ReturnScreen = Screen.BaseCamp;
+                        return;
+                    }
+
+                    ErrorMessage = $"Failed to retreat: {retreatResponse.StatusCode} - {errorContent}";
+                    Message = $"Retreat failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
+                    CurrentScreen = Screen.Message;
+                    ReturnScreen = Screen.BaseCamp;
+                    return;
+                }
+                
+                // Clear session
+                ActiveSessionId = null;
+                CurrentSession = null;
+
+                // Refresh operator state
+                RefreshOperator();
+
+                Message = "Successfully retreated from infil.\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
                 return;
