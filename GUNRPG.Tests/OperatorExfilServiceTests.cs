@@ -909,4 +909,86 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.False(postMortemResult.IsSuccess);
         Assert.Equal(ResultStatus.InvalidState, postMortemResult.Status);
     }
+
+    [Fact]
+    public async Task VictoryFlow_OperatorStaysInInfilMode_CanContinueFighting()
+    {
+        // This test validates the complete victory flow:
+        // 1. Start infil
+        // 2. Win first combat -> stay in Infil mode
+        // 3. Win second combat -> stay in Infil mode
+        // 4. Lose third combat -> return to Base mode
+
+        // Arrange
+        var createResult = await _service.CreateOperatorAsync("TestOperator");
+        var operatorId = createResult.Value!;
+
+        // Step 1: Start infil
+        var infilResult = await _service.StartInfilAsync(operatorId);
+        Assert.True(infilResult.IsSuccess);
+        var sessionId1 = infilResult.Value;
+
+        // Step 2: Win first combat
+        var victory1 = new Application.Combat.CombatOutcome(
+            sessionId: sessionId1,
+            operatorId: operatorId,
+            operatorDied: false,
+            damageTaken: 20f,
+            xpGained: 100,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
+            isVictory: true,
+            completedAt: DateTimeOffset.UtcNow);
+
+        var result1 = await _service.ProcessCombatOutcomeAsync(victory1, playerConfirmed: true);
+        Assert.True(result1.IsSuccess);
+
+        // Verify: Operator should stay in Infil mode
+        var load1 = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Infil, load1.Value!.CurrentMode);
+        Assert.Equal(1, load1.Value!.ExfilStreak);
+        Assert.Equal(100, load1.Value!.TotalXp);
+
+        // Step 3: Win second combat (new session during same infil)
+        var sessionId2 = Guid.NewGuid();
+        var victory2 = new Application.Combat.CombatOutcome(
+            sessionId: sessionId2,
+            operatorId: operatorId,
+            operatorDied: false,
+            damageTaken: 30f,
+            xpGained: 150,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
+            isVictory: true,
+            completedAt: DateTimeOffset.UtcNow);
+
+        var result2 = await _service.ProcessCombatOutcomeAsync(victory2, playerConfirmed: true);
+        Assert.True(result2.IsSuccess);
+
+        // Verify: Still in Infil mode, streak incremented
+        var load2 = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Infil, load2.Value!.CurrentMode);
+        Assert.Equal(2, load2.Value!.ExfilStreak);
+        Assert.Equal(250, load2.Value!.TotalXp);
+
+        // Step 4: Lose third combat (survive but don't win)
+        var sessionId3 = Guid.NewGuid();
+        var defeat = new Application.Combat.CombatOutcome(
+            sessionId: sessionId3,
+            operatorId: operatorId,
+            operatorDied: false,
+            damageTaken: 50f,
+            xpGained: 25,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
+            isVictory: false,
+            completedAt: DateTimeOffset.UtcNow);
+
+        var result3 = await _service.ProcessCombatOutcomeAsync(defeat, playerConfirmed: true);
+        Assert.True(result3.IsSuccess);
+
+        // Verify: Returned to Base mode, streak reset
+        var load3 = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Base, load3.Value!.CurrentMode);
+        Assert.Equal(0, load3.Value!.ExfilStreak); // Reset on failure
+        Assert.Equal(275, load3.Value!.TotalXp); // XP still awarded
+        Assert.False(load3.Value!.IsDead); // Still alive
+    }
 }
