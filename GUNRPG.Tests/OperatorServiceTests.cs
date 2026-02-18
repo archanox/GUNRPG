@@ -85,7 +85,7 @@ public sealed class OperatorServiceTests : IDisposable
         var op = operatorResult.Value!;
 
         // ActiveSessionId should be cleared after outcome processing
-        Assert.Null(op.ActiveSessionId);
+        Assert.Null(op.ActiveCombatSessionId);
         
         // Operator should still be in Infil mode (victory keeps you in infil)
         Assert.Equal(OperatorMode.Infil, op.CurrentMode);
@@ -135,7 +135,7 @@ public sealed class OperatorServiceTests : IDisposable
         var op = operatorResult.Value!;
 
         // ActiveSessionId should still be set (not processed yet)
-        Assert.Equal(sessionId, op.ActiveSessionId);
+        Assert.Equal(sessionId, op.ActiveCombatSessionId);
         
         // ActiveCombatSession should be included with Completed phase
         Assert.NotNull(op.ActiveCombatSession);
@@ -163,7 +163,7 @@ public sealed class OperatorServiceTests : IDisposable
         var op = operatorResult.Value!;
 
         // ActiveSessionId should be set
-        Assert.Equal(sessionId, op.ActiveSessionId);
+        Assert.Equal(sessionId, op.ActiveCombatSessionId);
         
         // ActiveCombatSession should be included
         Assert.NotNull(op.ActiveCombatSession);
@@ -203,7 +203,7 @@ public sealed class OperatorServiceTests : IDisposable
 
         // Assert: After victory, operator stays in Infil mode but with no active session
         Assert.Equal(OperatorMode.Infil, operatorAfterCleanup.Value!.CurrentMode);
-        Assert.Null(operatorAfterCleanup.Value.ActiveSessionId);
+        Assert.Null(operatorAfterCleanup.Value.ActiveCombatSessionId);
         Assert.Equal(1, operatorAfterCleanup.Value.ExfilStreak);
 
         // Act: CompleteExfil should work (this is called when user explicitly exfils after victory)
@@ -216,7 +216,7 @@ public sealed class OperatorServiceTests : IDisposable
 
         var finalState = await _operatorService.GetOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, finalState.Value!.CurrentMode);  // Still in Infil!
-        Assert.Null(finalState.Value.ActiveSessionId);
+        Assert.Null(finalState.Value.ActiveCombatSessionId);
         Assert.Equal(2, finalState.Value.ExfilStreak); // Streak incremented again
     }
 
@@ -239,7 +239,7 @@ public sealed class OperatorServiceTests : IDisposable
         // Assert: ActiveSessionId should be cleared in the returned DTO
         Assert.True(operatorResult.IsSuccess);
         var op = operatorResult.Value!;
-        Assert.Null(op.ActiveSessionId);
+        Assert.Null(op.ActiveCombatSessionId);
         Assert.Null(op.ActiveCombatSession);
     }
 
@@ -263,7 +263,7 @@ public sealed class OperatorServiceTests : IDisposable
         // Assert: Session should NOT be processed (still active)
         Assert.True(operatorResult.IsSuccess);
         var op = operatorResult.Value!;
-        Assert.Equal(sessionId, op.ActiveSessionId);
+        Assert.Equal(sessionId, op.ActiveCombatSessionId);
         Assert.NotNull(op.ActiveCombatSession);
         Assert.Equal(SessionPhase.Planning, op.ActiveCombatSession.Phase);
         Assert.Equal(0, op.ExfilStreak); // No streak increment
@@ -305,7 +305,7 @@ public sealed class OperatorServiceTests : IDisposable
         Assert.True(operatorResult.IsSuccess);
         
         // ActiveSessionId cleared by GetOperatorAsync due to missing session
-        Assert.Null(operatorResult.Value!.ActiveSessionId);
+        Assert.Null(operatorResult.Value!.ActiveCombatSessionId);
         Assert.Equal(0, operatorResult.Value.ExfilStreak); // No streak increment
     }
 

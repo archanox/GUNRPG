@@ -88,7 +88,8 @@ public static class ApiMapping
             IsDead = appDto.IsDead,
             CurrentMode = appDto.CurrentMode.ToString(),
             InfilStartTime = appDto.InfilStartTime,
-            ActiveSessionId = appDto.ActiveSessionId,
+            InfilSessionId = appDto.InfilSessionId,
+            ActiveCombatSessionId = appDto.ActiveCombatSessionId,
             ActiveCombatSession = appDto.ActiveCombatSession != null ? ToApiDto(appDto.ActiveCombatSession) : null,
             LockedLoadout = appDto.LockedLoadout,
             Pet = appDto.Pet != null ? ToApiDto(appDto.Pet) : null

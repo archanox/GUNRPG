@@ -45,7 +45,7 @@ public class OperatorModeTests : IDisposable
         var aggregate = loadResult.Value!;
         Assert.Equal(OperatorMode.Base, aggregate.CurrentMode);
         Assert.Null(aggregate.InfilStartTime);
-        Assert.Null(aggregate.ActiveSessionId);
+        Assert.Null(aggregate.ActiveCombatSessionId);
     }
 
     [Fact]
@@ -67,7 +67,7 @@ public class OperatorModeTests : IDisposable
         var aggregate = loadResult.Value!;
         Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode);
         Assert.NotNull(aggregate.InfilStartTime);
-        Assert.Equal(sessionId, aggregate.ActiveSessionId);
+        Assert.Equal(sessionId, aggregate.ActiveCombatSessionId);
     }
 
     [Fact]
@@ -230,7 +230,7 @@ public class OperatorModeTests : IDisposable
         Assert.Equal(OperatorMode.Base, aggregate.CurrentMode);
         Assert.Equal(0, aggregate.ExfilStreak);
         Assert.Null(aggregate.InfilStartTime);
-        Assert.Null(aggregate.ActiveSessionId);
+        Assert.Null(aggregate.ActiveCombatSessionId);
     }
 
     [Fact]
@@ -372,7 +372,7 @@ public class OperatorModeTests : IDisposable
         Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Should stay in Infil mode
         Assert.Equal(1, aggregate.ExfilStreak);
         Assert.Equal(100, aggregate.TotalXp);
-        Assert.Null(aggregate.ActiveSessionId); // Should clear ActiveSessionId after victory to prevent auto-resume
+        Assert.Null(aggregate.ActiveCombatSessionId); // Should clear ActiveSessionId after victory to prevent auto-resume
     }
 
     [Fact]
@@ -499,6 +499,6 @@ public class OperatorModeTests : IDisposable
         var aggregate = loadResult.Value!;
         Assert.Equal(OperatorMode.Base, aggregate.CurrentMode);
         Assert.Equal(0, aggregate.ExfilStreak);
-        Assert.Null(aggregate.ActiveSessionId);
+        Assert.Null(aggregate.ActiveCombatSessionId);
     }
 }

@@ -61,10 +61,10 @@ public sealed class OperatorService
 
         var operatorDto = ToDto(loadResult.Value!);
         
-        // If operator has an active session, load and include it
-        if (operatorDto.ActiveSessionId.HasValue)
+        // If operator has an active combat session, load and include it
+        if (operatorDto.ActiveCombatSessionId.HasValue)
         {
-            var sessionResult = await _sessionService.GetStateAsync(operatorDto.ActiveSessionId.Value);
+            var sessionResult = await _sessionService.GetStateAsync(operatorDto.ActiveCombatSessionId.Value);
             if (sessionResult.Status == ResultStatus.Success)
             {
                 // Session is active (Created, Planning, or Resolving phase), include it in the response
@@ -82,7 +82,8 @@ public sealed class OperatorService
                     IsDead = operatorDto.IsDead,
                     CurrentMode = operatorDto.CurrentMode,
                     InfilStartTime = operatorDto.InfilStartTime,
-                    ActiveSessionId = operatorDto.ActiveSessionId,
+                    InfilSessionId = operatorDto.InfilSessionId,
+                    ActiveCombatSessionId = operatorDto.ActiveCombatSessionId,
                     ActiveCombatSession = sessionResult.Value,
                     LockedLoadout = operatorDto.LockedLoadout,
                     Pet = operatorDto.Pet
@@ -90,7 +91,7 @@ public sealed class OperatorService
             }
             else
             {
-                // Session lookup failed; clear inconsistent ActiveSessionId in the returned DTO
+                // Session lookup failed; clear inconsistent ActiveCombatSessionId in the returned DTO
                 // This prevents clients from seeing a dangling session reference
                 operatorDto = new OperatorStateDto
                 {
@@ -105,7 +106,8 @@ public sealed class OperatorService
                     IsDead = operatorDto.IsDead,
                     CurrentMode = operatorDto.CurrentMode,
                     InfilStartTime = operatorDto.InfilStartTime,
-                    ActiveSessionId = null, // Clear the dangling reference
+                    InfilSessionId = operatorDto.InfilSessionId,
+                    ActiveCombatSessionId = null, // Clear the dangling reference
                     ActiveCombatSession = null,
                     LockedLoadout = operatorDto.LockedLoadout,
                     Pet = operatorDto.Pet
@@ -118,7 +120,7 @@ public sealed class OperatorService
 
     /// <summary>
     /// Cleans up completed combat sessions for an operator.
-    /// If the operator has an ActiveSessionId pointing to a Completed session, this method
+    /// If the operator has an ActiveCombatSessionId pointing to a Completed session, this method
     /// auto-processes the outcome to prevent the operator from getting stuck.
     /// This should be called before GetOperatorAsync when resuming a saved operator.
     /// </summary>
@@ -138,13 +140,13 @@ public sealed class OperatorService
 
         var aggregate = loadResult.Value!;
         
-        // If operator has no active session, nothing to cleanup
-        if (aggregate.ActiveSessionId == null)
+        // If operator has no active combat session, nothing to cleanup
+        if (aggregate.ActiveCombatSessionId == null)
         {
             return ServiceResult.Success();
         }
 
-        var sessionResult = await _sessionService.GetStateAsync(aggregate.ActiveSessionId.Value);
+        var sessionResult = await _sessionService.GetStateAsync(aggregate.ActiveCombatSessionId.Value);
         
         // If session not found, nothing to cleanup (GetOperatorAsync will handle clearing the reference)
         if (sessionResult.Status != ResultStatus.Success)
@@ -161,7 +163,7 @@ public sealed class OperatorService
         }
 
         // Get the combat outcome
-        var outcomeResult = await _sessionService.GetCombatOutcomeAsync(aggregate.ActiveSessionId.Value);
+        var outcomeResult = await _sessionService.GetCombatOutcomeAsync(aggregate.ActiveCombatSessionId.Value);
         if (outcomeResult.Status != ResultStatus.Success)
         {
             // Failed to get combat outcome; log and return success to avoid blocking the Get operation
@@ -292,21 +294,9 @@ public sealed class OperatorService
         return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
     }
 
-    public async Task<ServiceResult<OperatorStateDto>> RetreatFromInfilAsync(Guid operatorId)
+    public async Task<ServiceResult<Guid>> StartCombatSessionAsync(Guid operatorId)
     {
-        var result = await _exfilService.FailInfilAsync(new OperatorId(operatorId), "Operator retreated from infil");
-        if (result.Status != ResultStatus.Success)
-        {
-            return ServiceResult<OperatorStateDto>.FromResult(result);
-        }
-
-        var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
-        if (!loadResult.IsSuccess)
-        {
-            return ServiceResult<OperatorStateDto>.FromResult(loadResult);
-        }
-
-        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
+        return await _exfilService.StartCombatSessionAsync(new OperatorId(operatorId));
     }
 
     public async Task<ServiceResult<OperatorStateDto>> ChangeLoadoutAsync(Guid operatorId, ChangeLoadoutRequest request)
@@ -409,7 +399,8 @@ public sealed class OperatorService
             IsDead = aggregate.IsDead,
             CurrentMode = aggregate.CurrentMode,
             InfilStartTime = aggregate.InfilStartTime,
-            ActiveSessionId = aggregate.ActiveSessionId,
+            InfilSessionId = aggregate.InfilSessionId,
+            ActiveCombatSessionId = aggregate.ActiveCombatSessionId,
             LockedLoadout = aggregate.LockedLoadout,
             Pet = aggregate.PetState != null ? SessionMapping.ToDto(aggregate.PetState) : null
         };

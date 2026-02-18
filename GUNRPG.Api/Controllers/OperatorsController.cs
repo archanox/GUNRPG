@@ -105,14 +105,14 @@ public class OperatorsController : ControllerBase
         };
     }
 
-    [HttpPost("{id:guid}/infil/retreat")]
-    public async Task<ActionResult<ApiOperatorStateDto>> RetreatFromInfil(Guid id)
+    [HttpPost("{id:guid}/infil/combat")]
+    public async Task<ActionResult<Guid>> StartCombatSession(Guid id)
     {
-        var result = await _service.RetreatFromInfilAsync(id);
+        var result = await _service.StartCombatSessionAsync(id);
         
         return result.Status switch
         {
-            ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
+            ResultStatus.Success => Ok(result.Value),
             ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
             ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
             _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })

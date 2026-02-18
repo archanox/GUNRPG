@@ -279,7 +279,7 @@ public class OperatorAggregateTests
         // Assert
         Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Should stay in Infil mode
         Assert.Equal(1, aggregate.ExfilStreak); // Streak incremented
-        Assert.Null(aggregate.ActiveSessionId); // ActiveSessionId cleared to prevent auto-resume of completed session
+        Assert.Null(aggregate.ActiveCombatSessionId); // ActiveSessionId cleared to prevent auto-resume of completed session
     }
 
     [Fact]
