@@ -669,37 +669,53 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
         try
         {
-            // ActiveSessionId is the persistent infil session ID from /operators/{id}/infil/start.
-            // It is intentionally reused across combats in one infil.
+            // Delete the completed combat session
             using var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId.Value}").GetAwaiter().GetResult();
             if (!deleteResponse.IsSuccessStatusCode)
             {
                 return false;
             }
 
+            // Call the /infil/combat endpoint to start a new combat session
+            // This emits CombatSessionStartedEvent and returns the new session ID
+            using var startCombatResponse = client.PostAsync($"operators/{CurrentOperatorId}/infil/combat", null).GetAwaiter().GetResult();
+            if (!startCombatResponse.IsSuccessStatusCode)
+            {
+                var errorContent = startCombatResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                ErrorMessage = $"Failed to start combat session: {startCombatResponse.StatusCode} - {errorContent}";
+                return false;
+            }
+
+            var newSessionId = startCombatResponse.Content.ReadFromJsonAsync<Guid>(options).GetAwaiter().GetResult();
+
+            // Create the combat session with the new ID
             var sessionRequest = new
             {
-                id = ActiveSessionId.Value,
+                id = newSessionId,
                 operatorId = CurrentOperatorId,
                 playerName = CurrentOperator.Name,
                 weaponName = CurrentOperator.EquippedWeaponName,
                 playerLevel = 1,
                 playerMaxHealth = CurrentOperator.MaxHealth,
-                playerCurrentHealth = CurrentOperator.MaxHealth
+                playerCurrentHealth = CurrentOperator.CurrentHealth
             };
 
             using var sessionResponse = client.PostAsJsonAsync("sessions", sessionRequest, options).GetAwaiter().GetResult();
             if (!sessionResponse.IsSuccessStatusCode)
             {
+                ErrorMessage = $"Failed to create combat session: {sessionResponse.StatusCode}";
                 return false;
             }
 
             CurrentSession = sessionResponse.Content.ReadFromJsonAsync<CombatSessionDto>(options).GetAwaiter().GetResult();
             if (CurrentSession == null)
             {
-                ErrorMessage = $"Failed to deserialize replacement combat session for {ActiveSessionId.Value}";
+                ErrorMessage = $"Failed to deserialize replacement combat session";
                 return false;
             }
+
+            // Update ActiveSessionId to point to the new session
+            ActiveSessionId = newSessionId;
 
             return true;
         }
