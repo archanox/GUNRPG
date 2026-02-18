@@ -387,7 +387,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         }
 
         var menuItems = new List<string>();
-        var hasSessionReference = op.ActiveSessionId.HasValue || ActiveSessionId.HasValue;
+        var hasActiveCombatSession = op.ActiveCombatSessionId.HasValue || ActiveSessionId.HasValue;
 
         if (op.CurrentMode == "Base")
         {
@@ -446,18 +446,18 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 switch (selectedItem)
                 {
                     case InfilActionEngageCombat:
-                        // If we have a session reference, load it
-                        // If not, create a new combat session for the next fight
-                        if (hasSessionReference)
+                        // If we have an active combat session, load it
+                        // If not, start a new combat session using the infil session
+                        if (hasActiveCombatSession)
                         {
-                            ActiveSessionId ??= op.ActiveSessionId;
+                            ActiveSessionId ??= op.ActiveCombatSessionId;
                             LoadSession();
                         }
                         else
                         {
-                            // After a victory, ActiveSessionId is cleared but operator stays in Infil
-                            // Create a new combat session for the next enemy
-                            if (CreateFreshCombatSession())
+                            // After a victory, ActiveCombatSessionId is cleared but operator stays in Infil
+                            // Call the new endpoint to start a fresh combat session
+                            if (StartNewCombatSession())
                             {
                                 CurrentScreen = Screen.CombatSession;
                             }
@@ -710,7 +710,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         }
     }
 
-    bool CreateFreshCombatSession()
+    bool StartNewCombatSession()
     {
         ErrorMessage = null;
 
@@ -721,9 +721,19 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
         try
         {
-            // Create a new combat session with a fresh ID
-            // This is used after a victory when ActiveSessionId has been cleared
-            var newSessionId = Guid.NewGuid();
+            // Start a new combat session using the /infil/combat endpoint
+            // This emits a CombatSessionStartedEvent and returns the new session ID
+            using var response = client.PostAsync($"operators/{CurrentOperatorId}/infil/combat", null).GetAwaiter().GetResult();
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                ErrorMessage = $"Failed to start combat session: {response.StatusCode} - {errorContent}";
+                return false;
+            }
+
+            var newSessionId = response.Content.ReadFromJsonAsync<Guid>(options).GetAwaiter().GetResult();
+            
+            // Now create the combat session with the new ID
             var sessionRequest = new
             {
                 id = newSessionId,
@@ -738,13 +748,14 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             using var sessionResponse = client.PostAsJsonAsync("sessions", sessionRequest, options).GetAwaiter().GetResult();
             if (!sessionResponse.IsSuccessStatusCode)
             {
+                ErrorMessage = $"Failed to create combat session: {sessionResponse.StatusCode}";
                 return false;
             }
 
             CurrentSession = sessionResponse.Content.ReadFromJsonAsync<CombatSessionDto>(options).GetAwaiter().GetResult();
             if (CurrentSession == null)
             {
-                ErrorMessage = $"Failed to deserialize new combat session for {newSessionId}";
+                ErrorMessage = $"Failed to deserialize combat session";
                 return false;
             }
 
@@ -940,7 +951,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         try
         {
             // Use authoritative session ID with fallback
-            var sessionId = ActiveSessionId ?? CurrentOperator?.ActiveSessionId;
+            var sessionId = ActiveSessionId ?? CurrentOperator?.ActiveCombatSessionId;
             
             // Guard against null sessionId - API requires non-null Guid
             if (!sessionId.HasValue)
@@ -1527,50 +1538,20 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     {
         try
         {
-            // Use authoritative session ID with fallback
-            var sessionId = ActiveSessionId ?? CurrentOperator?.ActiveSessionId;
+            // Use authoritative combat session ID with fallback
+            var sessionId = ActiveSessionId ?? CurrentOperator?.ActiveCombatSessionId;
             
-            // If in Infil mode but no active session (e.g., after a victory),
-            // allow retreat by calling the retreat endpoint
+            // Must have a completed combat session to exfil
+            // Operators cannot retreat - they must either complete combat (win/die) or timeout
             if (!sessionId.HasValue)
             {
-                using var retreatResponse = client.PostAsync($"operators/{CurrentOperatorId}/infil/retreat", null).GetAwaiter().GetResult();
-                
-                if (!retreatResponse.IsSuccessStatusCode)
-                {
-                    var errorContent = retreatResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                    
-                    // If operator is already in Base mode, treat as success
-                    if (errorContent.Contains("InvalidState") || errorContent.Contains("not in Infil mode"))
-                    {
-                        RefreshOperator();
-                        Message = "Infil already ended.\nReturning to base.\n\nPress OK to continue.";
-                        CurrentScreen = Screen.Message;
-                        ReturnScreen = Screen.BaseCamp;
-                        return;
-                    }
-
-                    ErrorMessage = $"Failed to retreat: {retreatResponse.StatusCode} - {errorContent}";
-                    Message = $"Retreat failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
-                    CurrentScreen = Screen.Message;
-                    ReturnScreen = Screen.BaseCamp;
-                    return;
-                }
-                
-                // Clear session
-                ActiveSessionId = null;
-                CurrentSession = null;
-
-                // Refresh operator state
-                RefreshOperator();
-
-                Message = "Successfully retreated from infil.\n\nPress OK to continue.";
+                Message = "Cannot exfil without completing a combat.\nYou must engage and complete a combat encounter to exfil.\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
                 return;
             }
             
-            // Process EXFIL for the current infil session state
+            // Process EXFIL for the completed combat session
             var request = new { SessionId = sessionId.Value };
             using (var sessionStateResponse = client.GetAsync($"sessions/{sessionId.Value}/state").GetAwaiter().GetResult())
             {
@@ -1784,8 +1765,11 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             InfilStartTime = json.TryGetProperty("infilStartTime", out var time) && time.ValueKind != JsonValueKind.Null 
                 ? time.GetDateTimeOffset() 
                 : null,
-            ActiveSessionId = json.TryGetProperty("activeSessionId", out var sid) && sid.ValueKind != JsonValueKind.Null 
-                ? sid.GetGuid() 
+            InfilSessionId = json.TryGetProperty("infilSessionId", out var infil) && infil.ValueKind != JsonValueKind.Null 
+                ? infil.GetGuid() 
+                : null,
+            ActiveCombatSessionId = json.TryGetProperty("activeCombatSessionId", out var combat) && combat.ValueKind != JsonValueKind.Null 
+                ? combat.GetGuid() 
                 : null,
             LockedLoadout = json.GetProperty("lockedLoadout").GetString() ?? "",
             Pet = pet
@@ -1969,7 +1953,8 @@ class OperatorState
     public bool IsDead { get; init; }
     public string CurrentMode { get; init; } = "Base";
     public DateTimeOffset? InfilStartTime { get; init; }
-    public Guid? ActiveSessionId { get; init; }
+    public Guid? InfilSessionId { get; init; }
+    public Guid? ActiveCombatSessionId { get; init; }
     public string LockedLoadout { get; init; } = "";
     public PetState? Pet { get; init; }
 }

@@ -21,7 +21,8 @@ public sealed class OperatorStateDto
     public bool IsDead { get; init; }
     public OperatorMode CurrentMode { get; init; }
     public DateTimeOffset? InfilStartTime { get; init; }
-    public Guid? ActiveSessionId { get; init; }
+    public Guid? InfilSessionId { get; init; }
+    public Guid? ActiveCombatSessionId { get; init; }
     public CombatSessionDto? ActiveCombatSession { get; init; }
     public string LockedLoadout { get; init; } = string.Empty;
     public PetStateDto? Pet { get; init; }

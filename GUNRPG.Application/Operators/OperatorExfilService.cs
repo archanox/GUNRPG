@@ -382,6 +382,53 @@ public sealed class OperatorExfilService
     }
 
     /// <summary>
+    /// Starts a new combat session during an active infil operation.
+    /// Creates a CombatSessionStartedEvent to update the ActiveCombatSessionId.
+    /// Must be called when operator is in Infil mode without an active combat session.
+    /// </summary>
+    public async Task<ServiceResult<Guid>> StartCombatSessionAsync(OperatorId operatorId)
+    {
+        var loadResult = await LoadOperatorAsync(operatorId);
+        if (!loadResult.IsSuccess)
+            return ServiceResult<Guid>.FromResult(MapLoadResultStatus(loadResult));
+
+        var aggregate = loadResult.Value!;
+
+        // Must be in Infil mode to start a combat session
+        if (aggregate.CurrentMode != OperatorMode.Infil)
+            return ServiceResult<Guid>.InvalidState("Cannot start combat session when not in Infil mode");
+
+        // Must have an infil session ID
+        if (aggregate.InfilSessionId == null)
+            return ServiceResult<Guid>.InvalidState("Cannot start combat session without an active infil");
+
+        // Should not have an active combat session
+        if (aggregate.ActiveCombatSessionId != null)
+            return ServiceResult<Guid>.InvalidState("Cannot start new combat session while one is already active");
+
+        var combatSessionId = Guid.NewGuid();
+
+        var previousHash = aggregate.GetLastEventHash();
+        var sequenceNumber = aggregate.CurrentSequence + 1;
+
+        var combatEvent = new CombatSessionStartedEvent(
+            operatorId,
+            sequenceNumber,
+            combatSessionId,
+            previousHash);
+
+        try
+        {
+            await _eventStore.AppendEventAsync(combatEvent);
+            return ServiceResult<Guid>.Success(combatSessionId);
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult<Guid>.InvalidState($"Failed to start combat session: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Fails an infil operation due to timeout or other reasons.
     /// Clears the locked loadout (gear loss), resets streak, and returns operator to Base mode.
     /// </summary>
@@ -510,10 +557,11 @@ public sealed class OperatorExfilService
     /// - If operator survived but retreated/failed: Apply XP (if any), emit ExfilFailed + InfilEnded (resets streak, returns to Base mode)
     /// - If infil timer expired (30+ minutes), automatically fail the infil
     /// 
-    /// ActiveSessionId semantics:
-    /// - ExfilSucceededEvent clears ActiveSessionId when the operator remains in Infil mode after victory
-    /// - This prevents auto-resume of completed sessions and ensures operators are in a "between combats" state
-    /// - A new session must be created for the next combat (via StartInfilAsync or equivalent)
+    /// Session ID semantics:
+    /// - InfilSessionId: Persistent ID for the entire infil operation, set when infil starts
+    /// - ActiveCombatSessionId: ID for current combat encounter, cleared after each combat completion
+    /// - ExfilSucceededEvent clears ActiveCombatSessionId to enable starting a new combat
+    /// - Use StartCombatSessionAsync to create a new combat session after victory
     /// </summary>
     public async Task<ServiceResult> ProcessCombatOutcomeAsync(CombatOutcome outcome, bool playerConfirmed = true)
     {

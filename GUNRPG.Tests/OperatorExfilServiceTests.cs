@@ -947,7 +947,7 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Equal(OperatorMode.Infil, load1.Value!.CurrentMode);
         Assert.Equal(1, load1.Value!.ExfilStreak);
         Assert.Equal(100, load1.Value!.TotalXp);
-        Assert.Null(load1.Value!.ActiveSessionId); // ActiveSessionId cleared after victory
+        Assert.Null(load1.Value!.ActiveCombatSessionId); // ActiveSessionId cleared after victory
 
         // Step 3: Win second combat (new session during same infil)
         var sessionId2 = Guid.NewGuid();
@@ -969,7 +969,7 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.Equal(OperatorMode.Infil, load2.Value!.CurrentMode);
         Assert.Equal(2, load2.Value!.ExfilStreak);
         Assert.Equal(250, load2.Value!.TotalXp);
-        Assert.Null(load2.Value!.ActiveSessionId); // ActiveSessionId cleared after second victory
+        Assert.Null(load2.Value!.ActiveCombatSessionId); // ActiveSessionId cleared after second victory
 
         // Step 4: Lose third combat (survive but don't win)
         var sessionId3 = Guid.NewGuid();

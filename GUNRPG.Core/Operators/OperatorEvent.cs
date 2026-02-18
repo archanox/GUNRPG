@@ -597,6 +597,52 @@ public sealed class InfilEndedEvent : OperatorEvent
 }
 
 /// <summary>
+/// Event emitted when a new combat session starts during an ongoing infil.
+/// Updates the ActiveCombatSessionId while keeping the infil active.
+/// Used after completing a combat to start the next combat in the same infil.
+/// </summary>
+public sealed class CombatSessionStartedEvent : OperatorEvent
+{
+    public CombatSessionStartedEvent(
+        OperatorId operatorId,
+        long sequenceNumber,
+        Guid combatSessionId,
+        string previousHash,
+        DateTimeOffset? timestamp = null)
+        : base(
+            operatorId,
+            sequenceNumber,
+            eventType: "CombatSessionStarted",
+            payload: JsonSerializer.Serialize(new { CombatSessionId = combatSessionId }),
+            previousHash: previousHash,
+            timestamp: timestamp)
+    {
+    }
+
+    public Guid GetPayload()
+    {
+        var data = JsonSerializer.Deserialize<CombatSessionStartedPayload>(Payload)!;
+        return data.CombatSessionId;
+    }
+
+    /// <summary>
+    /// Rehydrates a CombatSessionStartedEvent from storage.
+    /// </summary>
+    public static CombatSessionStartedEvent Rehydrate(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string payload,
+        string previousHash,
+        DateTimeOffset timestamp)
+    {
+        var data = JsonSerializer.Deserialize<CombatSessionStartedPayload>(payload)!;
+        return new CombatSessionStartedEvent(operatorId, sequenceNumber, data.CombatSessionId, previousHash, timestamp);
+    }
+
+    private record CombatSessionStartedPayload(Guid CombatSessionId);
+}
+
+/// <summary>
 /// Event recording that a pet action was applied to the operator's virtual pet.
 /// Stores the complete resulting pet state after applying the action.
 /// </summary>

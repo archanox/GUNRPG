@@ -73,9 +73,16 @@ public sealed class OperatorAggregate
     public DateTimeOffset? InfilStartTime { get; private set; }
 
     /// <summary>
-    /// Active combat session ID when in Infil mode. Null if in Base mode.
+    /// Unique identifier for the current infil session. Persists across multiple combats during a single infil.
+    /// Null if not in Infil mode. Set when infil starts, cleared when infil ends.
     /// </summary>
-    public Guid? ActiveSessionId { get; private set; }
+    public Guid? InfilSessionId { get; private set; }
+
+    /// <summary>
+    /// Active combat session ID for the current combat encounter. Null if not in active combat or in Base mode.
+    /// This can be null even when in Infil mode (between combats after victory).
+    /// </summary>
+    public Guid? ActiveCombatSessionId { get; private set; }
 
     /// <summary>
     /// Locked loadout snapshot when in Infil mode. Empty if in Base mode.
@@ -178,7 +185,8 @@ public sealed class OperatorAggregate
                 IsDead = false;
                 CurrentMode = OperatorMode.Base; // Operators start in Base mode
                 InfilStartTime = null;
-                ActiveSessionId = null;
+                InfilSessionId = null;
+                ActiveCombatSessionId = null;
                 LockedLoadout = string.Empty;
                 // Initialize pet state with healthy defaults
                 PetState = new PetState(
@@ -216,9 +224,9 @@ public sealed class OperatorAggregate
 
             case ExfilSucceededEvent:
                 ExfilStreak++;
-                // Clear active session since this combat is complete
-                // Operator stays in Infil mode but is "between combats"
-                ActiveSessionId = null;
+                // Clear active combat session since this combat is complete
+                // Operator stays in Infil mode with InfilSessionId intact to allow consecutive combats
+                ActiveCombatSessionId = null;
                 break;
 
             case ExfilFailedEvent:
@@ -236,23 +244,26 @@ public sealed class OperatorAggregate
                 {
                     CurrentMode = OperatorMode.Base;
                     InfilStartTime = null;
-                    ActiveSessionId = null;
+                    InfilSessionId = null;
+                    ActiveCombatSessionId = null;
                     LockedLoadout = string.Empty;
                 }
                 break;
 
             case InfilStartedEvent infilStarted:
-                var (sessionId, lockedLoadout, infilStartTime) = infilStarted.GetPayload();
+                var (infilSessionId, lockedLoadout, infilStartTime) = infilStarted.GetPayload();
                 CurrentMode = OperatorMode.Infil;
                 InfilStartTime = infilStartTime;
-                ActiveSessionId = sessionId;
+                InfilSessionId = infilSessionId;
+                ActiveCombatSessionId = infilSessionId; // First combat uses same ID as infil
                 LockedLoadout = lockedLoadout;
                 break;
 
             case InfilEndedEvent infilEnded:
                 CurrentMode = OperatorMode.Base;
                 InfilStartTime = null;
-                ActiveSessionId = null;
+                InfilSessionId = null;
+                ActiveCombatSessionId = null;
                 var (wasSuccessful, _) = infilEnded.GetPayload();
                 // On failure, clear loadout (gear loss)
                 if (!wasSuccessful)
@@ -265,6 +276,11 @@ public sealed class OperatorAggregate
                     // On success, preserve loadout
                     LockedLoadout = string.Empty;
                 }
+                break;
+
+            case CombatSessionStartedEvent combatSessionStarted:
+                var combatSessionId = combatSessionStarted.GetPayload();
+                ActiveCombatSessionId = combatSessionId;
                 break;
 
             case PetActionAppliedEvent petAction:

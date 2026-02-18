@@ -50,7 +50,7 @@ public class InfilVictoryFlowTests
         // Assert 1: Operator should be in Infil mode but with no active session
         var load1 = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, load1.Value!.CurrentMode);
-        Assert.Null(load1.Value!.ActiveSessionId); // This was the bug - session cleared after victory
+        Assert.Null(load1.Value!.ActiveCombatSessionId); // This was the bug - session cleared after victory
         Assert.Equal(1, load1.Value!.ExfilStreak);
 
         // Act 2: Start second combat (this should work now!)
@@ -71,7 +71,7 @@ public class InfilVictoryFlowTests
         // Assert 2: Second victory should also work
         var load2 = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, load2.Value!.CurrentMode);
-        Assert.Null(load2.Value!.ActiveSessionId);
+        Assert.Null(load2.Value!.ActiveCombatSessionId);
         Assert.Equal(2, load2.Value!.ExfilStreak);
         Assert.Equal(250, load2.Value!.TotalXp);
     }
@@ -104,7 +104,7 @@ public class InfilVictoryFlowTests
         // Verify state before retreat
         var beforeRetreat = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, beforeRetreat.Value!.CurrentMode);
-        Assert.Null(beforeRetreat.Value!.ActiveSessionId);
+        Assert.Null(beforeRetreat.Value!.ActiveCombatSessionId);
         Assert.Equal(1, beforeRetreat.Value!.ExfilStreak);
 
         // Act: Retreat from infil (without active session)
@@ -114,7 +114,7 @@ public class InfilVictoryFlowTests
         // Assert: Operator should be back at base with reset streak
         var afterRetreat = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Base, afterRetreat.Value!.CurrentMode);
-        Assert.Null(afterRetreat.Value!.ActiveSessionId);
+        Assert.Null(afterRetreat.Value!.ActiveCombatSessionId);
         Assert.Equal(0, afterRetreat.Value!.ExfilStreak); // Reset on retreat
     }
 }
