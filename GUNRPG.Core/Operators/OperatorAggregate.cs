@@ -216,6 +216,9 @@ public sealed class OperatorAggregate
 
             case ExfilSucceededEvent:
                 ExfilStreak++;
+                // Clear active session since this combat is complete
+                // Operator stays in Infil mode but is "between combats"
+                ActiveSessionId = null;
                 break;
 
             case ExfilFailedEvent:

@@ -509,6 +509,11 @@ public sealed class OperatorExfilService
     /// - If operator survived and is victorious: Apply XP (if any), emit ExfilSucceeded (increments streak), STAY in Infil mode for next combat
     /// - If operator survived but retreated/failed: Apply XP (if any), emit ExfilFailed + InfilEnded (resets streak, returns to Base mode)
     /// - If infil timer expired (30+ minutes), automatically fail the infil
+    /// 
+    /// ActiveSessionId semantics:
+    /// - ExfilSucceededEvent clears ActiveSessionId when the operator remains in Infil mode after victory
+    /// - This prevents auto-resume of completed sessions and ensures operators are in a "between combats" state
+    /// - A new session must be created for the next combat (via StartInfilAsync or equivalent)
     /// </summary>
     public async Task<ServiceResult> ProcessCombatOutcomeAsync(CombatOutcome outcome, bool playerConfirmed = true)
     {
