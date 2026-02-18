@@ -292,6 +292,23 @@ public sealed class OperatorService
         return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
     }
 
+    public async Task<ServiceResult<OperatorStateDto>> RetreatFromInfilAsync(Guid operatorId)
+    {
+        var result = await _exfilService.FailInfilAsync(new OperatorId(operatorId), "Operator retreated from infil");
+        if (result.Status != ResultStatus.Success)
+        {
+            return ServiceResult<OperatorStateDto>.FromResult(result);
+        }
+
+        var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+        if (!loadResult.IsSuccess)
+        {
+            return ServiceResult<OperatorStateDto>.FromResult(loadResult);
+        }
+
+        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
+    }
+
     public async Task<ServiceResult<OperatorStateDto>> ChangeLoadoutAsync(Guid operatorId, ChangeLoadoutRequest request)
     {
         var result = await _exfilService.ChangeLoadoutAsync(new OperatorId(operatorId), request.WeaponName);
