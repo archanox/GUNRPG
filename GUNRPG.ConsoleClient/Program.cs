@@ -205,6 +205,17 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
     void LoadOperator(Guid operatorId)
     {
+        // First, cleanup any completed sessions to prevent stuck state
+        try
+        {
+            using var cleanupResponse = client.PostAsync($"operators/{operatorId}/cleanup", null).GetAwaiter().GetResult();
+            // Cleanup failures are non-fatal; the Get operation will handle dangling references
+        }
+        catch
+        {
+            // Silently ignore cleanup errors; Get will still work
+        }
+
         using var response = client.GetAsync($"operators/{operatorId}").GetAwaiter().GetResult();
         if (!response.IsSuccessStatusCode)
         {
@@ -906,6 +917,17 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     {
         try
         {
+            // First, cleanup any completed sessions to prevent stuck state
+            try
+            {
+                using var cleanupResponse = client.PostAsync($"operators/{CurrentOperatorId}/cleanup", null).GetAwaiter().GetResult();
+                // Cleanup failures are non-fatal; the Get operation will handle dangling references
+            }
+            catch
+            {
+                // Silently ignore cleanup errors; Get will still work
+            }
+
             using var response = client.GetAsync($"operators/{CurrentOperatorId}").GetAwaiter().GetResult();
             if (response.IsSuccessStatusCode)
             {

@@ -59,6 +59,18 @@ public class OperatorsController : ControllerBase
         };
     }
 
+    [HttpPost("{id:guid}/cleanup")]
+    public async Task<ActionResult> CleanupCompletedSession(Guid id)
+    {
+        var result = await _service.CleanupCompletedSessionAsync(id);
+        return result.Status switch
+        {
+            ResultStatus.Success => Ok(),
+            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
+            _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
+        };
+    }
+
     [HttpPost("{id:guid}/infil/start")]
     public async Task<ActionResult<ApiStartInfilResponse>> StartInfil(Guid id)
     {

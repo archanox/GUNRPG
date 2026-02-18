@@ -47,6 +47,10 @@ public sealed class OperatorService
         return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
     }
 
+    /// <summary>
+    /// Gets the current state of an operator, including their active combat session if present.
+    /// This is a read-only operation that does not modify operator state.
+    /// </summary>
     public async Task<ServiceResult<OperatorStateDto>> GetOperatorAsync(Guid operatorId)
     {
         var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
@@ -63,52 +67,118 @@ public sealed class OperatorService
             var sessionResult = await _sessionService.GetStateAsync(operatorDto.ActiveSessionId.Value);
             if (sessionResult.Status == ResultStatus.Success)
             {
-                var session = sessionResult.Value!;
-                
-                // If session is completed, auto-process the outcome to clean up the operator state
-                if (session.Phase == SessionPhase.Completed)
+                // Session is still active (Planning or Resolving phase), include it in the response
+                // Create a new DTO with the active session included
+                operatorDto = new OperatorStateDto
                 {
-                    var outcomeResult = await _sessionService.GetCombatOutcomeAsync(operatorDto.ActiveSessionId.Value);
-                    if (outcomeResult.Status == ResultStatus.Success)
-                    {
-                        // Process the outcome automatically (this will clear ActiveSessionId and update operator state)
-                        await _exfilService.ProcessCombatOutcomeAsync(outcomeResult.Value!, playerConfirmed: true);
-                        
-                        // Reload operator to get updated state after outcome processing
-                        var reloadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
-                        if (reloadResult.IsSuccess)
-                        {
-                            operatorDto = ToDto(reloadResult.Value!);
-                        }
-                    }
-                }
-                else
+                    Id = operatorDto.Id,
+                    Name = operatorDto.Name,
+                    TotalXp = operatorDto.TotalXp,
+                    CurrentHealth = operatorDto.CurrentHealth,
+                    MaxHealth = operatorDto.MaxHealth,
+                    EquippedWeaponName = operatorDto.EquippedWeaponName,
+                    UnlockedPerks = operatorDto.UnlockedPerks,
+                    ExfilStreak = operatorDto.ExfilStreak,
+                    IsDead = operatorDto.IsDead,
+                    CurrentMode = operatorDto.CurrentMode,
+                    InfilStartTime = operatorDto.InfilStartTime,
+                    ActiveSessionId = operatorDto.ActiveSessionId,
+                    ActiveCombatSession = sessionResult.Value,
+                    LockedLoadout = operatorDto.LockedLoadout,
+                    Pet = operatorDto.Pet
+                };
+            }
+            else
+            {
+                // Session lookup failed; clear inconsistent ActiveSessionId in the returned DTO
+                // This prevents clients from seeing a dangling session reference
+                operatorDto = new OperatorStateDto
                 {
-                    // Session is still active (Planning phase), include it in the response
-                    // Create a new DTO with the active session included
-                    operatorDto = new OperatorStateDto
-                    {
-                        Id = operatorDto.Id,
-                        Name = operatorDto.Name,
-                        TotalXp = operatorDto.TotalXp,
-                        CurrentHealth = operatorDto.CurrentHealth,
-                        MaxHealth = operatorDto.MaxHealth,
-                        EquippedWeaponName = operatorDto.EquippedWeaponName,
-                        UnlockedPerks = operatorDto.UnlockedPerks,
-                        ExfilStreak = operatorDto.ExfilStreak,
-                        IsDead = operatorDto.IsDead,
-                        CurrentMode = operatorDto.CurrentMode,
-                        InfilStartTime = operatorDto.InfilStartTime,
-                        ActiveSessionId = operatorDto.ActiveSessionId,
-                        ActiveCombatSession = session,
-                        LockedLoadout = operatorDto.LockedLoadout,
-                        Pet = operatorDto.Pet
-                    };
-                }
+                    Id = operatorDto.Id,
+                    Name = operatorDto.Name,
+                    TotalXp = operatorDto.TotalXp,
+                    CurrentHealth = operatorDto.CurrentHealth,
+                    MaxHealth = operatorDto.MaxHealth,
+                    EquippedWeaponName = operatorDto.EquippedWeaponName,
+                    UnlockedPerks = operatorDto.UnlockedPerks,
+                    ExfilStreak = operatorDto.ExfilStreak,
+                    IsDead = operatorDto.IsDead,
+                    CurrentMode = operatorDto.CurrentMode,
+                    InfilStartTime = operatorDto.InfilStartTime,
+                    ActiveSessionId = null, // Clear the dangling reference
+                    ActiveCombatSession = null,
+                    LockedLoadout = operatorDto.LockedLoadout,
+                    Pet = operatorDto.Pet
+                };
             }
         }
 
         return ServiceResult<OperatorStateDto>.Success(operatorDto);
+    }
+
+    /// <summary>
+    /// Cleans up completed combat sessions for an operator.
+    /// If the operator has an ActiveSessionId pointing to a Completed session, this method
+    /// auto-processes the outcome to prevent the operator from getting stuck.
+    /// This should be called before GetOperatorAsync when resuming a saved operator.
+    /// </summary>
+    public async Task<ServiceResult> CleanupCompletedSessionAsync(Guid operatorId)
+    {
+        var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+        if (!loadResult.IsSuccess)
+        {
+            return loadResult.Status switch
+            {
+                ResultStatus.NotFound => ServiceResult.NotFound(loadResult.ErrorMessage),
+                ResultStatus.InvalidState => ServiceResult.InvalidState(loadResult.ErrorMessage!),
+                ResultStatus.ValidationError => ServiceResult.ValidationError(loadResult.ErrorMessage!),
+                _ => ServiceResult.InvalidState(loadResult.ErrorMessage!)
+            };
+        }
+
+        var aggregate = loadResult.Value!;
+        
+        // If operator has no active session, nothing to cleanup
+        if (aggregate.ActiveSessionId == null)
+        {
+            return ServiceResult.Success();
+        }
+
+        var sessionResult = await _sessionService.GetStateAsync(aggregate.ActiveSessionId.Value);
+        
+        // If session not found, nothing to cleanup (GetOperatorAsync will handle clearing the reference)
+        if (sessionResult.Status != ResultStatus.Success)
+        {
+            return ServiceResult.Success();
+        }
+
+        var session = sessionResult.Value!;
+        
+        // Only process if session is completed
+        if (session.Phase != SessionPhase.Completed)
+        {
+            return ServiceResult.Success();
+        }
+
+        // Get the combat outcome
+        var outcomeResult = await _sessionService.GetCombatOutcomeAsync(aggregate.ActiveSessionId.Value);
+        if (outcomeResult.Status != ResultStatus.Success)
+        {
+            // Failed to get combat outcome; log and return success to avoid blocking the Get operation
+            // The completed session will be included in GetOperatorAsync response for manual recovery
+            return ServiceResult.Success();
+        }
+
+        // Process the outcome automatically
+        var processResult = await _exfilService.ProcessCombatOutcomeAsync(outcomeResult.Value!, playerConfirmed: true);
+        if (processResult.Status != ResultStatus.Success)
+        {
+            // Processing failed; log and return success to avoid blocking the Get operation
+            // The operator state may be partially updated, but GetOperatorAsync will return current state
+            return ServiceResult.Success();
+        }
+
+        return ServiceResult.Success();
     }
 
     public async Task<ServiceResult<List<OperatorSummaryDto>>> ListOperatorsAsync()
