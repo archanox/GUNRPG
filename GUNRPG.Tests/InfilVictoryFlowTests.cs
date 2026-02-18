@@ -23,7 +23,8 @@ public class InfilVictoryFlowTests
     public async Task AfterVictory_OperatorCanStartNewCombat()
     {
         // This test validates the fix for the issue where operators
-        // couldn't engage in consecutive battles after a victory
+        // couldn't engage in consecutive battles after a victory.
+        // It properly tests the StartCombatSessionAsync method and CombatSessionStartedEvent flow.
         
         // Arrange: Create operator and start infil
         var createResult = await _service.CreateOperatorAsync("TestOp");
@@ -47,16 +48,27 @@ public class InfilVictoryFlowTests
         var processResult = await _service.ProcessCombatOutcomeAsync(victory1, playerConfirmed: true);
         Assert.True(processResult.IsSuccess);
 
-        // Assert 1: Operator should be in Infil mode but with no active session
+        // Assert 1: Operator should be in Infil mode but with no active combat session
         var load1 = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, load1.Value!.CurrentMode);
-        Assert.Null(load1.Value!.ActiveCombatSessionId); // This was the bug - session cleared after victory
+        Assert.Null(load1.Value!.ActiveCombatSessionId); // Session cleared after victory
+        Assert.NotNull(load1.Value!.InfilSessionId); // Infil session persists
         Assert.Equal(1, load1.Value!.ExfilStreak);
 
-        // Act 2: Start second combat (this should work now!)
-        var session2 = Guid.NewGuid();
+        // Act 2: Start second combat using the proper StartCombatSessionAsync method
+        // This emits CombatSessionStartedEvent and updates ActiveCombatSessionId
+        var startCombatResult = await _service.StartCombatSessionAsync(operatorId);
+        Assert.True(startCombatResult.IsSuccess);
+        var session2 = startCombatResult.Value!;
+
+        // Verify CombatSessionStartedEvent was emitted and ActiveCombatSessionId is set
+        var load1b = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(session2, load1b.Value!.ActiveCombatSessionId);
+        Assert.NotNull(load1b.Value!.InfilSessionId); // Infil session still persists
+
+        // Act 3: Win second combat
         var victory2 = new CombatOutcome(
-            sessionId: session2, // Different session ID
+            sessionId: session2,
             operatorId: operatorId,
             operatorDied: false,
             damageTaken: 15f,
@@ -68,19 +80,21 @@ public class InfilVictoryFlowTests
         var processResult2 = await _service.ProcessCombatOutcomeAsync(victory2, playerConfirmed: true);
         Assert.True(processResult2.IsSuccess);
 
-        // Assert 2: Second victory should also work
+        // Assert 2: Second victory should work, combat session cleared again
         var load2 = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, load2.Value!.CurrentMode);
-        Assert.Null(load2.Value!.ActiveCombatSessionId);
+        Assert.Null(load2.Value!.ActiveCombatSessionId); // Cleared after second victory
+        Assert.NotNull(load2.Value!.InfilSessionId); // Infil session still persists
         Assert.Equal(2, load2.Value!.ExfilStreak);
         Assert.Equal(250, load2.Value!.TotalXp);
     }
 
     [Fact]
-    public async Task AfterVictory_OperatorCanRetreat()
+    public async Task AfterVictory_InfilCanBeFailedProgrammatically()
     {
-        // This test validates that operators can retreat/exfil
-        // even when they have no active session (after a victory)
+        // This test validates that infil operations can be failed programmatically
+        // (e.g., for timeout handling) even when there's no active combat session.
+        // Note: User-initiated retreat is NOT supported - operators must complete combat, die, or timeout.
         
         // Arrange: Create operator, start infil, win combat
         var createResult = await _service.CreateOperatorAsync("TestOp2");
@@ -101,20 +115,21 @@ public class InfilVictoryFlowTests
 
         await _service.ProcessCombatOutcomeAsync(victory, playerConfirmed: true);
 
-        // Verify state before retreat
-        var beforeRetreat = await _service.LoadOperatorAsync(operatorId);
-        Assert.Equal(OperatorMode.Infil, beforeRetreat.Value!.CurrentMode);
-        Assert.Null(beforeRetreat.Value!.ActiveCombatSessionId);
-        Assert.Equal(1, beforeRetreat.Value!.ExfilStreak);
+        // Verify state before failing infil
+        var beforeFail = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Infil, beforeFail.Value!.CurrentMode);
+        Assert.Null(beforeFail.Value!.ActiveCombatSessionId);
+        Assert.Equal(1, beforeFail.Value!.ExfilStreak);
 
-        // Act: Retreat from infil (without active session)
-        var retreatResult = await _service.FailInfilAsync(operatorId, "Operator retreated");
-        Assert.True(retreatResult.IsSuccess);
+        // Act: Fail infil programmatically (simulates timeout or system-initiated failure)
+        var failResult = await _service.FailInfilAsync(operatorId, "Infil timer expired (30 minutes)");
+        Assert.True(failResult.IsSuccess);
 
         // Assert: Operator should be back at base with reset streak
-        var afterRetreat = await _service.LoadOperatorAsync(operatorId);
-        Assert.Equal(OperatorMode.Base, afterRetreat.Value!.CurrentMode);
-        Assert.Null(afterRetreat.Value!.ActiveCombatSessionId);
-        Assert.Equal(0, afterRetreat.Value!.ExfilStreak); // Reset on retreat
+        var afterFail = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Base, afterFail.Value!.CurrentMode);
+        Assert.Null(afterFail.Value!.ActiveCombatSessionId);
+        Assert.Null(afterFail.Value!.InfilSessionId);
+        Assert.Equal(0, afterFail.Value!.ExfilStreak); // Reset on failure
     }
 }
