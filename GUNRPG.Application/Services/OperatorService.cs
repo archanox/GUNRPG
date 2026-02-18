@@ -299,6 +299,11 @@ public sealed class OperatorService
         return await _exfilService.StartCombatSessionAsync(new OperatorId(operatorId));
     }
 
+    public async Task<ServiceResult> CompleteInfilAsync(Guid operatorId)
+    {
+        return await _exfilService.CompleteInfilSuccessfullyAsync(new OperatorId(operatorId));
+    }
+
     public async Task<ServiceResult<OperatorStateDto>> ChangeLoadoutAsync(Guid operatorId, ChangeLoadoutRequest request)
     {
         var result = await _exfilService.ChangeLoadoutAsync(new OperatorId(operatorId), request.WeaponName);

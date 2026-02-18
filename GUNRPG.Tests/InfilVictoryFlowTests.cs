@@ -132,4 +132,50 @@ public class InfilVictoryFlowTests
         Assert.Null(afterFail.Value!.InfilSessionId);
         Assert.Equal(0, afterFail.Value!.ExfilStreak); // Reset on failure
     }
+
+    [Fact]
+    public async Task AfterVictory_OperatorCanCompleteInfilSuccessfully()
+    {
+        // This test validates the fix for the exfil issue where operators
+        // couldn't exfil after a victory because ActiveCombatSessionId was cleared.
+        // The new CompleteInfilSuccessfullyAsync method allows exfil with no active session.
+        
+        // Arrange: Create operator, start infil, win combat
+        var createResult = await _service.CreateOperatorAsync("TestOp3");
+        var operatorId = createResult.Value!;
+
+        var infilResult = await _service.StartInfilAsync(operatorId);
+        var sessionId = infilResult.Value;
+
+        var victory = new CombatOutcome(
+            sessionId: sessionId,
+            operatorId: operatorId,
+            operatorDied: false,
+            damageTaken: 15f,
+            xpGained: 75,
+            gearLost: Array.Empty<GearId>(),
+            isVictory: true,
+            completedAt: DateTimeOffset.UtcNow);
+
+        await _service.ProcessCombatOutcomeAsync(victory, playerConfirmed: true);
+
+        // Verify state after victory - still in Infil mode with no active session
+        var afterVictory = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Infil, afterVictory.Value!.CurrentMode);
+        Assert.Null(afterVictory.Value!.ActiveCombatSessionId); // Cleared after victory
+        Assert.Equal(1, afterVictory.Value!.ExfilStreak);
+        Assert.Equal(75, afterVictory.Value!.TotalXp);
+
+        // Act: Complete infil successfully (player chooses to exfil)
+        var completeResult = await _service.CompleteInfilSuccessfullyAsync(operatorId);
+        Assert.True(completeResult.IsSuccess);
+
+        // Assert: Operator should be back at base with preserved streak and loot
+        var afterComplete = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Base, afterComplete.Value!.CurrentMode);
+        Assert.Null(afterComplete.Value!.ActiveCombatSessionId);
+        Assert.Null(afterComplete.Value!.InfilSessionId);
+        Assert.Equal(1, afterComplete.Value!.ExfilStreak); // Preserved on successful completion
+        Assert.Equal(75, afterComplete.Value!.TotalXp); // XP preserved
+    }
 }
