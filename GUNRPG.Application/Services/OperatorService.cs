@@ -67,7 +67,7 @@ public sealed class OperatorService
             var sessionResult = await _sessionService.GetStateAsync(operatorDto.ActiveSessionId.Value);
             if (sessionResult.Status == ResultStatus.Success)
             {
-                // Session is still active (Planning or Resolving phase), include it in the response
+                // Session is active (Created, Planning, or Resolving phase), include it in the response
                 // Create a new DTO with the active session included
                 operatorDto = new OperatorStateDto
                 {
