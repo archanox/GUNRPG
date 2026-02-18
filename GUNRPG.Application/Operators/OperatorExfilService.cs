@@ -480,6 +480,49 @@ public sealed class OperatorExfilService
     }
 
     /// <summary>
+    /// Successfully completes the infil operation, transitioning the operator back to Base mode.
+    /// This is used when the player chooses to exfil after winning one or more combats.
+    /// Requires operator to be in Infil mode with at least one successful exfil (ExfilStreak > 0).
+    /// </summary>
+    public async Task<ServiceResult> CompleteInfilSuccessfullyAsync(OperatorId operatorId)
+    {
+        var loadResult = await LoadOperatorAsync(operatorId);
+        if (!loadResult.IsSuccess)
+            return MapLoadResultStatus(loadResult);
+
+        var aggregate = loadResult.Value!;
+
+        // Must be in Infil mode to complete infil
+        if (aggregate.CurrentMode != OperatorMode.Infil)
+            return ServiceResult.InvalidState("Cannot complete infil when not in Infil mode");
+
+        // Must have completed at least one combat successfully to exfil
+        if (aggregate.ExfilStreak == 0)
+            return ServiceResult.InvalidState("Cannot exfil without completing at least one combat encounter");
+
+        var previousHash = aggregate.GetLastEventHash();
+        var sequenceNumber = aggregate.CurrentSequence + 1;
+
+        // Emit InfilEndedEvent with wasSuccessful: true
+        var infilEndedEvent = new InfilEndedEvent(
+            operatorId,
+            sequenceNumber,
+            wasSuccessful: true,
+            reason: "Operator successfully exfiltrated",
+            previousHash: previousHash);
+
+        try
+        {
+            await _eventStore.AppendEventAsync(infilEndedEvent);
+            return ServiceResult.Success();
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult.InvalidState($"Failed to complete infil: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Checks if the operator's infil has timed out (exceeded 30 minutes).
     /// Returns true if the operator is in infil mode and the timer has expired.
     /// </summary>

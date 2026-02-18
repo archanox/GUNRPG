@@ -119,6 +119,20 @@ public class OperatorsController : ControllerBase
         };
     }
 
+    [HttpPost("{id:guid}/infil/complete")]
+    public async Task<ActionResult> CompleteInfil(Guid id)
+    {
+        var result = await _service.CompleteInfilAsync(id);
+        
+        return result.Status switch
+        {
+            ResultStatus.Success => Ok(),
+            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
+            ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
+            _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
+        };
+    }
+
     [HttpPost("{id:guid}/loadout")]
     public async Task<ActionResult<ApiOperatorStateDto>> ChangeLoadout(Guid id, [FromBody] ApiChangeLoadoutRequest? request)
     {
