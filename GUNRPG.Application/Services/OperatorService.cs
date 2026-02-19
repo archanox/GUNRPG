@@ -240,7 +240,7 @@ public sealed class OperatorService
         var operatorAggregate = loadResult.Value!;
 
         // Return the infil session ID (used for tracking the overall infil, not a combat session)
-        // Combat sessions will be created when player engages in combat via StartCombatSessionAsync
+        // Combat sessions will be created when the player engages in combat via the combat endpoint, which calls OperatorExfilService.StartCombatSessionAsync
         return ServiceResult<StartInfilResponse>.Success(new StartInfilResponse
         {
             SessionId = infilSessionId,
