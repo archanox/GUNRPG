@@ -212,16 +212,17 @@ public sealed class OperatorService
 
     public async Task<ServiceResult<StartInfilResponse>> StartInfilAsync(Guid operatorId)
     {
-        // Start the infil first to get the session ID and transition operator to Infil mode
+        // Start the infil - this only transitions the operator to Infil mode
+        // Combat sessions are created separately when the player engages in combat
         var result = await _exfilService.StartInfilAsync(new OperatorId(operatorId));
         if (result.Status != ResultStatus.Success)
         {
             return ServiceResult<StartInfilResponse>.FromResult(result);
         }
 
-        var sessionId = result.Value!;
+        var infilSessionId = result.Value!;
 
-        // Load the operator to get session creation parameters
+        // Load the operator to return current state
         var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
         if (!loadResult.IsSuccess)
         {
@@ -238,32 +239,11 @@ public sealed class OperatorService
 
         var operatorAggregate = loadResult.Value!;
 
-        // Create the combat session atomically with the infil
-        var sessionRequest = new SessionCreateRequest
-        {
-            Id = sessionId,
-            OperatorId = operatorId,
-            PlayerName = operatorAggregate.Name
-        };
-
-        var sessionResult = await _sessionService.CreateSessionAsync(sessionRequest);
-        if (sessionResult.Status != ResultStatus.Success)
-        {
-            // Session creation failed - we need to fail the infil to keep state consistent
-            var errorDetails = sessionResult.ErrorMessage ?? "Unknown error";
-            var failInfilResult = await _exfilService.FailInfilAsync(new OperatorId(operatorId), $"Session creation failed: {errorDetails}");
-            if (failInfilResult.Status != ResultStatus.Success)
-            {
-                // Log the failure to roll back infil so operators can be manually recovered
-                var cleanupError = failInfilResult.ErrorMessage ?? "Unknown error while failing infil";
-                Console.Error.WriteLine($"Failed to fail infil for operator {operatorId}: {cleanupError}");
-            }
-            return ServiceResult<StartInfilResponse>.FromResult(sessionResult);
-        }
-
+        // Return the infil session ID (used for tracking the overall infil, not a combat session)
+        // Combat sessions will be created when player engages in combat via StartCombatSessionAsync
         return ServiceResult<StartInfilResponse>.Success(new StartInfilResponse
         {
-            SessionId = sessionId,
+            SessionId = infilSessionId,
             Operator = ToDto(operatorAggregate)
         });
     }

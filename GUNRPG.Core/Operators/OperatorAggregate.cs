@@ -255,7 +255,7 @@ public sealed class OperatorAggregate
                 CurrentMode = OperatorMode.Infil;
                 InfilStartTime = infilStartTime;
                 InfilSessionId = infilSessionId;
-                ActiveCombatSessionId = infilSessionId; // First combat uses same ID as infil
+                // ActiveCombatSessionId is NOT set here - combat sessions are created separately
                 LockedLoadout = lockedLoadout;
                 break;
 
