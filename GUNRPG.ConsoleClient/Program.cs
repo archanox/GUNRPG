@@ -485,7 +485,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
         });
 
         var healthBar = UI.CreateProgressBar("HP", (int)op.CurrentHealth, (int)op.MaxHealth, 30);
-        var xpInfo = $"XP: {op.TotalXp}  STREAK: {op.ExfilStreak}";
+        var xpInfo = $"XP: {op.TotalXp}  EXFIL STREAK: {op.ExfilStreak}";
 
         // Create mode-specific title
         var modeTitle = op.CurrentMode == "Base" ? "BASE CAMP" : "FIELD OPS (INFIL)";
