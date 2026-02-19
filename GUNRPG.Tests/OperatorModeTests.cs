@@ -60,14 +60,15 @@ public class OperatorModeTests : IDisposable
 
         // Assert
         Assert.True(infilResult.IsSuccess);
-        var sessionId = infilResult.Value;
-        Assert.NotEqual(Guid.Empty, sessionId);
+        var infilSessionId = infilResult.Value;
+        Assert.NotEqual(Guid.Empty, infilSessionId);
 
         var loadResult = await _service.LoadOperatorAsync(operatorId);
         var aggregate = loadResult.Value!;
         Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode);
         Assert.NotNull(aggregate.InfilStartTime);
-        Assert.Equal(sessionId, aggregate.ActiveCombatSessionId);
+        Assert.Equal(infilSessionId, aggregate.InfilSessionId); // InfilSessionId is set, not ActiveCombatSessionId
+        Assert.Null(aggregate.ActiveCombatSessionId); // No active combat session until player engages
     }
 
     [Fact]
