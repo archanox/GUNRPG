@@ -512,9 +512,10 @@ public sealed class OperatorExfilService
             await _eventStore.AppendEventAsync(infilEndedEvent);
             return ServiceResult.Success();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ServiceResult.InvalidState($"Failed to complete infil: {ex.Message}");
+            // TODO: Consider logging the exception details server-side for diagnostics
+            return ServiceResult.InvalidState("Failed to complete infil due to an internal error.");
         }
     }
 
