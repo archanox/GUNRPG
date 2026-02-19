@@ -53,7 +53,7 @@ public class InfilVictoryFlowTests
         Assert.Equal(OperatorMode.Infil, load1.Value!.CurrentMode);
         Assert.Null(load1.Value!.ActiveCombatSessionId); // Session cleared after victory
         Assert.NotNull(load1.Value!.InfilSessionId); // Infil session persists
-        Assert.Equal(1, load1.Value!.ExfilStreak);
+        Assert.Equal(0, load1.Value!.ExfilStreak); // Streak NOT incremented by combat victory alone
 
         // Act 2: Start second combat using the proper StartCombatSessionAsync method
         // This emits CombatSessionStartedEvent and updates ActiveCombatSessionId
@@ -85,7 +85,7 @@ public class InfilVictoryFlowTests
         Assert.Equal(OperatorMode.Infil, load2.Value!.CurrentMode);
         Assert.Null(load2.Value!.ActiveCombatSessionId); // Cleared after second victory
         Assert.NotNull(load2.Value!.InfilSessionId); // Infil session still persists
-        Assert.Equal(2, load2.Value!.ExfilStreak);
+        Assert.Equal(0, load2.Value!.ExfilStreak); // Streak still not incremented (no infil completion yet)
         Assert.Equal(250, load2.Value!.TotalXp);
     }
 
@@ -119,7 +119,7 @@ public class InfilVictoryFlowTests
         var beforeFail = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, beforeFail.Value!.CurrentMode);
         Assert.Null(beforeFail.Value!.ActiveCombatSessionId);
-        Assert.Equal(1, beforeFail.Value!.ExfilStreak);
+        Assert.Equal(0, beforeFail.Value!.ExfilStreak); // Combat victory alone does not increment streak
 
         // Act: Fail infil programmatically (simulates timeout or system-initiated failure)
         var failResult = await _service.FailInfilAsync(operatorId, "Infil timer expired (30 minutes)");
@@ -163,7 +163,7 @@ public class InfilVictoryFlowTests
         var afterVictory = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, afterVictory.Value!.CurrentMode);
         Assert.Null(afterVictory.Value!.ActiveCombatSessionId); // Cleared after victory
-        Assert.Equal(1, afterVictory.Value!.ExfilStreak);
+        Assert.Equal(0, afterVictory.Value!.ExfilStreak); // Streak NOT incremented by combat victory
         Assert.Equal(75, afterVictory.Value!.TotalXp);
 
         // Act: Complete infil successfully (player chooses to exfil)
@@ -175,7 +175,7 @@ public class InfilVictoryFlowTests
         Assert.Equal(OperatorMode.Base, afterComplete.Value!.CurrentMode);
         Assert.Null(afterComplete.Value!.ActiveCombatSessionId);
         Assert.Null(afterComplete.Value!.InfilSessionId);
-        Assert.Equal(1, afterComplete.Value!.ExfilStreak); // Preserved on successful completion
+        Assert.Equal(1, afterComplete.Value!.ExfilStreak); // Incremented on successful infil completion
         Assert.Equal(75, afterComplete.Value!.TotalXp); // XP preserved
     }
 
@@ -205,6 +205,6 @@ public class InfilVictoryFlowTests
         var afterExfil = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Base, afterExfil.Value!.CurrentMode);
         Assert.Null(afterExfil.Value!.InfilSessionId);
-        Assert.Equal(0, afterExfil.Value!.ExfilStreak); // Still 0, no combat was completed
+        Assert.Equal(1, afterExfil.Value!.ExfilStreak); // Incremented on successful infil completion (even without combat)
     }
 }

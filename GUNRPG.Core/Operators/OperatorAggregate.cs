@@ -223,9 +223,9 @@ public sealed class OperatorAggregate
                 break;
 
             case ExfilSucceededEvent:
-                ExfilStreak++;
                 // Clear active combat session since this combat is complete
                 // Operator stays in Infil mode with InfilSessionId intact to allow consecutive combats
+                // Note: ExfilStreak is NOT incremented here - it only increments on successful infil completion
                 ActiveCombatSessionId = null;
                 break;
 
@@ -265,16 +265,19 @@ public sealed class OperatorAggregate
                 InfilSessionId = null;
                 ActiveCombatSessionId = null;
                 var (wasSuccessful, _) = infilEnded.GetPayload();
-                // On failure, clear loadout (gear loss)
-                if (!wasSuccessful)
+                if (wasSuccessful)
                 {
+                    // Increment exfil streak on successful infil completion
+                    ExfilStreak++;
+                    // On success, preserve loadout
                     LockedLoadout = string.Empty;
-                    EquippedWeaponName = string.Empty;
                 }
                 else
                 {
-                    // On success, preserve loadout
+                    // On failure, clear loadout (gear loss) and reset streak
+                    ExfilStreak = 0;
                     LockedLoadout = string.Empty;
+                    EquippedWeaponName = string.Empty;
                 }
                 break;
 

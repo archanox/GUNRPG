@@ -207,8 +207,11 @@ public class OperatorAggregateTests
     }
 
     [Fact]
-    public void ExfilSucceeded_ShouldIncrementStreak()
+    public void ExfilSucceeded_ShouldNotIncrementStreak()
     {
+        // ExfilSucceededEvent clears the active combat session but does NOT increment ExfilStreak.
+        // ExfilStreak only increments when the infil is completed successfully (InfilEndedEvent with wasSuccessful=true).
+        
         // Arrange
         var operatorId = OperatorId.NewId();
         var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
@@ -220,7 +223,7 @@ public class OperatorAggregateTests
         var aggregate = OperatorAggregate.FromEvents(events);
 
         // Assert
-        Assert.Equal(2, aggregate.ExfilStreak);
+        Assert.Equal(0, aggregate.ExfilStreak);
         Assert.False(aggregate.IsDead);
     }
 
@@ -278,7 +281,7 @@ public class OperatorAggregateTests
 
         // Assert
         Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Should stay in Infil mode
-        Assert.Equal(1, aggregate.ExfilStreak); // Streak incremented
+        Assert.Equal(0, aggregate.ExfilStreak); // Streak NOT incremented (only increments on infil completion)
         Assert.Null(aggregate.ActiveCombatSessionId); // ActiveSessionId cleared to prevent auto-resume of completed session
     }
 

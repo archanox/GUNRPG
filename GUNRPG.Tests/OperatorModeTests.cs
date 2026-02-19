@@ -288,7 +288,7 @@ public class OperatorModeTests : IDisposable
         var aggregate = loadResult.Value!;
         Assert.Equal("SOKOL 545", aggregate.EquippedWeaponName); // Loadout preserved
         Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Still in Infil (not ended yet)
-        Assert.Equal(1, aggregate.ExfilStreak); // Streak incremented
+        Assert.Equal(0, aggregate.ExfilStreak); // CompleteExfilAsync does not increment streak (only infil completion does)
     }
 
     [Fact]
@@ -371,7 +371,7 @@ public class OperatorModeTests : IDisposable
         var loadResult = await service.LoadOperatorAsync(operatorId);
         var aggregate = loadResult.Value!;
         Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Should stay in Infil mode
-        Assert.Equal(1, aggregate.ExfilStreak);
+        Assert.Equal(0, aggregate.ExfilStreak); // Streak NOT incremented by combat victory (only on infil completion)
         Assert.Equal(100, aggregate.TotalXp);
         Assert.Null(aggregate.ActiveCombatSessionId); // Should clear ActiveSessionId after victory to prevent auto-resume
     }
