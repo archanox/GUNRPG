@@ -252,7 +252,7 @@ public sealed class OperatorServiceTests : IDisposable
         var finalState = await _operatorService.GetOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, finalState.Value!.CurrentMode);  // Still in Infil!
         Assert.Null(finalState.Value.ActiveCombatSessionId);
-        Assert.Equal(0, finalState.Value.ExfilStreak); // CompleteExfilAsync emits ExfilSucceededEvent which does not increment streak
+        Assert.Equal(0, finalState.Value.ExfilStreak); // CompleteExfilAsync emits CombatVictoryEvent which does not increment streak
     }
 
     [Fact]

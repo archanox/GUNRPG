@@ -323,7 +323,7 @@ public class OperatorExfilServiceTests : IDisposable
         await _service.CompleteExfilAsync(operatorId);
         // Note: CompleteExfilAsync doesn't end infil mode, so we can't call StartInfilAsync again
         // This test should probably be updated to use ProcessCombatOutcomeAsync instead
-        // CompleteExfilAsync emits ExfilSucceededEvent which clears the active session but does NOT increment streak
+        // CompleteExfilAsync emits CombatVictoryEvent which clears the active session but does NOT increment streak
         
         // Assert
         var loadResult = await _service.LoadOperatorAsync(operatorId);

@@ -279,7 +279,7 @@ public sealed class OperatorExfilService
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;
 
-        var exfilEvent = new ExfilSucceededEvent(
+        var exfilEvent = new CombatVictoryEvent(
             operatorId,
             sequenceNumber,
             previousHash);
@@ -593,14 +593,14 @@ public sealed class OperatorExfilService
     /// Exfil Semantics:
     /// - Operator must be in Infil mode to process combat outcome
     /// - If operator died: Emit OperatorDied + InfilEnded (failure) events (resets streak, marks IsDead, returns to Base mode)
-    /// - If operator survived and is victorious: Apply XP (if any), emit ExfilSucceeded (increments streak), STAY in Infil mode for next combat
+    /// - If operator survived and is victorious: Apply XP (if any), emit CombatVictory (clears ActiveCombatSessionId), STAY in Infil mode for next combat
     /// - If operator survived but retreated/failed: Apply XP (if any), emit ExfilFailed + InfilEnded (resets streak, returns to Base mode)
     /// - If infil timer expired (30+ minutes), automatically fail the infil
     /// 
     /// Session ID semantics:
     /// - InfilSessionId: Persistent ID for the entire infil operation, set when infil starts
     /// - ActiveCombatSessionId: ID for current combat encounter, cleared after each combat completion
-    /// - ExfilSucceededEvent clears ActiveCombatSessionId to enable starting a new combat
+    /// - CombatVictoryEvent clears ActiveCombatSessionId to enable starting a new combat
     /// - Use StartCombatSessionAsync to create a new combat session after victory
     /// </summary>
     public async Task<ServiceResult> ProcessCombatOutcomeAsync(CombatOutcome outcome, bool playerConfirmed = true)
@@ -689,11 +689,11 @@ public sealed class OperatorExfilService
                 nextSequence++;
             }
 
-            // If operator achieved victory, emit exfil success event but keep operator in Infil mode
+            // If operator achieved victory, emit combat victory event but keep operator in Infil mode
             // This allows them to continue fighting additional enemies
             if (outcome.IsVictory)
             {
-                var exfilEvent = new ExfilSucceededEvent(
+                var exfilEvent = new CombatVictoryEvent(
                     outcome.OperatorId,
                     nextSequence,
                     previousHash);

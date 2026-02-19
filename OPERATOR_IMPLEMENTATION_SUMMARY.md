@@ -15,7 +15,7 @@ This PR successfully implements a first-class **Operator aggregate** with event 
   - `WoundsTreatedEvent` - Health restoration
   - `LoadoutChangedEvent` - Equipment changes
   - `PerkUnlockedEvent` - Skill/perk unlocks
-  - `ExfilSucceededEvent` - Successful exfil (increments streak)
+  - `CombatVictoryEvent` - Combat victory (clears ActiveCombatSessionId, does not affect streak)
   - `ExfilFailedEvent` - Failed exfil (resets streak)
   - `OperatorDiedEvent` - Operator death (permanent, resets streak)
 - **OperatorAggregate** - Event-sourced aggregate that replays events to derive state
