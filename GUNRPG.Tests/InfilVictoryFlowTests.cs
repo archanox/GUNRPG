@@ -178,4 +178,33 @@ public class InfilVictoryFlowTests
         Assert.Equal(1, afterComplete.Value!.ExfilStreak); // Preserved on successful completion
         Assert.Equal(75, afterComplete.Value!.TotalXp); // XP preserved
     }
+
+    [Fact]
+    public async Task OperatorCanExfilImmediatelyWithoutCombat()
+    {
+        // This test validates that operators can exfil immediately after starting infil
+        // without being required to engage in combat first.
+        
+        // Arrange: Create operator and start infil
+        var createResult = await _service.CreateOperatorAsync("TestOp4");
+        var operatorId = createResult.Value!;
+
+        var infilResult = await _service.StartInfilAsync(operatorId);
+        Assert.True(infilResult.IsSuccess);
+
+        // Verify operator is in Infil mode with no combat completed
+        var afterInfil = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Infil, afterInfil.Value!.CurrentMode);
+        Assert.Equal(0, afterInfil.Value!.ExfilStreak); // No combat completed yet
+
+        // Act: Exfil immediately without engaging in combat
+        var completeResult = await _service.CompleteInfilSuccessfullyAsync(operatorId);
+        Assert.True(completeResult.IsSuccess);
+
+        // Assert: Operator should be back at base
+        var afterExfil = await _service.LoadOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Base, afterExfil.Value!.CurrentMode);
+        Assert.Null(afterExfil.Value!.InfilSessionId);
+        Assert.Equal(0, afterExfil.Value!.ExfilStreak); // Still 0, no combat was completed
+    }
 }

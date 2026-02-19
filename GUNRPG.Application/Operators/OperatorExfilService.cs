@@ -481,8 +481,8 @@ public sealed class OperatorExfilService
 
     /// <summary>
     /// Successfully completes the infil operation, transitioning the operator back to Base mode.
-    /// This is used when the player chooses to exfil after winning one or more combats.
-    /// Requires operator to be in Infil mode with at least one successful exfil (ExfilStreak > 0).
+    /// This is used when the player chooses to exfil, with or without engaging in combat.
+    /// Operators can exfil at any time during an active infil.
     /// </summary>
     public async Task<ServiceResult> CompleteInfilSuccessfullyAsync(OperatorId operatorId)
     {
@@ -495,10 +495,6 @@ public sealed class OperatorExfilService
         // Must be in Infil mode to complete infil
         if (aggregate.CurrentMode != OperatorMode.Infil)
             return ServiceResult.InvalidState("Cannot complete infil when not in Infil mode");
-
-        // Must have completed at least one combat successfully to exfil
-        if (aggregate.ExfilStreak == 0)
-            return ServiceResult.InvalidState("Cannot exfil without completing at least one combat encounter");
 
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;

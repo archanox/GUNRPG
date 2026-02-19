@@ -1,4 +1,4 @@
-# Post-Victory Exfil Fix
+# Post-Victory Exfil Fix & Combat-Free Exfil
 
 ## Problem
 
@@ -7,6 +7,8 @@ After winning a combat during an active infil, players were unable to exfil. The
 1. **Victory clears the active combat session** - This is intentional design to allow consecutive battles during a single infil
 2. **Exfil required an active combat session** - The `ProcessExfil()` method checked for `ActiveSessionId` and failed if none existed
 3. **Players got stuck in Infil mode** - They couldn't exfil despite having successfully completed combat
+
+Additionally, the original design incorrectly required players to complete combat before exfiling, but the intended design is to allow exfil at any time during an infil.
 
 ### User-Reported Symptoms
 
@@ -27,16 +29,16 @@ However, the exfil logic still required an active combat session, creating a cat
 
 ### New Endpoint: `/infil/complete`
 
-Added a new flow for completing infil successfully when there's no active combat session.
+Added a new flow for completing infil successfully at any time, with or without combat.
 
 #### Server-Side Changes
 
 **OperatorExfilService.CompleteInfilSuccessfullyAsync**
 - Validates operator is in `Infil` mode
-- Validates `ExfilStreak > 0` (must have completed at least one combat)
+- **No combat requirement** - Players can exfil immediately after starting infil
 - Emits `InfilEndedEvent` with `wasSuccessful: true`
 - Transitions operator to `Base` mode
-- Preserves loot and streak
+- Preserves loot and streak (if any combat was completed)
 
 **OperatorService.CompleteInfilAsync**
 - Thin wrapper for API layer
@@ -45,7 +47,7 @@ Added a new flow for completing infil successfully when there's no active combat
 **API Controller**
 - `POST /operators/{id}/infil/complete`
 - Returns 200 OK on success
-- Returns 400 BadRequest if validation fails (not in Infil mode, ExfilStreak = 0)
+- Returns 400 BadRequest if validation fails (not in Infil mode)
 
 #### Client-Side Changes
 
@@ -53,7 +55,7 @@ Added a new flow for completing infil successfully when there's no active combat
 
 Modified to handle two distinct cases:
 
-1. **No active session + Infil mode** (NEW - post-victory path)
+1. **No active session + Infil mode** (NEW - post-victory or no-combat path)
    - Calls `POST /infil/complete`
    - Shows "Exfil successful!" message
    - Returns to base
@@ -63,27 +65,31 @@ Modified to handle two distinct cases:
    - Calls `POST /infil/outcome` with sessionId
    - Processes combat outcome
 
-This maintains backward compatibility while enabling the new post-victory exfil flow.
+This maintains backward compatibility while enabling the new exfil flow.
 
 ### Validation Logic
 
-The fix includes important validation to prevent abuse:
+The fix includes minimal validation:
 
 ```csharp
 // Must be in Infil mode to complete infil
 if (aggregate.CurrentMode != OperatorMode.Infil)
     return ServiceResult.InvalidState("Cannot complete infil when not in Infil mode");
-
-// Must have completed at least one combat successfully to exfil
-if (aggregate.ExfilStreak == 0)
-    return ServiceResult.InvalidState("Cannot exfil without completing at least one combat encounter");
 ```
 
-This ensures players can't skip combat by immediately exfiling after starting an infil.
+No combat requirement - players can exfil at any time during an active infil.
 
 ## Testing
 
-### New Test: `AfterVictory_OperatorCanCompleteInfilSuccessfully`
+### New Test: `OperatorCanExfilImmediatelyWithoutCombat`
+
+Validates that players can exfil immediately after starting infil:
+1. Create operator and start infil
+2. Verify operator is in Infil mode with ExfilStreak = 0 (no combat)
+3. Call `CompleteInfilSuccessfullyAsync`
+4. Verify operator is in Base mode with ExfilStreak still 0
+
+### Existing Test: `AfterVictory_OperatorCanCompleteInfilSuccessfully`
 
 Validates the complete post-victory exfil flow:
 1. Create operator and start infil
@@ -95,7 +101,7 @@ Validates the complete post-victory exfil flow:
 ### Test Results
 
 All relevant test suites pass:
-- ✅ 3 InfilVictoryFlowTests (including the new test)
+- ✅ 4 InfilVictoryFlowTests (including the new test)
 - ✅ 39 OperatorExfilServiceTests
 - ✅ 19 OperatorAggregateTests
 - ✅ 112 Mode-related tests
@@ -120,18 +126,22 @@ Player clicks OK → BaseCamp
 BaseCamp shows: [ENGAGE COMBAT] [EXFIL] [VIEW STATS]
 ```
 
-### Post-Victory Exfil Flow (NEW)
+### Exfil Flow (NEW - No Combat Required)
 
 ```
-Player clicks EXFIL
+Player starts infil
+    ↓
+BaseCamp shows: [ENGAGE COMBAT] [EXFIL] [VIEW STATS]
+    ↓
+Player clicks EXFIL (without engaging in combat)
     ↓
 ProcessExfil() checks for active session
     ↓
-No session found, but CurrentMode = "Infil"
+No session found, CurrentMode = "Infil"
     ↓
 POST /infil/complete
     ↓
-Server validates ExfilStreak > 0
+Server validates CurrentMode = Infil
     ↓
 Emit InfilEndedEvent (wasSuccessful: true)
     ↓
@@ -144,6 +154,16 @@ BaseCamp shows: [INFIL] [CHANGE LOADOUT] [TREAT WOUNDS] etc.
 
 ## Design Notes
 
+### Why Allow Exfil Without Combat?
+
+The design allows players full agency over their infil experience:
+- **Risk assessment** - Players can scout and decide to exfil if conditions are unfavorable
+- **Resource management** - Exit before taking damage or using consumables
+- **Time management** - Quick in/out without forced engagement
+- **Learning/Training** - New players can practice infil mechanics without combat pressure
+
+This creates a more flexible and player-friendly system.
+
 ### Why Not Modify ProcessCombatOutcomeAsync?
 
 We could have modified the victory path to not clear `ActiveCombatSessionId`, but this would:
@@ -152,15 +172,6 @@ We could have modified the victory path to not clear `ActiveCombatSessionId`, bu
 - Require changes to auto-resume logic
 
 The separate endpoint approach is cleaner and maintains clear separation of concerns.
-
-### Why Validate ExfilStreak > 0?
-
-This prevents players from:
-1. Starting infil
-2. Immediately exfiling without engaging in combat
-3. Bypassing the risk/reward mechanic
-
-The validation ensures at least one successful combat before allowing exfil.
 
 ### Backward Compatibility
 
@@ -176,6 +187,7 @@ The legacy path (with active session) is preserved for edge cases:
 1. **Multiple combats before exfil** - Already supported! Players can win multiple combats and only exfil when ready
 2. **Exfil bonus for longer streaks** - Could be added by checking `ExfilStreak` in `CompleteInfilSuccessfullyAsync`
 3. **Time-based exfil restrictions** - Could validate minimum time in infil before allowing exfil
+4. **Exfil cost/penalty for no combat** - Could apply a resource cost for exfiling without engaging
 
 ### Migration Path
 
@@ -183,6 +195,7 @@ No migration needed - this is a pure addition. Existing game states will work co
 - Operators in Base mode: No change
 - Operators in Infil with active session: Uses legacy path
 - Operators in Infil after victory: Uses new path
+- Operators in Infil without combat: Uses new path
 
 ## Related Issues
 
