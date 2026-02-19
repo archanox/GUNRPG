@@ -1589,7 +1589,7 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 }
                 
                 // Not in Infil mode and no active session - this shouldn't happen
-                Message = "Cannot exfil without completing a combat.\nYou must engage and complete a combat encounter to exfil.\n\nPress OK to continue.";
+                Message = "Cannot exfil when not in an active infil.\nPlease start an infil first.\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
                 return;
