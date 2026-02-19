@@ -298,12 +298,12 @@ public class LiteDbOperatorEventStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task ExfilSucceeded_ShouldBeStoredAndLoaded()
+    public async Task CombatVictory_ShouldBeStoredAndLoaded()
     {
         // Arrange
         var operatorId = OperatorId.NewId();
         var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
-        var evt2 = new ExfilSucceededEvent(operatorId, 1, evt1.Hash);
+        var evt2 = new CombatVictoryEvent(operatorId, 1, evt1.Hash);
 
         // Act
         await _store.AppendEventAsync(evt1);
@@ -312,7 +312,7 @@ public class LiteDbOperatorEventStoreTests : IDisposable
 
         // Assert
         Assert.Equal(2, events.Count);
-        Assert.IsType<ExfilSucceededEvent>(events[1]);
+        Assert.IsType<CombatVictoryEvent>(events[1]);
     }
 
     [Fact]
@@ -360,7 +360,7 @@ public class LiteDbOperatorEventStoreTests : IDisposable
         var operatorId = OperatorId.NewId();
         var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
         var evt2 = new XpGainedEvent(operatorId, 1, 100, "Victory", evt1.Hash);
-        var evt3 = new ExfilSucceededEvent(operatorId, 2, evt2.Hash);
+        var evt3 = new CombatVictoryEvent(operatorId, 2, evt2.Hash);
 
         var eventsToAppend = new List<OperatorEvent> { evt1, evt2, evt3 };
 
@@ -372,7 +372,7 @@ public class LiteDbOperatorEventStoreTests : IDisposable
         Assert.Equal(3, events.Count);
         Assert.IsType<OperatorCreatedEvent>(events[0]);
         Assert.IsType<XpGainedEvent>(events[1]);
-        Assert.IsType<ExfilSucceededEvent>(events[2]);
+        Assert.IsType<CombatVictoryEvent>(events[2]);
     }
 
     [Fact]
@@ -417,7 +417,7 @@ public class LiteDbOperatorEventStoreTests : IDisposable
         await _store.AppendEventAsync(evt1); // First event already exists
 
         var evt2 = new XpGainedEvent(operatorId, 1, 100, "Victory", evt1.Hash);
-        var evt3 = new ExfilSucceededEvent(operatorId, 2, evt2.Hash);
+        var evt3 = new CombatVictoryEvent(operatorId, 2, evt2.Hash);
         
         // Try to append a batch that includes a duplicate sequence
         var eventsToAppend = new List<OperatorEvent> { evt1, evt2, evt3 }; // evt1 is duplicate

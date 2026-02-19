@@ -222,7 +222,7 @@ public sealed class OperatorAggregate
                 UnlockedPerks = perks;
                 break;
 
-            case ExfilSucceededEvent:
+            case CombatVictoryEvent:
                 // Clear active combat session since this combat is complete
                 // Operator stays in Infil mode with InfilSessionId intact to allow consecutive combats
                 // Note: ExfilStreak is NOT incremented here - it only increments on successful infil completion

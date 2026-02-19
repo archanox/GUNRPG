@@ -88,7 +88,7 @@ All operator events inherit from `OperatorEvent` and include:
 - **WoundsTreatedEvent** - Health restoration
 - **LoadoutChangedEvent** - Equipment changes
 - **PerkUnlockedEvent** - Skill/perk unlocks
-- **ExfilSucceededEvent** - Successful exfil completion (increments streak)
+- **CombatVictoryEvent** - Combat victory (clears ActiveCombatSessionId, does not affect streak)
 - **ExfilFailedEvent** - Failed exfil (resets streak)
 - **OperatorDiedEvent** - Operator death (marks IsDead=true, resets streak)
 
@@ -151,7 +151,7 @@ This ensures deterministic recovery - operators always roll back to their last k
 
 #### Exfil Streak
 The `ExfilStreak` property tracks consecutive successful exfils:
-- Increments by 1 on each `ExfilSucceededEvent`
+- Increments by 1 on each successful `InfilEndedEvent` (`wasSuccessful=true`)
 - Resets to 0 on:
   - `ExfilFailedEvent` (retreat, abandon mission, etc.)
   - `OperatorDiedEvent` (operator death)

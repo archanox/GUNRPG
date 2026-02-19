@@ -19,7 +19,7 @@ Additionally, the original design incorrectly required players to complete comba
 ## Root Cause
 
 The exfil flow was designed around a single-combat-per-infil model. When the multi-combat feature was added (allowing consecutive battles), the victory flow properly:
-- Emits `ExfilSucceededEvent` (increments streak)
+- Emits `CombatVictoryEvent` (clears `ActiveCombatSessionId`)
 - Clears `ActiveCombatSessionId` (allows starting new combat)
 - Keeps operator in `Infil` mode (allows consecutive battles)
 
@@ -93,7 +93,7 @@ Validates that players can exfil immediately after starting infil:
 
 Validates the complete post-victory exfil flow:
 1. Create operator and start infil
-2. Win combat (emits `ExfilSucceededEvent`, clears `ActiveCombatSessionId`)
+2. Win combat (emits `CombatVictoryEvent`, clears `ActiveCombatSessionId`)
 3. Verify operator is in Infil mode with no active session
 4. Call `CompleteInfilSuccessfullyAsync`
 5. Verify operator is in Base mode with preserved `ExfilStreak` and XP
@@ -115,7 +115,7 @@ Player wins combat
     ↓
 ProcessCombatOutcome() → POST /infil/outcome
     ↓
-Server emits ExfilSucceededEvent
+Server emits CombatVictoryEvent
     ↓
 ActiveCombatSessionId = null (but stays in Infil mode)
     ↓

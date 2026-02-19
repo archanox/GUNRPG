@@ -207,16 +207,16 @@ public class OperatorAggregateTests
     }
 
     [Fact]
-    public void ExfilSucceeded_ShouldNotIncrementStreak()
+    public void CombatVictory_ShouldNotIncrementStreak()
     {
-        // ExfilSucceededEvent clears the active combat session but does NOT increment ExfilStreak.
+        // CombatVictoryEvent clears the active combat session but does NOT increment ExfilStreak.
         // ExfilStreak only increments when the infil is completed successfully (InfilEndedEvent with wasSuccessful=true).
         
         // Arrange
         var operatorId = OperatorId.NewId();
         var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
-        var evt2 = new ExfilSucceededEvent(operatorId, 1, evt1.Hash);
-        var evt3 = new ExfilSucceededEvent(operatorId, 2, evt2.Hash);
+        var evt2 = new CombatVictoryEvent(operatorId, 1, evt1.Hash);
+        var evt3 = new CombatVictoryEvent(operatorId, 2, evt2.Hash);
 
         // Act
         var events = new List<OperatorEvent> { evt1, evt2, evt3 };
@@ -233,8 +233,8 @@ public class OperatorAggregateTests
         // Arrange
         var operatorId = OperatorId.NewId();
         var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
-        var evt2 = new ExfilSucceededEvent(operatorId, 1, evt1.Hash);
-        var evt3 = new ExfilSucceededEvent(operatorId, 2, evt2.Hash);
+        var evt2 = new CombatVictoryEvent(operatorId, 1, evt1.Hash);
+        var evt3 = new CombatVictoryEvent(operatorId, 2, evt2.Hash);
         var evt4 = new ExfilFailedEvent(operatorId, 3, "Retreat", evt3.Hash);
 
         // Act
@@ -252,7 +252,7 @@ public class OperatorAggregateTests
         // Arrange
         var operatorId = OperatorId.NewId();
         var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
-        var evt2 = new ExfilSucceededEvent(operatorId, 1, evt1.Hash);
+        var evt2 = new CombatVictoryEvent(operatorId, 1, evt1.Hash);
         var evt3 = new OperatorDiedEvent(operatorId, 2, "Combat casualty", evt2.Hash);
 
         // Act
@@ -266,14 +266,14 @@ public class OperatorAggregateTests
     }
 
     [Fact]
-    public void ExfilSucceeded_ShouldClearActiveSessionId()
+    public void CombatVictory_ShouldClearActiveSessionId()
     {
         // Arrange
         var operatorId = OperatorId.NewId();
         var sessionId = Guid.NewGuid();
         var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
         var evt2 = new InfilStartedEvent(operatorId, 1, sessionId, "AK-47", DateTimeOffset.UtcNow, evt1.Hash);
-        var evt3 = new ExfilSucceededEvent(operatorId, 2, evt2.Hash);
+        var evt3 = new CombatVictoryEvent(operatorId, 2, evt2.Hash);
 
         // Act
         var events = new List<OperatorEvent> { evt1, evt2, evt3 };

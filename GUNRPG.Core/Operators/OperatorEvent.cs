@@ -349,12 +349,13 @@ public sealed class PerkUnlockedEvent : OperatorEvent
 }
 
 /// <summary>
-/// Event emitted when an operator successfully completes exfil.
-/// This increments the operator's exfil streak.
+/// Event emitted when an operator wins a combat encounter.
+/// Clears the active combat session ID so the operator can start a new combat within the same infil.
+/// Does NOT increment ExfilStreak — the streak is incremented only when the infil completes successfully.
 /// </summary>
-public sealed class ExfilSucceededEvent : OperatorEvent
+public sealed class CombatVictoryEvent : OperatorEvent
 {
-    public ExfilSucceededEvent(
+    public CombatVictoryEvent(
         OperatorId operatorId,
         long sequenceNumber,
         string previousHash,
@@ -362,14 +363,14 @@ public sealed class ExfilSucceededEvent : OperatorEvent
         : base(
             operatorId,
             sequenceNumber,
-            eventType: "ExfilSucceeded",
+            eventType: "CombatVictory",
             payload: JsonSerializer.Serialize(new { }),
             previousHash: previousHash,
             timestamp: timestamp)
     {
     }
 
-    private ExfilSucceededEvent(
+    private CombatVictoryEvent(
         OperatorId operatorId,
         long sequenceNumber,
         string payload,
@@ -378,7 +379,7 @@ public sealed class ExfilSucceededEvent : OperatorEvent
         : base(
             operatorId,
             sequenceNumber,
-            eventType: "ExfilSucceeded",
+            eventType: "CombatVictory",
             payload: payload,
             previousHash: previousHash,
             timestamp: timestamp)
@@ -386,17 +387,17 @@ public sealed class ExfilSucceededEvent : OperatorEvent
     }
 
     /// <summary>
-    /// Rehydrates an ExfilSucceededEvent from storage.
+    /// Rehydrates a CombatVictoryEvent from storage.
     /// Accepts the persisted payload to enable hash chain verification by the caller.
     /// </summary>
-    public static ExfilSucceededEvent Rehydrate(
+    public static CombatVictoryEvent Rehydrate(
         OperatorId operatorId,
         long sequenceNumber,
         string payload,
         string previousHash,
         DateTimeOffset timestamp)
     {
-        return new ExfilSucceededEvent(operatorId, sequenceNumber, payload, previousHash, timestamp);
+        return new CombatVictoryEvent(operatorId, sequenceNumber, payload, previousHash, timestamp);
     }
 }
 
