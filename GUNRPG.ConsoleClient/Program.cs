@@ -1554,50 +1554,54 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     {
         try
         {
-            // Use authoritative combat session ID with fallback
-            var sessionId = ActiveSessionId ?? CurrentOperator?.ActiveCombatSessionId;
+            // Get combat session ID (may be null after victory or if no combat started)
+            var activeCombatSessionId = ActiveSessionId ?? CurrentOperator?.ActiveCombatSessionId;
             
-            // If no active session but operator is in Infil mode, complete the infil successfully
-            // This happens after victory when ActiveSessionId is cleared but operator stays in Infil mode
-            if (!sessionId.HasValue)
+            // Get infil session ID (should always exist when in Infil mode)
+            var infilSessionId = CurrentOperator?.InfilSessionId;
+            
+            // If no active combat session, use the new complete infil endpoint
+            // This happens after victory (ActiveCombatSessionId cleared) or when exfiling without combat
+            if (!activeCombatSessionId.HasValue)
             {
-                if (CurrentOperator?.CurrentMode == "Infil")
+                // Validate we have an infil session - this should always be true when in Infil mode
+                if (!infilSessionId.HasValue)
                 {
-                    // Complete infil successfully using the new endpoint
-                    using var completeResponse = client.PostAsync($"operators/{CurrentOperatorId}/infil/complete", null)
-                        .GetAwaiter().GetResult();
-                    
-                    if (completeResponse.IsSuccessStatusCode)
-                    {
-                        // Clear session state and refresh
-                        ActiveSessionId = null;
-                        CurrentSession = null;
-                        RefreshOperator();
-                        Message = "Exfil successful!\nReturning to base.\n\nPress OK to continue.";
-                        CurrentScreen = Screen.Message;
-                        ReturnScreen = Screen.BaseCamp;
-                        return;
-                    }
-                    
-                    // If complete failed, show error
-                    var errorContent = completeResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                    ErrorMessage = $"Failed to complete exfil: {completeResponse.StatusCode} - {errorContent}";
-                    Message = $"Exfil failed.\n{ErrorMessage}\n\nPress OK to continue.";
+                    // This is an error state - operator claims to be in Infil mode but has no infil session
+                    Message = "Error: Invalid infil state.\nNo infil session found.\n\nPress OK to continue.";
                     CurrentScreen = Screen.Message;
                     ReturnScreen = Screen.BaseCamp;
                     return;
                 }
                 
-                // Not in Infil mode and no active session - this shouldn't happen
-                Message = "Cannot exfil when not in an active infil.\nPlease start an infil first.\n\nPress OK to continue.";
+                // Complete infil successfully using the new endpoint
+                using var completeResponse = client.PostAsync($"operators/{CurrentOperatorId}/infil/complete", null)
+                    .GetAwaiter().GetResult();
+                
+                if (completeResponse.IsSuccessStatusCode)
+                {
+                    // Clear session state and refresh
+                    ActiveSessionId = null;
+                    CurrentSession = null;
+                    RefreshOperator();
+                    Message = "Exfil successful!\nReturning to base.\n\nPress OK to continue.";
+                    CurrentScreen = Screen.Message;
+                    ReturnScreen = Screen.BaseCamp;
+                    return;
+                }
+                
+                // If complete failed, show error
+                var errorContent = completeResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                ErrorMessage = $"Failed to complete exfil: {completeResponse.StatusCode} - {errorContent}";
+                Message = $"Exfil failed.\n{ErrorMessage}\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.BaseCamp;
                 return;
             }
             
-            // Process EXFIL for the completed combat session (legacy path for active sessions)
-            var request = new { SessionId = sessionId.Value };
-            using (var sessionStateResponse = client.GetAsync($"sessions/{sessionId.Value}/state").GetAwaiter().GetResult())
+            // Legacy path: Process EXFIL for the completed combat session
+            var request = new { SessionId = activeCombatSessionId.Value };
+            using (var sessionStateResponse = client.GetAsync($"sessions/{activeCombatSessionId.Value}/state").GetAwaiter().GetResult())
             {
                 if (!sessionStateResponse.IsSuccessStatusCode)
                 {
