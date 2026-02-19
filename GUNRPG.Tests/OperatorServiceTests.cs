@@ -38,6 +38,33 @@ public sealed class OperatorServiceTests : IDisposable
         _database.Dispose();
     }
 
+    /// <summary>
+    /// Helper method to start a combat session and create the actual session object.
+    /// This is the standard two-step process: emit event, then create session.
+    /// </summary>
+    private async Task<Guid> StartAndCreateCombatSessionAsync(Guid operatorId, string playerName)
+    {
+        // Start a combat session (emits event)
+        var startCombatResult = await _operatorService.StartCombatSessionAsync(operatorId);
+        if (!startCombatResult.IsSuccess)
+            throw new InvalidOperationException($"Failed to start combat session: {startCombatResult.ErrorMessage}");
+        
+        var sessionId = startCombatResult.Value!;
+        
+        // Create the actual combat session
+        var sessionRequest = new SessionCreateRequest
+        {
+            Id = sessionId,
+            OperatorId = operatorId,
+            PlayerName = playerName
+        };
+        var sessionCreateResult = await _sessionService.CreateSessionAsync(sessionRequest);
+        if (!sessionCreateResult.IsSuccess)
+            throw new InvalidOperationException($"Failed to create session: {sessionCreateResult.ErrorMessage}");
+        
+        return sessionId;
+    }
+
     [Fact]
     public async Task CleanupCompletedSessionAsync_WithCompletedSession_ProcessesOutcome()
     {
@@ -49,20 +76,8 @@ public sealed class OperatorServiceTests : IDisposable
         var infilResult = await _operatorService.StartInfilAsync(operatorId);
         Assert.True(infilResult.IsSuccess);
         
-        // Start a combat session
-        var startCombatResult = await _operatorService.StartCombatSessionAsync(operatorId);
-        Assert.True(startCombatResult.IsSuccess);
-        var sessionId = startCombatResult.Value!;
-        
-        // Create the actual combat session
-        var sessionRequest = new SessionCreateRequest
-        {
-            Id = sessionId,
-            OperatorId = operatorId,
-            PlayerName = "TestOp"
-        };
-        var sessionCreateResult = await _sessionService.CreateSessionAsync(sessionRequest);
-        Assert.True(sessionCreateResult.IsSuccess);
+        // Start and create combat session
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
 
         // Complete the combat session (simulate victory)
         for (int i = 0; i < 20; i++)
@@ -122,20 +137,8 @@ public sealed class OperatorServiceTests : IDisposable
         var infilResult = await _operatorService.StartInfilAsync(operatorId);
         Assert.True(infilResult.IsSuccess);
         
-        // Start a combat session
-        var startCombatResult = await _operatorService.StartCombatSessionAsync(operatorId);
-        Assert.True(startCombatResult.IsSuccess);
-        var sessionId = startCombatResult.Value!;
-        
-        // Create the actual combat session
-        var sessionRequest = new SessionCreateRequest
-        {
-            Id = sessionId,
-            OperatorId = operatorId,
-            PlayerName = "TestOp"
-        };
-        var sessionCreateResult = await _sessionService.CreateSessionAsync(sessionRequest);
-        Assert.True(sessionCreateResult.IsSuccess);
+        // Start and create combat session
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
 
         // Complete the combat session
         for (int i = 0; i < 20; i++)
@@ -182,20 +185,8 @@ public sealed class OperatorServiceTests : IDisposable
         var infilResult = await _operatorService.StartInfilAsync(operatorId);
         Assert.True(infilResult.IsSuccess);
         
-        // Start a combat session
-        var startCombatResult = await _operatorService.StartCombatSessionAsync(operatorId);
-        Assert.True(startCombatResult.IsSuccess);
-        var sessionId = startCombatResult.Value!;
-        
-        // Create the actual combat session
-        var sessionRequest = new SessionCreateRequest
-        {
-            Id = sessionId,
-            OperatorId = operatorId,
-            PlayerName = "TestOp"
-        };
-        var sessionCreateResult = await _sessionService.CreateSessionAsync(sessionRequest);
-        Assert.True(sessionCreateResult.IsSuccess);
+        // Start and create combat session
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
 
         // Act: Load operator with active (non-completed) session
         var operatorResult = await _operatorService.GetOperatorAsync(operatorId);
@@ -224,20 +215,8 @@ public sealed class OperatorServiceTests : IDisposable
 
         var infilResult = await _operatorService.StartInfilAsync(operatorId);
         
-        // Start a combat session
-        var startCombatResult = await _operatorService.StartCombatSessionAsync(operatorId);
-        Assert.True(startCombatResult.IsSuccess);
-        var sessionId = startCombatResult.Value!;
-        
-        // Create the actual combat session
-        var sessionRequest = new SessionCreateRequest
-        {
-            Id = sessionId,
-            OperatorId = operatorId,
-            PlayerName = "TestOp"
-        };
-        var sessionCreateResult = await _sessionService.CreateSessionAsync(sessionRequest);
-        Assert.True(sessionCreateResult.IsSuccess);
+        // Start and create combat session
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
 
         // Complete combat
         for (int i = 0; i < 20; i++)
@@ -285,10 +264,8 @@ public sealed class OperatorServiceTests : IDisposable
 
         var infilResult = await _operatorService.StartInfilAsync(operatorId);
         
-        // Start a combat session
-        var startCombatResult = await _operatorService.StartCombatSessionAsync(operatorId);
-        Assert.True(startCombatResult.IsSuccess);
-        var sessionId = startCombatResult.Value!;
+        // Start and create combat session
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
 
         // Delete the session from the store to simulate missing session
         await _sessionStore.DeleteAsync(sessionId);
@@ -312,20 +289,8 @@ public sealed class OperatorServiceTests : IDisposable
 
         var infilResult = await _operatorService.StartInfilAsync(operatorId);
         
-        // Start a combat session
-        var startCombatResult = await _operatorService.StartCombatSessionAsync(operatorId);
-        Assert.True(startCombatResult.IsSuccess);
-        var sessionId = startCombatResult.Value!;
-        
-        // Create the actual combat session
-        var sessionRequest = new SessionCreateRequest
-        {
-            Id = sessionId,
-            OperatorId = operatorId,
-            PlayerName = "TestOp"
-        };
-        var sessionCreateResult = await _sessionService.CreateSessionAsync(sessionRequest);
-        Assert.True(sessionCreateResult.IsSuccess);
+        // Start and create combat session
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
 
         // Act: Cleanup when session is still active (Planning phase)
         var cleanupResult = await _operatorService.CleanupCompletedSessionAsync(operatorId);
@@ -352,20 +317,8 @@ public sealed class OperatorServiceTests : IDisposable
 
         var infilResult = await _operatorService.StartInfilAsync(operatorId);
         
-        // Start a combat session
-        var startCombatResult = await _operatorService.StartCombatSessionAsync(operatorId);
-        Assert.True(startCombatResult.IsSuccess);
-        var sessionId = startCombatResult.Value!;
-        
-        // Create the actual combat session
-        var sessionRequest = new SessionCreateRequest
-        {
-            Id = sessionId,
-            OperatorId = operatorId,
-            PlayerName = "TestOp"
-        };
-        var sessionCreateResult = await _sessionService.CreateSessionAsync(sessionRequest);
-        Assert.True(sessionCreateResult.IsSuccess);
+        // Start and create combat session
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
 
         // Complete combat
         for (int i = 0; i < 20; i++)
