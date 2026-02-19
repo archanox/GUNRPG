@@ -1575,7 +1575,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
                 }
                 
                 // Complete infil successfully using the new endpoint
-                using var completeResponse = client.PostAsync($"operators/{CurrentOperatorId}/infil/complete", null)
+                using var completeResponse = client.SendAsync(
+                    new HttpRequestMessage(HttpMethod.Post, $"operators/{CurrentOperatorId}/infil/complete"))
                     .GetAwaiter().GetResult();
                 
                 if (completeResponse.IsSuccessStatusCode)

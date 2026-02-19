@@ -27,7 +27,7 @@ However, the exfil logic still required an active combat session, creating a cat
 
 ## Solution
 
-### New Endpoint: `/infil/complete`
+### New Endpoint: `POST /operators/{id}/infil/complete`
 
 Added a new flow for completing infil successfully at any time, with or without combat.
 
@@ -56,7 +56,7 @@ Added a new flow for completing infil successfully at any time, with or without 
 Modified to handle two distinct cases:
 
 1. **No active session + Infil mode** (NEW - post-victory or no-combat path)
-   - Calls `POST /infil/complete`
+   - Calls `POST /operators/{id}/infil/complete`
    - Shows "Exfil successful!" message
    - Returns to base
 
@@ -139,7 +139,7 @@ ProcessExfil() checks for active session
     ↓
 No session found, CurrentMode = "Infil"
     ↓
-POST /infil/complete
+POST /operators/{id}/infil/complete
     ↓
 Server validates CurrentMode = Infil
     ↓
