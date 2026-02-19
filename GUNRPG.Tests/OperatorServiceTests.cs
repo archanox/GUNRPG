@@ -119,8 +119,8 @@ public sealed class OperatorServiceTests : IDisposable
         // Operator should still be in Infil mode (victory keeps you in infil)
         Assert.Equal(OperatorMode.Infil, op.CurrentMode);
         
-        // Exfil streak should be incremented (victory outcome processed)
-        Assert.Equal(1, op.ExfilStreak);
+        // Exfil streak is NOT incremented on combat victory (only on infil completion)
+        Assert.Equal(0, op.ExfilStreak);
         
         // ActiveCombatSession should be null (outcome processed, session reference cleared)
         Assert.Null(op.ActiveCombatSession);
@@ -239,7 +239,7 @@ public sealed class OperatorServiceTests : IDisposable
         // Assert: After victory, operator stays in Infil mode but with no active session
         Assert.Equal(OperatorMode.Infil, operatorAfterCleanup.Value!.CurrentMode);
         Assert.Null(operatorAfterCleanup.Value.ActiveCombatSessionId);
-        Assert.Equal(1, operatorAfterCleanup.Value.ExfilStreak);
+        Assert.Equal(0, operatorAfterCleanup.Value.ExfilStreak); // No streak increment from combat victory
 
         // Act: CompleteExfil should work (this is called when user explicitly exfils after victory)
         var exfilResult = await _exfilService.CompleteExfilAsync(new OperatorId(operatorId));
@@ -252,7 +252,7 @@ public sealed class OperatorServiceTests : IDisposable
         var finalState = await _operatorService.GetOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, finalState.Value!.CurrentMode);  // Still in Infil!
         Assert.Null(finalState.Value.ActiveCombatSessionId);
-        Assert.Equal(2, finalState.Value.ExfilStreak); // Streak incremented again
+        Assert.Equal(0, finalState.Value.ExfilStreak); // CompleteExfilAsync emits ExfilSucceededEvent which does not increment streak
     }
 
     [Fact]

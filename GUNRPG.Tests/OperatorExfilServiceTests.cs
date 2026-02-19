@@ -323,12 +323,12 @@ public class OperatorExfilServiceTests : IDisposable
         await _service.CompleteExfilAsync(operatorId);
         // Note: CompleteExfilAsync doesn't end infil mode, so we can't call StartInfilAsync again
         // This test should probably be updated to use ProcessCombatOutcomeAsync instead
-        // For now, just test that one exfil increments the streak
+        // CompleteExfilAsync emits ExfilSucceededEvent which clears the active session but does NOT increment streak
         
         // Assert
         var loadResult = await _service.LoadOperatorAsync(operatorId);
         var aggregate = loadResult.Value!;
-        Assert.Equal(1, aggregate.ExfilStreak);
+        Assert.Equal(0, aggregate.ExfilStreak); // CompleteExfilAsync does not increment streak
     }
 
     [Fact]
@@ -457,7 +457,7 @@ public class OperatorExfilServiceTests : IDisposable
         // Assert
         Assert.True(result.IsSuccess);
         var loadResult = await _service.LoadOperatorAsync(operatorId);
-        Assert.Equal(1, loadResult.Value!.ExfilStreak); // New streak starts
+        Assert.Equal(0, loadResult.Value!.ExfilStreak); // CompleteExfilAsync does not increment streak
     }
 
     [Fact]
@@ -538,7 +538,7 @@ public class OperatorExfilServiceTests : IDisposable
         var aggregate = loadResult.Value!;
         
         Assert.Equal(100, aggregate.TotalXp);
-        Assert.Equal(1, aggregate.ExfilStreak);
+        Assert.Equal(0, aggregate.ExfilStreak); // Combat victory alone does not increment streak
         Assert.False(aggregate.IsDead);
         Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Still in Infil after victory
         
@@ -585,7 +585,7 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.True(exfilResult2.IsSuccess);
         
         var loadBefore = await _service.LoadOperatorAsync(operatorId);
-        Assert.Equal(2, loadBefore.Value!.ExfilStreak);
+        Assert.Equal(0, loadBefore.Value!.ExfilStreak); // Combat victories do not increment streak
 
         // Third combat - operator dies
         var sessionId3 = Guid.NewGuid();
@@ -754,7 +754,7 @@ public class OperatorExfilServiceTests : IDisposable
         var loadResult = await _service.LoadOperatorAsync(operatorId);
         var aggregate = loadResult.Value!;
         
-        Assert.Equal(5, aggregate.ExfilStreak);
+        Assert.Equal(0, aggregate.ExfilStreak); // Combat victories alone do not increment streak
         Assert.Equal(500, aggregate.TotalXp);
         Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Still in Infil mode after victories
     }
@@ -788,7 +788,7 @@ public class OperatorExfilServiceTests : IDisposable
         var aggregate = loadResult.Value!;
         
         Assert.Equal(0, aggregate.TotalXp);
-        Assert.Equal(1, aggregate.ExfilStreak); // Exfil still succeeds
+        Assert.Equal(0, aggregate.ExfilStreak); // Combat victory alone does not increment streak
         Assert.Equal(OperatorMode.Infil, aggregate.CurrentMode); // Still in Infil after victory
         
         // Should have: OperatorCreated + InfilStarted + ExfilSucceeded = 3 events (no XpGained, no InfilEnded)
@@ -829,7 +829,7 @@ public class OperatorExfilServiceTests : IDisposable
         var aggregate1 = loadResult1.Value!;
         
         Assert.Equal(150, aggregate1.TotalXp);
-        Assert.Equal(1, aggregate1.ExfilStreak);
+        Assert.Equal(0, aggregate1.ExfilStreak); // Combat victory alone does not increment streak
         Assert.False(aggregate1.IsDead);
         Assert.Equal(OperatorMode.Infil, aggregate1.CurrentMode); // Still in Infil after victory
 
@@ -854,7 +854,7 @@ public class OperatorExfilServiceTests : IDisposable
         var aggregate2 = loadResult2.Value!;
         
         Assert.Equal(350, aggregate2.TotalXp); // 150 + 200
-        Assert.Equal(2, aggregate2.ExfilStreak); // Both exfils succeeded
+        Assert.Equal(0, aggregate2.ExfilStreak); // Combat victories alone do not increment streak
         Assert.False(aggregate2.IsDead);
         Assert.Equal(OperatorMode.Infil, aggregate2.CurrentMode); // Still in Infil after victories
         
@@ -945,7 +945,7 @@ public class OperatorExfilServiceTests : IDisposable
         // Verify: Operator should stay in Infil mode
         var load1 = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, load1.Value!.CurrentMode);
-        Assert.Equal(1, load1.Value!.ExfilStreak);
+        Assert.Equal(0, load1.Value!.ExfilStreak); // Streak NOT incremented by combat victory
         Assert.Equal(100, load1.Value!.TotalXp);
         Assert.Null(load1.Value!.ActiveCombatSessionId); // ActiveSessionId cleared after victory
 
@@ -964,10 +964,10 @@ public class OperatorExfilServiceTests : IDisposable
         var result2 = await _service.ProcessCombatOutcomeAsync(victory2, playerConfirmed: true);
         Assert.True(result2.IsSuccess);
 
-        // Verify: Still in Infil mode, streak incremented
+        // Verify: Still in Infil mode, streak not incremented
         var load2 = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, load2.Value!.CurrentMode);
-        Assert.Equal(2, load2.Value!.ExfilStreak);
+        Assert.Equal(0, load2.Value!.ExfilStreak); // Streak still NOT incremented by combat victories
         Assert.Equal(250, load2.Value!.TotalXp);
         Assert.Null(load2.Value!.ActiveCombatSessionId); // ActiveSessionId cleared after second victory
 
