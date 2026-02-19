@@ -560,7 +560,8 @@ class GameState(HttpClient client, JsonSerializerOptions options)
     {
         try
         {
-            // Start the infil - server now creates the combat session atomically
+            // Start the infil - this only transitions the operator to Infil mode
+            // Combat sessions are created when the player chooses to engage in combat
             var response = client.PostAsync($"operators/{CurrentOperatorId}/infil/start", null).GetAwaiter().GetResult();
             
             if (!response.IsSuccessStatusCode)
@@ -574,10 +575,10 @@ class GameState(HttpClient client, JsonSerializerOptions options)
             }
 
             var result = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
-            ActiveSessionId = result.GetProperty("sessionId").GetGuid();
+            // Don't set ActiveSessionId - it will be set when player engages in combat
             CurrentOperator = ParseOperator(result.GetProperty("operator"));
             
-            // Stay in Field Ops after infil; let player decide when to engage combat.
+            // Return to Field Ops; player can choose to engage combat or exfil
             CurrentScreen = Screen.BaseCamp;
         }
         catch (Exception ex)
