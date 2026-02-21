@@ -1,6 +1,7 @@
 using GUNRPG.Application.Sessions;
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Intents;
+using GUNRPG.Core.Operators;
 
 namespace GUNRPG.Application.Combat;
 
@@ -43,20 +44,8 @@ public static class CombatSimulationService
             }
 
             // AI decides intents for both player and enemy
-            var playerIntents = session.Ai.DecideIntents(session.Player, session.Enemy, session.Combat);
-            var playerSubmission = session.Combat.SubmitIntents(session.Player, playerIntents);
-            if (!playerSubmission.success)
-            {
-                // Fallback: submit stop intents
-                session.Combat.SubmitIntents(session.Player, SimultaneousIntents.CreateStop(session.Player.Id));
-            }
-
-            var enemyIntents = session.Ai.DecideIntents(session.Enemy, session.Player, session.Combat);
-            var enemySubmission = session.Combat.SubmitIntents(session.Enemy, enemyIntents);
-            if (!enemySubmission.success)
-            {
-                session.Combat.SubmitIntents(session.Enemy, SimultaneousIntents.CreateStop(session.Enemy.Id));
-            }
+            SubmitIntentsWithFallback(session, session.Player, session.Enemy);
+            SubmitIntentsWithFallback(session, session.Enemy, session.Player);
 
             // Transition to resolving and begin execution
             session.TransitionTo(SessionPhase.Resolving);
@@ -89,5 +78,18 @@ public static class CombatSimulationService
         }
 
         return session.GetOutcome();
+    }
+
+    /// <summary>
+    /// Submits AI-decided intents for an operator, falling back to stop intents on failure.
+    /// </summary>
+    private static void SubmitIntentsWithFallback(CombatSession session, Operator self, Operator opponent)
+    {
+        var intents = session.Ai.DecideIntents(self, opponent, session.Combat);
+        var submission = session.Combat.SubmitIntents(self, intents);
+        if (!submission.success)
+        {
+            session.Combat.SubmitIntents(self, SimultaneousIntents.CreateStop(self.Id));
+        }
     }
 }

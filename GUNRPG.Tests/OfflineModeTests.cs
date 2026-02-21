@@ -1,4 +1,5 @@
 using GUNRPG.Application.Backend;
+using GUNRPG.Application.Combat;
 using GUNRPG.Infrastructure;
 using GUNRPG.Infrastructure.Backend;
 using GUNRPG.Infrastructure.Persistence;
@@ -252,6 +253,39 @@ public sealed class OfflineModeTests : IDisposable
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => offlineBackend.ExecuteMissionAsync(new MissionRequest { OperatorId = "nonexistent" }));
+    }
+
+    [Fact]
+    public void CombatSimulation_WithFixedSeed_ProducesDeterministicResults()
+    {
+        // Running the same seed twice should produce identical combat outcomes
+        var outcome1 = CombatSimulationService.RunSimulation(playerName: "TestOp", seed: 42);
+        var outcome2 = CombatSimulationService.RunSimulation(playerName: "TestOp", seed: 42);
+
+        Assert.Equal(outcome1.IsVictory, outcome2.IsVictory);
+        Assert.Equal(outcome1.OperatorDied, outcome2.OperatorDied);
+        Assert.Equal(outcome1.XpGained, outcome2.XpGained);
+    }
+
+    [Fact]
+    public void CombatSimulation_ProducesValidOutcome()
+    {
+        var outcome = CombatSimulationService.RunSimulation(playerName: "TestOp", seed: 100);
+
+        Assert.True(outcome.TurnsSurvived > 0, "Combat should have lasted at least one turn");
+        Assert.True(outcome.XpGained >= 0, "XP gained should be non-negative");
+
+        // Victory and death are mutually exclusive
+        if (outcome.IsVictory)
+        {
+            Assert.False(outcome.OperatorDied, "Victory requires operator survival");
+            Assert.Equal(100, outcome.XpGained);
+        }
+        if (outcome.OperatorDied)
+        {
+            Assert.False(outcome.IsVictory, "Dead operator cannot have victory");
+            Assert.Equal(0, outcome.XpGained);
+        }
     }
 
     [Fact]
