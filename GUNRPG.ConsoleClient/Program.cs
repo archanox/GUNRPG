@@ -28,7 +28,7 @@ var offlineStore = new OfflineStore(offlineDb);
 
 // Resolve game backend based on server reachability and local state
 var backendResolver = new GameBackendResolver(httpClient, offlineStore, jsonOptions);
-var backend = backendResolver.ResolveAsync().GetAwaiter().GetResult();
+var backend = await backendResolver.ResolveAsync();
 
 var gameState = new GameState(httpClient, jsonOptions, backend, backendResolver, offlineStore);
 

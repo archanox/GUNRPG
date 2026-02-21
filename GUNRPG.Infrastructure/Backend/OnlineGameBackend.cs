@@ -87,24 +87,12 @@ public sealed class OnlineGameBackend : IGameBackend
     {
         try
         {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            return new OperatorDto
+            var dto = JsonSerializer.Deserialize<OperatorDto>(json, _jsonOptions);
+            if (dto != null)
             {
-                Id = id,
-                Name = root.TryGetProperty("name", out var name) ? name.GetString() ?? string.Empty : string.Empty,
-                TotalXp = root.TryGetProperty("totalXp", out var xp) ? xp.GetInt64() : 0,
-                CurrentHealth = root.TryGetProperty("currentHealth", out var hp) ? hp.GetSingle() : 0,
-                MaxHealth = root.TryGetProperty("maxHealth", out var maxHp) ? maxHp.GetSingle() : 100,
-                EquippedWeaponName = root.TryGetProperty("equippedWeaponName", out var weapon) ? weapon.GetString() ?? string.Empty : string.Empty,
-                UnlockedPerks = root.TryGetProperty("unlockedPerks", out var perks) && perks.ValueKind == JsonValueKind.Array
-                    ? perks.EnumerateArray().Select(p => p.GetString() ?? string.Empty).ToList()
-                    : new List<string>(),
-                ExfilStreak = root.TryGetProperty("exfilStreak", out var streak) ? streak.GetInt32() : 0,
-                IsDead = root.TryGetProperty("isDead", out var dead) && dead.GetBoolean(),
-                CurrentMode = root.TryGetProperty("currentMode", out var mode) ? mode.GetString() ?? string.Empty : string.Empty
-            };
+                dto.Id = id;
+            }
+            return dto;
         }
         catch
         {

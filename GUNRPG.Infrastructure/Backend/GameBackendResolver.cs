@@ -66,8 +66,9 @@ public sealed class GameBackendResolver
             var response = await _httpClient.GetAsync("operators", cts.Token);
             return response.IsSuccessStatusCode;
         }
-        catch
+        catch (Exception ex)
         {
+            Console.WriteLine($"[MODE] Server connectivity check failed: {ex.Message}");
             return false;
         }
     }
