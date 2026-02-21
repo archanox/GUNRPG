@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GUNRPG.Application.Backend;
+using GUNRPG.Application.Combat;
 using GUNRPG.Infrastructure.Persistence;
 
 namespace GUNRPG.Infrastructure.Backend;
@@ -49,17 +50,31 @@ public sealed class OfflineGameBackend : IGameBackend
         var operatorDto = JsonSerializer.Deserialize<OperatorDto>(infiled.SnapshotJson)
             ?? throw new InvalidOperationException("Failed to deserialize operator snapshot.");
 
-        // Simulate a basic mission result offline
+        // Run full combat simulation using the same domain logic as online mode
+        Guid? operatorGuid = Guid.TryParse(request.OperatorId, out var parsed) ? parsed : null;
+        var outcome = CombatSimulationService.RunSimulation(
+            playerName: operatorDto.Name,
+            operatorId: operatorGuid);
+
+        // Map CombatOutcome to MissionResultDto
         var result = new MissionResultDto
         {
             OperatorId = request.OperatorId,
-            Victory = true,
-            XpGained = 10,
+            Victory = outcome.IsVictory,
+            XpGained = outcome.XpGained,
+            OperatorDied = outcome.OperatorDied,
+            TurnsSurvived = outcome.TurnsSurvived,
+            DamageTaken = outcome.DamageTaken,
             ResultJson = JsonSerializer.Serialize(new
             {
                 operatorId = request.OperatorId,
-                sessionId = request.SessionId,
+                sessionId = outcome.SessionId.ToString(),
                 executedOffline = true,
+                isVictory = outcome.IsVictory,
+                operatorDied = outcome.OperatorDied,
+                xpGained = outcome.XpGained,
+                turnsSurvived = outcome.TurnsSurvived,
+                damageTaken = outcome.DamageTaken,
                 timestamp = DateTime.UtcNow
             })
         };
@@ -74,15 +89,20 @@ public sealed class OfflineGameBackend : IGameBackend
         };
         _offlineStore.SaveMissionResult(offlineResult);
 
-        // Update the local operator snapshot with any changes
+        // Update the local operator snapshot with combat results
         operatorDto.TotalXp += result.XpGained;
-        if (result.Victory)
+        if (outcome.IsVictory)
         {
             operatorDto.ExfilStreak++;
         }
+        if (outcome.OperatorDied)
+        {
+            operatorDto.IsDead = true;
+        }
         _offlineStore.UpdateOperatorSnapshot(request.OperatorId, operatorDto);
 
-        Console.WriteLine($"[OFFLINE] Mission executed locally for operator '{operatorDto.Name}'. Result persisted for sync.");
+        Console.WriteLine($"[OFFLINE] Combat simulation completed for '{operatorDto.Name}': " +
+            $"Victory={outcome.IsVictory}, XP={outcome.XpGained}, Turns={outcome.TurnsSurvived}");
         return Task.FromResult(result);
     }
 
