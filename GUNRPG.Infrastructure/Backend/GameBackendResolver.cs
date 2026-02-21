@@ -39,20 +39,34 @@ public sealed class GameBackendResolver
         {
             CurrentMode = GameMode.Online;
             Console.WriteLine("[MODE] Online mode — server is reachable.");
+            LogUnsyncedResults();
             return new OnlineGameBackend(_httpClient, _offlineStore, _jsonOptions);
         }
 
         if (_offlineStore.HasActiveInfiledOperator())
         {
             CurrentMode = GameMode.Offline;
-            Console.WriteLine("[MODE] Offline mode — server unreachable, using infiled operator snapshot.");
+            var activeOp = _offlineStore.GetActiveInfiledOperator();
+            Console.WriteLine($"[MODE] Offline mode — server unreachable, using infiled operator snapshot (ID: {activeOp?.Id}).");
+            LogUnsyncedResults();
             return new OfflineGameBackend(_offlineStore);
         }
 
         CurrentMode = GameMode.Blocked;
-        Console.WriteLine("[MODE] Online mode (blocked) — server unreachable and no infiled operator available.");
-        // Return online backend, but gameplay will be blocked at the client level
+        Console.WriteLine("[MODE] Blocked — server unreachable and no infiled operator available. Gameplay blocked.");
         return new OnlineGameBackend(_httpClient, _offlineStore, _jsonOptions);
+    }
+
+    /// <summary>
+    /// Logs the count of unsynced offline mission results.
+    /// </summary>
+    private void LogUnsyncedResults()
+    {
+        var unsyncedResults = _offlineStore.GetAllUnsyncedResults();
+        if (unsyncedResults.Count > 0)
+        {
+            Console.WriteLine($"[SYNC] {unsyncedResults.Count} unsynced offline mission result(s) pending.");
+        }
     }
 
     /// <summary>

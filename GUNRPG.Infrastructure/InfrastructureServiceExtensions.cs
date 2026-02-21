@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Operators;
 using GUNRPG.Application.Sessions;
@@ -97,6 +98,7 @@ public static class InfrastructureServiceExtensions
     /// Registers the game backend abstraction with mode resolution logic.
     /// Resolution: server reachable → OnlineGameBackend; else if infiled operator → OfflineGameBackend;
     /// else → OnlineGameBackend (gameplay blocked).
+    /// For server-side DI container usage.
     /// </summary>
     public static IServiceCollection AddGameBackend(this IServiceCollection services)
     {
@@ -109,6 +111,27 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<GameBackendResolver>();
 
         return services;
+    }
+
+    /// <summary>
+    /// Creates the offline services needed by the console client.
+    /// Centralizes construction of OfflineStore, GameBackendResolver, and IGameBackend
+    /// to avoid scattered new() instantiation in UI code.
+    /// </summary>
+    /// <param name="httpClient">HTTP client for API communication.</param>
+    /// <param name="offlineDbPath">Path to the offline LiteDB file.</param>
+    /// <param name="jsonOptions">JSON serializer options.</param>
+    /// <returns>Tuple of (offlineDb, offlineStore, backendResolver).</returns>
+    public static (LiteDatabase offlineDb, OfflineStore offlineStore, GameBackendResolver backendResolver) CreateConsoleServices(
+        HttpClient httpClient,
+        string offlineDbPath,
+        JsonSerializerOptions? jsonOptions = null)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(offlineDbPath)!);
+        var offlineDb = new LiteDatabase(offlineDbPath);
+        var offlineStore = new OfflineStore(offlineDb);
+        var resolver = new GameBackendResolver(httpClient, offlineStore, jsonOptions);
+        return (offlineDb, offlineStore, resolver);
     }
 
     /// <summary>

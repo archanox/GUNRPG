@@ -47,7 +47,8 @@ public sealed class OnlineGameBackend : IGameBackend
         // Persist snapshot locally for offline use
         _offlineStore.SaveInfiledOperator(operatorDto);
 
-        Console.WriteLine($"[ONLINE] Operator '{operatorDto.Name}' infiled and snapshot saved for offline play.");
+        Console.WriteLine($"[INFIL] Operator '{operatorDto.Name}' (ID: {id}) infiled successfully.");
+        Console.WriteLine($"[INFIL] Snapshot saved — offline play now available if server becomes unreachable.");
         return operatorDto;
     }
 
