@@ -1,9 +1,15 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using GUNRPG.Application.Backend;
 using GUNRPG.Application.Dtos;
+using GUNRPG.Infrastructure;
+using GUNRPG.Infrastructure.Backend;
+using GUNRPG.Infrastructure.Persistence;
 using Hex1b;
 using Hex1b.Widgets;
+using LiteDB;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 
 var baseAddress = Environment.GetEnvironmentVariable("GUNRPG_API_BASE") ?? "http://localhost:5209";
 var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
@@ -12,7 +18,19 @@ jsonOptions.Converters.Add(new JsonStringEnumConverter());
 using var httpClient = new HttpClient { BaseAddress = new Uri(baseAddress) };
 using var cts = new CancellationTokenSource();
 
-var gameState = new GameState(httpClient, jsonOptions);
+// Initialize offline storage (separate from server storage)
+var offlineDbPath = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+    ".gunrpg", "offline.db");
+Directory.CreateDirectory(Path.GetDirectoryName(offlineDbPath)!);
+using var offlineDb = new LiteDatabase(offlineDbPath);
+var offlineStore = new OfflineStore(offlineDb);
+
+// Resolve game backend based on server reachability and local state
+var backendResolver = new GameBackendResolver(httpClient, offlineStore, jsonOptions);
+var backend = backendResolver.ResolveAsync().GetAwaiter().GetResult();
+
+var gameState = new GameState(httpClient, jsonOptions, backend, backendResolver, offlineStore);
 
 // Try to auto-load last used operator
 gameState.LoadSavedOperatorId();
@@ -23,7 +41,7 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 using var app = new Hex1bApp(_ => gameState.BuildUI(cts));
 await app.RunAsync(cts.Token);
 
-class GameState(HttpClient client, JsonSerializerOptions options)
+class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver, OfflineStore offlineStore)
 {
     public Screen CurrentScreen { get; set; } = Screen.MainMenu;
     public Screen ReturnScreen { get; set; } = Screen.MainMenu;
@@ -71,39 +89,111 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
     Hex1bWidget BuildMainMenu(CancellationTokenSource cts)
     {
-        var menuItems = new[] {
-            "CREATE NEW OPERATOR",
-            "SELECT OPERATOR",
-            "EXIT"
+        var mode = backendResolver.CurrentMode;
+        var modeLabel = mode switch
+        {
+            GameMode.Online => "[ONLINE]",
+            GameMode.Offline => "[OFFLINE]",
+            GameMode.Blocked => "[OFFLINE - NO OPERATOR]",
+            _ => "[UNKNOWN]"
         };
 
+        var menuItems = new List<string>();
+
+        if (mode != GameMode.Offline && mode != GameMode.Blocked)
+        {
+            menuItems.Add("CREATE NEW OPERATOR");
+        }
+
+        menuItems.Add("SELECT OPERATOR");
+
+        if (mode == GameMode.Online && CurrentOperatorId.HasValue)
+        {
+            menuItems.Add("INFILL OPERATOR");
+        }
+
+        menuItems.Add("EXIT");
+
         return new VStackWidget([
-            UI.CreateBorder("GUNRPG - OPERATOR TERMINAL"),
+            UI.CreateBorder($"GUNRPG - OPERATOR TERMINAL {modeLabel}"),
             new TextBlockWidget(""),
+            mode == GameMode.Blocked
+                ? new TextBlockWidget("  ⚠ Server unreachable and no infilled operator. Gameplay blocked.")
+                : new TextBlockWidget(""),
             UI.CreateBorder("MAIN MENU", new VStackWidget([
                 new TextBlockWidget("  Select an option:"),
                 new TextBlockWidget(""),
-                new ListWidget(menuItems).OnItemActivated(e => {
-                    switch (e.ActivatedIndex)
+                new ListWidget(menuItems.ToArray()).OnItemActivated(e => {
+                    var selected = menuItems[e.ActivatedIndex];
+                    switch (selected)
                     {
-                        case 0: // CREATE NEW OPERATOR
-                            CurrentScreen = Screen.CreateOperator;
-                            OperatorName = "";
+                        case "CREATE NEW OPERATOR":
+                            if (mode == GameMode.Offline || mode == GameMode.Blocked)
+                            {
+                                ErrorMessage = "Cannot create operators while offline.";
+                                Message = "Operator creation requires a server connection.\n\nPress OK to continue.";
+                                CurrentScreen = Screen.Message;
+                                ReturnScreen = Screen.MainMenu;
+                            }
+                            else
+                            {
+                                CurrentScreen = Screen.CreateOperator;
+                                OperatorName = "";
+                            }
                             break;
-                        case 1: // SELECT OPERATOR
+                        case "SELECT OPERATOR":
                             ErrorMessage = null;
                             LoadOperatorList();
                             CurrentScreen = Screen.SelectOperator;
                             break;
-                        case 2: // EXIT
+                        case "INFILL OPERATOR":
+                            InfillCurrentOperator();
+                            break;
+                        case "EXIT":
                             cts.Cancel();
                             break;
                     }
                 })
             ])),
             new TextBlockWidget(""),
-            UI.CreateStatusBar($"API: {client.BaseAddress}"),
+            UI.CreateStatusBar($"API: {client.BaseAddress} | Mode: {modeLabel}"),
         ]);
+    }
+
+    void InfillCurrentOperator()
+    {
+        if (backendResolver.CurrentMode != GameMode.Online)
+        {
+            ErrorMessage = "Infill is only available in online mode.";
+            Message = "Cannot infill while offline.\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.MainMenu;
+            return;
+        }
+
+        if (!CurrentOperatorId.HasValue)
+        {
+            ErrorMessage = "No operator selected.";
+            Message = "Select an operator first, then infill.\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.MainMenu;
+            return;
+        }
+
+        try
+        {
+            var result = backend.InfillOperatorAsync(CurrentOperatorId.Value.ToString()).GetAwaiter().GetResult();
+            Message = $"Operator '{result.Name}' has been infilled.\nOffline play is now available if the server becomes unreachable.\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            Message = $"Infill failed: {ex.Message}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.MainMenu;
+        }
     }
 
     void LoadOperatorList()
@@ -340,6 +430,13 @@ class GameState(HttpClient client, JsonSerializerOptions options)
 
     void CreateOperator()
     {
+        // Guard: operator creation is not allowed offline
+        if (backendResolver.CurrentMode == GameMode.Offline || backendResolver.CurrentMode == GameMode.Blocked)
+        {
+            ErrorMessage = "Cannot create operators while offline. Server connection required.";
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(OperatorName))
         {
             ErrorMessage = "Name cannot be empty";
