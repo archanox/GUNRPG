@@ -40,11 +40,13 @@ public sealed class OnlineGameBackend : IGameBackend
     {
         // Fetch operator from server
         var response = await _httpClient.GetAsync($"operators/{id}");
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+            throw new InvalidOperationException($"Operator {id} not found on server.");
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync();
         var operatorDto = MapFromApiJson(id, json)
-            ?? throw new InvalidOperationException($"Operator {id} not found on server.");
+            ?? throw new InvalidOperationException($"Failed to parse operator {id} response from server.");
 
         // Persist snapshot locally for offline use
         _offlineStore.SaveInfiledOperator(operatorDto);

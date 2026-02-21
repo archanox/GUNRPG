@@ -95,19 +95,29 @@ public static class InfrastructureServiceExtensions
     }
 
     /// <summary>
-    /// Registers the game backend abstraction with mode resolution logic.
-    /// Resolution: server reachable → OnlineGameBackend; else if infiled operator → OfflineGameBackend;
-    /// else → OnlineGameBackend (gameplay blocked).
-    /// For server-side DI container usage.
+    /// Registers offline persistence and backend resolver services used by the game backend.
     /// </summary>
-    public static IServiceCollection AddGameBackend(this IServiceCollection services)
+    /// <remarks>
+    /// This method registers <see cref="OfflineStore"/> and <see cref="GameBackendResolver"/> for
+    /// client-side DI container usage. It does not register <see cref="IGameBackend"/>,
+    /// concrete backend implementations such as <see cref="OnlineGameBackend"/>, or an
+    /// <see cref="HttpClient"/>; those must be configured by the hosting application.
+    /// <para>
+    /// Note: This should only be used in client contexts (e.g., console client) where a separate
+    /// offline LiteDB file is configured. Do not use in the API host — it would mix offline
+    /// snapshots into the server's persistence store.
+    /// </para>
+    /// </remarks>
+    public static IServiceCollection AddGameBackend(this IServiceCollection services, string offlineDbPath)
     {
-        services.AddSingleton<OfflineStore>(sp =>
+        var directory = Path.GetDirectoryName(offlineDbPath);
+        if (!string.IsNullOrEmpty(directory))
         {
-            var db = sp.GetRequiredService<LiteDatabase>();
-            return new OfflineStore(db);
-        });
+            Directory.CreateDirectory(directory);
+        }
 
+        services.AddSingleton<LiteDatabase>(sp => new LiteDatabase(offlineDbPath));
+        services.AddSingleton<OfflineStore>(sp => new OfflineStore(sp.GetRequiredService<LiteDatabase>()));
         services.AddSingleton<GameBackendResolver>();
 
         return services;
