@@ -8,6 +8,8 @@ namespace GUNRPG.Infrastructure.Backend;
 /// <summary>
 /// Online game backend that delegates to the HTTP API.
 /// Also handles infil snapshot persistence to local storage.
+/// Combat remains interactive and player-driven via the session-based API — this backend
+/// handles operator data access, not gameplay execution.
 /// </summary>
 public sealed class OnlineGameBackend : IGameBackend
 {
@@ -50,28 +52,6 @@ public sealed class OnlineGameBackend : IGameBackend
         Console.WriteLine($"[INFIL] Operator '{operatorDto.Name}' (ID: {id}) infiled successfully.");
         Console.WriteLine($"[INFIL] Snapshot saved — offline play now available if server becomes unreachable.");
         return operatorDto;
-    }
-
-    /// <inheritdoc />
-    public async Task<MissionResultDto> ExecuteMissionAsync(MissionRequest request)
-    {
-        // In online mode, mission execution goes through the full API workflow.
-        // This is a simplified representation - the actual combat loop still uses
-        // the session-based API endpoints in the console client.
-        var response = await _httpClient.PostAsJsonAsync(
-            $"operators/{request.OperatorId}/infil/outcome",
-            new { sessionId = request.SessionId },
-            _jsonOptions);
-
-        response.EnsureSuccessStatusCode();
-
-        var json = await response.Content.ReadAsStringAsync();
-        return new MissionResultDto
-        {
-            OperatorId = request.OperatorId,
-            Victory = true,
-            ResultJson = json
-        };
     }
 
     /// <inheritdoc />
