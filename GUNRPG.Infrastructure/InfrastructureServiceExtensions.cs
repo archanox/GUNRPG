@@ -127,7 +127,11 @@ public static class InfrastructureServiceExtensions
         string offlineDbPath,
         JsonSerializerOptions? jsonOptions = null)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(offlineDbPath)!);
+        var directory = Path.GetDirectoryName(offlineDbPath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
         var offlineDb = new LiteDatabase(offlineDbPath);
         var offlineStore = new OfflineStore(offlineDb);
         var resolver = new GameBackendResolver(httpClient, offlineStore, jsonOptions);

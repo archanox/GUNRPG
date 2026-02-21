@@ -91,16 +91,19 @@ public sealed class OfflineGameBackend : IGameBackend
 
         // Update the local operator snapshot with full post-mission state
         operatorDto.TotalXp += result.XpGained;
-        operatorDto.CurrentHealth = Math.Max(0, operatorDto.CurrentHealth - outcome.DamageTaken);
-        if (outcome.IsVictory)
-        {
-            operatorDto.ExfilStreak++;
-        }
         if (outcome.OperatorDied)
         {
             operatorDto.IsDead = true;
             operatorDto.CurrentHealth = 0;
             operatorDto.CurrentMode = "Dead";
+        }
+        else
+        {
+            operatorDto.CurrentHealth = Math.Max(0, operatorDto.CurrentHealth - outcome.DamageTaken);
+            if (outcome.IsVictory)
+            {
+                operatorDto.ExfilStreak++;
+            }
         }
         _offlineStore.UpdateOperatorSnapshot(request.OperatorId, operatorDto);
 

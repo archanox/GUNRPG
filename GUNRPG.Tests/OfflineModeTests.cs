@@ -240,7 +240,7 @@ public sealed class OfflineModeTests : IDisposable
             Assert.True(updated.TotalXp > 100, "Victory should grant XP");
             Assert.Equal(1, updated.ExfilStreak);
         }
-        if (result.OperatorDied)
+        else if (result.OperatorDied)
         {
             Assert.True(updated.IsDead, "Operator death should be recorded in snapshot");
             Assert.Equal(0, updated.CurrentHealth);
