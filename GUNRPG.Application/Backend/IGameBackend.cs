@@ -3,6 +3,8 @@ namespace GUNRPG.Application.Backend;
 /// <summary>
 /// Abstraction for game backend operations.
 /// Online implementation uses HTTP API; offline implementation uses local LiteDB.
+/// Combat remains interactive and player-driven in both modes — this interface
+/// handles operator data access, not gameplay execution.
 /// </summary>
 public interface IGameBackend
 {
@@ -17,12 +19,6 @@ public interface IGameBackend
     /// Only available in online mode.
     /// </summary>
     Task<OperatorDto> InfilOperatorAsync(string id);
-
-    /// <summary>
-    /// Executes a mission (combat encounter) for the given operator.
-    /// Online: delegates to server. Offline: runs locally and persists result.
-    /// </summary>
-    Task<MissionResultDto> ExecuteMissionAsync(MissionRequest request);
 
     /// <summary>
     /// Checks whether an operator with the given ID exists.

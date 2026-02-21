@@ -3,6 +3,9 @@ namespace GUNRPG.Application.Backend;
 /// <summary>
 /// Result of a mission execution through the game backend.
 /// Structurally mirrors <see cref="GUNRPG.Application.Combat.CombatOutcome"/> fields.
+/// 
+/// TODO: Will be used when offline session-based combat is implemented.
+/// Currently the interactive combat loop drives gameplay directly.
 /// </summary>
 public sealed class MissionResultDto
 {

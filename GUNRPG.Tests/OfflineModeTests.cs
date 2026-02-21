@@ -1,5 +1,4 @@
 using GUNRPG.Application.Backend;
-using GUNRPG.Application.Combat;
 using GUNRPG.Infrastructure;
 using GUNRPG.Infrastructure.Backend;
 using GUNRPG.Infrastructure.Persistence;
@@ -206,95 +205,6 @@ public sealed class OfflineModeTests : IDisposable
     }
 
     [Fact]
-    public async Task OfflineBackend_ExecuteMission_PersistsResult()
-    {
-        var op = CreateTestOperator("op-1", "TestOp");
-        op.TotalXp = 100;
-        op.ExfilStreak = 0;
-        _offlineStore.SaveInfiledOperator(op);
-
-        var offlineBackend = new OfflineGameBackend(_offlineStore);
-        var result = await offlineBackend.ExecuteMissionAsync(new MissionRequest
-        {
-            OperatorId = "op-1",
-            SessionId = "session-1"
-        });
-
-        // Result uses real combat simulation — outcome is deterministic but not hardcoded
-        Assert.NotNull(result);
-        Assert.Equal("op-1", result.OperatorId);
-        Assert.True(result.TurnsSurvived > 0, "Combat should have lasted at least one turn");
-        Assert.True(result.XpGained >= 0, "XP gained should be non-negative");
-
-        // Verify mission result was persisted
-        var unsynced = _offlineStore.GetUnsyncedResults("op-1");
-        Assert.Single(unsynced);
-        Assert.Contains("executedOffline", unsynced[0].ResultJson);
-
-        // Verify operator snapshot was updated with full post-mission state
-        var updated = await offlineBackend.GetOperatorAsync("op-1");
-        Assert.NotNull(updated);
-
-        if (result.Victory)
-        {
-            Assert.True(updated.TotalXp > 100, "Victory should grant XP");
-            Assert.Equal(1, updated.ExfilStreak);
-        }
-        else if (result.OperatorDied)
-        {
-            Assert.True(updated.IsDead, "Operator death should be recorded in snapshot");
-            Assert.Equal(0, updated.CurrentHealth);
-            Assert.Equal("Dead", updated.CurrentMode);
-        }
-        if (result.DamageTaken > 0 && !result.OperatorDied)
-        {
-            Assert.True(updated.CurrentHealth < 100, "Damage should reduce health in snapshot");
-        }
-    }
-
-    [Fact]
-    public async Task OfflineBackend_ExecuteMission_ThrowsWhenNoSnapshot()
-    {
-        var offlineBackend = new OfflineGameBackend(_offlineStore);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => offlineBackend.ExecuteMissionAsync(new MissionRequest { OperatorId = "nonexistent" }));
-    }
-
-    [Fact]
-    public void CombatSimulation_WithFixedSeed_ProducesDeterministicResults()
-    {
-        // Running the same seed twice should produce identical combat outcomes
-        var outcome1 = CombatSimulationService.RunSimulation(playerName: "TestOp", seed: 42);
-        var outcome2 = CombatSimulationService.RunSimulation(playerName: "TestOp", seed: 42);
-
-        Assert.Equal(outcome1.IsVictory, outcome2.IsVictory);
-        Assert.Equal(outcome1.OperatorDied, outcome2.OperatorDied);
-        Assert.Equal(outcome1.XpGained, outcome2.XpGained);
-    }
-
-    [Fact]
-    public void CombatSimulation_ProducesValidOutcome()
-    {
-        var outcome = CombatSimulationService.RunSimulation(playerName: "TestOp", seed: 100);
-
-        Assert.True(outcome.TurnsSurvived > 0, "Combat should have lasted at least one turn");
-        Assert.True(outcome.XpGained >= 0, "XP gained should be non-negative");
-
-        // Victory and death are mutually exclusive
-        if (outcome.IsVictory)
-        {
-            Assert.False(outcome.OperatorDied, "Victory requires operator survival");
-            Assert.Equal(100, outcome.XpGained);
-        }
-        if (outcome.OperatorDied)
-        {
-            Assert.False(outcome.IsVictory, "Dead operator cannot have victory");
-            Assert.Equal(0, outcome.XpGained);
-        }
-    }
-
-    [Fact]
     public async Task OfflineBackend_OperatorExists_ChecksInfiledStatus()
     {
         var offlineBackend = new OfflineGameBackend(_offlineStore);
@@ -374,10 +284,6 @@ public sealed class OfflineModeTests : IDisposable
         // Trying to infil a non-existent operator offline should throw
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => offlineBackend.InfilOperatorAsync("new-op"));
-
-        // Trying to execute a mission for a non-infiled operator should throw
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            () => offlineBackend.ExecuteMissionAsync(new MissionRequest { OperatorId = "new-op" }));
     }
 
     [Fact]
