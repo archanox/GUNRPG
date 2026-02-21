@@ -13,10 +13,10 @@ public interface IGameBackend
     Task<OperatorDto?> GetOperatorAsync(string id);
 
     /// <summary>
-    /// Infills the operator: takes a snapshot of current server state for offline use.
+    /// Infils the operator: takes a snapshot of current server state for offline use.
     /// Only available in online mode.
     /// </summary>
-    Task<OperatorDto> InfillOperatorAsync(string id);
+    Task<OperatorDto> InfilOperatorAsync(string id);
 
     /// <summary>
     /// Executes a mission (combat encounter) for the given operator.

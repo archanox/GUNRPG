@@ -6,7 +6,7 @@ namespace GUNRPG.Infrastructure.Backend;
 
 /// <summary>
 /// Offline game backend that uses local LiteDB for operator state and mission execution.
-/// Only available when an operator has been previously infilled from the server.
+/// Only available when an operator has been previously infiled from the server.
 /// </summary>
 public sealed class OfflineGameBackend : IGameBackend
 {
@@ -20,33 +20,33 @@ public sealed class OfflineGameBackend : IGameBackend
     /// <inheritdoc />
     public Task<OperatorDto?> GetOperatorAsync(string id)
     {
-        var infilled = _offlineStore.GetInfilledOperator(id);
-        if (infilled == null)
+        var infiled = _offlineStore.GetInfiledOperator(id);
+        if (infiled == null)
             return Task.FromResult<OperatorDto?>(null);
 
-        var dto = JsonSerializer.Deserialize<OperatorDto>(infilled.SnapshotJson);
+        var dto = JsonSerializer.Deserialize<OperatorDto>(infiled.SnapshotJson);
         return Task.FromResult<OperatorDto?>(dto);
     }
 
     /// <inheritdoc />
-    public Task<OperatorDto> InfillOperatorAsync(string id)
+    public Task<OperatorDto> InfilOperatorAsync(string id)
     {
-        // Infill is not available in offline mode - requires server connection
+        // Infil is not available in offline mode - requires server connection
         throw new InvalidOperationException(
-            "[OFFLINE] Cannot infill operator while offline. Server connection required.");
+            "[OFFLINE] Cannot infil operator while offline. Server connection required.");
     }
 
     /// <inheritdoc />
     public Task<MissionResultDto> ExecuteMissionAsync(MissionRequest request)
     {
-        var infilled = _offlineStore.GetInfilledOperator(request.OperatorId);
-        if (infilled == null)
+        var infiled = _offlineStore.GetInfiledOperator(request.OperatorId);
+        if (infiled == null)
         {
             throw new InvalidOperationException(
-                $"[OFFLINE] Operator {request.OperatorId} has no infilled snapshot. Cannot execute mission offline.");
+                $"[OFFLINE] Operator {request.OperatorId} has no infiled snapshot. Cannot execute mission offline.");
         }
 
-        var operatorDto = JsonSerializer.Deserialize<OperatorDto>(infilled.SnapshotJson)
+        var operatorDto = JsonSerializer.Deserialize<OperatorDto>(infiled.SnapshotJson)
             ?? throw new InvalidOperationException("Failed to deserialize operator snapshot.");
 
         // Simulate a basic mission result offline
@@ -89,7 +89,7 @@ public sealed class OfflineGameBackend : IGameBackend
     /// <inheritdoc />
     public Task<bool> OperatorExistsAsync(string id)
     {
-        var exists = _offlineStore.GetInfilledOperator(id) != null;
+        var exists = _offlineStore.GetInfiledOperator(id) != null;
         return Task.FromResult(exists);
     }
 }

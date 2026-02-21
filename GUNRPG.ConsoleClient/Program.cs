@@ -109,7 +109,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         if (mode == GameMode.Online && CurrentOperatorId.HasValue)
         {
-            menuItems.Add("INFILL OPERATOR");
+            menuItems.Add("INFIL OPERATOR");
         }
 
         menuItems.Add("EXIT");
@@ -118,7 +118,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             UI.CreateBorder($"GUNRPG - OPERATOR TERMINAL {modeLabel}"),
             new TextBlockWidget(""),
             mode == GameMode.Blocked
-                ? new TextBlockWidget("  ⚠ Server unreachable and no infilled operator. Gameplay blocked.")
+                ? new TextBlockWidget("  ⚠ Server unreachable and no infiled operator. Gameplay blocked.")
                 : new TextBlockWidget(""),
             UI.CreateBorder("MAIN MENU", new VStackWidget([
                 new TextBlockWidget("  Select an option:"),
@@ -146,8 +146,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             LoadOperatorList();
                             CurrentScreen = Screen.SelectOperator;
                             break;
-                        case "INFILL OPERATOR":
-                            InfillCurrentOperator();
+                        case "INFIL OPERATOR":
+                            InfilCurrentOperator();
                             break;
                         case "EXIT":
                             cts.Cancel();
@@ -160,12 +160,12 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         ]);
     }
 
-    void InfillCurrentOperator()
+    void InfilCurrentOperator()
     {
         if (backendResolver.CurrentMode != GameMode.Online)
         {
-            ErrorMessage = "Infill is only available in online mode.";
-            Message = "Cannot infill while offline.\n\nPress OK to continue.";
+            ErrorMessage = "Infil is only available in online mode.";
+            Message = "Cannot infil while offline.\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.MainMenu;
             return;
@@ -174,7 +174,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         if (!CurrentOperatorId.HasValue)
         {
             ErrorMessage = "No operator selected.";
-            Message = "Select an operator first, then infill.\n\nPress OK to continue.";
+            Message = "Select an operator first, then infil.\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.MainMenu;
             return;
@@ -182,15 +182,15 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         try
         {
-            var result = backend.InfillOperatorAsync(CurrentOperatorId.Value.ToString()).GetAwaiter().GetResult();
-            Message = $"Operator '{result.Name}' has been infilled.\nOffline play is now available if the server becomes unreachable.\n\nPress OK to continue.";
+            var result = backend.InfilOperatorAsync(CurrentOperatorId.Value.ToString()).GetAwaiter().GetResult();
+            Message = $"Operator '{result.Name}' has been infiled.\nOffline play is now available if the server becomes unreachable.\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
         }
         catch (Exception ex)
         {
             ErrorMessage = ex.Message;
-            Message = $"Infill failed: {ex.Message}\n\nPress OK to continue.";
+            Message = $"Infil failed: {ex.Message}\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.MainMenu;
         }

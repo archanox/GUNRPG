@@ -29,13 +29,13 @@ public sealed class OfflineModeTests : IDisposable
     // ─── OfflineStore Tests ───
 
     [Fact]
-    public void SaveInfilledOperator_PersistsSnapshot()
+    public void SaveInfiledOperator_PersistsSnapshot()
     {
         var op = CreateTestOperator("op-1", "TestOperator");
 
-        _offlineStore.SaveInfilledOperator(op);
+        _offlineStore.SaveInfiledOperator(op);
 
-        var result = _offlineStore.GetInfilledOperator("op-1");
+        var result = _offlineStore.GetInfiledOperator("op-1");
         Assert.NotNull(result);
         Assert.Equal("op-1", result.Id);
         Assert.True(result.IsActive);
@@ -43,16 +43,16 @@ public sealed class OfflineModeTests : IDisposable
     }
 
     [Fact]
-    public void SaveInfilledOperator_DeactivatesPreviousActive()
+    public void SaveInfiledOperator_DeactivatesPreviousActive()
     {
         var op1 = CreateTestOperator("op-1", "First");
         var op2 = CreateTestOperator("op-2", "Second");
 
-        _offlineStore.SaveInfilledOperator(op1);
-        _offlineStore.SaveInfilledOperator(op2);
+        _offlineStore.SaveInfiledOperator(op1);
+        _offlineStore.SaveInfiledOperator(op2);
 
-        var first = _offlineStore.GetInfilledOperator("op-1");
-        var second = _offlineStore.GetInfilledOperator("op-2");
+        var first = _offlineStore.GetInfiledOperator("op-1");
+        var second = _offlineStore.GetInfiledOperator("op-2");
 
         Assert.NotNull(first);
         Assert.False(first.IsActive);
@@ -61,50 +61,50 @@ public sealed class OfflineModeTests : IDisposable
     }
 
     [Fact]
-    public void HasActiveInfilledOperator_ReturnsTrueWhenActive()
+    public void HasActiveInfiledOperator_ReturnsTrueWhenActive()
     {
-        Assert.False(_offlineStore.HasActiveInfilledOperator());
+        Assert.False(_offlineStore.HasActiveInfiledOperator());
 
-        _offlineStore.SaveInfilledOperator(CreateTestOperator("op-1", "Test"));
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-1", "Test"));
 
-        Assert.True(_offlineStore.HasActiveInfilledOperator());
+        Assert.True(_offlineStore.HasActiveInfiledOperator());
     }
 
     [Fact]
-    public void GetActiveInfilledOperator_ReturnsActiveOnly()
+    public void GetActiveInfiledOperator_ReturnsActiveOnly()
     {
-        _offlineStore.SaveInfilledOperator(CreateTestOperator("op-1", "First"));
-        _offlineStore.SaveInfilledOperator(CreateTestOperator("op-2", "Second"));
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-1", "First"));
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-2", "Second"));
 
-        var active = _offlineStore.GetActiveInfilledOperator();
+        var active = _offlineStore.GetActiveInfiledOperator();
         Assert.NotNull(active);
         Assert.Equal("op-2", active.Id);
     }
 
     [Fact]
-    public void RemoveInfilledOperator_DeletesSnapshot()
+    public void RemoveInfiledOperator_DeletesSnapshot()
     {
-        _offlineStore.SaveInfilledOperator(CreateTestOperator("op-1", "Test"));
-        Assert.True(_offlineStore.HasActiveInfilledOperator());
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-1", "Test"));
+        Assert.True(_offlineStore.HasActiveInfiledOperator());
 
-        _offlineStore.RemoveInfilledOperator("op-1");
+        _offlineStore.RemoveInfiledOperator("op-1");
 
-        Assert.False(_offlineStore.HasActiveInfilledOperator());
-        Assert.Null(_offlineStore.GetInfilledOperator("op-1"));
+        Assert.False(_offlineStore.HasActiveInfiledOperator());
+        Assert.Null(_offlineStore.GetInfiledOperator("op-1"));
     }
 
     [Fact]
     public void UpdateOperatorSnapshot_ModifiesExistingSnapshot()
     {
         var op = CreateTestOperator("op-1", "Test");
-        _offlineStore.SaveInfilledOperator(op);
+        _offlineStore.SaveInfiledOperator(op);
 
         op.TotalXp = 999;
         _offlineStore.UpdateOperatorSnapshot("op-1", op);
 
-        var infilled = _offlineStore.GetInfilledOperator("op-1");
-        Assert.NotNull(infilled);
-        Assert.Contains("999", infilled.SnapshotJson);
+        var infiled = _offlineStore.GetInfiledOperator("op-1");
+        Assert.NotNull(infiled);
+        Assert.Contains("999", infiled.SnapshotJson);
     }
 
     [Fact]
@@ -173,10 +173,10 @@ public sealed class OfflineModeTests : IDisposable
     // ─── OfflineGameBackend Tests ───
 
     [Fact]
-    public async Task OfflineBackend_GetOperator_ReturnsInfilledOperator()
+    public async Task OfflineBackend_GetOperator_ReturnsInfiledOperator()
     {
         var op = CreateTestOperator("op-1", "TestOp");
-        _offlineStore.SaveInfilledOperator(op);
+        _offlineStore.SaveInfiledOperator(op);
 
         var offlineBackend = new OfflineGameBackend(_offlineStore);
         var result = await offlineBackend.GetOperatorAsync("op-1");
@@ -187,7 +187,7 @@ public sealed class OfflineModeTests : IDisposable
     }
 
     [Fact]
-    public async Task OfflineBackend_GetOperator_ReturnsNullWhenNotInfilled()
+    public async Task OfflineBackend_GetOperator_ReturnsNullWhenNotInfiled()
     {
         var offlineBackend = new OfflineGameBackend(_offlineStore);
         var result = await offlineBackend.GetOperatorAsync("nonexistent");
@@ -196,12 +196,12 @@ public sealed class OfflineModeTests : IDisposable
     }
 
     [Fact]
-    public async Task OfflineBackend_InfillOperator_ThrowsOffline()
+    public async Task OfflineBackend_InfilOperator_ThrowsOffline()
     {
         var offlineBackend = new OfflineGameBackend(_offlineStore);
 
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => offlineBackend.InfillOperatorAsync("op-1"));
+            () => offlineBackend.InfilOperatorAsync("op-1"));
     }
 
     [Fact]
@@ -210,7 +210,7 @@ public sealed class OfflineModeTests : IDisposable
         var op = CreateTestOperator("op-1", "TestOp");
         op.TotalXp = 100;
         op.ExfilStreak = 0;
-        _offlineStore.SaveInfilledOperator(op);
+        _offlineStore.SaveInfiledOperator(op);
 
         var offlineBackend = new OfflineGameBackend(_offlineStore);
         var result = await offlineBackend.ExecuteMissionAsync(new MissionRequest
@@ -244,13 +244,13 @@ public sealed class OfflineModeTests : IDisposable
     }
 
     [Fact]
-    public async Task OfflineBackend_OperatorExists_ChecksInfilledStatus()
+    public async Task OfflineBackend_OperatorExists_ChecksInfiledStatus()
     {
         var offlineBackend = new OfflineGameBackend(_offlineStore);
 
         Assert.False(await offlineBackend.OperatorExistsAsync("op-1"));
 
-        _offlineStore.SaveInfilledOperator(CreateTestOperator("op-1", "TestOp"));
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-1", "TestOp"));
 
         Assert.True(await offlineBackend.OperatorExistsAsync("op-1"));
     }
@@ -272,9 +272,9 @@ public sealed class OfflineModeTests : IDisposable
     }
 
     [Fact]
-    public async Task Resolver_WithNoServerButInfilledOperator_ReturnsOfflineMode()
+    public async Task Resolver_WithNoServerButInfiledOperator_ReturnsOfflineMode()
     {
-        _offlineStore.SaveInfilledOperator(CreateTestOperator("op-1", "TestOp"));
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-1", "TestOp"));
 
         using var unreachableClient = new HttpClient { BaseAddress = new Uri("http://localhost:1") };
         var resolver = new GameBackendResolver(unreachableClient, _offlineStore);

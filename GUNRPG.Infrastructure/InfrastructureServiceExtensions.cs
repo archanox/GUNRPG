@@ -95,7 +95,7 @@ public static class InfrastructureServiceExtensions
 
     /// <summary>
     /// Registers the game backend abstraction with mode resolution logic.
-    /// Resolution: server reachable → OnlineGameBackend; else if infilled operator → OfflineGameBackend;
+    /// Resolution: server reachable → OnlineGameBackend; else if infiled operator → OfflineGameBackend;
     /// else → OnlineGameBackend (gameplay blocked).
     /// </summary>
     public static IServiceCollection AddGameBackend(this IServiceCollection services)
