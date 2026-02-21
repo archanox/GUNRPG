@@ -6,16 +6,16 @@ namespace GUNRPG.Infrastructure.Persistence;
 
 /// <summary>
 /// Manages local LiteDB storage for offline mode.
-/// Handles infilled operator snapshots and offline mission results.
+/// Handles infiled operator snapshots and offline mission results.
 /// </summary>
 public sealed class OfflineStore
 {
-    private readonly ILiteCollection<InfilledOperator> _operators;
+    private readonly ILiteCollection<InfiledOperator> _operators;
     private readonly ILiteCollection<OfflineMissionResult> _missionResults;
 
     public OfflineStore(LiteDatabase database)
     {
-        _operators = database.GetCollection<InfilledOperator>("infilled_operators");
+        _operators = database.GetCollection<InfiledOperator>("infiled_operators");
         _operators.EnsureIndex(x => x.Id);
         _operators.EnsureIndex(x => x.IsActive);
 
@@ -25,10 +25,10 @@ public sealed class OfflineStore
     }
 
     /// <summary>
-    /// Saves an infilled operator snapshot to local storage.
-    /// Deactivates any previously active infilled operator.
+    /// Saves an infiled operator snapshot to local storage.
+    /// Deactivates any previously active infiled operator.
     /// </summary>
-    public void SaveInfilledOperator(OperatorDto operatorDto)
+    public void SaveInfiledOperator(OperatorDto operatorDto)
     {
         // Deactivate any previously active operators
         var activeOps = _operators.Find(x => x.IsActive).ToList();
@@ -38,11 +38,11 @@ public sealed class OfflineStore
             _operators.Update(op);
         }
 
-        var snapshot = new InfilledOperator
+        var snapshot = new InfiledOperator
         {
             Id = operatorDto.Id,
             SnapshotJson = JsonSerializer.Serialize(operatorDto),
-            InfilledUtc = DateTime.UtcNow,
+            InfiledUtc = DateTime.UtcNow,
             IsActive = true
         };
 
@@ -50,31 +50,31 @@ public sealed class OfflineStore
     }
 
     /// <summary>
-    /// Gets the currently active infilled operator, or null if none exists.
+    /// Gets the currently active infiled operator, or null if none exists.
     /// </summary>
-    public InfilledOperator? GetActiveInfilledOperator()
+    public InfiledOperator? GetActiveInfiledOperator()
     {
         return _operators.FindOne(x => x.IsActive);
     }
 
     /// <summary>
-    /// Checks whether an active infilled operator exists.
+    /// Checks whether an active infiled operator exists.
     /// </summary>
-    public bool HasActiveInfilledOperator()
+    public bool HasActiveInfiledOperator()
     {
         return _operators.Exists(x => x.IsActive);
     }
 
     /// <summary>
-    /// Gets the infilled operator by ID, or null if not found.
+    /// Gets the infiled operator by ID, or null if not found.
     /// </summary>
-    public InfilledOperator? GetInfilledOperator(string id)
+    public InfiledOperator? GetInfiledOperator(string id)
     {
         return _operators.FindById(id);
     }
 
     /// <summary>
-    /// Updates the snapshot JSON of an infilled operator (e.g., after offline mission).
+    /// Updates the snapshot JSON of an infiled operator (e.g., after offline mission).
     /// </summary>
     public void UpdateOperatorSnapshot(string operatorId, OperatorDto updatedDto)
     {
@@ -87,9 +87,9 @@ public sealed class OfflineStore
     }
 
     /// <summary>
-    /// Deactivates the infilled operator and removes the snapshot (exfil complete).
+    /// Deactivates the infiled operator and removes the snapshot (exfil complete).
     /// </summary>
-    public void RemoveInfilledOperator(string operatorId)
+    public void RemoveInfiledOperator(string operatorId)
     {
         _operators.Delete(operatorId);
     }

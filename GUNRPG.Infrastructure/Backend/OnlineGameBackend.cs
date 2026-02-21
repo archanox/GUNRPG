@@ -7,7 +7,7 @@ namespace GUNRPG.Infrastructure.Backend;
 
 /// <summary>
 /// Online game backend that delegates to the HTTP API.
-/// Also handles infill snapshot persistence to local storage.
+/// Also handles infil snapshot persistence to local storage.
 /// </summary>
 public sealed class OnlineGameBackend : IGameBackend
 {
@@ -34,7 +34,7 @@ public sealed class OnlineGameBackend : IGameBackend
     }
 
     /// <inheritdoc />
-    public async Task<OperatorDto> InfillOperatorAsync(string id)
+    public async Task<OperatorDto> InfilOperatorAsync(string id)
     {
         // Fetch operator from server
         var response = await _httpClient.GetAsync($"operators/{id}");
@@ -45,9 +45,9 @@ public sealed class OnlineGameBackend : IGameBackend
             ?? throw new InvalidOperationException($"Operator {id} not found on server.");
 
         // Persist snapshot locally for offline use
-        _offlineStore.SaveInfilledOperator(operatorDto);
+        _offlineStore.SaveInfiledOperator(operatorDto);
 
-        Console.WriteLine($"[ONLINE] Operator '{operatorDto.Name}' infilled and snapshot saved for offline play.");
+        Console.WriteLine($"[ONLINE] Operator '{operatorDto.Name}' infiled and snapshot saved for offline play.");
         return operatorDto;
     }
 

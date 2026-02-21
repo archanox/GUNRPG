@@ -42,15 +42,15 @@ public sealed class GameBackendResolver
             return new OnlineGameBackend(_httpClient, _offlineStore, _jsonOptions);
         }
 
-        if (_offlineStore.HasActiveInfilledOperator())
+        if (_offlineStore.HasActiveInfiledOperator())
         {
             CurrentMode = GameMode.Offline;
-            Console.WriteLine("[MODE] Offline mode — server unreachable, using infilled operator snapshot.");
+            Console.WriteLine("[MODE] Offline mode — server unreachable, using infiled operator snapshot.");
             return new OfflineGameBackend(_offlineStore);
         }
 
         CurrentMode = GameMode.Blocked;
-        Console.WriteLine("[MODE] Online mode (blocked) — server unreachable and no infilled operator available.");
+        Console.WriteLine("[MODE] Online mode (blocked) — server unreachable and no infiled operator available.");
         // Return online backend, but gameplay will be blocked at the client level
         return new OnlineGameBackend(_httpClient, _offlineStore, _jsonOptions);
     }
@@ -81,8 +81,8 @@ public enum GameMode
 {
     /// <summary>Server reachable, full functionality available.</summary>
     Online,
-    /// <summary>Server unreachable, using infilled operator snapshot.</summary>
+    /// <summary>Server unreachable, using infiled operator snapshot.</summary>
     Offline,
-    /// <summary>Server unreachable, no infilled operator — gameplay blocked.</summary>
+    /// <summary>Server unreachable, no infiled operator — gameplay blocked.</summary>
     Blocked
 }
