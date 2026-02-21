@@ -1,5 +1,7 @@
+using GUNRPG.Application.Backend;
 using GUNRPG.Application.Operators;
 using GUNRPG.Application.Sessions;
+using GUNRPG.Infrastructure.Backend;
 using GUNRPG.Infrastructure.Persistence;
 using LiteDB;
 using Microsoft.Extensions.Configuration;
@@ -87,6 +89,24 @@ public static class InfrastructureServiceExtensions
             services.AddSingleton<IOperatorEventStore, LiteDbOperatorEventStore>();
             services.AddSingleton<OperatorExfilService>();
         }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the game backend abstraction with mode resolution logic.
+    /// Resolution: server reachable → OnlineGameBackend; else if infilled operator → OfflineGameBackend;
+    /// else → OnlineGameBackend (gameplay blocked).
+    /// </summary>
+    public static IServiceCollection AddGameBackend(this IServiceCollection services)
+    {
+        services.AddSingleton<OfflineStore>(sp =>
+        {
+            var db = sp.GetRequiredService<LiteDatabase>();
+            return new OfflineStore(db);
+        });
+
+        services.AddSingleton<GameBackendResolver>();
 
         return services;
     }
