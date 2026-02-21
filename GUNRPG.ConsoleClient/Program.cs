@@ -138,9 +138,19 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             }
                             break;
                         case "SELECT OPERATOR":
-                            ErrorMessage = null;
-                            LoadOperatorList();
-                            CurrentScreen = Screen.SelectOperator;
+                            if (mode == GameMode.Blocked)
+                            {
+                                ErrorMessage = "Cannot select operators while server is unreachable.";
+                                Message = "Server connection required to load operator list.\n\nPress OK to continue.";
+                                CurrentScreen = Screen.Message;
+                                ReturnScreen = Screen.MainMenu;
+                            }
+                            else
+                            {
+                                ErrorMessage = null;
+                                LoadOperatorList();
+                                CurrentScreen = Screen.SelectOperator;
+                            }
                             break;
                         case "INFIL OPERATOR":
                             InfilCurrentOperator();

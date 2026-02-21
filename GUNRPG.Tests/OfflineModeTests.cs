@@ -196,6 +196,51 @@ public sealed class OfflineModeTests : IDisposable
     }
 
     [Fact]
+    public async Task OfflineBackend_GetOperator_ReturnsNullForInactiveSnapshot()
+    {
+        // Infil two operators — first one becomes inactive when second is infiled
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-1", "First"));
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-2", "Second"));
+
+        var offlineBackend = new OfflineGameBackend(_offlineStore);
+
+        // Inactive operator should not be accessible
+        var inactive = await offlineBackend.GetOperatorAsync("op-1");
+        Assert.Null(inactive);
+
+        // Active operator should be accessible
+        var active = await offlineBackend.GetOperatorAsync("op-2");
+        Assert.NotNull(active);
+        Assert.Equal("Second", active.Name);
+    }
+
+    [Fact]
+    public async Task OfflineBackend_GetOperator_ThrowsOnCorruptedSnapshot()
+    {
+        // Manually insert a snapshot with invalid JSON
+        var corrupted = new InfiledOperator
+        {
+            Id = "op-corrupt",
+            SnapshotJson = "not valid json{{{",
+            InfiledUtc = DateTime.UtcNow,
+            IsActive = true
+        };
+        // Use store internals to insert directly
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-corrupt", "Test"));
+        // Corrupt the snapshot manually via the database
+        var col = _database.GetCollection<InfiledOperator>("infiled_operators");
+        var record = col.FindById("op-corrupt");
+        record!.SnapshotJson = "not valid json{{{";
+        col.Update(record);
+
+        var offlineBackend = new OfflineGameBackend(_offlineStore);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => offlineBackend.GetOperatorAsync("op-corrupt"));
+        Assert.Contains("re-infil", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task OfflineBackend_InfilOperator_ThrowsOffline()
     {
         var offlineBackend = new OfflineGameBackend(_offlineStore);
@@ -205,7 +250,7 @@ public sealed class OfflineModeTests : IDisposable
     }
 
     [Fact]
-    public async Task OfflineBackend_OperatorExists_ChecksInfiledStatus()
+    public async Task OfflineBackend_OperatorExists_ChecksActiveInfiledStatus()
     {
         var offlineBackend = new OfflineGameBackend(_offlineStore);
 
@@ -214,6 +259,12 @@ public sealed class OfflineModeTests : IDisposable
         _offlineStore.SaveInfiledOperator(CreateTestOperator("op-1", "TestOp"));
 
         Assert.True(await offlineBackend.OperatorExistsAsync("op-1"));
+
+        // Infiling a second operator deactivates the first
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-2", "TestOp2"));
+
+        Assert.False(await offlineBackend.OperatorExistsAsync("op-1"));
+        Assert.True(await offlineBackend.OperatorExistsAsync("op-2"));
     }
 
     // ─── GameBackendResolver Tests ───

@@ -23,11 +23,21 @@ public sealed class OfflineGameBackend : IGameBackend
     public Task<OperatorDto?> GetOperatorAsync(string id)
     {
         var infiled = _offlineStore.GetInfiledOperator(id);
-        if (infiled == null)
+        if (infiled == null || !infiled.IsActive)
             return Task.FromResult<OperatorDto?>(null);
 
-        var dto = JsonSerializer.Deserialize<OperatorDto>(infiled.SnapshotJson);
-        return Task.FromResult<OperatorDto?>(dto);
+        try
+        {
+            var dto = JsonSerializer.Deserialize<OperatorDto>(infiled.SnapshotJson);
+            return Task.FromResult<OperatorDto?>(dto);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException(
+                "[OFFLINE] Stored operator snapshot is invalid or incompatible. " +
+                "Please reconnect and re-infil the operator from the server.",
+                ex);
+        }
     }
 
     /// <inheritdoc />
@@ -39,9 +49,9 @@ public sealed class OfflineGameBackend : IGameBackend
     }
 
     /// <inheritdoc />
-    public Task<bool> OperatorExistsAsync(string id)
+    public async Task<bool> OperatorExistsAsync(string id)
     {
-        var exists = _offlineStore.GetInfiledOperator(id) != null;
-        return Task.FromResult(exists);
+        var op = await GetOperatorAsync(id);
+        return op != null;
     }
 }
