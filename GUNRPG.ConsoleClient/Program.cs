@@ -4,11 +4,8 @@ using System.Text.Json.Serialization;
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Infrastructure;
-using GUNRPG.Infrastructure.Backend;
-using GUNRPG.Infrastructure.Persistence;
 using Hex1b;
 using Hex1b.Widgets;
-using LiteDB;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
 var baseAddress = Environment.GetEnvironmentVariable("GUNRPG_API_BASE") ?? "http://localhost:5209";
@@ -18,19 +15,18 @@ jsonOptions.Converters.Add(new JsonStringEnumConverter());
 using var httpClient = new HttpClient { BaseAddress = new Uri(baseAddress) };
 using var cts = new CancellationTokenSource();
 
-// Initialize offline storage (separate from server storage)
+// Initialize offline services via centralized factory (no manual new() for infrastructure types)
 var offlineDbPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
     ".gunrpg", "offline.db");
-Directory.CreateDirectory(Path.GetDirectoryName(offlineDbPath)!);
-using var offlineDb = new LiteDatabase(offlineDbPath);
-var offlineStore = new OfflineStore(offlineDb);
+var (offlineDb, offlineStore, backendResolver) = InfrastructureServiceExtensions.CreateConsoleServices(
+    httpClient, offlineDbPath, jsonOptions);
+using var _ = offlineDb; // ensure disposal
 
 // Resolve game backend based on server reachability and local state
-var backendResolver = new GameBackendResolver(httpClient, offlineStore, jsonOptions);
 var backend = await backendResolver.ResolveAsync();
 
-var gameState = new GameState(httpClient, jsonOptions, backend, backendResolver, offlineStore);
+var gameState = new GameState(httpClient, jsonOptions, backend, backendResolver);
 
 // Try to auto-load last used operator
 gameState.LoadSavedOperatorId();
@@ -41,7 +37,7 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 using var app = new Hex1bApp(_ => gameState.BuildUI(cts));
 await app.RunAsync(cts.Token);
 
-class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver, OfflineStore offlineStore)
+class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver)
 {
     public Screen CurrentScreen { get; set; } = Screen.MainMenu;
     public Screen ReturnScreen { get; set; } = Screen.MainMenu;

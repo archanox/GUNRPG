@@ -231,7 +231,7 @@ public sealed class OfflineModeTests : IDisposable
         Assert.Single(unsynced);
         Assert.Contains("executedOffline", unsynced[0].ResultJson);
 
-        // Verify operator snapshot was updated
+        // Verify operator snapshot was updated with full post-mission state
         var updated = await offlineBackend.GetOperatorAsync("op-1");
         Assert.NotNull(updated);
 
@@ -240,9 +240,15 @@ public sealed class OfflineModeTests : IDisposable
             Assert.True(updated.TotalXp > 100, "Victory should grant XP");
             Assert.Equal(1, updated.ExfilStreak);
         }
-        else if (result.OperatorDied)
+        if (result.OperatorDied)
         {
             Assert.True(updated.IsDead, "Operator death should be recorded in snapshot");
+            Assert.Equal(0, updated.CurrentHealth);
+            Assert.Equal("Dead", updated.CurrentMode);
+        }
+        if (result.DamageTaken > 0 && !result.OperatorDied)
+        {
+            Assert.True(updated.CurrentHealth < 100, "Damage should reduce health in snapshot");
         }
     }
 
@@ -328,6 +334,66 @@ public sealed class OfflineModeTests : IDisposable
 
         Assert.Equal(GameMode.Offline, resolver.CurrentMode);
         Assert.IsType<OfflineGameBackend>(backend);
+    }
+
+    // ─── Guardrail Tests ───
+
+    [Fact]
+    public async Task OfflineBackend_InfilBlocked_ThrowsInvalidOperation()
+    {
+        // Infil must always be blocked when offline — requires server connection
+        var offlineBackend = new OfflineGameBackend(_offlineStore);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => offlineBackend.InfilOperatorAsync("any-id"));
+        Assert.Contains("offline", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task OfflineBackend_NeverMakesHttpCalls()
+    {
+        // OfflineGameBackend only depends on OfflineStore, not HttpClient.
+        // Verify it can be constructed and used without any HTTP infrastructure.
+        var offlineBackend = new OfflineGameBackend(_offlineStore);
+
+        // All operations should work purely against local store (no HttpClient needed)
+        var existsResult = await offlineBackend.OperatorExistsAsync("nonexistent");
+        Assert.False(existsResult);
+
+        var getResult = await offlineBackend.GetOperatorAsync("nonexistent");
+        Assert.Null(getResult);
+    }
+
+    [Fact]
+    public async Task OfflineBackend_OperatorCreation_NotSupported()
+    {
+        // OfflineGameBackend has no CreateOperator method — creation is only possible
+        // through the online API. Verify the interface doesn't expose creation.
+        var offlineBackend = new OfflineGameBackend(_offlineStore);
+
+        // Trying to infil a non-existent operator offline should throw
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => offlineBackend.InfilOperatorAsync("new-op"));
+
+        // Trying to execute a mission for a non-infiled operator should throw
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => offlineBackend.ExecuteMissionAsync(new MissionRequest { OperatorId = "new-op" }));
+    }
+
+    [Fact]
+    public async Task Resolver_Blocked_WhenServerUnreachableAndNoInfiledOperator()
+    {
+        // Fresh state: no infiled operators
+        Assert.False(_offlineStore.HasActiveInfiledOperator());
+
+        using var unreachableClient = new HttpClient { BaseAddress = new Uri("http://localhost:1") };
+        var resolver = new GameBackendResolver(unreachableClient, _offlineStore);
+
+        var backend = await resolver.ResolveAsync();
+
+        Assert.Equal(GameMode.Blocked, resolver.CurrentMode);
+        // Should NOT be OfflineGameBackend — there's nothing to play offline with
+        Assert.IsNotType<OfflineGameBackend>(backend);
     }
 
     // ─── Helpers ───

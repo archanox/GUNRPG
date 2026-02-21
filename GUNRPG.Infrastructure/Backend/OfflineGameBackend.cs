@@ -89,8 +89,9 @@ public sealed class OfflineGameBackend : IGameBackend
         };
         _offlineStore.SaveMissionResult(offlineResult);
 
-        // Update the local operator snapshot with combat results
+        // Update the local operator snapshot with full post-mission state
         operatorDto.TotalXp += result.XpGained;
+        operatorDto.CurrentHealth = Math.Max(0, operatorDto.CurrentHealth - outcome.DamageTaken);
         if (outcome.IsVictory)
         {
             operatorDto.ExfilStreak++;
@@ -98,11 +99,16 @@ public sealed class OfflineGameBackend : IGameBackend
         if (outcome.OperatorDied)
         {
             operatorDto.IsDead = true;
+            operatorDto.CurrentHealth = 0;
+            operatorDto.CurrentMode = "Dead";
         }
         _offlineStore.UpdateOperatorSnapshot(request.OperatorId, operatorDto);
 
+        var unsyncedCount = _offlineStore.GetUnsyncedResults(request.OperatorId).Count;
         Console.WriteLine($"[OFFLINE] Combat simulation completed for '{operatorDto.Name}': " +
-            $"Victory={outcome.IsVictory}, XP={outcome.XpGained}, Turns={outcome.TurnsSurvived}");
+            $"Victory={outcome.IsVictory}, XP={outcome.XpGained}, Turns={outcome.TurnsSurvived}, " +
+            $"DamageTaken={outcome.DamageTaken:F1}, Health={operatorDto.CurrentHealth:F1}/{operatorDto.MaxHealth:F1}");
+        Console.WriteLine($"[OFFLINE] Unsynced mission results for '{operatorDto.Name}': {unsyncedCount}");
         return Task.FromResult(result);
     }
 

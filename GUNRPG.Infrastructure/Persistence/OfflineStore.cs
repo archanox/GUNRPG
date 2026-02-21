@@ -125,6 +125,7 @@ public sealed class OfflineStore
 
     /// <summary>
     /// Gets all unsynced results across all operators.
+    /// TODO: Future ExfilSyncService will call this to retrieve all pending results for server reconciliation.
     /// </summary>
     public List<OfflineMissionResult> GetAllUnsyncedResults()
     {
