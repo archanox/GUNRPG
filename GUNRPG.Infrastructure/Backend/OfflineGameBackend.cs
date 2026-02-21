@@ -51,10 +51,10 @@ public sealed class OfflineGameBackend : IGameBackend
             ?? throw new InvalidOperationException("Failed to deserialize operator snapshot.");
 
         // Run full combat simulation using the same domain logic as online mode
-        Guid? operatorGuid = Guid.TryParse(request.OperatorId, out var parsed) ? parsed : null;
+        Guid? parsedOperatorId = Guid.TryParse(request.OperatorId, out var parsed) ? parsed : null;
         var outcome = CombatSimulationService.RunSimulation(
             playerName: operatorDto.Name,
-            operatorId: operatorGuid);
+            operatorId: parsedOperatorId);
 
         // Map CombatOutcome to MissionResultDto
         var result = new MissionResultDto
