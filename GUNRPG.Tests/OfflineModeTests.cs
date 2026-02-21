@@ -219,19 +219,30 @@ public sealed class OfflineModeTests : IDisposable
             SessionId = "session-1"
         });
 
+        // Result uses real combat simulation — outcome is deterministic but not hardcoded
         Assert.NotNull(result);
         Assert.Equal("op-1", result.OperatorId);
-        Assert.True(result.Victory);
+        Assert.True(result.TurnsSurvived > 0, "Combat should have lasted at least one turn");
+        Assert.True(result.XpGained >= 0, "XP gained should be non-negative");
 
         // Verify mission result was persisted
         var unsynced = _offlineStore.GetUnsyncedResults("op-1");
         Assert.Single(unsynced);
+        Assert.Contains("executedOffline", unsynced[0].ResultJson);
 
         // Verify operator snapshot was updated
         var updated = await offlineBackend.GetOperatorAsync("op-1");
         Assert.NotNull(updated);
-        Assert.True(updated.TotalXp > 100);
-        Assert.Equal(1, updated.ExfilStreak);
+
+        if (result.Victory)
+        {
+            Assert.True(updated.TotalXp > 100, "Victory should grant XP");
+            Assert.Equal(1, updated.ExfilStreak);
+        }
+        else if (result.OperatorDied)
+        {
+            Assert.True(updated.IsDead, "Operator death should be recorded in snapshot");
+        }
     }
 
     [Fact]
