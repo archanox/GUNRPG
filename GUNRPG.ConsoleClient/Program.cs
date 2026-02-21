@@ -103,11 +103,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         menuItems.Add("SELECT OPERATOR");
 
-        if (mode == GameMode.Online && CurrentOperatorId.HasValue)
-        {
-            menuItems.Add("INFIL OPERATOR");
-        }
-
         menuItems.Add("EXIT");
 
         return new VStackWidget([
@@ -138,7 +133,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             }
                             break;
                         case "SELECT OPERATOR":
-                            if (mode == GameMode.Blocked)
+                            if (mode == GameMode.Blocked || mode == GameMode.Offline)
                             {
                                 ErrorMessage = "Cannot select operators while server is unreachable.";
                                 Message = "Server connection required to load operator list.\n\nPress OK to continue.";
@@ -151,9 +146,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                                 LoadOperatorList();
                                 CurrentScreen = Screen.SelectOperator;
                             }
-                            break;
-                        case "INFIL OPERATOR":
-                            InfilCurrentOperator();
                             break;
                         case "EXIT":
                             cts.Cancel();
@@ -173,7 +165,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             ErrorMessage = "Infil is only available in online mode.";
             Message = "Cannot infil while offline.\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
-            ReturnScreen = Screen.MainMenu;
+            ReturnScreen = Screen.BaseCamp;
             return;
         }
 
@@ -182,7 +174,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             ErrorMessage = "No operator selected.";
             Message = "Select an operator first, then infil.\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
-            ReturnScreen = Screen.MainMenu;
+            ReturnScreen = Screen.BaseCamp;
             return;
         }
 
@@ -198,7 +190,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             ErrorMessage = ex.Message;
             Message = $"Infil failed: {ex.Message}\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
-            ReturnScreen = Screen.MainMenu;
+            ReturnScreen = Screen.BaseCamp;
         }
     }
 
@@ -360,12 +352,30 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 if (Guid.TryParse(idText, out var operatorId))
                 {
                     CurrentOperatorId = operatorId;
-                    LoadOperator(operatorId);
-                    // LoadOperator will auto-transition to combat screen if session is active
-                    // Otherwise, ensure we show BaseCamp
-                    if (CurrentScreen != Screen.CombatSession)
+                    if (backendResolver.CurrentMode == GameMode.Offline)
                     {
-                        CurrentScreen = Screen.BaseCamp;
+                        // In offline mode, load operator snapshot from local store via backend
+                        var dto = backend.GetOperatorAsync(operatorId.ToString()).GetAwaiter().GetResult();
+                        if (dto != null)
+                        {
+                            CurrentOperator = OperatorStateFromDto(dto);
+                            CurrentScreen = Screen.BaseCamp;
+                        }
+                        else
+                        {
+                            // Snapshot not found - operator was never infiled or snapshot was cleared
+                            CurrentOperatorId = null;
+                        }
+                    }
+                    else
+                    {
+                        LoadOperator(operatorId);
+                        // LoadOperator will auto-transition to combat screen if session is active
+                        // Otherwise, ensure we show BaseCamp
+                        if (CurrentScreen != Screen.CombatSession)
+                        {
+                            CurrentScreen = Screen.BaseCamp;
+                        }
                     }
                 }
             }
@@ -495,6 +505,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         if (op.CurrentMode == "Base")
         {
             menuItems.Add(BaseActionInfil);
+            menuItems.Add("INFIL FOR OFFLINE");
             menuItems.Add("CHANGE LOADOUT");
             menuItems.Add("TREAT WOUNDS");
             menuItems.Add("UNLOCK PERK");
@@ -521,6 +532,9 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 {
                     case BaseActionInfil:
                         CurrentScreen = Screen.StartMission;
+                        break;
+                    case "INFIL FOR OFFLINE":
+                        InfilCurrentOperator();
                         break;
                     case "CHANGE LOADOUT":
                         CurrentScreen = Screen.ChangeLoadout;
@@ -1883,6 +1897,23 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.PetActions;
         }
+    }
+
+    static OperatorState OperatorStateFromDto(OperatorDto dto)
+    {
+        return new OperatorState
+        {
+            Id = Guid.Parse(dto.Id),
+            Name = dto.Name,
+            TotalXp = dto.TotalXp,
+            CurrentHealth = dto.CurrentHealth,
+            MaxHealth = dto.MaxHealth,
+            EquippedWeaponName = dto.EquippedWeaponName,
+            UnlockedPerks = dto.UnlockedPerks,
+            ExfilStreak = dto.ExfilStreak,
+            IsDead = dto.IsDead,
+            CurrentMode = dto.CurrentMode
+        };
     }
 
     static OperatorState ParseOperator(JsonElement json)
