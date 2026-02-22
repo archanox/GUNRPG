@@ -363,4 +363,43 @@ public sealed class OperatorServiceTests : IDisposable
         // Assert: Should return success immediately without any processing
         Assert.True(cleanupResult.IsSuccess);
     }
+
+    [Fact]
+    public async Task StartCombatSessionAsync_WithDanglingReference_ClearsAndStartsNew()
+    {
+        // Regression test: reproduces the "Failed to start next combat" bug.
+        // The scenario: a combat session is deleted from the store (e.g., by StartNextCombatInInfil)
+        // without a CombatVictoryEvent being emitted, leaving ActiveCombatSessionId set in the
+        // aggregate. The next call to StartCombatSessionAsync must detect this and recover
+        // automatically instead of returning "Cannot start new combat session while one is already active".
+
+        // Arrange: Create operator, start infil, start and then delete a combat session
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        await _operatorService.StartInfilAsync(operatorId);
+
+        // Simulate the two-step StartNewCombatSession flow: emit event + create session
+        var staleSessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
+
+        // Simulate session deletion without CombatVictoryEvent (the dangling reference scenario)
+        await _sessionStore.DeleteAsync(staleSessionId);
+
+        // Verify the aggregate still has the stale reference
+        var beforeRepair = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+        Assert.Equal(staleSessionId, beforeRepair.Value!.ActiveCombatSessionId);
+
+        // Act: StartCombatSessionAsync should detect the dangling reference, clear it, and succeed
+        var startResult = await _operatorService.StartCombatSessionAsync(operatorId);
+
+        // Assert: A new session ID is returned and the operator's reference is updated
+        Assert.True(startResult.IsSuccess, $"Expected success but got: {startResult.ErrorMessage}");
+        var newSessionId = startResult.Value!;
+        Assert.NotEqual(staleSessionId, newSessionId);
+
+        // Verify aggregate was updated
+        var afterRepair = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+        Assert.Equal(newSessionId, afterRepair.Value!.ActiveCombatSessionId);
+    }
 }
