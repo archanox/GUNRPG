@@ -68,6 +68,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     // Disk-persisted combat service for offline play (uses same LiteDB file as operator snapshots)
     private CombatSessionService? _localCombatService;
     private bool _usingLocalCombat;
+    private int _activeOfflineMissionSeed;
 
     public Task<Hex1bWidget> BuildUI(CancellationTokenSource cts)
     {
@@ -877,8 +878,10 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             var request = new SessionCreateRequest
             {
                 OperatorId = CurrentOperatorId,
-                PlayerName = CurrentOperator.Name
+                PlayerName = CurrentOperator.Name,
+                Seed = new Random().Next()
             };
+            _activeOfflineMissionSeed = request.Seed.Value;
 
             var result = _localCombatService.CreateSessionAsync(request).GetAwaiter().GetResult();
             if (!result.IsSuccess)
@@ -1255,6 +1258,9 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         if (session == null || CurrentOperator == null || offlineStore == null)
             return;
 
+        var initialDto = ToBackendDto(CurrentOperator);
+        var initialHash = OfflineMissionHashing.ComputeOperatorStateHash(initialDto);
+
         var player = session.Player;
         var enemy = session.Enemy;
         var isVictory = player.Health > 0 && enemy.Health <= 0;
@@ -1298,8 +1304,63 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             }
         };
 
+        var resultHash = OfflineMissionHashing.ComputeOperatorStateHash(updatedDto);
+        var nextSequence = offlineStore.GetNextMissionSequence(updatedDto.Id);
+        var envelope = new OfflineMissionEnvelope
+        {
+            OperatorId = updatedDto.Id,
+            SequenceNumber = nextSequence,
+            RandomSeed = _activeOfflineMissionSeed,
+            InitialOperatorStateHash = initialHash,
+            ResultOperatorStateHash = resultHash,
+            FullBattleLog = session.BattleLog
+                .Select(x => new GUNRPG.Application.Dtos.BattleLogEntryDto
+                {
+                    EventType = x.EventType,
+                    TimeMs = x.TimeMs,
+                    Message = x.Message,
+                    ActorName = x.ActorName
+                })
+                .ToList(),
+            ExecutedUtc = DateTime.UtcNow,
+            Synced = false
+        };
+
+        offlineStore.SaveMissionResult(envelope);
         offlineStore.UpdateOperatorSnapshot(updatedDto.Id, updatedDto);
         CurrentOperator = OperatorStateFromDto(updatedDto);
+    }
+
+    private static OperatorDto ToBackendDto(OperatorState state)
+    {
+        return new OperatorDto
+        {
+            Id = state.Id.ToString(),
+            Name = state.Name,
+            TotalXp = state.TotalXp,
+            CurrentHealth = state.CurrentHealth,
+            MaxHealth = state.MaxHealth,
+            EquippedWeaponName = state.EquippedWeaponName,
+            UnlockedPerks = state.UnlockedPerks,
+            ExfilStreak = state.ExfilStreak,
+            IsDead = state.IsDead,
+            CurrentMode = state.CurrentMode,
+            ActiveCombatSessionId = state.ActiveCombatSessionId,
+            InfilSessionId = state.InfilSessionId,
+            InfilStartTime = state.InfilStartTime,
+            LockedLoadout = state.LockedLoadout,
+            Pet = state.Pet == null ? null : new GUNRPG.Application.Dtos.PetStateDto
+            {
+                Health = state.Pet.Health,
+                Fatigue = state.Pet.Fatigue,
+                Injury = state.Pet.Injury,
+                Stress = state.Pet.Stress,
+                Morale = state.Pet.Morale,
+                Hunger = state.Pet.Hunger,
+                Hydration = state.Pet.Hydration,
+                LastUpdated = state.Pet.LastUpdated
+            }
+        };
     }
 
     void RefreshOperator()

@@ -9,25 +9,13 @@ namespace GUNRPG.Application.Combat;
 /// </summary>
 public static class BattleLogFormatter
 {
-    private const int MaxLogEntries = 20; // Keep the most recent 20 events
-
     public static List<BattleLogEntryDto> FormatEvents(IReadOnlyList<ISimulationEvent> events, Operator player, Operator enemy)
     {
-        // Only process the last MaxLogEntries + buffer to handle filtered events
-        // This keeps response time O(MaxLogEntries) instead of O(total events)
-        var startIndex = Math.Max(0, events.Count - MaxLogEntries - 10);
-        var eventsToProcess = events.Skip(startIndex).ToList();
-        
-        var entries = eventsToProcess
+        return events
             .Select(evt => FormatEvent(evt, player, enemy))
             .Where(entry => entry != null)
             .Cast<BattleLogEntryDto>()
             .ToList();
-
-        // Return only the most recent entries
-        return entries.Count > MaxLogEntries 
-            ? entries.Skip(entries.Count - MaxLogEntries).ToList() 
-            : entries;
     }
 
     private static BattleLogEntryDto? FormatEvent(ISimulationEvent evt, Operator player, Operator enemy)
@@ -104,7 +92,15 @@ public static class BattleLogFormatter
                 Message = "is suppressing!",
                 ActorName = GetActorName(suppressEvent.OperatorId, player, enemy)
             },
-            _ => null // Skip events we don't want to display
+            _ => new BattleLogEntryDto
+            {
+                // Deterministic offline sync stores every event; replay currently uses
+                // Damage entries and keeps others for chain verification and future replay expansion.
+                EventType = evt.GetType().Name,
+                TimeMs = evt.EventTimeMs,
+                Message = $"Unformatted event: {evt.GetType().Name}",
+                ActorName = null
+            }
         };
     }
 

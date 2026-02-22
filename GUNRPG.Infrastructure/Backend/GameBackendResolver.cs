@@ -40,7 +40,14 @@ public sealed class GameBackendResolver
             CurrentMode = GameMode.Online;
             Console.WriteLine("[MODE] Online mode — server is reachable.");
             LogUnsyncedResults();
-            return new OnlineGameBackend(_httpClient, _offlineStore, _jsonOptions);
+            var onlineBackend = new OnlineGameBackend(_httpClient, _offlineStore, _jsonOptions);
+            var syncService = new ExfilSyncService(_offlineStore, onlineBackend);
+            var syncSuccess = await syncService.SyncPendingAsync();
+            if (!syncSuccess)
+            {
+                Console.WriteLine("[SYNC] Offline envelope sync stopped due to validation failure or server rejection.");
+            }
+            return onlineBackend;
         }
 
         if (_offlineStore.HasActiveInfiledOperator())

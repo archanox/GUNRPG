@@ -11,7 +11,7 @@ namespace GUNRPG.Infrastructure.Persistence;
 public sealed class OfflineStore
 {
     private readonly ILiteCollection<InfiledOperator> _operators;
-    private readonly ILiteCollection<OfflineMissionResult> _missionResults;
+    private readonly ILiteCollection<OfflineMissionEnvelope> _missionResults;
 
     public OfflineStore(LiteDatabase database)
     {
@@ -19,9 +19,11 @@ public sealed class OfflineStore
         _operators.EnsureIndex(x => x.Id);
         _operators.EnsureIndex(x => x.IsActive);
 
-        _missionResults = database.GetCollection<OfflineMissionResult>("offline_mission_results");
+        _missionResults = database.GetCollection<OfflineMissionEnvelope>("offline_mission_results");
         _missionResults.EnsureIndex(x => x.OperatorId);
         _missionResults.EnsureIndex(x => x.Synced);
+        _missionResults.EnsureIndex(x => x.SequenceNumber);
+        _missionResults.EnsureIndex("idx_op_seq", x => new { x.OperatorId, x.SequenceNumber }, true);
     }
 
     /// <summary>
@@ -97,17 +99,39 @@ public sealed class OfflineStore
     /// <summary>
     /// Saves an offline mission result.
     /// </summary>
-    public void SaveMissionResult(OfflineMissionResult result)
+    public void SaveMissionResult(OfflineMissionEnvelope result)
     {
+        var previous = _missionResults
+            .Find(x => x.OperatorId == result.OperatorId)
+            .OrderByDescending(x => x.SequenceNumber)
+            .FirstOrDefault();
+
+        var expectedSequence = previous == null ? 1 : previous.SequenceNumber + 1;
+        if (result.SequenceNumber != expectedSequence)
+        {
+            throw new InvalidOperationException(
+                $"Offline mission sequence mismatch for operator {result.OperatorId}. Expected {expectedSequence}, got {result.SequenceNumber}.");
+        }
+
+        if (previous != null &&
+            !string.Equals(result.InitialOperatorStateHash, previous.ResultOperatorStateHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Offline mission hash chain mismatch for operator {result.OperatorId} at sequence {result.SequenceNumber}.");
+        }
+
         _missionResults.Insert(result);
     }
 
     /// <summary>
     /// Gets all unsynced offline mission results for a given operator.
     /// </summary>
-    public List<OfflineMissionResult> GetUnsyncedResults(string operatorId)
+    public List<OfflineMissionEnvelope> GetUnsyncedResults(string operatorId)
     {
-        return _missionResults.Find(x => x.OperatorId == operatorId && !x.Synced).ToList();
+        return _missionResults
+            .Find(x => x.OperatorId == operatorId && !x.Synced)
+            .OrderBy(x => x.SequenceNumber)
+            .ToList();
     }
 
     /// <summary>
@@ -127,8 +151,23 @@ public sealed class OfflineStore
     /// Gets all unsynced results across all operators.
     /// TODO: Future ExfilSyncService will call this to retrieve all pending results for server reconciliation.
     /// </summary>
-    public List<OfflineMissionResult> GetAllUnsyncedResults()
+    public List<OfflineMissionEnvelope> GetAllUnsyncedResults()
     {
-        return _missionResults.Find(x => !x.Synced).ToList();
+        return _missionResults
+            .Find(x => !x.Synced)
+            .OrderBy(x => x.SequenceNumber)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Gets the next sequence number for an operator's offline mission envelope.
+    /// </summary>
+    public long GetNextMissionSequence(string operatorId)
+    {
+        var latest = _missionResults
+            .Find(x => x.OperatorId == operatorId)
+            .OrderByDescending(x => x.SequenceNumber)
+            .FirstOrDefault();
+        return latest == null ? 1 : latest.SequenceNumber + 1;
     }
 }
