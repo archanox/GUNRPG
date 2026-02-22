@@ -530,6 +530,13 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             ActiveSessionId ??= op.ActiveCombatSessionId;
                             LoadSession();
                         }
+                        else if (backend is not OnlineGameBackend)
+                        {
+                            // Starting a new combat session requires a live server connection.
+                            Message = "Cannot start combat while offline.\nReconnect to the server and re-infil to resume.\n\nPress OK to continue.";
+                            CurrentScreen = Screen.Message;
+                            ReturnScreen = Screen.BaseCamp;
+                        }
                         else
                         {
                             // After a victory, ActiveCombatSessionId is cleared but operator stays in Infil

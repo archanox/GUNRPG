@@ -429,6 +429,38 @@ public sealed class OperatorExfilService
     }
 
     /// <summary>
+    /// Clears a dangling ActiveCombatSessionId by emitting a CombatVictoryEvent.
+    /// Use when the referenced combat session no longer exists in the store but the
+    /// operator aggregate still holds its ID, preventing a new session from being started.
+    /// </summary>
+    public async Task<ServiceResult> ClearDanglingCombatSessionAsync(OperatorId operatorId)
+    {
+        var loadResult = await LoadOperatorAsync(operatorId);
+        if (!loadResult.IsSuccess)
+            return MapLoadResultStatus(loadResult);
+
+        var aggregate = loadResult.Value!;
+
+        if (aggregate.ActiveCombatSessionId == null)
+            return ServiceResult.Success();
+
+        var previousHash = aggregate.GetLastEventHash();
+        var sequenceNumber = aggregate.CurrentSequence + 1;
+
+        var clearEvent = new CombatVictoryEvent(operatorId, sequenceNumber, previousHash);
+
+        try
+        {
+            await _eventStore.AppendEventAsync(clearEvent);
+            return ServiceResult.Success();
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult.InvalidState($"Failed to clear dangling combat session: {ex.Message}");
+        }
+    }
+
+    /// <summary>
     /// Fails an infil operation due to timeout or other reasons.
     /// Clears the locked loadout (gear loss), resets streak, and returns operator to Base mode.
     /// </summary>

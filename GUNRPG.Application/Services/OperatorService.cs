@@ -148,9 +148,11 @@ public sealed class OperatorService
 
         var sessionResult = await _sessionService.GetStateAsync(aggregate.ActiveCombatSessionId.Value);
         
-        // If session not found, nothing to cleanup (GetOperatorAsync will handle clearing the reference)
+        // If session not found, the reference is dangling — clear it so the operator can start a new combat.
+        // This can happen when a session is deleted without the corresponding CombatVictoryEvent being emitted.
         if (sessionResult.Status != ResultStatus.Success)
         {
+            await _exfilService.ClearDanglingCombatSessionAsync(new OperatorId(operatorId));
             return ServiceResult.Success();
         }
 
@@ -276,6 +278,11 @@ public sealed class OperatorService
 
     public async Task<ServiceResult<Guid>> StartCombatSessionAsync(Guid operatorId)
     {
+        // Resolve any dangling session reference before attempting to start a new one.
+        // If the operator's ActiveCombatSessionId points to a session that no longer exists,
+        // CleanupCompletedSessionAsync emits a CombatVictoryEvent to clear the stale reference.
+        await CleanupCompletedSessionAsync(operatorId);
+
         return await _exfilService.StartCombatSessionAsync(new OperatorId(operatorId));
     }
 
