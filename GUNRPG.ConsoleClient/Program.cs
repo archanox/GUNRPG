@@ -133,7 +133,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             }
                             break;
                         case "SELECT OPERATOR":
-                            if (mode == GameMode.Blocked || mode == GameMode.Offline)
+                            if (mode == GameMode.Blocked)
                             {
                                 ErrorMessage = "Cannot select operators while server is unreachable.";
                                 Message = "Server connection required to load operator list.\n\nPress OK to continue.";
@@ -156,42 +156,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             new TextBlockWidget(""),
             UI.CreateStatusBar($"API: {client.BaseAddress} | Mode: {modeLabel}"),
         ]);
-    }
-
-    void InfilCurrentOperator()
-    {
-        if (backendResolver.CurrentMode != GameMode.Online)
-        {
-            ErrorMessage = "Infil is only available in online mode.";
-            Message = "Cannot infil while offline.\n\nPress OK to continue.";
-            CurrentScreen = Screen.Message;
-            ReturnScreen = Screen.BaseCamp;
-            return;
-        }
-
-        if (!CurrentOperatorId.HasValue)
-        {
-            ErrorMessage = "No operator selected.";
-            Message = "Select an operator first, then infil.\n\nPress OK to continue.";
-            CurrentScreen = Screen.Message;
-            ReturnScreen = Screen.BaseCamp;
-            return;
-        }
-
-        try
-        {
-            var result = backend.InfilOperatorAsync(CurrentOperatorId.Value.ToString()).GetAwaiter().GetResult();
-            Message = $"Operator '{result.Name}' has been infiled.\nOffline play is now available if the server becomes unreachable.\n\nPress OK to continue.";
-            CurrentScreen = Screen.Message;
-            ReturnScreen = Screen.BaseCamp;
-        }
-        catch (Exception ex)
-        {
-            ErrorMessage = ex.Message;
-            Message = $"Infil failed: {ex.Message}\n\nPress OK to continue.";
-            CurrentScreen = Screen.Message;
-            ReturnScreen = Screen.BaseCamp;
-        }
     }
 
     void LoadOperatorList()
@@ -352,30 +316,26 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 if (Guid.TryParse(idText, out var operatorId))
                 {
                     CurrentOperatorId = operatorId;
-                    if (backendResolver.CurrentMode == GameMode.Offline)
+                    // Use IGameBackend — works for both online (HTTP) and offline (LiteDB snapshot)
+                    var dto = backend.GetOperatorAsync(operatorId.ToString()).GetAwaiter().GetResult();
+                    if (dto != null)
                     {
-                        // In offline mode, load operator snapshot from local store via backend
-                        var dto = backend.GetOperatorAsync(operatorId.ToString()).GetAwaiter().GetResult();
-                        if (dto != null)
+                        CurrentOperator = OperatorStateFromDto(dto);
+                        // If operator is in Infil mode with an active combat session, resume it
+                        if (dto.ActiveCombatSessionId.HasValue && dto.CurrentMode == "Infil")
                         {
-                            CurrentOperator = OperatorStateFromDto(dto);
-                            CurrentScreen = Screen.BaseCamp;
+                            ActiveSessionId = dto.ActiveCombatSessionId;
+                            LoadSession();
                         }
-                        else
-                        {
-                            // Snapshot not found - operator was never infiled or snapshot was cleared
-                            CurrentOperatorId = null;
-                        }
-                    }
-                    else
-                    {
-                        LoadOperator(operatorId);
-                        // LoadOperator will auto-transition to combat screen if session is active
-                        // Otherwise, ensure we show BaseCamp
                         if (CurrentScreen != Screen.CombatSession)
                         {
                             CurrentScreen = Screen.BaseCamp;
                         }
+                    }
+                    else
+                    {
+                        // No snapshot found (offline) or operator not found (online)
+                        CurrentOperatorId = null;
                     }
                 }
             }
@@ -505,7 +465,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         if (op.CurrentMode == "Base")
         {
             menuItems.Add(BaseActionInfil);
-            menuItems.Add("INFIL FOR OFFLINE");
             menuItems.Add("CHANGE LOADOUT");
             menuItems.Add("TREAT WOUNDS");
             menuItems.Add("UNLOCK PERK");
@@ -532,9 +491,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 {
                     case BaseActionInfil:
                         CurrentScreen = Screen.StartMission;
-                        break;
-                    case "INFIL FOR OFFLINE":
-                        InfilCurrentOperator();
                         break;
                     case "CHANGE LOADOUT":
                         CurrentScreen = Screen.ChangeLoadout;
@@ -694,7 +650,20 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             var result = response.Content.ReadFromJsonAsync<JsonElement>(options).GetAwaiter().GetResult();
             // Don't set ActiveSessionId - it will be set when player engages in combat
             CurrentOperator = ParseOperator(result.GetProperty("operator"));
-            
+
+            // Save offline snapshot so the operator is available if the server becomes unreachable.
+            // This is the single infil path: one server call + one local persist.
+            // NOTE: GetAwaiter().GetResult() is required here — hex1b event handlers are synchronous.
+            try
+            {
+                backend.InfilOperatorAsync(CurrentOperatorId!.Value.ToString()).GetAwaiter().GetResult();
+            }
+            catch (Exception snapshotEx)
+            {
+                // Snapshot save failure is non-fatal — offline play simply won't be available
+                Console.WriteLine($"[INFIL] Snapshot save failed (non-fatal): {snapshotEx.Message}");
+            }
+
             // Return to Field Ops; player can choose to engage combat or exfil
             CurrentScreen = Screen.BaseCamp;
         }
@@ -1912,7 +1881,9 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             UnlockedPerks = dto.UnlockedPerks,
             ExfilStreak = dto.ExfilStreak,
             IsDead = dto.IsDead,
-            CurrentMode = dto.CurrentMode
+            CurrentMode = dto.CurrentMode,
+            ActiveCombatSessionId = dto.ActiveCombatSessionId,
+            InfilSessionId = dto.InfilSessionId
         };
     }
 

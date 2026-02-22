@@ -16,4 +16,6 @@ public sealed class OperatorDto
     public int ExfilStreak { get; set; }
     public bool IsDead { get; set; }
     public string CurrentMode { get; set; } = string.Empty;
+    public Guid? ActiveCombatSessionId { get; set; }
+    public Guid? InfilSessionId { get; set; }
 }
