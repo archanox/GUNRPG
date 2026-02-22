@@ -63,6 +63,12 @@ public sealed class OnlineGameBackend : IGameBackend
         return response.IsSuccessStatusCode;
     }
 
+    public async Task<bool> SyncOfflineMission(OfflineMissionEnvelope envelope, CancellationToken cancellationToken = default)
+    {
+        using var response = await _httpClient.PostAsJsonAsync("operators/offline/sync", envelope, _jsonOptions, cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
+
     /// <summary>
     /// Maps API JSON response to an OperatorDto.
     /// </summary>

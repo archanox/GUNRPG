@@ -1,5 +1,6 @@
 using GUNRPG.Api.Dtos;
 using GUNRPG.Api.Mapping;
+using GUNRPG.Application.Backend;
 using GUNRPG.Application.Results;
 using GUNRPG.Application.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -170,6 +171,24 @@ public class OperatorsController : ControllerBase
             ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
             ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
             ResultStatus.ValidationError => BadRequest(new { error = result.ErrorMessage }),
+            _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
+        };
+    }
+
+    [HttpPost("offline/sync")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult> SyncOfflineMission([FromBody] OfflineMissionEnvelope envelope)
+    {
+        var result = await _service.SyncOfflineMission(envelope);
+        return result.Status switch
+        {
+            ResultStatus.Success => Ok(),
+            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
+            ResultStatus.ValidationError => BadRequest(new { error = result.ErrorMessage }),
+            ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
             _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
         };
     }

@@ -1,3 +1,5 @@
+using System.Globalization;
+using GUNRPG.Application.Backend;
 using GUNRPG.Application.Combat;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Mapping;
@@ -14,9 +16,13 @@ namespace GUNRPG.Application.Services;
 /// </summary>
 public sealed class OperatorService
 {
+    private const int VictoryXpReward = 100;
+    private const int SurvivalXpReward = 50;
+    private const int DeathXpReward = 0;
     private readonly OperatorExfilService _exfilService;
     private readonly CombatSessionService _sessionService;
     private readonly IOperatorEventStore _eventStore;
+    private readonly Dictionary<Guid, (long SequenceNumber, string ResultHash)> _offlineSyncHeads = new();
 
     public OperatorService(OperatorExfilService exfilService, CombatSessionService sessionService, IOperatorEventStore eventStore)
     {
@@ -374,6 +380,106 @@ public sealed class OperatorService
         }
 
         return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
+    }
+
+    public async Task<ServiceResult> SyncOfflineMission(OfflineMissionEnvelope envelope)
+    {
+        if (!Guid.TryParse(envelope.OperatorId, out var operatorId))
+            return ServiceResult.ValidationError("Offline mission envelope has invalid operator ID");
+        if (envelope.SequenceNumber <= 0)
+            return ServiceResult.ValidationError("Offline mission envelope sequence must be positive");
+        if (envelope.FullBattleLog.Count == 0)
+            return ServiceResult.ValidationError("Offline mission envelope must include a full battle log");
+
+        if (_offlineSyncHeads.TryGetValue(operatorId, out var previous))
+        {
+            if (envelope.SequenceNumber != previous.SequenceNumber + 1)
+                return ServiceResult.InvalidState("Offline mission envelope sequence is not contiguous");
+            if (!string.Equals(envelope.InitialOperatorStateHash, previous.ResultHash, StringComparison.Ordinal))
+                return ServiceResult.InvalidState("Offline mission envelope hash chain is broken");
+        }
+        else if (envelope.SequenceNumber != 1)
+        {
+            return ServiceResult.InvalidState("First offline mission envelope must begin at sequence 1");
+        }
+
+        var currentStateResult = await GetOperatorAsync(operatorId);
+        if (!currentStateResult.IsSuccess)
+        {
+            return currentStateResult.Status switch
+            {
+                ResultStatus.NotFound => ServiceResult.NotFound(currentStateResult.ErrorMessage),
+                ResultStatus.InvalidState => ServiceResult.InvalidState(currentStateResult.ErrorMessage!),
+                ResultStatus.ValidationError => ServiceResult.ValidationError(currentStateResult.ErrorMessage!),
+                _ => ServiceResult.InvalidState(currentStateResult.ErrorMessage!)
+            };
+        }
+
+        var currentState = currentStateResult.Value!;
+        var currentHash = OfflineMissionHashing.ComputeOperatorStateHash(currentState);
+        if (!string.Equals(currentHash, envelope.InitialOperatorStateHash, StringComparison.Ordinal))
+            return ServiceResult.InvalidState("Offline mission envelope initial state hash mismatch");
+
+        var replayedState = ReplayOfflineMission(currentState, envelope);
+        var replayedHash = OfflineMissionHashing.ComputeOperatorStateHash(replayedState);
+        if (!string.Equals(replayedHash, envelope.ResultOperatorStateHash, StringComparison.Ordinal))
+            return ServiceResult.InvalidState("Offline mission envelope final state hash mismatch");
+
+        _offlineSyncHeads[operatorId] = (envelope.SequenceNumber, envelope.ResultOperatorStateHash);
+        return ServiceResult.Success();
+    }
+
+    private static OperatorDto ReplayOfflineMission(OperatorStateDto initialState, OfflineMissionEnvelope envelope)
+    {
+        var random = new Random(envelope.RandomSeed);
+        // Advance deterministic RNG using replay length. Stub replay currently uses
+        // log-derived outcome, but this keeps seed consumption explicit for future parity.
+        for (var i = 0; i < envelope.FullBattleLog.Count; i++)
+        {
+            random.Next();
+        }
+        var damageTaken = envelope.FullBattleLog
+            .Where(x => x.EventType == "Damage" && x.Message.Contains($"{initialState.Name} took ", StringComparison.Ordinal))
+            .Select(ParseDamageAmount)
+            .Sum();
+        var operatorDied = damageTaken >= initialState.CurrentHealth;
+        var enemyDamaged = envelope.FullBattleLog.Any(x => x.EventType == "Damage" && !x.Message.Contains($"{initialState.Name} took ", StringComparison.Ordinal));
+        var victory = !operatorDied && enemyDamaged;
+        var xpGained = victory ? VictoryXpReward : operatorDied ? DeathXpReward : SurvivalXpReward;
+
+        return new OperatorDto
+        {
+            Id = initialState.Id.ToString(),
+            Name = initialState.Name,
+            TotalXp = initialState.TotalXp + xpGained,
+            CurrentHealth = operatorDied ? initialState.MaxHealth : Math.Max(1f, initialState.CurrentHealth - damageTaken),
+            MaxHealth = initialState.MaxHealth,
+            EquippedWeaponName = initialState.EquippedWeaponName,
+            UnlockedPerks = initialState.UnlockedPerks,
+            ExfilStreak = initialState.ExfilStreak,
+            IsDead = false,
+            CurrentMode = operatorDied ? "Base" : "Infil",
+            ActiveCombatSessionId = null,
+            InfilSessionId = operatorDied ? null : initialState.InfilSessionId,
+            InfilStartTime = operatorDied ? null : initialState.InfilStartTime,
+            LockedLoadout = initialState.LockedLoadout,
+            Pet = initialState.Pet
+        };
+    }
+
+    private static float ParseDamageAmount(BattleLogEntryDto entry)
+    {
+        var start = entry.Message.IndexOf(" took ", StringComparison.Ordinal);
+        if (start < 0)
+            return 0f;
+        start += " took ".Length;
+        var end = entry.Message.IndexOf(" damage", start, StringComparison.Ordinal);
+        if (end <= start)
+            return 0f;
+
+        return float.TryParse(entry.Message[start..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var damage)
+            ? damage
+            : 0f;
     }
 
     private static OperatorStateDto ToDto(OperatorAggregate aggregate)

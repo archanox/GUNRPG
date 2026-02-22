@@ -110,10 +110,14 @@ public sealed class OfflineModeTests : IDisposable
     [Fact]
     public void SaveMissionResult_PersistsResult()
     {
-        var result = new OfflineMissionResult
+        var result = new OfflineMissionEnvelope
         {
             OperatorId = "op-1",
-            ResultJson = "{\"victory\":true}",
+            SequenceNumber = 1,
+            RandomSeed = 123,
+            InitialOperatorStateHash = "h0",
+            ResultOperatorStateHash = "h1",
+            FullBattleLog = new List<GUNRPG.Application.Dtos.BattleLogEntryDto> { new() { EventType = "Damage", TimeMs = 1, Message = "hit" } },
             ExecutedUtc = DateTime.UtcNow,
             Synced = false
         };
@@ -129,10 +133,14 @@ public sealed class OfflineModeTests : IDisposable
     [Fact]
     public void MarkResultSynced_UpdatesSyncedFlag()
     {
-        var result = new OfflineMissionResult
+        var result = new OfflineMissionEnvelope
         {
             OperatorId = "op-1",
-            ResultJson = "{}",
+            SequenceNumber = 1,
+            RandomSeed = 123,
+            InitialOperatorStateHash = "h0",
+            ResultOperatorStateHash = "h1",
+            FullBattleLog = new List<GUNRPG.Application.Dtos.BattleLogEntryDto> { new() { EventType = "Damage", TimeMs = 1, Message = "hit" } },
             ExecutedUtc = DateTime.UtcNow,
             Synced = false
         };
@@ -151,23 +159,83 @@ public sealed class OfflineModeTests : IDisposable
     [Fact]
     public void GetAllUnsyncedResults_ReturnsAllOperators()
     {
-        _offlineStore.SaveMissionResult(new OfflineMissionResult
+        _offlineStore.SaveMissionResult(new OfflineMissionEnvelope
         {
             OperatorId = "op-1",
-            ResultJson = "{}",
+            SequenceNumber = 1,
+            RandomSeed = 123,
+            InitialOperatorStateHash = "h0",
+            ResultOperatorStateHash = "h1",
+            FullBattleLog = new List<GUNRPG.Application.Dtos.BattleLogEntryDto> { new() { EventType = "Damage", TimeMs = 1, Message = "hit" } },
             ExecutedUtc = DateTime.UtcNow,
             Synced = false
         });
-        _offlineStore.SaveMissionResult(new OfflineMissionResult
+        _offlineStore.SaveMissionResult(new OfflineMissionEnvelope
         {
             OperatorId = "op-2",
-            ResultJson = "{}",
+            SequenceNumber = 1,
+            RandomSeed = 456,
+            InitialOperatorStateHash = "x0",
+            ResultOperatorStateHash = "x1",
+            FullBattleLog = new List<GUNRPG.Application.Dtos.BattleLogEntryDto> { new() { EventType = "Damage", TimeMs = 1, Message = "hit" } },
             ExecutedUtc = DateTime.UtcNow,
             Synced = false
         });
 
         var all = _offlineStore.GetAllUnsyncedResults();
         Assert.Equal(2, all.Count);
+    }
+
+    [Fact]
+    public void SaveMissionResult_RejectsSequenceSkips()
+    {
+        _offlineStore.SaveMissionResult(new OfflineMissionEnvelope
+        {
+            OperatorId = "op-1",
+            SequenceNumber = 1,
+            RandomSeed = 1,
+            InitialOperatorStateHash = "h0",
+            ResultOperatorStateHash = "h1",
+            FullBattleLog = new List<GUNRPG.Application.Dtos.BattleLogEntryDto> { new() { EventType = "Damage", TimeMs = 1, Message = "hit" } },
+            ExecutedUtc = DateTime.UtcNow
+        });
+
+        Assert.Throws<InvalidOperationException>(() => _offlineStore.SaveMissionResult(new OfflineMissionEnvelope
+        {
+            OperatorId = "op-1",
+            SequenceNumber = 3,
+            RandomSeed = 2,
+            InitialOperatorStateHash = "h1",
+            ResultOperatorStateHash = "h2",
+            FullBattleLog = new List<GUNRPG.Application.Dtos.BattleLogEntryDto> { new() { EventType = "Damage", TimeMs = 2, Message = "hit" } },
+            ExecutedUtc = DateTime.UtcNow
+        }));
+    }
+
+    [Fact]
+    public void SaveMissionResult_RejectsBrokenHashChain()
+    {
+        _offlineStore.SaveMissionResult(new OfflineMissionEnvelope
+        {
+            OperatorId = "op-1",
+            SequenceNumber = 1,
+            RandomSeed = 1,
+            InitialOperatorStateHash = "h0",
+            ResultOperatorStateHash = "h1",
+            FullBattleLog = new List<GUNRPG.Application.Dtos.BattleLogEntryDto> { new() { EventType = "Damage", TimeMs = 1, Message = "hit" } },
+            ExecutedUtc = DateTime.UtcNow
+        });
+
+        Assert.Throws<InvalidOperationException>(() => _offlineStore.SaveMissionResult(new OfflineMissionEnvelope
+        {
+            OperatorId = "op-1",
+            SequenceNumber = 2,
+            RandomSeed = 2,
+            InitialOperatorStateHash = "wrong",
+            ResultOperatorStateHash = "h2",
+            FullBattleLog = new List<GUNRPG.Application.Dtos.BattleLogEntryDto> { new() { EventType = "Damage", TimeMs = 2, Message = "hit" } },
+            ExecutedUtc = DateTime.UtcNow
+        }));
     }
 
     // ─── OfflineGameBackend Tests ───
