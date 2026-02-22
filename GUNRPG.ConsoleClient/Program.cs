@@ -853,6 +853,12 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         if (CurrentOperator == null || CurrentOperatorId == null)
             return false;
 
+        if (CurrentOperator.CurrentMode != "Infil")
+        {
+            ErrorMessage = "Cannot start combat: operator is not in Infil mode.";
+            return false;
+        }
+
         if (offlineDb == null)
         {
             ErrorMessage = "Offline database unavailable";
@@ -1065,18 +1071,32 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                                 else
                                     ProcessCombatOutcome();
                             }
-                            // Retreat: delete server-side combat session and return to Infil mode (skip for local sessions)
-                            if (ActiveSessionId.HasValue && !_usingLocalCombat)
+                            // Retreat: delete the combat session and return to Infil mode
+                            if (ActiveSessionId.HasValue)
                             {
-                                try
+                                if (_usingLocalCombat)
                                 {
-                                    // Delete the session server-side so it won't auto-resume
-                                    var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult();
-                                    deleteResponse.Dispose();
+                                    try
+                                    {
+                                        _localCombatService!.DeleteSessionAsync(ActiveSessionId.Value).GetAwaiter().GetResult();
+                                    }
+                                    catch
+                                    {
+                                        // Non-fatal — session will be orphaned in offline.db but won't affect gameplay
+                                    }
                                 }
-                                catch
+                                else
                                 {
-                                    // If delete fails, still clear locally - better than nothing
+                                    try
+                                    {
+                                        // Delete the session server-side so it won't auto-resume
+                                        var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult();
+                                        deleteResponse.Dispose();
+                                    }
+                                    catch
+                                    {
+                                        // If delete fails, still clear locally - better than nothing
+                                    }
                                 }
                             }
                             _usingLocalCombat = false;
@@ -1157,6 +1177,16 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 // Combat ended — update offline snapshot with outcome, then clear local combat flag
                 ProcessCombatOutcomeOffline();
                 _usingLocalCombat = false;
+
+                // Delete the completed local session to keep offline.db clean
+                try
+                {
+                    _localCombatService!.DeleteSessionAsync(ActiveSessionId!.Value).GetAwaiter().GetResult();
+                }
+                catch
+                {
+                    // Non-fatal — orphaned session won't affect gameplay
+                }
 
                 // Keep CurrentSession for display on MissionComplete screen
                 ActiveSessionId = null;
@@ -1254,7 +1284,18 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             ActiveCombatSessionId = null,
             InfilSessionId = operatorDied ? null : CurrentOperator.InfilSessionId,
             InfilStartTime = operatorDied ? null : CurrentOperator.InfilStartTime,
-            LockedLoadout = CurrentOperator.LockedLoadout
+            LockedLoadout = CurrentOperator.LockedLoadout,
+            Pet = CurrentOperator.Pet == null ? null : new GUNRPG.Application.Dtos.PetStateDto
+            {
+                Health = CurrentOperator.Pet.Health,
+                Fatigue = CurrentOperator.Pet.Fatigue,
+                Injury = CurrentOperator.Pet.Injury,
+                Stress = CurrentOperator.Pet.Stress,
+                Morale = CurrentOperator.Pet.Morale,
+                Hunger = CurrentOperator.Pet.Hunger,
+                Hydration = CurrentOperator.Pet.Hydration,
+                LastUpdated = CurrentOperator.Pet.LastUpdated
+            }
         };
 
         offlineStore.UpdateOperatorSnapshot(updatedDto.Id, updatedDto);
