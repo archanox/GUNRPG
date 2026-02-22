@@ -22,13 +22,18 @@ public sealed class OperatorService
     private readonly OperatorExfilService _exfilService;
     private readonly CombatSessionService _sessionService;
     private readonly IOperatorEventStore _eventStore;
-    private readonly Dictionary<Guid, (long SequenceNumber, string ResultHash)> _offlineSyncHeads = new();
+    private readonly IOfflineSyncHeadStore? _offlineSyncHeadStore;
 
-    public OperatorService(OperatorExfilService exfilService, CombatSessionService sessionService, IOperatorEventStore eventStore)
+    public OperatorService(
+        OperatorExfilService exfilService,
+        CombatSessionService sessionService,
+        IOperatorEventStore eventStore,
+        IOfflineSyncHeadStore? offlineSyncHeadStore = null)
     {
         _exfilService = exfilService;
         _sessionService = sessionService;
         _eventStore = eventStore;
+        _offlineSyncHeadStore = offlineSyncHeadStore;
     }
 
     public async Task<ServiceResult<OperatorStateDto>> CreateOperatorAsync(OperatorCreateRequest request)
@@ -388,14 +393,16 @@ public sealed class OperatorService
             return ServiceResult.ValidationError("Offline mission envelope has invalid operator ID");
         if (envelope.SequenceNumber <= 0)
             return ServiceResult.ValidationError("Offline mission envelope sequence must be positive");
-        if (envelope.FullBattleLog.Count == 0)
+        if (envelope.FullBattleLog == null || envelope.FullBattleLog.Count == 0)
             return ServiceResult.ValidationError("Offline mission envelope must include a full battle log");
 
-        if (_offlineSyncHeads.TryGetValue(operatorId, out var previous))
+        // _offlineSyncHeadStore remains optional for lightweight test construction paths.
+        var previous = _offlineSyncHeadStore == null ? null : await _offlineSyncHeadStore.GetAsync(operatorId);
+        if (previous != null)
         {
             if (envelope.SequenceNumber != previous.SequenceNumber + 1)
                 return ServiceResult.InvalidState("Offline mission envelope sequence is not contiguous");
-            if (!string.Equals(envelope.InitialOperatorStateHash, previous.ResultHash, StringComparison.Ordinal))
+            if (!string.Equals(envelope.InitialOperatorStateHash, previous.ResultOperatorStateHash, StringComparison.Ordinal))
                 return ServiceResult.InvalidState("Offline mission envelope hash chain is broken");
         }
         else if (envelope.SequenceNumber != 1)
@@ -416,16 +423,29 @@ public sealed class OperatorService
         }
 
         var currentState = currentStateResult.Value!;
-        var currentHash = OfflineMissionHashing.ComputeOperatorStateHash(currentState);
-        if (!string.Equals(currentHash, envelope.InitialOperatorStateHash, StringComparison.Ordinal))
-            return ServiceResult.InvalidState("Offline mission envelope initial state hash mismatch");
+        if (previous == null)
+        {
+            // First accepted envelope for this operator is anchored to current server operator state.
+            // Later envelopes are anchored to the persisted sync head hash chain.
+            var currentHash = OfflineMissionHashing.ComputeOperatorStateHash(currentState);
+            if (!string.Equals(currentHash, envelope.InitialOperatorStateHash, StringComparison.Ordinal))
+                return ServiceResult.InvalidState("Offline mission envelope initial state hash mismatch");
+        }
 
         var replayedState = ReplayOfflineMission(currentState, envelope);
         var replayedHash = OfflineMissionHashing.ComputeOperatorStateHash(replayedState);
         if (!string.Equals(replayedHash, envelope.ResultOperatorStateHash, StringComparison.Ordinal))
             return ServiceResult.InvalidState("Offline mission envelope final state hash mismatch");
 
-        _offlineSyncHeads[operatorId] = (envelope.SequenceNumber, envelope.ResultOperatorStateHash);
+        if (_offlineSyncHeadStore != null)
+        {
+            await _offlineSyncHeadStore.UpsertAsync(new OfflineSyncHead
+            {
+                OperatorId = operatorId,
+                SequenceNumber = envelope.SequenceNumber,
+                ResultOperatorStateHash = envelope.ResultOperatorStateHash
+            });
+        }
         return ServiceResult.Success();
     }
 

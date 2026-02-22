@@ -1,6 +1,8 @@
 using GUNRPG.Application.Dtos;
+using GUNRPG.Application.Backend;
 using GUNRPG.Application.Operators;
 using GUNRPG.Application.Requests;
+using GUNRPG.Application.Results;
 using GUNRPG.Application.Services;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Core.Intents;
@@ -253,6 +255,85 @@ public sealed class OperatorServiceTests : IDisposable
         Assert.Equal(OperatorMode.Infil, finalState.Value!.CurrentMode);  // Still in Infil!
         Assert.Null(finalState.Value.ActiveCombatSessionId);
         Assert.Equal(0, finalState.Value.ExfilStreak); // CompleteExfilAsync emits CombatVictoryEvent which does not increment streak
+    }
+
+    [Fact]
+    public async Task SyncOfflineMission_WithNullBattleLog_ReturnsValidationError()
+    {
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "SyncOp" });
+        Assert.True(createResult.IsSuccess);
+
+        var envelope = new OfflineMissionEnvelope
+        {
+            OperatorId = createResult.Value!.Id.ToString(),
+            SequenceNumber = 1,
+            RandomSeed = 7,
+            InitialOperatorStateHash = "hash-a",
+            ResultOperatorStateHash = "hash-b",
+            FullBattleLog = null!,
+            ExecutedUtc = DateTime.UtcNow
+        };
+
+        var result = await _operatorService.SyncOfflineMission(envelope);
+
+        Assert.Equal(ResultStatus.ValidationError, result.Status);
+    }
+
+    [Fact]
+    public async Task SyncOfflineMission_SequenceTwo_UsesStoredHeadContinuity()
+    {
+        var storeWithHead = new InMemoryOfflineSyncHeadStore();
+        var operatorService = new OperatorService(_exfilService, _sessionService, _operatorStore, storeWithHead);
+        var createResult = await operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "HeadOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        var state = await operatorService.GetOperatorAsync(operatorId);
+        var initialHash = OfflineMissionHashing.ComputeOperatorStateHash(state.Value!);
+
+        await storeWithHead.UpsertAsync(new OfflineSyncHead
+        {
+            OperatorId = operatorId,
+            SequenceNumber = 1,
+            ResultOperatorStateHash = initialHash
+        });
+
+        var expectedResultHash = OfflineMissionHashing.ComputeOperatorStateHash(new OperatorDto
+        {
+            Id = operatorId.ToString(),
+            Name = state.Value!.Name,
+            TotalXp = state.Value.TotalXp + 100,
+            CurrentHealth = state.Value.CurrentHealth,
+            MaxHealth = state.Value.MaxHealth,
+            EquippedWeaponName = state.Value.EquippedWeaponName,
+            UnlockedPerks = state.Value.UnlockedPerks,
+            ExfilStreak = state.Value.ExfilStreak,
+            IsDead = false,
+            CurrentMode = "Infil",
+            ActiveCombatSessionId = null,
+            InfilSessionId = state.Value.InfilSessionId,
+            InfilStartTime = state.Value.InfilStartTime,
+            LockedLoadout = state.Value.LockedLoadout,
+            Pet = state.Value.Pet
+        });
+
+        var envelope = new OfflineMissionEnvelope
+        {
+            OperatorId = operatorId.ToString(),
+            SequenceNumber = 2,
+            RandomSeed = 42,
+            InitialOperatorStateHash = initialHash,
+            ResultOperatorStateHash = expectedResultHash,
+            FullBattleLog = new List<BattleLogEntryDto>
+            {
+                new() { EventType = "Damage", TimeMs = 1, Message = "Enemy took 10 damage (Torso)!" }
+            },
+            ExecutedUtc = DateTime.UtcNow
+        };
+
+        var result = await operatorService.SyncOfflineMission(envelope);
+
+        Assert.True(result.IsSuccess);
     }
 
     [Fact]

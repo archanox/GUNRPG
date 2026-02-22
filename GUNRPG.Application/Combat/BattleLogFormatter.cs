@@ -9,6 +9,8 @@ namespace GUNRPG.Application.Combat;
 /// </summary>
 public static class BattleLogFormatter
 {
+    // Keep full deterministic event stream here for offline envelope capture.
+    // API transport truncation is applied in ApiMapping.ToApiDto(CombatSessionDto).
     public static List<BattleLogEntryDto> FormatEvents(IReadOnlyList<ISimulationEvent> events, Operator player, Operator enemy)
     {
         return events

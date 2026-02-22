@@ -1,6 +1,5 @@
 using GUNRPG.Api.Dtos;
 using GUNRPG.Api.Mapping;
-using GUNRPG.Application.Backend;
 using GUNRPG.Application.Results;
 using GUNRPG.Application.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -180,9 +179,9 @@ public class OperatorsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult> SyncOfflineMission([FromBody] OfflineMissionEnvelope envelope)
+    public async Task<ActionResult> SyncOfflineMission([FromBody] ApiOfflineMissionEnvelopeDto envelope)
     {
-        var result = await _service.SyncOfflineMission(envelope);
+        var result = await _service.SyncOfflineMission(ApiMapping.ToApplicationDto(envelope));
         return result.Status switch
         {
             ResultStatus.Success => Ok(),

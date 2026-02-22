@@ -1,4 +1,5 @@
 using GUNRPG.Api.Dtos;
+using GUNRPG.Application.Backend;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Requests;
 
@@ -10,6 +11,8 @@ namespace GUNRPG.Api.Mapping;
 /// </summary>
 public static class ApiMapping
 {
+    private const int MaxApiBattleLogEntries = 20;
+
     public static SessionCreateRequest ToApplicationRequest(ApiSessionCreateRequest apiRequest)
     {
         return new SessionCreateRequest
@@ -69,7 +72,33 @@ public static class ApiMapping
             Pet = ToApiDto(appDto.Pet),
             EnemyLevel = appDto.EnemyLevel,
             TurnNumber = appDto.TurnNumber,
-            BattleLog = appDto.BattleLog.Select(ToApiDto).ToList()
+            BattleLog = appDto.BattleLog
+                .TakeLast(MaxApiBattleLogEntries)
+                .Select(ToApiDto)
+                .ToList()
+        };
+    }
+
+    public static OfflineMissionEnvelope ToApplicationDto(ApiOfflineMissionEnvelopeDto apiDto)
+    {
+        return new OfflineMissionEnvelope
+        {
+            OperatorId = apiDto.OperatorId,
+            SequenceNumber = apiDto.SequenceNumber,
+            RandomSeed = apiDto.RandomSeed,
+            InitialOperatorStateHash = apiDto.InitialOperatorStateHash,
+            ResultOperatorStateHash = apiDto.ResultOperatorStateHash,
+            FullBattleLog = (apiDto.FullBattleLog ?? [])
+                .Select(x => new BattleLogEntryDto
+                {
+                    EventType = x.EventType,
+                    TimeMs = x.TimeMs,
+                    Message = x.Message,
+                    ActorName = x.ActorName
+                })
+                .ToList(),
+            ExecutedUtc = apiDto.ExecutedUtc,
+            Synced = apiDto.Synced
         };
     }
 

@@ -39,6 +39,27 @@ public sealed class ExfilSyncServiceTests : IDisposable
         Assert.Equal(new long[] { 2, 3 }, unsyncedSequences);
     }
 
+    [Fact]
+    public async Task SyncPendingAsync_ContinuesFromLatestSyncedHead()
+    {
+        var store = new OfflineStore(_database);
+        SaveEnvelope(store, 1, "h0", "h1");
+        store.MarkResultSynced(store.GetUnsyncedResults("op-1").Single().Id);
+        SaveEnvelope(store, 2, "h1", "h2");
+        SaveEnvelope(store, 3, "h2", "h3");
+
+        var handler = new QueueHandler(HttpStatusCode.OK, HttpStatusCode.OK);
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://localhost") };
+        var backend = new OnlineGameBackend(client, store);
+        var service = new ExfilSyncService(store, backend);
+
+        var result = await service.SyncPendingAsync();
+
+        Assert.True(result);
+        Assert.Equal(new long[] { 2, 3 }, handler.SequenceNumbers);
+        Assert.Empty(store.GetUnsyncedResults("op-1"));
+    }
+
     private static void SaveEnvelope(OfflineStore store, long sequence, string initial, string result)
     {
         store.SaveMissionResult(new OfflineMissionEnvelope

@@ -21,6 +21,14 @@ public sealed class ExfilSyncService
             .ThenBy(x => x.SequenceNumber)
             .ToList();
         var previousByOperator = new Dictionary<string, OfflineMissionEnvelope>(StringComparer.Ordinal);
+        foreach (var operatorId in pending.Select(x => x.OperatorId).Distinct(StringComparer.Ordinal))
+        {
+            var latestSynced = _offlineStore.GetLatestSyncedResult(operatorId);
+            if (latestSynced != null)
+            {
+                previousByOperator[operatorId] = latestSynced;
+            }
+        }
 
         foreach (var envelope in pending)
         {

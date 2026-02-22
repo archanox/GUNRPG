@@ -41,6 +41,7 @@ public static class InfrastructureServiceExtensions
             // Register a no-op operator event store so CombatSessionService can be resolved
             // Validation will be skipped when the store is present but returns no events
             services.AddSingleton<IOperatorEventStore, InMemoryOperatorEventStore>();
+            services.AddSingleton<IOfflineSyncHeadStore, InMemoryOfflineSyncHeadStore>();
         }
         else
         {
@@ -88,6 +89,7 @@ public static class InfrastructureServiceExtensions
 
             services.AddSingleton<ICombatSessionStore, LiteDbCombatSessionStore>();
             services.AddSingleton<IOperatorEventStore, LiteDbOperatorEventStore>();
+            services.AddSingleton<IOfflineSyncHeadStore, LiteDbOfflineSyncHeadStore>();
             services.AddSingleton<OperatorExfilService>();
         }
 
