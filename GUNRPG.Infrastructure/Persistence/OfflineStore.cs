@@ -134,6 +134,14 @@ public sealed class OfflineStore
             .ToList();
     }
 
+    public OfflineMissionEnvelope? GetLatestSyncedResult(string operatorId)
+    {
+        return _missionResults
+            .Find(x => x.OperatorId == operatorId && x.Synced)
+            .OrderByDescending(x => x.SequenceNumber)
+            .FirstOrDefault();
+    }
+
     /// <summary>
     /// Marks a mission result as synced.
     /// </summary>
