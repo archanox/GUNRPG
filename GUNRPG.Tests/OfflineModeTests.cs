@@ -353,6 +353,61 @@ public sealed class OfflineModeTests : IDisposable
         Assert.IsNotType<OfflineGameBackend>(backend);
     }
 
+    [Fact]
+    public async Task Resolver_Blocked_WhenAllSnapshotsInactive()
+    {
+        // Infil two operators — first becomes inactive when second is saved
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-1", "First"));
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-2", "Second"));
+
+        // Remove both — no active snapshot remains
+        _offlineStore.RemoveInfiledOperator("op-1");
+        _offlineStore.RemoveInfiledOperator("op-2");
+
+        Assert.False(_offlineStore.HasActiveInfiledOperator());
+
+        using var unreachableClient = new HttpClient { BaseAddress = new Uri("http://localhost:1") };
+        var resolver = new GameBackendResolver(unreachableClient, _offlineStore);
+
+        var result = await resolver.ResolveAsync();
+
+        // Offline readiness requires an ACTIVE snapshot; none here → Blocked
+        Assert.Equal(GameMode.Blocked, resolver.CurrentMode);
+        Assert.IsNotType<OfflineGameBackend>(result);
+    }
+
+    [Fact]
+    public async Task OfflineBackend_SingleInfilPath_InfilAlwaysThrows()
+    {
+        // OfflineGameBackend must never permit infil — it has no server connection.
+        // The only valid infil path is through OnlineGameBackend (server reachable).
+        var offlineBackend = new OfflineGameBackend(_offlineStore);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => offlineBackend.InfilOperatorAsync("any-operator-id"));
+
+        // Message must guide the user back to online infil
+        Assert.Contains("offline", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("server", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Resolver_OfflineOnlyWhenActiveSnapshotExists()
+    {
+        // Infil one operator (it becomes active)
+        _offlineStore.SaveInfiledOperator(CreateTestOperator("op-active", "ActiveOp"));
+        Assert.True(_offlineStore.HasActiveInfiledOperator());
+
+        using var unreachableClient = new HttpClient { BaseAddress = new Uri("http://localhost:1") };
+        var resolver = new GameBackendResolver(unreachableClient, _offlineStore);
+
+        var result = await resolver.ResolveAsync();
+
+        // Active snapshot exists → Offline mode with OfflineGameBackend
+        Assert.Equal(GameMode.Offline, resolver.CurrentMode);
+        Assert.IsType<OfflineGameBackend>(result);
+    }
+
     // ─── Helpers ───
 
     private static OperatorDto CreateTestOperator(string id, string name)
