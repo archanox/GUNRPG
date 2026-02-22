@@ -31,7 +31,7 @@ using var _ = offlineDb; // ensure disposal
 // Resolve game backend based on server reachability and local state
 var backend = await backendResolver.ResolveAsync();
 
-var gameState = new GameState(httpClient, jsonOptions, backend, backendResolver, offlineStore);
+var gameState = new GameState(httpClient, jsonOptions, backend, backendResolver, offlineStore, offlineDb);
 
 // Try to auto-load last used operator
 gameState.LoadSavedOperatorId();
@@ -42,7 +42,7 @@ Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 using var app = new Hex1bApp(_ => gameState.BuildUI(cts));
 await app.RunAsync(cts.Token);
 
-class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver, OfflineStore? offlineStore = null)
+class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver, OfflineStore? offlineStore = null, LiteDB.LiteDatabase? offlineDb = null)
 {
     public Screen CurrentScreen { get; set; } = Screen.MainMenu;
     public Screen ReturnScreen { get; set; } = Screen.MainMenu;
@@ -65,8 +65,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     public string IntentCategory { get; set; } = "";
     public string[] IntentOptions { get; set; } = Array.Empty<string>();
 
-    // Local in-memory combat service for offline play
-    private InMemoryCombatSessionStore? _localCombatStore;
+    // Disk-persisted combat service for offline play (uses same LiteDB file as operator snapshots)
     private CombatSessionService? _localCombatService;
     private bool _usingLocalCombat;
 
@@ -844,7 +843,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     }
 
     /// <summary>
-    /// Starts a new offline combat session backed by a local in-memory store.
+    /// Starts a new offline combat session backed by the disk-persisted LiteDB store.
     /// Used when the server is unreachable but the operator has an active infil snapshot.
     /// </summary>
     bool StartOfflineCombatSession()
@@ -854,13 +853,19 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         if (CurrentOperator == null || CurrentOperatorId == null)
             return false;
 
+        if (offlineDb == null)
+        {
+            ErrorMessage = "Offline database unavailable";
+            return false;
+        }
+
         try
         {
             // Lazy-initialize the local combat service (reused across combats within a session)
             if (_localCombatService == null)
             {
-                _localCombatStore = new InMemoryCombatSessionStore();
-                _localCombatService = new CombatSessionService(_localCombatStore);
+                var localStore = new LiteDbCombatSessionStore(offlineDb);
+                _localCombatService = new CombatSessionService(localStore);
             }
 
             var request = new SessionCreateRequest
