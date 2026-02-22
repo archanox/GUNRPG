@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Infrastructure;
+using GUNRPG.Infrastructure.Backend;
 using Hex1b;
 using Hex1b.Widgets;
 using JsonSerializer = System.Text.Json.JsonSerializer;
@@ -321,8 +322,10 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                     if (dto != null)
                     {
                         CurrentOperator = OperatorStateFromDto(dto);
-                        // If operator is in Infil mode with an active combat session, resume it
-                        if (dto.ActiveCombatSessionId.HasValue && dto.CurrentMode == "Infil")
+                        // If operator is in Infil mode with an active combat session, resume it —
+                        // but only when online, as LoadSession() requires HTTP access.
+                        if (dto.ActiveCombatSessionId.HasValue && dto.CurrentMode == "Infil"
+                            && backend is OnlineGameBackend)
                         {
                             ActiveSessionId = dto.ActiveCombatSessionId;
                             LoadSession();
@@ -334,8 +337,9 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                     }
                     else
                     {
-                        // No snapshot found (offline) or operator not found (online)
+                        // No snapshot found (offline) or operator not found (online); clear stale ID
                         CurrentOperatorId = null;
+                        SaveCurrentOperatorId();
                     }
                 }
             }
@@ -654,14 +658,17 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             // Save offline snapshot so the operator is available if the server becomes unreachable.
             // This is the single infil path: one server call + one local persist.
             // NOTE: GetAwaiter().GetResult() is required here — hex1b event handlers are synchronous.
-            try
+            if (backend is OnlineGameBackend onlineBackend)
             {
-                backend.InfilOperatorAsync(CurrentOperatorId!.Value.ToString()).GetAwaiter().GetResult();
-            }
-            catch (Exception snapshotEx)
-            {
-                // Snapshot save failure is non-fatal — offline play simply won't be available
-                Console.WriteLine($"[INFIL] Snapshot save failed (non-fatal): {snapshotEx.Message}");
+                try
+                {
+                    onlineBackend.InfilOperatorAsync(CurrentOperatorId!.Value.ToString()).GetAwaiter().GetResult();
+                }
+                catch (Exception snapshotEx)
+                {
+                    // Snapshot save failure is non-fatal — offline play simply won't be available
+                    Console.WriteLine($"[INFIL] Snapshot save failed (non-fatal): {snapshotEx.Message}");
+                }
             }
 
             // Return to Field Ops; player can choose to engage combat or exfil
@@ -1870,6 +1877,22 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     static OperatorState OperatorStateFromDto(OperatorDto dto)
     {
+        PetState? pet = null;
+        if (dto.Pet != null)
+        {
+            pet = new PetState
+            {
+                Health = dto.Pet.Health,
+                Fatigue = dto.Pet.Fatigue,
+                Injury = dto.Pet.Injury,
+                Stress = dto.Pet.Stress,
+                Morale = dto.Pet.Morale,
+                Hunger = dto.Pet.Hunger,
+                Hydration = dto.Pet.Hydration,
+                LastUpdated = dto.Pet.LastUpdated
+            };
+        }
+
         return new OperatorState
         {
             Id = Guid.Parse(dto.Id),
@@ -1883,7 +1906,10 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             IsDead = dto.IsDead,
             CurrentMode = dto.CurrentMode,
             ActiveCombatSessionId = dto.ActiveCombatSessionId,
-            InfilSessionId = dto.InfilSessionId
+            InfilSessionId = dto.InfilSessionId,
+            InfilStartTime = dto.InfilStartTime,
+            LockedLoadout = dto.LockedLoadout,
+            Pet = pet
         };
     }
 

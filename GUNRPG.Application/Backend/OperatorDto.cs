@@ -1,3 +1,5 @@
+using GUNRPG.Application.Dtos;
+
 namespace GUNRPG.Application.Backend;
 
 /// <summary>
@@ -18,4 +20,7 @@ public sealed class OperatorDto
     public string CurrentMode { get; set; } = string.Empty;
     public Guid? ActiveCombatSessionId { get; set; }
     public Guid? InfilSessionId { get; set; }
+    public DateTimeOffset? InfilStartTime { get; set; }
+    public string LockedLoadout { get; set; } = string.Empty;
+    public PetStateDto? Pet { get; set; }
 }
