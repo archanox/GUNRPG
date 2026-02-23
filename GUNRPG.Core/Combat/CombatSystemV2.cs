@@ -183,7 +183,9 @@ public class CombatSystemV2
     /// <summary>
     /// Executes events until round end conditions are met:
     /// - Either player or enemy is hit, OR
-    /// - Both players miss their shots
+    /// - Both players miss their shots.
+    /// Special case: when the enemy dies but has already-fired hit impacts queued
+    /// against the player, execution continues until those in-flight bullet impacts resolve.
     /// </summary>
     public bool ExecuteUntilReactionWindow()
     {
