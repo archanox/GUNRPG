@@ -216,6 +216,16 @@ public class CombatSystemV2
             // Check for death
             if (!Player.IsAlive || !Enemy.IsAlive)
             {
+                // If the enemy was killed but already-fired enemy bullets are still expected to hit,
+                // let those in-flight damage events resolve before ending combat.
+                if (Player.IsAlive
+                    && !Enemy.IsAlive
+                    && _eventQueue.HasPendingDamageEvent(Enemy.Id, Player.Id))
+                {
+                    _eventQueue.ClearExceptInFlightBullets();
+                    continue;
+                }
+
                 Phase = CombatPhase.Ended;
                 
                 // Synchronize distance at end of combat

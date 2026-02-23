@@ -253,4 +253,52 @@ public class RoundExecutionTests
         // Round should have completed (returned to Planning)
         Assert.Equal(CombatPhase.Planning, combat.Phase);
     }
+
+    [Fact]
+    public void Round_ResolvesPendingEnemyHit_AfterEnemyDies()
+    {
+        var player = new Operator("Player", Guid.Parse("00000000-0000-0000-0000-000000000001"))
+        {
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
+            CurrentAmmo = 30,
+            DistanceToOpponent = 15f,
+            Health = 10f,
+            MaxHealth = 100f,
+            Accuracy = 1f,
+            AccuracyProficiency = 1f
+        };
+        player.EquippedWeapon!.VerticalRecoil = 0f;
+
+        var enemy = new Operator("Enemy", Guid.Parse("00000000-0000-0000-0000-000000000002"))
+        {
+            EquippedWeapon = WeaponFactory.CreateSturmwolf45(),
+            CurrentAmmo = 30,
+            DistanceToOpponent = 15f,
+            Health = 10f,
+            MaxHealth = 100f,
+            Accuracy = 1f,
+            AccuracyProficiency = 1f
+        };
+        enemy.EquippedWeapon!.VerticalRecoil = 0f;
+
+        var combat = new CombatSystemV2(player, enemy, seed: 42);
+
+        combat.SubmitIntents(player, new SimultaneousIntents(player.Id)
+        {
+            Primary = PrimaryAction.Fire,
+            Movement = MovementAction.Stand
+        });
+        combat.SubmitIntents(enemy, new SimultaneousIntents(enemy.Id)
+        {
+            Primary = PrimaryAction.Fire,
+            Movement = MovementAction.Stand
+        });
+
+        combat.BeginExecution();
+        combat.ExecuteUntilReactionWindow();
+
+        Assert.False(enemy.IsAlive);
+        Assert.False(player.IsAlive);
+        Assert.Equal(CombatPhase.Ended, combat.Phase);
+    }
 }
