@@ -1980,26 +1980,20 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     {
         try
         {
+            // Offline exfil: update local snapshot directly without any server calls
+            if (backend is not OnlineGameBackend)
+            {
+                ProcessExfilOffline();
+                return;
+            }
+
             // Get combat session ID (may be null after victory or if no combat started)
             var activeCombatSessionId = ActiveSessionId ?? CurrentOperator?.ActiveCombatSessionId;
-            
-            // Get infil session ID (should always exist when in Infil mode)
-            var infilSessionId = CurrentOperator?.InfilSessionId;
             
             // If no active combat session, use the new complete infil endpoint
             // This happens after victory (ActiveCombatSessionId cleared) or when exfiling without combat
             if (!activeCombatSessionId.HasValue)
             {
-                // Validate we have an infil session - this should always be true when in Infil mode
-                if (!infilSessionId.HasValue)
-                {
-                    // This is an error state - operator claims to be in Infil mode but has no infil session
-                    Message = "Error: Invalid infil state.\nNo infil session found.\n\nPress OK to continue.";
-                    CurrentScreen = Screen.Message;
-                    ReturnScreen = Screen.BaseCamp;
-                    return;
-                }
-                
                 // Complete infil successfully using the new endpoint
                 using var completeResponse = client.SendAsync(
                     new HttpRequestMessage(HttpMethod.Post, $"operators/{CurrentOperatorId}/infil/complete"))
@@ -2090,6 +2084,56 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
         }
+    }
+
+    void ProcessExfilOffline()
+    {
+        if (CurrentOperator == null || offlineStore == null)
+        {
+            Message = "Error: Cannot exfil — offline data unavailable.\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+            return;
+        }
+
+        var updatedDto = new OperatorDto
+        {
+            Id = CurrentOperator.Id.ToString(),
+            Name = CurrentOperator.Name,
+            TotalXp = CurrentOperator.TotalXp,
+            CurrentHealth = CurrentOperator.CurrentHealth,
+            MaxHealth = CurrentOperator.MaxHealth,
+            EquippedWeaponName = CurrentOperator.EquippedWeaponName,
+            UnlockedPerks = CurrentOperator.UnlockedPerks,
+            ExfilStreak = CurrentOperator.ExfilStreak + 1,
+            IsDead = CurrentOperator.IsDead,
+            CurrentMode = "Base",
+            ActiveCombatSessionId = null,
+            InfilSessionId = null,
+            InfilStartTime = null,
+            LockedLoadout = CurrentOperator.LockedLoadout,
+            Pet = CurrentOperator.Pet == null ? null : new GUNRPG.Application.Dtos.PetStateDto
+            {
+                Health = CurrentOperator.Pet.Health,
+                Fatigue = CurrentOperator.Pet.Fatigue,
+                Injury = CurrentOperator.Pet.Injury,
+                Stress = CurrentOperator.Pet.Stress,
+                Morale = CurrentOperator.Pet.Morale,
+                Hunger = CurrentOperator.Pet.Hunger,
+                Hydration = CurrentOperator.Pet.Hydration,
+                LastUpdated = CurrentOperator.Pet.LastUpdated
+            }
+        };
+
+        offlineStore.UpdateOperatorSnapshot(updatedDto.Id, updatedDto);
+        CurrentOperator = OperatorStateFromDto(updatedDto);
+        ActiveSessionId = null;
+        CurrentSession = null;
+        _usingLocalCombat = false;
+
+        Message = "Exfil successful!\nReturning to base.\n\nPress OK to continue.";
+        CurrentScreen = Screen.Message;
+        ReturnScreen = Screen.BaseCamp;
     }
 
     Hex1bWidget BuildPetActions()
