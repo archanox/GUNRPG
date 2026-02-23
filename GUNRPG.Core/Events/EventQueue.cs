@@ -49,6 +49,16 @@ public class EventQueue
     }
 
     /// <summary>
+    /// Returns true when a specific shooter has at least one pending damage event against a specific target.
+    /// </summary>
+    public bool HasPendingDamageEvent(Guid shooterId, Guid targetId)
+    {
+        return _events.Any(e => e is DamageAppliedEvent damageEvent
+            && damageEvent.OperatorId == shooterId
+            && damageEvent.TargetId == targetId);
+    }
+
+    /// <summary>
     /// Removes all events for a specific operator.
     /// Used when cancelling intents.
     /// </summary>
