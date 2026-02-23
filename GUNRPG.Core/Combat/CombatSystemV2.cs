@@ -216,12 +216,15 @@ public class CombatSystemV2
             // Check for death
             if (!Player.IsAlive || !Enemy.IsAlive)
             {
-                // If the enemy was killed but already-fired enemy bullets are still expected to hit,
+                // If the enemy is dead but already-fired enemy bullets are still expected to hit,
                 // let those in-flight damage events resolve before ending combat.
                 if (Player.IsAlive
                     && !Enemy.IsAlive
                     && _eventQueue.HasPendingDamageEvent(Enemy.Id, Player.Id))
                 {
+                    // Keep only already-scheduled bullet impact events (DamageAppliedEvent/ShotMissedEvent);
+                    // this drops non-bullet events (movement/stance/shot-fire scheduling) after the enemy dies.
+                    // The current event was already dequeued/executed above, so the loop continues forward.
                     _eventQueue.ClearExceptInFlightBullets();
                     continue;
                 }
