@@ -1980,13 +1980,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     {
         try
         {
-            // Offline exfil: update local snapshot directly without any server calls
-            if (backend is not OnlineGameBackend)
-            {
-                ProcessExfilOffline();
-                return;
-            }
-
             // Get combat session ID (may be null after victory or if no combat started)
             var activeCombatSessionId = ActiveSessionId ?? CurrentOperator?.ActiveCombatSessionId;
             
@@ -2001,10 +1994,23 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 
                 if (completeResponse.IsSuccessStatusCode)
                 {
-                    // Clear session state and refresh
+                    // Clear session state
                     ActiveSessionId = null;
                     CurrentSession = null;
-                    RefreshOperator();
+                    // Directly update client-side operator state to Base mode so the UI reflects
+                    // the correct state even if the subsequent RefreshOperator call fails transiently.
+                    if (CurrentOperator != null)
+                    {
+                        var dto = ToBackendDto(CurrentOperator);
+                        dto.CurrentMode = "Base";
+                        dto.InfilSessionId = null;
+                        dto.InfilStartTime = null;
+                        dto.ActiveCombatSessionId = null;
+                        dto.ExfilStreak = CurrentOperator.ExfilStreak + 1;
+                        dto.LockedLoadout = "";
+                        CurrentOperator = OperatorStateFromDto(dto);
+                    }
+                    RefreshOperator(); // Best-effort sync with server
                     Message = "Exfil successful!\nReturning to base.\n\nPress OK to continue.";
                     CurrentScreen = Screen.Message;
                     ReturnScreen = Screen.BaseCamp;
@@ -2084,56 +2090,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
         }
-    }
-
-    void ProcessExfilOffline()
-    {
-        if (CurrentOperator == null || offlineStore == null)
-        {
-            Message = "Error: Cannot exfil — offline data unavailable.\n\nPress OK to continue.";
-            CurrentScreen = Screen.Message;
-            ReturnScreen = Screen.BaseCamp;
-            return;
-        }
-
-        var updatedDto = new OperatorDto
-        {
-            Id = CurrentOperator.Id.ToString(),
-            Name = CurrentOperator.Name,
-            TotalXp = CurrentOperator.TotalXp,
-            CurrentHealth = CurrentOperator.CurrentHealth,
-            MaxHealth = CurrentOperator.MaxHealth,
-            EquippedWeaponName = CurrentOperator.EquippedWeaponName,
-            UnlockedPerks = CurrentOperator.UnlockedPerks,
-            ExfilStreak = CurrentOperator.ExfilStreak + 1,
-            IsDead = CurrentOperator.IsDead,
-            CurrentMode = "Base",
-            ActiveCombatSessionId = null,
-            InfilSessionId = null,
-            InfilStartTime = null,
-            LockedLoadout = CurrentOperator.LockedLoadout,
-            Pet = CurrentOperator.Pet == null ? null : new GUNRPG.Application.Dtos.PetStateDto
-            {
-                Health = CurrentOperator.Pet.Health,
-                Fatigue = CurrentOperator.Pet.Fatigue,
-                Injury = CurrentOperator.Pet.Injury,
-                Stress = CurrentOperator.Pet.Stress,
-                Morale = CurrentOperator.Pet.Morale,
-                Hunger = CurrentOperator.Pet.Hunger,
-                Hydration = CurrentOperator.Pet.Hydration,
-                LastUpdated = CurrentOperator.Pet.LastUpdated
-            }
-        };
-
-        offlineStore.UpdateOperatorSnapshot(updatedDto.Id, updatedDto);
-        CurrentOperator = OperatorStateFromDto(updatedDto);
-        ActiveSessionId = null;
-        CurrentSession = null;
-        _usingLocalCombat = false;
-
-        Message = "Exfil successful!\nReturning to base.\n\nPress OK to continue.";
-        CurrentScreen = Screen.Message;
-        ReturnScreen = Screen.BaseCamp;
     }
 
     Hex1bWidget BuildPetActions()
