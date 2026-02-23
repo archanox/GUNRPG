@@ -51,6 +51,9 @@ public class EventQueue
     /// <summary>
     /// Returns true when a specific shooter has at least one pending damage event against a specific target.
     /// </summary>
+    /// <param name="shooterId">The operator id that fired the shot.</param>
+    /// <param name="targetId">The operator id expected to receive damage.</param>
+    /// <returns>True if a matching pending <see cref="DamageAppliedEvent"/> exists.</returns>
     public bool HasPendingDamageEvent(Guid shooterId, Guid targetId)
     {
         return _events.Any(e => e is DamageAppliedEvent damageEvent
