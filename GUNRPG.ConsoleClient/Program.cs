@@ -1155,13 +1155,9 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             new TextBlockWidget(""),
             new HStackWidget([
                 new TextBlockWidget("  "),
-                new ButtonWidget("CONFIRM & SUBMIT").OnClick(_ => {
+                new ButtonWidget("SUBMIT & ADVANCE TURN").OnClick(_ => {
+                    // Submit player intents then immediately advance the turn
                     SubmitPlayerIntents();
-                    // Close the window — screen change from SubmitPlayerIntents handles navigation
-                    w.Window.Cancel();
-                }),
-                new TextBlockWidget("  "),
-                new ButtonWidget("ADVANCE TURN").OnClick(_ => {
                     // NOTE: AdvanceCombat blocks on HTTP calls due to hex1b's synchronous event handlers.
                     AdvanceCombat();
                     w.Window.Cancel();
