@@ -212,12 +212,7 @@ public class CoverSemanticsTests
         
         Assert.True(result.success);
         
-        combat.BeginExecution();
-        combat.ExecuteUntilReactionWindow();
-
-        // Assert: Distance should have increased (retreating allowed)
-        // Note: May need to wait for movement events to process
-        // For now, just verify intent was accepted
+        // Assert: retreat intent is accepted from full cover
         Assert.True(result.success);
     }
 

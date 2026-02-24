@@ -21,7 +21,7 @@ public class CombatOutcomeTests
         var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
         
-        var loadedSession = SessionMapping.FromSnapshot(await store.LoadAsync(session.Id));
+        var loadedSession = SessionMapping.FromSnapshot((await store.LoadAsync(session.Id))!);
 
         // Act & Assert
         var exception = Assert.Throws<InvalidOperationException>(() => loadedSession!.GetOutcome());
@@ -51,7 +51,7 @@ public class CombatOutcomeTests
             await service.AdvanceAsync(session.Id);
         }
 
-        var loadedSession = SessionMapping.FromSnapshot(await store.LoadAsync(session.Id));
+        var loadedSession = SessionMapping.FromSnapshot((await store.LoadAsync(session.Id))!);
         Assert.Equal(SessionPhase.Completed, loadedSession!.Phase);
 
         // Act
@@ -88,7 +88,7 @@ public class CombatOutcomeTests
             await service.AdvanceAsync(session.Id);
         }
 
-        var loadedSession = SessionMapping.FromSnapshot(await store.LoadAsync(session.Id));
+        var loadedSession = SessionMapping.FromSnapshot((await store.LoadAsync(session.Id))!);
         Assert.Equal(SessionPhase.Completed, loadedSession!.Phase);
 
         // Act
@@ -122,7 +122,7 @@ public class CombatOutcomeTests
             await service.AdvanceAsync(session.Id);
         }
 
-        var loadedSession = SessionMapping.FromSnapshot(await store.LoadAsync(session.Id));
+        var loadedSession = SessionMapping.FromSnapshot((await store.LoadAsync(session.Id))!);
         Assert.Equal(SessionPhase.Completed, loadedSession!.Phase);
 
         // Act
@@ -172,7 +172,7 @@ public class CombatOutcomeTests
             await service.AdvanceAsync(session.Id);
         }
 
-        var loadedSession = SessionMapping.FromSnapshot(await store.LoadAsync(session.Id));
+        var loadedSession = SessionMapping.FromSnapshot((await store.LoadAsync(session.Id))!);
         Assert.Equal(SessionPhase.Completed, loadedSession!.Phase);
 
         // Act
@@ -306,7 +306,7 @@ public class CombatOutcomeTests
             await service.AdvanceAsync(session.Id);
         }
 
-        var loadedSession = SessionMapping.FromSnapshot(await store.LoadAsync(session.Id));
+        var loadedSession = SessionMapping.FromSnapshot((await store.LoadAsync(session.Id))!);
         Assert.Equal(SessionPhase.Completed, loadedSession!.Phase);
 
         // Act
@@ -349,7 +349,7 @@ public class CombatOutcomeTests
             await service.AdvanceAsync(session.Id);
         }
 
-        var loadedSession = SessionMapping.FromSnapshot(await store.LoadAsync(session.Id));
+        var loadedSession = SessionMapping.FromSnapshot((await store.LoadAsync(session.Id))!);
         Assert.Equal(SessionPhase.Completed, loadedSession!.Phase);
 
         // Act
