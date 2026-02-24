@@ -1156,11 +1156,13 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             new HStackWidget([
                 new TextBlockWidget("  "),
                 new ButtonWidget("SUBMIT & ADVANCE TURN").OnClick(_ => {
-                    // Submit player intents then immediately advance the turn
-                    SubmitPlayerIntents();
-                    // NOTE: AdvanceCombat blocks on HTTP calls due to hex1b's synchronous event handlers.
-                    AdvanceCombat();
-                    w.Window.Cancel();
+                    // Only advance the turn if intent submission succeeded
+                    if (SubmitPlayerIntents())
+                    {
+                        // NOTE: AdvanceCombat blocks on HTTP calls due to hex1b's synchronous event handlers.
+                        AdvanceCombat();
+                        w.Window.Cancel();
+                    }
                 }),
                 new TextBlockWidget("  "),
                 new ButtonWidget("CANCEL").OnClick(_ => w.Window.Cancel()),
@@ -1476,12 +1478,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     }
 
 
-    void SubmitPlayerIntents()
+    bool SubmitPlayerIntents()
     {
         if (_usingLocalCombat)
         {
-            SubmitPlayerIntentsOffline();
-            return;
+            return SubmitPlayerIntentsOffline();
         }
 
         try
@@ -1508,7 +1509,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 Message = $"Intent submission failed:\n\n{errorContent}\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.CombatSession;
-                return;
+                return false;
             }
 
             // Reload session state
@@ -1518,10 +1519,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 CurrentSession = sessionData;
             }
 
-            // Success - return to combat screen
-            Message = "Intents submitted successfully!\n\nPress OK to continue.";
-            CurrentScreen = Screen.Message;
-            ReturnScreen = Screen.CombatSession;
+            return true;
         }
         catch (Exception ex)
         {
@@ -1529,10 +1527,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             Message = $"Error submitting intents:\n\n{ex.Message}\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.CombatSession;
+            return false;
         }
     }
 
-    void SubmitPlayerIntentsOffline()
+    bool SubmitPlayerIntentsOffline()
     {
         try
         {
@@ -1556,14 +1555,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 Message = $"Intent submission failed:\n\n{result.ErrorMessage}\n\nPress OK to continue.";
                 CurrentScreen = Screen.Message;
                 ReturnScreen = Screen.CombatSession;
-                return;
+                return false;
             }
 
             CurrentSession = ToLocalDto(result.Value!);
-
-            Message = "Intents submitted successfully!\n\nPress OK to continue.";
-            CurrentScreen = Screen.Message;
-            ReturnScreen = Screen.CombatSession;
+            return true;
         }
         catch (Exception ex)
         {
@@ -1571,6 +1567,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             Message = $"Error submitting intents:\n\n{ex.Message}\n\nPress OK to continue.";
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.CombatSession;
+            return false;
         }
     }
 
