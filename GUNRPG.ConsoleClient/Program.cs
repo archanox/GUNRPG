@@ -1173,6 +1173,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         ]))
         .Title("⚡ SUBMIT INTENTS ⚡")
         .Size(72, 22)
+        .Modal()
         .Open(windows);
     }
 
