@@ -68,6 +68,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     private CombatSessionService? _localCombatService;
     private bool _usingLocalCombat;
     private int _activeOfflineMissionSeed;
+    private readonly IDeterministicCombatEngine _deterministicEngine = new DeterministicCombatEngine();
 
     public Task<Hex1bWidget> BuildUI(RootContext ctx, CancellationTokenSource cts)
     {
@@ -1320,8 +1321,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         var initialHash = OfflineMissionHashing.ComputeOperatorStateHash(initialDto);
 
         // Run the deterministic combat engine — same engine the server will use to verify.
-        var engine = new DeterministicCombatEngine();
-        var combatResult = engine.Execute(initialDto, _activeOfflineMissionSeed);
+        var combatResult = _deterministicEngine.Execute(initialDto, _activeOfflineMissionSeed);
         var updatedDto = combatResult.ResultOperator;
 
         var resultHash = OfflineMissionHashing.ComputeOperatorStateHash(updatedDto);
