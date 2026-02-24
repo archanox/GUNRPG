@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GUNRPG.Application.Backend;
+using GUNRPG.Application.Combat;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Sessions;
@@ -1306,75 +1307,28 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     }
 
     /// <summary>
-    /// Processes a combat outcome for an offline session. Updates the local operator snapshot
-    /// and <see cref="CurrentOperator"/> directly, without any HTTP calls.
+    /// Processes a combat outcome for an offline session using the deterministic combat engine.
+    /// The engine computes the authoritative result from the initial operator state and seed,
+    /// ensuring the server can independently replay and verify the outcome.
     /// </summary>
     void ProcessCombatOutcomeOffline()
     {
-        var session = CurrentSession;
-        if (session == null || CurrentOperator == null || offlineStore == null)
+        if (CurrentOperator == null || offlineStore == null)
             return;
 
         var initialDto = ToBackendDto(CurrentOperator);
         var initialHash = OfflineMissionHashing.ComputeOperatorStateHash(initialDto);
 
-        var player = session.Player;
-        var enemy = session.Enemy;
-        var isVictory = player.Health > 0 && enemy.Health <= 0;
-        var operatorDied = player.Health <= 0;
-
-        // XP mirrors CombatSession.GetOutcome()
-        int xpGained = isVictory ? 100 : operatorDied ? 0 : 50;
-        float damageTaken = player.MaxHealth - player.Health;
-
-        var updatedDto = new OperatorDto
-        {
-            Id = CurrentOperator.Id.ToString(),
-            Name = CurrentOperator.Name,
-            TotalXp = CurrentOperator.TotalXp + xpGained,
-            // Died: respawn at full health; survived: carry forward damage taken
-            CurrentHealth = operatorDied
-                ? CurrentOperator.MaxHealth
-                : Math.Max(1f, CurrentOperator.CurrentHealth - damageTaken),
-            MaxHealth = CurrentOperator.MaxHealth,
-            EquippedWeaponName = CurrentOperator.EquippedWeaponName,
-            UnlockedPerks = CurrentOperator.UnlockedPerks,
-            ExfilStreak = CurrentOperator.ExfilStreak,
-            IsDead = false, // operators respawn after death
-            // Victory: stay in Infil so another combat can start
-            // Death: return to Base
-            CurrentMode = operatorDied ? "Base" : "Infil",
-            ActiveCombatSessionId = null,
-            InfilSessionId = operatorDied ? null : CurrentOperator.InfilSessionId,
-            InfilStartTime = operatorDied ? null : CurrentOperator.InfilStartTime,
-            LockedLoadout = CurrentOperator.LockedLoadout,
-            Pet = CurrentOperator.Pet == null ? null : new GUNRPG.Application.Dtos.PetStateDto
-            {
-                Health = CurrentOperator.Pet.Health,
-                Fatigue = CurrentOperator.Pet.Fatigue,
-                Injury = CurrentOperator.Pet.Injury,
-                Stress = CurrentOperator.Pet.Stress,
-                Morale = CurrentOperator.Pet.Morale,
-                Hunger = CurrentOperator.Pet.Hunger,
-                Hydration = CurrentOperator.Pet.Hydration,
-                LastUpdated = CurrentOperator.Pet.LastUpdated
-            }
-        };
+        // Run the deterministic combat engine — same engine the server will use to verify.
+        var engine = new DeterministicCombatEngine();
+        var combatResult = engine.Execute(initialDto, _activeOfflineMissionSeed);
+        var updatedDto = combatResult.ResultOperator;
 
         var resultHash = OfflineMissionHashing.ComputeOperatorStateHash(updatedDto);
         var nextSequence = offlineStore.GetNextMissionSequence(updatedDto.Id);
 
         var initialSnapshotJson = JsonSerializer.Serialize(initialDto, options);
         var resultSnapshotJson = JsonSerializer.Serialize(updatedDto, options);
-        var fullBattleLog = session.BattleLog
-            .Select(x => new GUNRPG.Application.Dtos.BattleLogEntryDto
-            {
-                EventType = x.EventType,
-                TimeMs = x.TimeMs,
-                Message = x.Message,
-                ActorName = x.ActorName
-            })
-            .ToList();
 
         Console.WriteLine($"[OFFLINE] Envelope seq={nextSequence} seed={_activeOfflineMissionSeed} initialHash={initialHash} resultHash={resultHash}");
 
@@ -1387,7 +1341,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             ResultSnapshotJson = resultSnapshotJson,
             InitialOperatorStateHash = initialHash,
             ResultOperatorStateHash = resultHash,
-            FullBattleLog = fullBattleLog,
+            FullBattleLog = combatResult.BattleLog,
             ExecutedUtc = DateTime.UtcNow,
             Synced = false
         };

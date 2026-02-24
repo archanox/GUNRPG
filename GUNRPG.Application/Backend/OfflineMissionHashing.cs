@@ -45,6 +45,16 @@ public static class OfflineMissionHashing
             dto.Pet == null ? null : new PetHashState(dto.Pet.Health, dto.Pet.Fatigue, dto.Pet.Injury, dto.Pet.Stress, dto.Pet.Morale, dto.Pet.Hunger, dto.Pet.Hydration, dto.Pet.LastUpdated)));
     }
 
+    /// <summary>
+    /// Computes a SHA256 hash over an already-serialized canonical JSON string.
+    /// Use this when the caller owns the serialization step (ordered properties, no indentation).
+    /// </summary>
+    public static string ComputeSnapshotHash(string canonicalJson)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(canonicalJson));
+        return Convert.ToHexString(bytes);
+    }
+
     private static string ComputeHash(OperatorHashState state)
     {
         var json = JsonSerializer.Serialize(state);
