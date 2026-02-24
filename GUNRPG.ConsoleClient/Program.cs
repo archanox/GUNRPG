@@ -1375,7 +1375,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 ActorName = x.ActorName
             })
             .ToList();
-        var battleLogJson = JsonSerializer.Serialize(fullBattleLog, options);
 
         Console.WriteLine($"[OFFLINE] Envelope seq={nextSequence} seed={_activeOfflineMissionSeed} initialHash={initialHash} resultHash={resultHash}");
 
@@ -1385,7 +1384,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             SequenceNumber = nextSequence,
             RandomSeed = _activeOfflineMissionSeed,
             InitialSnapshotJson = initialSnapshotJson,
-            BattleLogJson = battleLogJson,
             ResultSnapshotJson = resultSnapshotJson,
             InitialOperatorStateHash = initialHash,
             ResultOperatorStateHash = resultHash,

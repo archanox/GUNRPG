@@ -51,6 +51,14 @@ public sealed class GameBackendResolver
                 if (!syncResult.Success)
                 {
                     Console.WriteLine($"[SYNC] Sync failed: {syncResult.FailureReason}. Gameplay blocked until operator is re-infiled.");
+                    if (syncResult.IsIntegrityFailure)
+                    {
+                        // Integrity violation is permanent — remove the snapshot so subsequent
+                        // calls to ResolveAsync don't loop on the same unresolvable failure.
+                        // The operator must re-infil with a clean slate.
+                        _offlineStore.RemoveInfiledOperator(activeOp.Id);
+                        Console.WriteLine($"[SYNC] Infiled snapshot for operator {activeOp.Id} removed. Re-infil required.");
+                    }
                     CurrentMode = GameMode.Blocked;
                     return onlineBackend;
                 }
