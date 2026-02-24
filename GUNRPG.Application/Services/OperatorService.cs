@@ -477,8 +477,9 @@ public sealed class OperatorService
             {
                 initialDto = JsonSerializer.Deserialize<OperatorDto>(envelope.InitialSnapshotJson, _replayJsonOptions);
             }
-            catch
+            catch (JsonException)
             {
+                // Malformed InitialSnapshotJson — caller maps null return to InvalidState error.
                 return null;
             }
 
