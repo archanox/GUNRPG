@@ -365,6 +365,6 @@ public class CombatOutcomeTests
     {
         var snapshot = await store.LoadAsync(sessionId);
         Assert.NotNull(snapshot);
-        return SessionMapping.FromSnapshot(snapshot);
+        return SessionMapping.FromSnapshot(snapshot!);
     }
 }
