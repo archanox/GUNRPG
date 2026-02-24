@@ -9,6 +9,7 @@ namespace GUNRPG.Tests;
 
 public class LiteDbCombatSessionStoreTests : IDisposable
 {
+    private static readonly TimeSpan TestOperationTimeout = TimeSpan.FromSeconds(10);
     private readonly string _tempDbPath;
     private readonly LiteDatabase _database;
     private readonly LiteDbCombatSessionStore _store;
@@ -229,7 +230,7 @@ public class LiteDbCombatSessionStoreTests : IDisposable
             Task.Run(() => _store.SaveAsync(snapshot2)),
             Task.Run(() => _store.SaveAsync(snapshot3))
         };
-        await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(10));
+        await Task.WhenAll(tasks).WaitAsync(TestOperationTimeout);
 
         // Verify all writes succeeded and can be read concurrently
         var readTasks = new[]
@@ -238,7 +239,7 @@ public class LiteDbCombatSessionStoreTests : IDisposable
             Task.Run(() => _store.LoadAsync(snapshot2.Id)),
             Task.Run(() => _store.LoadAsync(snapshot3.Id))
         };
-        var results = await Task.WhenAll(readTasks).WaitAsync(TimeSpan.FromSeconds(10));
+        var results = await Task.WhenAll(readTasks).WaitAsync(TestOperationTimeout);
 
         Assert.All(results, result => Assert.NotNull(result));
         Assert.Contains(results, r => r!.Id == snapshot1.Id);
