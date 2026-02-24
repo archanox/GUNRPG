@@ -1159,13 +1159,13 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             new HStackWidget([
                 new TextBlockWidget("  "),
                 new ButtonWidget("SUBMIT & ADVANCE TURN").OnClick(e => {
-                    // Only advance the turn if intent submission succeeded
+                    // Always pop the popup so the next screen (combat, error, or mission complete) is unblocked
                     if (SubmitPlayerIntents())
                     {
                         // NOTE: AdvanceCombat blocks on HTTP calls due to hex1b's synchronous event handlers.
                         AdvanceCombat();
-                        e.Popups.Pop();
                     }
+                    e.Popups.Pop();
                 }),
                 new TextBlockWidget("  "),
                 new ButtonWidget("CANCEL").OnClick(e => e.Popups.Pop()),
