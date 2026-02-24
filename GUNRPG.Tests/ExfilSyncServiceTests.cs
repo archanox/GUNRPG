@@ -19,7 +19,7 @@ public sealed class ExfilSyncServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SyncPendingAsync_SendsInSequence_StopsOnFirstFailure()
+    public async Task SyncAsync_SendsInSequence_StopsOnFirstFailure()
     {
         var store = new OfflineStore(_database);
         SaveEnvelope(store, 1, "h0", "h1");
@@ -31,16 +31,16 @@ public sealed class ExfilSyncServiceTests : IDisposable
         var backend = new OnlineGameBackend(client, store);
         var service = new ExfilSyncService(store, backend);
 
-        var result = await service.SyncPendingAsync();
+        var result = await service.SyncAsync("op-1");
 
-        Assert.False(result);
+        Assert.False(result.Success);
         Assert.Equal(new long[] { 1, 2 }, handler.SequenceNumbers);
         var unsyncedSequences = store.GetUnsyncedResults("op-1").Select(x => x.SequenceNumber).ToArray();
         Assert.Equal(new long[] { 2, 3 }, unsyncedSequences);
     }
 
     [Fact]
-    public async Task SyncPendingAsync_ContinuesFromLatestSyncedHead()
+    public async Task SyncAsync_ContinuesFromLatestSyncedHead()
     {
         var store = new OfflineStore(_database);
         SaveEnvelope(store, 1, "h0", "h1");
@@ -53,9 +53,10 @@ public sealed class ExfilSyncServiceTests : IDisposable
         var backend = new OnlineGameBackend(client, store);
         var service = new ExfilSyncService(store, backend);
 
-        var result = await service.SyncPendingAsync();
+        var result = await service.SyncAsync("op-1");
 
-        Assert.True(result);
+        Assert.True(result.Success);
+        Assert.Equal(2, result.EnvelopesSynced);
         Assert.Equal(new long[] { 2, 3 }, handler.SequenceNumbers);
         Assert.Empty(store.GetUnsyncedResults("op-1"));
     }

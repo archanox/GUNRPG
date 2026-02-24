@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GUNRPG.Application.Backend;
@@ -874,7 +875,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             {
                 OperatorId = CurrentOperatorId,
                 PlayerName = CurrentOperator.Name,
-                Seed = new Random().Next()
+                Seed = RandomNumberGenerator.GetInt32(int.MaxValue)
             };
             _activeOfflineMissionSeed = request.Seed.Value;
 
@@ -1362,22 +1363,33 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         var resultHash = OfflineMissionHashing.ComputeOperatorStateHash(updatedDto);
         var nextSequence = offlineStore.GetNextMissionSequence(updatedDto.Id);
+
+        var initialSnapshotJson = JsonSerializer.Serialize(initialDto, options);
+        var resultSnapshotJson = JsonSerializer.Serialize(updatedDto, options);
+        var fullBattleLog = session.BattleLog
+            .Select(x => new GUNRPG.Application.Dtos.BattleLogEntryDto
+            {
+                EventType = x.EventType,
+                TimeMs = x.TimeMs,
+                Message = x.Message,
+                ActorName = x.ActorName
+            })
+            .ToList();
+        var battleLogJson = JsonSerializer.Serialize(fullBattleLog, options);
+
+        Console.WriteLine($"[OFFLINE] Envelope seq={nextSequence} seed={_activeOfflineMissionSeed} initialHash={initialHash} resultHash={resultHash}");
+
         var envelope = new OfflineMissionEnvelope
         {
             OperatorId = updatedDto.Id,
             SequenceNumber = nextSequence,
             RandomSeed = _activeOfflineMissionSeed,
+            InitialSnapshotJson = initialSnapshotJson,
+            BattleLogJson = battleLogJson,
+            ResultSnapshotJson = resultSnapshotJson,
             InitialOperatorStateHash = initialHash,
             ResultOperatorStateHash = resultHash,
-            FullBattleLog = session.BattleLog
-                .Select(x => new GUNRPG.Application.Dtos.BattleLogEntryDto
-                {
-                    EventType = x.EventType,
-                    TimeMs = x.TimeMs,
-                    Message = x.Message,
-                    ActorName = x.ActorName
-                })
-                .ToList(),
+            FullBattleLog = fullBattleLog,
             ExecutedUtc = DateTime.UtcNow,
             Synced = false
         };

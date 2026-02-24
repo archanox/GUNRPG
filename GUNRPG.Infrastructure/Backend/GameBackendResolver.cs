@@ -30,6 +30,8 @@ public sealed class GameBackendResolver
 
     /// <summary>
     /// Resolves the appropriate backend based on server reachability and local state.
+    /// When the server is reachable and an infiled operator exists, sync is run first.
+    /// Gameplay is blocked if sync fails (chain-of-trust enforcement).
     /// </summary>
     public async Task<IGameBackend> ResolveAsync()
     {
@@ -37,16 +39,32 @@ public sealed class GameBackendResolver
 
         if (serverReachable)
         {
+            var onlineBackend = new OnlineGameBackend(_httpClient, _offlineStore, _jsonOptions);
+
+            // If an operator was infiled offline, sync must succeed before allowing online play.
+            var activeOp = _offlineStore.GetActiveInfiledOperator();
+            if (activeOp != null)
+            {
+                Console.WriteLine($"[SYNC] Infiled operator {activeOp.Id} found — synchronizing before returning online.");
+                IExfilSyncService syncService = new ExfilSyncService(_offlineStore, onlineBackend);
+                var syncResult = await syncService.SyncAsync(activeOp.Id);
+                if (!syncResult.Success)
+                {
+                    Console.WriteLine($"[SYNC] Sync failed: {syncResult.FailureReason}. Gameplay blocked until operator is re-infiled.");
+                    CurrentMode = GameMode.Blocked;
+                    return onlineBackend;
+                }
+
+                Console.WriteLine($"[SYNC] Sync succeeded — {syncResult.EnvelopesSynced} envelope(s) uploaded.");
+            }
+            else
+            {
+                // No infiled operator: log any residual unsynced results from other operators.
+                LogUnsyncedResults();
+            }
+
             CurrentMode = GameMode.Online;
             Console.WriteLine("[MODE] Online mode — server is reachable.");
-            LogUnsyncedResults();
-            var onlineBackend = new OnlineGameBackend(_httpClient, _offlineStore, _jsonOptions);
-            var syncService = new ExfilSyncService(_offlineStore, onlineBackend);
-            var syncSuccess = await syncService.SyncPendingAsync();
-            if (!syncSuccess)
-            {
-                Console.WriteLine("[SYNC] Offline envelope sync stopped due to validation failure or server rejection.");
-            }
             return onlineBackend;
         }
 

@@ -3,7 +3,7 @@ using GUNRPG.Infrastructure.Persistence;
 
 namespace GUNRPG.Infrastructure.Backend;
 
-public sealed class ExfilSyncService
+public sealed class ExfilSyncService : IExfilSyncService
 {
     private readonly OfflineStore _offlineStore;
     private readonly OnlineGameBackend _onlineBackend;
@@ -14,43 +14,59 @@ public sealed class ExfilSyncService
         _onlineBackend = onlineBackend;
     }
 
-    public async Task<bool> SyncPendingAsync(CancellationToken cancellationToken = default)
+    /// <inheritdoc />
+    public async Task<SyncResult> SyncAsync(string operatorId, CancellationToken cancellationToken = default)
     {
-        var pending = _offlineStore.GetAllUnsyncedResults()
-            .OrderBy(x => x.OperatorId, StringComparer.Ordinal)
-            .ThenBy(x => x.SequenceNumber)
+        var pending = _offlineStore.GetUnsyncedResults(operatorId)
+            .OrderBy(x => x.SequenceNumber)
             .ToList();
-        var previousByOperator = new Dictionary<string, OfflineMissionEnvelope>(StringComparer.Ordinal);
-        foreach (var operatorId in pending.Select(x => x.OperatorId).Distinct(StringComparer.Ordinal))
+
+        Console.WriteLine($"[SYNC] Operator {operatorId}: {pending.Count} unsynced envelope(s) pending.");
+
+        if (pending.Count == 0)
         {
-            var latestSynced = _offlineStore.GetLatestSyncedResult(operatorId);
-            if (latestSynced != null)
-            {
-                previousByOperator[operatorId] = latestSynced;
-            }
+            return SyncResult.Ok(0);
         }
 
+        var latestSynced = _offlineStore.GetLatestSyncedResult(operatorId);
+        OfflineMissionEnvelope? previous = latestSynced;
+
+        int synced = 0;
         foreach (var envelope in pending)
         {
-            if (previousByOperator.TryGetValue(envelope.OperatorId, out var previous))
+            if (previous != null)
             {
-                if (envelope.SequenceNumber != previous.SequenceNumber + 1 ||
-                    !string.Equals(envelope.InitialOperatorStateHash, previous.ResultOperatorStateHash, StringComparison.Ordinal))
+                if (envelope.SequenceNumber != previous.SequenceNumber + 1)
                 {
-                    return false;
+                    var reason = $"Sequence gap for operator {operatorId}: expected {previous.SequenceNumber + 1}, got {envelope.SequenceNumber}.";
+                    Console.WriteLine($"[SYNC] FAIL — {reason}");
+                    return SyncResult.Fail(reason);
+                }
+
+                if (!string.Equals(envelope.InitialOperatorStateHash, previous.ResultOperatorStateHash, StringComparison.Ordinal))
+                {
+                    var reason = $"Hash chain mismatch for operator {operatorId} at sequence {envelope.SequenceNumber}.";
+                    Console.WriteLine($"[SYNC] FAIL — {reason}");
+                    return SyncResult.Fail(reason);
                 }
             }
 
-            var synced = await _onlineBackend.SyncOfflineMission(envelope, cancellationToken);
-            if (!synced)
+            Console.WriteLine($"[SYNC] Sending envelope seq={envelope.SequenceNumber} seed={envelope.RandomSeed} initialHash={envelope.InitialOperatorStateHash} resultHash={envelope.ResultOperatorStateHash}");
+
+            var ok = await _onlineBackend.SyncOfflineMission(envelope, cancellationToken);
+            if (!ok)
             {
-                return false;
+                var reason = $"Server rejected envelope seq={envelope.SequenceNumber} for operator {operatorId}.";
+                Console.WriteLine($"[SYNC] FAIL — {reason}");
+                return SyncResult.Fail(reason);
             }
 
             _offlineStore.MarkResultSynced(envelope.Id);
-            previousByOperator[envelope.OperatorId] = envelope;
+            previous = envelope;
+            synced++;
         }
 
-        return true;
+        Console.WriteLine($"[SYNC] SUCCESS — {synced} envelope(s) synced for operator {operatorId}.");
+        return SyncResult.Ok(synced);
     }
 }
