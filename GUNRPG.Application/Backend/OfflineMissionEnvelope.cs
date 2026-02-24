@@ -8,6 +8,16 @@ public sealed class OfflineMissionEnvelope
     public string OperatorId { get; set; } = string.Empty;
     public long SequenceNumber { get; set; }
     public int RandomSeed { get; set; }
+
+    /// <summary>Canonical JSON snapshot of operator state immediately before mission execution.</summary>
+    public string InitialSnapshotJson { get; set; } = string.Empty;
+
+    /// <summary>Serialised full battle log; sufficient to replay the mission from InitialSnapshotJson + RandomSeed.</summary>
+    public string BattleLogJson { get; set; } = string.Empty;
+
+    /// <summary>Canonical JSON snapshot of operator state immediately after mission execution.</summary>
+    public string ResultSnapshotJson { get; set; } = string.Empty;
+
     public string InitialOperatorStateHash { get; set; } = string.Empty;
     public string ResultOperatorStateHash { get; set; } = string.Empty;
     public List<BattleLogEntryDto> FullBattleLog { get; set; } = new();
