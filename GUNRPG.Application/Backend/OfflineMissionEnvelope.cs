@@ -12,15 +12,15 @@ public sealed class OfflineMissionEnvelope
     /// <summary>Canonical JSON snapshot of operator state immediately before mission execution.</summary>
     public string InitialSnapshotJson { get; set; } = string.Empty;
 
-    /// <summary>Serialised full battle log; sufficient to replay the mission from InitialSnapshotJson + RandomSeed.</summary>
-    public string BattleLogJson { get; set; } = string.Empty;
-
     /// <summary>Canonical JSON snapshot of operator state immediately after mission execution.</summary>
     public string ResultSnapshotJson { get; set; } = string.Empty;
 
     public string InitialOperatorStateHash { get; set; } = string.Empty;
     public string ResultOperatorStateHash { get; set; } = string.Empty;
+
+    /// <summary>Full deterministic battle log; sufficient to replay the mission from InitialSnapshotJson + RandomSeed.</summary>
     public List<BattleLogEntryDto> FullBattleLog { get; set; } = new();
+
     public DateTime ExecutedUtc { get; set; }
     public bool Synced { get; set; }
 }

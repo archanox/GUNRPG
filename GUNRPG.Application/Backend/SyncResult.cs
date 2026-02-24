@@ -9,9 +9,15 @@ public sealed class SyncResult
     public int EnvelopesSynced { get; init; }
     public string? FailureReason { get; init; }
 
+    /// <summary>
+    /// True when failure is due to a permanent integrity violation (sequence gap or hash chain mismatch).
+    /// Integrity failures require re-infil to recover; transient HTTP failures allow retry.
+    /// </summary>
+    public bool IsIntegrityFailure { get; init; }
+
     public static SyncResult Ok(int envelopesSynced) =>
         new() { Success = true, EnvelopesSynced = envelopesSynced };
 
-    public static SyncResult Fail(string reason) =>
-        new() { Success = false, FailureReason = reason };
+    public static SyncResult Fail(string reason, bool isIntegrityFailure = false) =>
+        new() { Success = false, FailureReason = reason, IsIntegrityFailure = isIntegrityFailure };
 }
