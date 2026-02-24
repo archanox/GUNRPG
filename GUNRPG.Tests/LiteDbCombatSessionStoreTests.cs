@@ -229,7 +229,7 @@ public class LiteDbCombatSessionStoreTests : IDisposable
             Task.Run(() => _store.SaveAsync(snapshot2)),
             Task.Run(() => _store.SaveAsync(snapshot3))
         };
-        await Task.WhenAll(tasks);
+        await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(10));
 
         // Verify all writes succeeded and can be read concurrently
         var readTasks = new[]
@@ -238,7 +238,7 @@ public class LiteDbCombatSessionStoreTests : IDisposable
             Task.Run(() => _store.LoadAsync(snapshot2.Id)),
             Task.Run(() => _store.LoadAsync(snapshot3.Id))
         };
-        var results = await Task.WhenAll(readTasks);
+        var results = await Task.WhenAll(readTasks).WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.All(results, result => Assert.NotNull(result));
         Assert.Contains(results, r => r!.Id == snapshot1.Id);
