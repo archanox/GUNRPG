@@ -210,8 +210,6 @@ public class CoverSemanticsTests
         var intents = new SimultaneousIntents(shooter.Id) { Movement = MovementAction.WalkAway };
         var result = combat.SubmitIntents(shooter, intents);
         
-        Assert.True(result.success);
-        
         // Assert: retreat intent is accepted from full cover
         Assert.True(result.success);
     }
