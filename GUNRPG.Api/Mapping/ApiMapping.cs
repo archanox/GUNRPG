@@ -86,6 +86,7 @@ public static class ApiMapping
             OperatorId = apiDto.OperatorId,
             SequenceNumber = apiDto.SequenceNumber,
             RandomSeed = apiDto.RandomSeed,
+            InitialSnapshotJson = apiDto.InitialSnapshotJson,
             InitialOperatorStateHash = apiDto.InitialOperatorStateHash,
             ResultOperatorStateHash = apiDto.ResultOperatorStateHash,
             FullBattleLog = (apiDto.FullBattleLog ?? [])

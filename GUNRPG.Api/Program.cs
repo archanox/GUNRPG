@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using GUNRPG.Application.Backend;
+using GUNRPG.Application.Combat;
 using GUNRPG.Application.Operators;
 using GUNRPG.Application.Services;
 using GUNRPG.Application.Sessions;
@@ -17,6 +18,7 @@ builder.Services.AddControllers()
 builder.Services.AddOpenApi();
 
 builder.Services.AddCombatSessionStore(builder.Configuration);
+builder.Services.AddSingleton<IDeterministicCombatEngine, DeterministicCombatEngine>();
 builder.Services.AddSingleton<CombatSessionService>(sp =>
 {
     var sessionStore = sp.GetRequiredService<ICombatSessionStore>();
@@ -29,7 +31,8 @@ builder.Services.AddSingleton<OperatorService>(sp =>
     var sessionService = sp.GetRequiredService<CombatSessionService>();
     var eventStore = sp.GetRequiredService<IOperatorEventStore>();
     var offlineSyncHeadStore = sp.GetRequiredService<IOfflineSyncHeadStore>();
-    return new OperatorService(exfilService, sessionService, eventStore, offlineSyncHeadStore);
+    var combatEngine = sp.GetRequiredService<IDeterministicCombatEngine>();
+    return new OperatorService(exfilService, sessionService, eventStore, offlineSyncHeadStore, combatEngine);
 });
 
 var app = builder.Build();
