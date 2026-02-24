@@ -79,7 +79,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             Screen.CreateOperator => Task.FromResult<Hex1bWidget>(BuildCreateOperator()),
             Screen.BaseCamp => Task.FromResult<Hex1bWidget>(BuildBaseCamp()),
             Screen.StartMission => Task.FromResult<Hex1bWidget>(BuildStartMission()),
-            Screen.CombatSession => Task.FromResult<Hex1bWidget>(BuildCombatSession(ctx)),
+            Screen.CombatSession => Task.FromResult<Hex1bWidget>(BuildCombatSession()),
             Screen.MissionComplete => Task.FromResult<Hex1bWidget>(BuildMissionComplete()),
             Screen.Message => Task.FromResult<Hex1bWidget>(BuildMessage()),
             Screen.ChangeLoadout => Task.FromResult<Hex1bWidget>(BuildChangeLoadout()),
@@ -961,7 +961,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         }
     }
 
-    Hex1bWidget BuildCombatSession(RootContext ctx)
+    Hex1bWidget BuildCombatSession()
     {
         var session = CurrentSession;
         if (session == null)
@@ -1049,7 +1049,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             SelectedMovement = "Stand";
                             SelectedStance = "None";
                             SelectedCover = "None";
-                            OpenSubmitIntentsWindow(e.Windows, session);
+                            e.Popups.Push(() => BuildSubmitIntentsContent(session)).AsBarrier();
                             break;
                         case "VIEW DETAILS":
                             var pet = session.Pet;
@@ -1108,10 +1108,10 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             UI.CreateStatusBar($"Session: {session.Id}")
         ]);
 
-        return ctx.WindowPanel().Background(_ => combatContentWidget).Fill();
+        return combatContentWidget;
     }
 
-    void OpenSubmitIntentsWindow(WindowManager windows, CombatSessionDto session)
+    Hex1bWidget BuildSubmitIntentsContent(CombatSessionDto session)
     {
         var primaryActions = new[] { "None", "Fire", "Reload" };
         var movementActions = new[] { "Stand", "WalkToward", "WalkAway", "SprintToward", "SprintAway", "SlideToward", "SlideAway", "Crouch" };
@@ -1120,7 +1120,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         var player = session.Player;
 
-        windows.Window(w => new VStackWidget([
+        return new BorderWidget(new VStackWidget([
             new TabPanelWidget([
                 new TabItemWidget("🎯 PRIMARY", _ => [
                     new TextBlockWidget($"  Current: {SelectedPrimary}"),
@@ -1158,23 +1158,19 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             new TextBlockWidget(""),
             new HStackWidget([
                 new TextBlockWidget("  "),
-                new ButtonWidget("SUBMIT & ADVANCE TURN").OnClick(_ => {
+                new ButtonWidget("SUBMIT & ADVANCE TURN").OnClick(e => {
                     // Only advance the turn if intent submission succeeded
                     if (SubmitPlayerIntents())
                     {
                         // NOTE: AdvanceCombat blocks on HTTP calls due to hex1b's synchronous event handlers.
                         AdvanceCombat();
-                        w.Window.Cancel();
+                        e.Popups.Pop();
                     }
                 }),
                 new TextBlockWidget("  "),
-                new ButtonWidget("CANCEL").OnClick(_ => w.Window.Cancel()),
+                new ButtonWidget("CANCEL").OnClick(e => e.Popups.Pop()),
             ])
-        ]))
-        .Title("⚡ SUBMIT INTENTS ⚡")
-        .Size(72, 22)
-        .Modal()
-        .Open(windows);
+        ])).Title("⚡ SUBMIT INTENTS ⚡");
     }
 
     void AdvanceCombat()
