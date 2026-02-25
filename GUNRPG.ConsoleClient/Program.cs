@@ -64,6 +64,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     public string SelectedMovement { get; set; } = "Stand";
     public string SelectedStance { get; set; } = "None";
     public string SelectedCover { get; set; } = "None";
+    public string SelectedCategory { get; set; } = "PRIMARY";
     // Disk-persisted combat service for offline play (uses same LiteDB file as operator snapshots)
     private CombatSessionService? _localCombatService;
     private bool _usingLocalCombat;
@@ -1049,6 +1050,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             SelectedMovement = "Stand";
                             SelectedStance = "None";
                             SelectedCover = "None";
+                            SelectedCategory = "PRIMARY";
                             e.Popups.Push(() => BuildSubmitIntentsContent(session)).AsBarrier();
                             break;
                         case "VIEW DETAILS":
@@ -1120,29 +1122,42 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         var player = session.Player;
 
-        return new BorderWidget(new VStackWidget([
-            new TabPanelWidget([
-                new TabItemWidget("🎯 PRIMARY", _ => [
-                    new TextBlockWidget($"  Current: {SelectedPrimary}"),
-                    new TextBlockWidget(""),
-                    new ListWidget(primaryActions).OnItemActivated(e => { SelectedPrimary = e.ActivatedText; })
-                ]),
-                new TabItemWidget("🏃 MOVEMENT", _ => [
-                    new TextBlockWidget($"  Current: {SelectedMovement}"),
-                    new TextBlockWidget(""),
-                    new ListWidget(movementActions).OnItemActivated(e => { SelectedMovement = e.ActivatedText; })
-                ]),
-                new TabItemWidget("🧍 STANCE", _ => [
-                    new TextBlockWidget($"  Current: {SelectedStance}"),
-                    new TextBlockWidget(""),
-                    new ListWidget(stanceActions).OnItemActivated(e => { SelectedStance = e.ActivatedText; })
-                ]),
-                new TabItemWidget("🏠 COVER", _ => [
-                    new TextBlockWidget($"  Current: {SelectedCover}"),
-                    new TextBlockWidget(""),
-                    new ListWidget(coverActions).OnItemActivated(e => { SelectedCover = e.ActivatedText; })
-                ]),
+        Hex1bWidget categoryOptions = SelectedCategory switch
+        {
+            "PRIMARY" => new VStackWidget([
+                new TextBlockWidget($"  Current: {SelectedPrimary}"),
+                new TextBlockWidget(""),
+                new ListWidget(primaryActions).OnItemActivated(e => { SelectedPrimary = e.ActivatedText; }),
             ]),
+            "MOVEMENT" => new VStackWidget([
+                new TextBlockWidget($"  Current: {SelectedMovement}"),
+                new TextBlockWidget(""),
+                new ListWidget(movementActions).OnItemActivated(e => { SelectedMovement = e.ActivatedText; }),
+            ]),
+            "STANCE" => new VStackWidget([
+                new TextBlockWidget($"  Current: {SelectedStance}"),
+                new TextBlockWidget(""),
+                new ListWidget(stanceActions).OnItemActivated(e => { SelectedStance = e.ActivatedText; }),
+            ]),
+            _ => new VStackWidget([
+                new TextBlockWidget($"  Current: {SelectedCover}"),
+                new TextBlockWidget(""),
+                new ListWidget(coverActions).OnItemActivated(e => { SelectedCover = e.ActivatedText; }),
+            ]),
+        };
+
+        return new BorderWidget(new VStackWidget([
+            new HStackWidget([
+                new ButtonWidget($"{(SelectedCategory == "PRIMARY" ? "►" : " ")} 🎯 PRIMARY").OnClick(_ => { SelectedCategory = "PRIMARY"; }),
+                new TextBlockWidget(" "),
+                new ButtonWidget($"{(SelectedCategory == "MOVEMENT" ? "►" : " ")} 🏃 MOVEMENT").OnClick(_ => { SelectedCategory = "MOVEMENT"; }),
+                new TextBlockWidget(" "),
+                new ButtonWidget($"{(SelectedCategory == "STANCE" ? "►" : " ")} 🧍 STANCE").OnClick(_ => { SelectedCategory = "STANCE"; }),
+                new TextBlockWidget(" "),
+                new ButtonWidget($"{(SelectedCategory == "COVER" ? "►" : " ")} 🏠 COVER").OnClick(_ => { SelectedCategory = "COVER"; }),
+            ]),
+            new TextBlockWidget(""),
+            categoryOptions,
             new TextBlockWidget(""),
             UI.CreateBorder("SELECTIONS", new HStackWidget([
                 new TextBlockWidget($"  PRIMARY: {SelectedPrimary}"),
