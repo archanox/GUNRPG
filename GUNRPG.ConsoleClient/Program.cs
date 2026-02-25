@@ -1372,6 +1372,33 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         };
 
         offlineStore.SaveMissionResult(envelope);
+
+        // Reconcile local game state with the visual (interactive) combat result.
+        // The envelope retains the deterministic engine result for server-side anti-cheat verification,
+        // but local gameplay state must reflect what the player actually experienced so that
+        // a visual victory keeps the operator in Infil mode (to fight again or exfil) and
+        // a visual defeat returns them to Base mode.
+        bool playerSurvivedVisually = CurrentSession?.Player.Health > 0;
+        if (playerSurvivedVisually && updatedDto.CurrentMode == "Base")
+        {
+            // Player survived the visual combat but the deterministic engine computed death.
+            // Keep the operator in Infil mode so the player can continue the infil.
+            updatedDto.CurrentMode = "Infil";
+            updatedDto.InfilSessionId = initialDto.InfilSessionId;
+            updatedDto.InfilStartTime = initialDto.InfilStartTime;
+            updatedDto.IsDead = false;
+            if (updatedDto.CurrentHealth <= 0)
+                updatedDto.CurrentHealth = 1f;
+        }
+        else if (!playerSurvivedVisually && updatedDto.CurrentMode == "Infil")
+        {
+            // Player died in the visual combat but the deterministic engine computed survival.
+            // Transition to Base mode consistent with the visual defeat.
+            updatedDto.CurrentMode = "Base";
+            updatedDto.InfilSessionId = null;
+            updatedDto.InfilStartTime = null;
+        }
+
         offlineStore.UpdateOperatorSnapshot(updatedDto.Id, updatedDto);
         CurrentOperator = OperatorStateFromDto(updatedDto);
     }
