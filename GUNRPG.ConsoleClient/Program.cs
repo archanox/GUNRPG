@@ -78,26 +78,40 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     private bool _usingLocalCombat;
     private int _activeOfflineMissionSeed;
     private readonly IDeterministicCombatEngine _deterministicEngine = new DeterministicCombatEngine();
+    private DateTime? _raidStartTimeUtc;
+    private static readonly TimeSpan RaidDuration = TimeSpan.FromMinutes(30);
+    private RaidState _raidState = RaidState.Completed;
 
     public Task<Hex1bWidget> BuildUI(RootContext ctx, CancellationTokenSource cts)
     {
-        return CurrentScreen switch
+        SyncRaidStateFromOperator();
+        TryHandleExfilExpiry();
+
+        var widget = CurrentScreen switch
         {
-            Screen.MainMenu => Task.FromResult<Hex1bWidget>(BuildMainMenu(cts)),
-            Screen.SelectOperator => Task.FromResult<Hex1bWidget>(BuildSelectOperator()),
-            Screen.CreateOperator => Task.FromResult<Hex1bWidget>(BuildCreateOperator()),
-            Screen.BaseCamp => Task.FromResult<Hex1bWidget>(BuildBaseCamp()),
-            Screen.StartMission => Task.FromResult<Hex1bWidget>(BuildStartMission()),
-            Screen.CombatSession => Task.FromResult<Hex1bWidget>(BuildCombatSession()),
-            Screen.MissionComplete => Task.FromResult<Hex1bWidget>(BuildMissionComplete()),
-            Screen.Message => Task.FromResult<Hex1bWidget>(BuildMessage()),
-            Screen.ChangeLoadout => Task.FromResult<Hex1bWidget>(BuildChangeLoadout()),
-            Screen.TreatWounds => Task.FromResult<Hex1bWidget>(BuildTreatWounds()),
-            Screen.UnlockPerk => Task.FromResult<Hex1bWidget>(BuildUnlockPerk()),
-            Screen.AbortMission => Task.FromResult<Hex1bWidget>(BuildAbortMission()),
-            Screen.PetActions => Task.FromResult<Hex1bWidget>(BuildPetActions()),
-            _ => Task.FromResult<Hex1bWidget>(new TextBlockWidget("Unknown screen"))
+            Screen.MainMenu => BuildMainMenu(cts),
+            Screen.SelectOperator => BuildSelectOperator(),
+            Screen.CreateOperator => BuildCreateOperator(),
+            Screen.BaseCamp => BuildBaseCamp(),
+            Screen.StartMission => BuildStartMission(),
+            Screen.CombatSession => BuildCombatSession(),
+            Screen.ExfilFailed => BuildExfilFailed(),
+            Screen.MissionComplete => BuildMissionComplete(),
+            Screen.Message => BuildMessage(),
+            Screen.ChangeLoadout => BuildChangeLoadout(),
+            Screen.TreatWounds => BuildTreatWounds(),
+            Screen.UnlockPerk => BuildUnlockPerk(),
+            Screen.AbortMission => BuildAbortMission(),
+            Screen.PetActions => BuildPetActions(),
+            _ => new TextBlockWidget("Unknown screen")
         };
+
+        if (_raidState is RaidState.Infil or RaidState.Combat)
+        {
+            widget = widget.RedrawAfter(250);
+        }
+
+        return Task.FromResult(widget);
     }
 
     Hex1bWidget BuildMainMenu(CancellationTokenSource cts)
@@ -602,6 +616,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         return new VStackWidget([
             UI.CreateBorder($"OPERATOR: {op.Name.ToUpper()}"),
+            op.CurrentMode == "Infil" ? UI.CreateBorder("EXFIL TIMER", BuildExfilTimerWidget()) : new TextBlockWidget(""),
             new TextBlockWidget(""),
             new HStackWidget([
                 UI.CreateBorder("STATUS", new VStackWidget([
@@ -972,6 +987,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     Hex1bWidget BuildCombatSession()
     {
+        if (TryHandleExfilExpiry())
+        {
+            return BuildExfilFailed();
+        }
+
         var session = CurrentSession;
         if (session == null)
         {
@@ -1017,6 +1037,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         var combatContentWidget = new VStackWidget([
             UI.CreateBorder("⚔ COMBAT MISSION ⚔"),
+            UI.CreateBorder("EXFIL TIMER", BuildExfilTimerWidget()),
             new TextBlockWidget(""),
             new HStackWidget([
                 // Player column
@@ -1049,6 +1070,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 new TextBlockWidget($"  TURN: {session.TurnNumber}  PHASE: {session.Phase}  TIME: {session.CurrentTimeMs}ms"),
                 new TextBlockWidget(""),
                 new ListWidget(actionItems.ToArray()).OnItemActivated(e => {
+                    if (TryHandleExfilExpiry())
+                    {
+                        return;
+                    }
+
                     var selectedAction = actionItems[e.ActivatedIndex];
                     switch (selectedAction)
                     {
@@ -1234,6 +1260,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     void AdvanceCombat()
     {
+        if (TryHandleExfilExpiry())
+        {
+            return;
+        }
+
         if (_usingLocalCombat)
         {
             AdvanceCombatOffline();
@@ -1254,6 +1285,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             if (sessionData != null)
             {
                 CurrentSession = sessionData;
+
+                if (TryHandleExfilExpiry())
+                {
+                    return;
+                }
                 
                 if (sessionData.Player.Health <= 0 || sessionData.Enemy.Health <= 0)
                 {
@@ -1279,6 +1315,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     void AdvanceCombatOffline()
     {
+        if (TryHandleExfilExpiry())
+        {
+            return;
+        }
+
         try
         {
             var result = _localCombatService!.AdvanceAsync(ActiveSessionId!.Value).GetAwaiter().GetResult();
@@ -1289,6 +1330,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             }
 
             CurrentSession = ToLocalDto(result.Value!);
+
+            if (TryHandleExfilExpiry())
+            {
+                return;
+            }
 
             if (CurrentSession.Player.Health <= 0 || CurrentSession.Enemy.Health <= 0)
             {
@@ -1323,6 +1369,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     void ProcessCombatOutcome()
     {
+        if (TryHandleExfilExpiry())
+        {
+            return;
+        }
+
         try
         {
             // Use authoritative session ID with fallback
@@ -1370,6 +1421,9 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     /// </summary>
     void ProcessCombatOutcomeOffline()
     {
+        if (TryHandleExfilExpiry())
+            return;
+
         if (CurrentOperator == null || offlineStore == null)
             return;
 
@@ -1500,6 +1554,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     bool SubmitPlayerIntents()
     {
+        if (TryHandleExfilExpiry())
+        {
+            return false;
+        }
+
         if (_usingLocalCombat)
         {
             return SubmitPlayerIntentsOffline();
@@ -1537,6 +1596,10 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             if (sessionData != null)
             {
                 CurrentSession = sessionData;
+                if (TryHandleExfilExpiry())
+                {
+                    return false;
+                }
             }
 
             return true;
@@ -1553,6 +1616,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     bool SubmitPlayerIntentsOffline()
     {
+        if (TryHandleExfilExpiry())
+        {
+            return false;
+        }
+
         try
         {
             var intents = new GUNRPG.Application.Dtos.IntentDto
@@ -1579,6 +1647,10 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             }
 
             CurrentSession = ToLocalDto(result.Value!);
+            if (TryHandleExfilExpiry())
+            {
+                return false;
+            }
             return true;
         }
         catch (Exception ex)
@@ -1901,6 +1973,29 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         ]);
     }
 
+    Hex1bWidget BuildExfilFailed()
+    {
+        return new VStackWidget([
+            UI.CreateBorder("EXFIL FAILED"),
+            new TextBlockWidget(""),
+            UI.CreateBorder("", new VStackWidget([
+                new TextBlockWidget("        EXFIL FAILED"),
+                new TextBlockWidget(""),
+                new TextBlockWidget("  You failed to extract in time."),
+                new TextBlockWidget("  Your operator has died."),
+                new TextBlockWidget(""),
+                new TextBlockWidget("  Press OK to return to base."),
+                new TextBlockWidget(""),
+                new ListWidget(new[] { "OK" }).OnItemActivated(_ => {
+                    _raidState = RaidState.Completed;
+                    CurrentScreen = Screen.BaseCamp;
+                    ReturnScreen = Screen.BaseCamp;
+                })
+            ])),
+            UI.CreateStatusBar("Exfil window expired")
+        ]);
+    }
+
     void ProcessExfil()
     {
         try
@@ -2015,6 +2110,82 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
         }
+    }
+
+    Hex1bWidget BuildExfilTimerWidget()
+    {
+        var remaining = GetRemainingRaidTime();
+        if (!remaining.HasValue)
+        {
+            return new TextBlockWidget("  EXFIL WINDOW: --:-- REMAINING");
+        }
+
+        return new TextBlockWidget($"  {RaidTimer.FormatRemainingLabel(remaining.Value)}");
+    }
+
+    void SyncRaidStateFromOperator()
+    {
+        if (CurrentOperator?.CurrentMode != "Infil" || !CurrentOperator.InfilStartTime.HasValue)
+        {
+            _raidStartTimeUtc = null;
+            if (_raidState != RaidState.ExfilFailed)
+                _raidState = RaidState.Completed;
+            return;
+        }
+
+        _raidStartTimeUtc = CurrentOperator.InfilStartTime.Value.UtcDateTime;
+        if (CurrentScreen == Screen.CombatSession)
+            _raidState = RaidState.Combat;
+        else if (_raidState != RaidState.ExfilFailed)
+            _raidState = RaidState.Infil;
+    }
+
+    TimeSpan? GetRemainingRaidTime()
+    {
+        if (!_raidStartTimeUtc.HasValue)
+            return null;
+
+        return RaidTimer.ComputeRemaining(_raidStartTimeUtc.Value, RaidDuration);
+    }
+
+    bool TryHandleExfilExpiry()
+    {
+        var remaining = GetRemainingRaidTime();
+        if (!remaining.HasValue || remaining.Value > TimeSpan.Zero || _raidState == RaidState.ExfilFailed)
+        {
+            return false;
+        }
+
+        _raidState = RaidState.ExfilFailed;
+        _usingLocalCombat = false;
+        ActiveSessionId = null;
+        CurrentSession = null;
+
+        if (CurrentOperator != null)
+        {
+            CurrentOperator = new OperatorState
+            {
+                Id = CurrentOperator.Id,
+                Name = CurrentOperator.Name,
+                TotalXp = CurrentOperator.TotalXp,
+                CurrentHealth = CurrentOperator.CurrentHealth,
+                MaxHealth = CurrentOperator.MaxHealth,
+                EquippedWeaponName = CurrentOperator.EquippedWeaponName,
+                UnlockedPerks = CurrentOperator.UnlockedPerks,
+                ExfilStreak = CurrentOperator.ExfilStreak,
+                IsDead = true,
+                CurrentMode = "Base",
+                InfilStartTime = null,
+                InfilSessionId = null,
+                ActiveCombatSessionId = null,
+                LockedLoadout = CurrentOperator.LockedLoadout,
+                Pet = CurrentOperator.Pet
+            };
+        }
+
+        _raidStartTimeUtc = null;
+        CurrentScreen = Screen.ExfilFailed;
+        return true;
     }
 
     Hex1bWidget BuildPetActions()
@@ -2447,6 +2618,7 @@ enum Screen
     BaseCamp,
     StartMission,
     CombatSession,
+    ExfilFailed,
     MissionComplete,
     Message,
     ChangeLoadout,
@@ -2454,4 +2626,38 @@ enum Screen
     UnlockPerk,
     AbortMission,
     PetActions
+}
+
+enum RaidState
+{
+    Infil,
+    Combat,
+    ExfilFailed,
+    Completed
+}
+
+public static class RaidTimer
+{
+    public static TimeSpan ComputeRemaining(DateTime raidStartTimeUtc, TimeSpan raidDuration, DateTime? nowUtc = null)
+    {
+        var now = nowUtc ?? DateTime.UtcNow;
+        return raidDuration - (now - raidStartTimeUtc);
+    }
+
+    public static string FormatRemainingLabel(TimeSpan remaining)
+    {
+        var clamped = remaining <= TimeSpan.Zero ? TimeSpan.Zero : remaining;
+        var formatted = $"EXFIL WINDOW: {clamped.Minutes:00}:{clamped.Seconds:00} REMAINING";
+
+        if (clamped <= TimeSpan.FromSeconds(5))
+            return $"{formatted} [!!!]";
+
+        if (clamped <= TimeSpan.FromSeconds(10))
+            return $"⚠ {formatted}";
+
+        if (clamped <= TimeSpan.FromSeconds(30))
+            return $"⚠ {formatted}";
+
+        return formatted;
+    }
 }
