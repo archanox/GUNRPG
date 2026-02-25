@@ -1123,66 +1123,95 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     Hex1bWidget BuildSubmitIntentsContent(CombatSessionDto session)
     {
-        var primaryActions = new[] { "None", "Fire", "Reload" };
-        var movementActions = new[] { "Stand", "WalkToward", "WalkAway", "SprintToward", "SprintAway", "SlideToward", "SlideAway", "Crouch" };
-        var stanceActions = new[] { "None", "EnterADS", "ExitADS" };
-        var coverActions = new[] { "None", "EnterPartial", "EnterFull", "Exit" };
-
         var player = session.Player;
 
-        Hex1bWidget categoryOptions = SelectedCategory switch
+        // Determine which options are incompatible with the current player state
+        bool fireIncompatible = player.CurrentAmmo <= 0;
+        bool reloadIncompatible = player.MagazineSize.HasValue && player.CurrentAmmo >= player.MagazineSize.Value;
+        bool sprintIncompatible = player.Stamina <= 0;
+        bool slideIncompatible = player.Stamina <= 0;
+        bool enterAdsIncompatible = player.AimState == "ADS"
+            || player.MovementState == "Sprinting"
+            || player.MovementState == "Sliding";
+        bool exitAdsIncompatible = player.AimState != "ADS" && player.AimState != "TransitioningToADS";
+        bool enterCoverIncompatible = player.CurrentCover != "None" || player.IsMoving;
+        bool exitCoverIncompatible = player.CurrentCover == "None";
+
+        // Prefix incompatible items with ⊘ (2 chars: ⊘ + space) so they are visually greyed out
+        static string Mark(string name, bool incompatible) => incompatible ? $"⊘ {name}" : name;
+        static string Unmark(string name) => name.StartsWith("⊘ ") ? name[2..] : name;
+        static bool IsCompatible(string name) => !name.StartsWith("⊘ ");
+
+        var primaryActions = new[]
         {
-            IntentCategory.Primary => new VStackWidget([
-                new TextBlockWidget($"  Current: {SelectedPrimary}"),
-                new TextBlockWidget(""),
-                new ListWidget(primaryActions).OnItemActivated(e => { SelectedPrimary = e.ActivatedText; }),
-            ]),
-            IntentCategory.Movement => new VStackWidget([
-                new TextBlockWidget($"  Current: {SelectedMovement}"),
-                new TextBlockWidget(""),
-                new ListWidget(movementActions).OnItemActivated(e => { SelectedMovement = e.ActivatedText; }),
-            ]),
-            IntentCategory.Stance => new VStackWidget([
-                new TextBlockWidget($"  Current: {SelectedStance}"),
-                new TextBlockWidget(""),
-                new ListWidget(stanceActions).OnItemActivated(e => { SelectedStance = e.ActivatedText; }),
-            ]),
-            IntentCategory.Cover => new VStackWidget([
-                new TextBlockWidget($"  Current: {SelectedCover}"),
-                new TextBlockWidget(""),
-                new ListWidget(coverActions).OnItemActivated(e => { SelectedCover = e.ActivatedText; }),
-            ]),
-            _ => new VStackWidget([
-                new TextBlockWidget($"  Current: {SelectedPrimary}"),
-                new TextBlockWidget(""),
-                new ListWidget(primaryActions).OnItemActivated(e => { SelectedPrimary = e.ActivatedText; }),
-            ]),
+            "None",
+            Mark("Fire", fireIncompatible),
+            Mark("Reload", reloadIncompatible),
+        };
+        var movementActions = new[]
+        {
+            "Stand",
+            "WalkToward",
+            "WalkAway",
+            Mark("SprintToward", sprintIncompatible),
+            Mark("SprintAway", sprintIncompatible),
+            Mark("SlideToward", slideIncompatible),
+            Mark("SlideAway", slideIncompatible),
+            "Crouch",
+        };
+        var stanceActions = new[]
+        {
+            "None",
+            Mark("EnterADS", enterAdsIncompatible),
+            Mark("ExitADS", exitAdsIncompatible),
+        };
+        var coverActions = new[]
+        {
+            "None",
+            Mark("EnterPartial", enterCoverIncompatible),
+            Mark("EnterFull", enterCoverIncompatible),
+            Mark("Exit", exitCoverIncompatible),
         };
 
         return new BorderWidget(new VStackWidget([
-            new HStackWidget([
-                new ButtonWidget($"{(SelectedCategory == IntentCategory.Primary ? "►" : " ")} 🎯 PRIMARY").OnClick(_ => { SelectedCategory = IntentCategory.Primary; }),
-                new TextBlockWidget(" "),
-                new ButtonWidget($"{(SelectedCategory == IntentCategory.Movement ? "►" : " ")} 🏃 MOVEMENT").OnClick(_ => { SelectedCategory = IntentCategory.Movement; }),
-                new TextBlockWidget(" "),
-                new ButtonWidget($"{(SelectedCategory == IntentCategory.Stance ? "►" : " ")} 🧍 STANCE").OnClick(_ => { SelectedCategory = IntentCategory.Stance; }),
-                new TextBlockWidget(" "),
-                new ButtonWidget($"{(SelectedCategory == IntentCategory.Cover ? "►" : " ")} 🏠 COVER").OnClick(_ => { SelectedCategory = IntentCategory.Cover; }),
-            ]),
+            new TextBlockWidget($"  {player.Name}: HP {player.Health:F0}/{player.MaxHealth:F0}  AMMO: {player.CurrentAmmo}/{player.MagazineSize}  Stamina: {player.Stamina:F0}"),
             new TextBlockWidget(""),
-            categoryOptions,
+            new HStackWidget([
+                new BorderWidget(new ListWidget(primaryActions)
+                    .OnSelectionChanged(e =>
+                    {
+                        if (IsCompatible(e.SelectedText))
+                            SelectedPrimary = Unmark(e.SelectedText);
+                    })).Title("🎯 PRIMARY"),
+                new TextBlockWidget(" "),
+                new BorderWidget(new ListWidget(movementActions)
+                    .OnSelectionChanged(e =>
+                    {
+                        if (IsCompatible(e.SelectedText))
+                            SelectedMovement = Unmark(e.SelectedText);
+                    })).Title("🏃 MOVEMENT"),
+                new TextBlockWidget(" "),
+                new BorderWidget(new ListWidget(stanceActions)
+                    .OnSelectionChanged(e =>
+                    {
+                        if (IsCompatible(e.SelectedText))
+                            SelectedStance = Unmark(e.SelectedText);
+                    })).Title("🧍 STANCE"),
+                new TextBlockWidget(" "),
+                new BorderWidget(new ListWidget(coverActions)
+                    .OnSelectionChanged(e =>
+                    {
+                        if (IsCompatible(e.SelectedText))
+                            SelectedCover = Unmark(e.SelectedText);
+                    })).Title("🏠 COVER"),
+            ]),
             new TextBlockWidget(""),
             UI.CreateBorder("SELECTIONS", new HStackWidget([
                 new TextBlockWidget($"  PRIMARY: {SelectedPrimary}"),
-                new TextBlockWidget("   MOVEMENT: "),
-                new TextBlockWidget(SelectedMovement),
-                new TextBlockWidget("   STANCE: "),
-                new TextBlockWidget(SelectedStance),
-                new TextBlockWidget("   COVER: "),
-                new TextBlockWidget(SelectedCover),
+                new TextBlockWidget($"   MOVEMENT: {SelectedMovement}"),
+                new TextBlockWidget($"   STANCE: {SelectedStance}"),
+                new TextBlockWidget($"   COVER: {SelectedCover}"),
             ])),
-            new TextBlockWidget(""),
-            new TextBlockWidget($"  {player.Name}: HP {player.Health:F0}/{player.MaxHealth:F0}  AMMO: {player.CurrentAmmo}/{player.MagazineSize}  Stamina: {player.Stamina:F0}"),
             new TextBlockWidget(""),
             new HStackWidget([
                 new TextBlockWidget("  "),
