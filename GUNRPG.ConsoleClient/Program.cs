@@ -1129,12 +1129,14 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         bool fireIncompatible = player.CurrentAmmo <= 0;
         bool reloadIncompatible = player.MagazineSize.HasValue && player.CurrentAmmo >= player.MagazineSize.Value;
         bool sprintIncompatible = player.Stamina <= 0;
-        bool slideIncompatible = player.Stamina <= 0;
+        bool slideIncompatible = player.Stamina < 30;
         bool enterAdsIncompatible = player.AimState == "ADS"
-            || player.MovementState == "Sprinting"
             || player.MovementState == "Sliding";
-        bool exitAdsIncompatible = player.AimState != "ADS" && player.AimState != "TransitioningToADS";
-        bool enterCoverIncompatible = player.CurrentCover != "None" || player.IsMoving;
+        bool exitAdsIncompatible = player.AimState == "Hip";
+        bool enterCoverIncompatible = player.CurrentCover != "None"
+            || (player.MovementState != "Stationary"
+                && player.MovementState != "Idle"
+                && player.MovementState != "Crouching");
         bool exitCoverIncompatible = player.CurrentCover == "None";
 
         // Prefix incompatible items with ⊘ (2 chars: ⊘ + space) so they are visually greyed out
