@@ -502,4 +502,95 @@ public class OperatorModeTests : IDisposable
         Assert.Equal(0, aggregate.ExfilStreak);
         Assert.Null(aggregate.ActiveCombatSessionId);
     }
+
+    [Fact]
+    public async Task ProcessCombatOutcome_Victory_KeepsInInfilMode_EvenWhenTimerExpired()
+    {
+        // Regression test: winning a combat must never send the operator to Base mode,
+        // even when the 30-minute infil timer has expired. Timer enforcement was incorrectly
+        // placed in ProcessCombatOutcomeAsync, which silently failed the infil on victory.
+        // The timer is now enforced in StartCombatSessionAsync instead.
+
+        // Arrange: start infil with a timestamp 31 minutes ago so the timer appears expired
+        var mapper = new BsonMapper();
+        mapper.Entity<OperatorEventDocument>().Id(x => x.Id);
+        using var db = new LiteDatabase(":memory:", mapper);
+        var eventStore = new LiteDbOperatorEventStore(db);
+        var service = new OperatorExfilService(eventStore);
+
+        var createResult = await service.CreateOperatorAsync("TestOp");
+        var operatorId = createResult.Value!;
+
+        // Manually emit an InfilStartedEvent with an old timestamp
+        var loadForHash = await service.LoadOperatorAsync(operatorId);
+        var previousHash = loadForHash.Value!.GetLastEventHash();
+        var expiredTimestamp = DateTimeOffset.UtcNow.AddMinutes(-31);
+        var infilSessionId = Guid.NewGuid();
+        var infilEvent = new InfilStartedEvent(
+            operatorId,
+            loadForHash.Value!.CurrentSequence + 1,
+            infilSessionId,
+            "DefaultLoadout",
+            expiredTimestamp,
+            previousHash);
+        await eventStore.AppendEventAsync(infilEvent);
+
+        // Construct a victory outcome
+        var sessionId = Guid.NewGuid();
+        var outcome = new GUNRPG.Application.Combat.CombatOutcome(
+            sessionId,
+            operatorId,
+            operatorDied: false,
+            xpGained: 100,
+            gearLost: Array.Empty<GUNRPG.Core.Equipment.GearId>(),
+            isVictory: true);
+
+        // Act
+        var result = await service.ProcessCombatOutcomeAsync(outcome, playerConfirmed: true);
+
+        // Assert: victory must succeed and operator must stay in Infil mode
+        Assert.True(result.IsSuccess);
+        var afterLoad = await service.LoadOperatorAsync(operatorId);
+        var afterAggregate = afterLoad.Value!;
+        Assert.Equal(OperatorMode.Infil, afterAggregate.CurrentMode);
+        Assert.False(afterAggregate.IsDead);
+        Assert.Equal(100, afterAggregate.TotalXp);
+    }
+
+    [Fact]
+    public async Task StartCombatSession_WhenTimerExpired_ReturnsError()
+    {
+        // Timer expiry is now enforced when the player tries to start a new combat,
+        // not when a current combat outcome is processed. This test verifies the
+        // enforcement point has moved to StartCombatSessionAsync.
+
+        // Arrange: start infil with an expired timestamp
+        var mapper = new BsonMapper();
+        mapper.Entity<OperatorEventDocument>().Id(x => x.Id);
+        using var db = new LiteDatabase(":memory:", mapper);
+        var eventStore = new LiteDbOperatorEventStore(db);
+        var service = new OperatorExfilService(eventStore);
+
+        var createResult = await service.CreateOperatorAsync("TestOp");
+        var operatorId = createResult.Value!;
+
+        var loadForHash = await service.LoadOperatorAsync(operatorId);
+        var previousHash = loadForHash.Value!.GetLastEventHash();
+        var expiredTimestamp = DateTimeOffset.UtcNow.AddMinutes(-31);
+        var infilEvent = new InfilStartedEvent(
+            operatorId,
+            loadForHash.Value!.CurrentSequence + 1,
+            Guid.NewGuid(),
+            "DefaultLoadout",
+            expiredTimestamp,
+            previousHash);
+        await eventStore.AppendEventAsync(infilEvent);
+
+        // Act: attempt to start a new combat session
+        var result = await service.StartCombatSessionAsync(operatorId);
+
+        // Assert: must be rejected with a timer-expired error
+        Assert.False(result.IsSuccess);
+        Assert.Contains("timer expired", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
 }

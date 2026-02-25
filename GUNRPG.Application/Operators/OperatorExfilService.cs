@@ -406,6 +406,17 @@ public sealed class OperatorExfilService
         if (aggregate.ActiveCombatSessionId != null)
             return ServiceResult<Guid>.InvalidState("Cannot start new combat session while one is already active");
 
+        // Enforce the 30-minute infil timer here, not in ProcessCombatOutcomeAsync.
+        // This allows an in-progress combat to resolve normally (awarding XP and returning
+        // to Infil mode) even when the timer has expired, while blocking new combats.
+        // Players must exfil to end the infil after the timer has run out.
+        if (aggregate.InfilStartTime.HasValue)
+        {
+            var elapsed = DateTimeOffset.UtcNow - aggregate.InfilStartTime.Value;
+            if (elapsed.TotalMinutes >= 30)
+                return ServiceResult<Guid>.InvalidState("Infil timer expired: you must exfil immediately");
+        }
+
         var combatSessionId = Guid.NewGuid();
 
         var previousHash = aggregate.GetLastEventHash();
@@ -627,7 +638,10 @@ public sealed class OperatorExfilService
     /// - If operator died: Emit OperatorDied + InfilEnded (failure) events (resets streak, marks IsDead, returns to Base mode)
     /// - If operator survived and is victorious: Apply XP (if any), emit CombatVictory (clears ActiveCombatSessionId), STAY in Infil mode for next combat
     /// - If operator survived but retreated/failed: Apply XP (if any), emit ExfilFailed + InfilEnded (resets streak, returns to Base mode)
-    /// - If infil timer expired (30+ minutes), automatically fail the infil
+    /// 
+    /// Note: The infil timer is enforced in StartCombatSessionAsync, not here. This allows the
+    /// current combat to resolve normally (awarding XP and keeping the operator in Infil mode)
+    /// even if the timer has since expired. Starting a new combat after expiry is blocked instead.
     /// 
     /// Session ID semantics:
     /// - InfilSessionId: Persistent ID for the entire infil operation, set when infil starts
@@ -661,17 +675,6 @@ public sealed class OperatorExfilService
         // combat sessions can occur during a single infil (after victories, operator stays in Infil mode).
         // The fact that the operator is in Infil mode is the key validation - this ensures they have
         // an active infil and prevents processing outcomes when in Base mode.
-
-        // Check if infil timer has expired (30 minutes)
-        if (aggregate.InfilStartTime.HasValue)
-        {
-            var elapsed = DateTimeOffset.UtcNow - aggregate.InfilStartTime.Value;
-            if (elapsed.TotalMinutes >= 30)
-            {
-                // Timer expired - automatically fail the infil
-                return await FailInfilAsync(outcome.OperatorId, "Infil timer expired (30 minutes)");
-            }
-        }
 
         // Build event list to append atomically
         var eventsToAppend = new List<OperatorEvent>();

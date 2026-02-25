@@ -570,7 +570,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             }
                             else
                             {
-                                Message = "Failed to start next combat.\n\nPress OK to continue.";
+                                // Check if the failure was due to infil timer expiry
+                                var reason = ErrorMessage?.Contains("timer expired", StringComparison.OrdinalIgnoreCase) == true
+                                    ? "Infil timer expired (30 minutes).\n\nYou must exfil immediately — no new combats allowed."
+                                    : $"Failed to start next combat.\n\n{ErrorMessage ?? "Unknown error"}";
+                                Message = $"{reason}\n\nPress OK to continue.";
                                 CurrentScreen = Screen.Message;
                                 ReturnScreen = Screen.BaseCamp;
                             }
