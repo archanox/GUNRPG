@@ -489,12 +489,9 @@ public class CombatSessionServiceTests
         var operatorEventStore = new StubOperatorEventStore();
         var operatorId = Guid.NewGuid();
         
-        // Setup operator in Infil mode
-        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil);
-        
         var service = new CombatSessionService(store, operatorEventStore);
         
-        // Create a session with this operator
+        // Create a session with this operator first to get the session ID
         var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
         { 
             OperatorId = operatorId,
@@ -503,7 +500,10 @@ public class CombatSessionServiceTests
         Assert.True(sessionResult.IsSuccess);
         var session = sessionResult.Value!;
 
-        // Act - submit intents while operator is in Infil mode
+        // Setup operator in Infil mode with the matching active combat session ID
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: session.Id);
+
+        // Act - submit intents while operator is in Infil mode with matching session
         var result = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
         {
             Intents = new IntentDto { Primary = PrimaryAction.Fire, Movement = MovementAction.WalkToward }
@@ -535,8 +535,8 @@ public class CombatSessionServiceTests
         Assert.True(sessionResult.IsSuccess);
         var session = sessionResult.Value!;
 
-        // Change operator to Infil temporarily to submit intents
-        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil);
+        // Change operator to Infil temporarily to submit intents, with matching session ID
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: session.Id);
         await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
         {
             Intents = new IntentDto { Primary = PrimaryAction.Fire, Movement = MovementAction.WalkToward }
@@ -613,5 +613,150 @@ public class CombatSessionServiceTests
 
         // Assert - succeeds because validation is skipped
         Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task SubmitIntents_WithMismatchedSessionId_ReturnsInvalidStateError()
+    {
+        // Arrange
+        var store = new InMemoryCombatSessionStore();
+        var operatorEventStore = new StubOperatorEventStore();
+        var operatorId = Guid.NewGuid();
+        
+        // Setup operator in Infil mode with a DIFFERENT active combat session ID (tamper scenario)
+        var differentSessionId = Guid.NewGuid();
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: differentSessionId);
+        
+        var service = new CombatSessionService(store, operatorEventStore);
+        
+        // Create a session with this operator
+        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
+        { 
+            OperatorId = operatorId,
+            Seed = 123 
+        });
+        Assert.True(sessionResult.IsSuccess);
+        var session = sessionResult.Value!;
+
+        // Act - try to submit intents using a session ID that doesn't match operator's active session
+        var result = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire }
+        });
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("active combat session", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SubmitIntents_WithNoActiveSessionId_ReturnsInvalidStateError()
+    {
+        // Arrange
+        var store = new InMemoryCombatSessionStore();
+        var operatorEventStore = new StubOperatorEventStore();
+        var operatorId = Guid.NewGuid();
+        
+        // Setup operator in Infil mode with NO active combat session (e.g., after a victory)
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil);
+        
+        var service = new CombatSessionService(store, operatorEventStore);
+        
+        // Create a session with this operator
+        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
+        { 
+            OperatorId = operatorId,
+            Seed = 123 
+        });
+        Assert.True(sessionResult.IsSuccess);
+        var session = sessionResult.Value!;
+
+        // Act - try to submit intents when operator has no active combat session
+        var result = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire }
+        });
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("active combat session", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Advance_WithMismatchedSessionId_ReturnsInvalidStateError()
+    {
+        // Arrange
+        var store = new InMemoryCombatSessionStore();
+        var operatorEventStore = new StubOperatorEventStore();
+        var operatorId = Guid.NewGuid();
+
+        var service = new CombatSessionService(store, operatorEventStore);
+
+        // Create a session and submit intents with the matching session ID
+        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
+        { 
+            OperatorId = operatorId,
+            Seed = 123 
+        });
+        Assert.True(sessionResult.IsSuccess);
+        var session = sessionResult.Value!;
+
+        // Set up operator in Infil mode with matching session ID for intent submission
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: session.Id);
+        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire }
+        });
+
+        // Now set up operator with a DIFFERENT active session ID (tamper scenario for advance)
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: Guid.NewGuid());
+
+        // Act - try to advance using a session ID that doesn't match the operator's active session
+        var result = await service.AdvanceAsync(session.Id);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("active combat session", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Advance_WithNoActiveSessionId_ReturnsInvalidStateError()
+    {
+        // Arrange
+        var store = new InMemoryCombatSessionStore();
+        var operatorEventStore = new StubOperatorEventStore();
+        var operatorId = Guid.NewGuid();
+
+        var service = new CombatSessionService(store, operatorEventStore);
+
+        // Create a session and submit intents with the matching session ID
+        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
+        { 
+            OperatorId = operatorId,
+            Seed = 123 
+        });
+        Assert.True(sessionResult.IsSuccess);
+        var session = sessionResult.Value!;
+
+        // Set up operator in Infil mode with matching session ID for intent submission
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: session.Id);
+        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire }
+        });
+
+        // Now set up operator in Infil mode with NO active session ID (e.g., after victory cleared it)
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil);
+
+        // Act - try to advance when operator has no active combat session
+        var result = await service.AdvanceAsync(session.Id);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("active combat session", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 }

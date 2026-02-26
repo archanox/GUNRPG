@@ -53,7 +53,7 @@ public class StubOperatorEventStore : IOperatorEventStore
     /// <summary>
     /// Sets up an operator with the specified mode for testing.
     /// </summary>
-    public void SetupOperatorWithMode(OperatorId operatorId, OperatorMode mode, string operatorName = "TestOperator")
+    public void SetupOperatorWithMode(OperatorId operatorId, OperatorMode mode, string operatorName = "TestOperator", Guid? activeCombatSessionId = null)
     {
         var events = new List<OperatorEvent>
         {
@@ -71,6 +71,17 @@ public class StubOperatorEventStore : IOperatorEventStore
                 "SOKOL 545", // lockedLoadout
                 DateTimeOffset.UtcNow, // infilStartTime
                 createHash));
+
+            // Add CombatSessionStartedEvent if an active combat session ID is specified
+            if (activeCombatSessionId.HasValue)
+            {
+                var infilHash = events[^1].Hash;
+                events.Add(new CombatSessionStartedEvent(
+                    operatorId,
+                    2,
+                    activeCombatSessionId.Value,
+                    infilHash));
+            }
         }
 
         _eventsByOperator[operatorId] = events;

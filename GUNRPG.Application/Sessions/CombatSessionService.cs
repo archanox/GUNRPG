@@ -250,6 +250,11 @@ public sealed class CombatSessionService
                 return ServiceResult.InvalidState("Combat actions are only allowed when operator is in Infil mode");
             }
 
+            if (aggregate.ActiveCombatSessionId == null || aggregate.ActiveCombatSessionId.Value != session.Id)
+            {
+                return ServiceResult.InvalidState("Session does not match the operator's active combat session");
+            }
+
             return null;
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("hash") || ex.Message.Contains("chain") || ex.Message.Contains("corrupted"))
