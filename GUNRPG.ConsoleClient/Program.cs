@@ -1071,15 +1071,17 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                                     using var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult();
                                     if (!deleteResponse.IsSuccessStatusCode)
                                     {
-                                        ErrorMessage = $"Failed to delete session: {deleteResponse.StatusCode}";
+                                        var errorContent = deleteResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                                        ErrorMessage = $"Failed to delete session: {deleteResponse.StatusCode} - {errorContent}";
                                     }
                                 }
                                 catch (Exception ex)
                                 {
                                     // If delete fails, still clear locally - better than nothing
+                                    var baseMessage = "Failed to delete session request";
                                     ErrorMessage = ErrorMessage == null
-                                        ? $"Failed to delete session: {ex.Message}"
-                                        : $"{ErrorMessage} ({ex.Message})";
+                                        ? $"{baseMessage}: {ex.Message}"
+                                        : $"{ErrorMessage} ({baseMessage}: {ex.Message})";
                                 }
                             }
                             ActiveSessionId = null;
