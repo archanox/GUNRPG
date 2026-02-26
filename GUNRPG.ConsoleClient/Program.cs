@@ -1065,10 +1065,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             // Retreat: delete the combat session and return to Infil mode
                             if (ActiveSessionId.HasValue)
                             {
+                                HttpResponseMessage? deleteResponse = null;
                                 try
                                 {
                                     // Delete the session server-side so it won't auto-resume
-                                    using var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult();
+                                    deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult(); // hex1b handlers are synchronous
                                     if (!deleteResponse.IsSuccessStatusCode)
                                     {
                                         var errorContent = deleteResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
@@ -1083,6 +1084,10 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                                     // If delete fails, still clear locally - better than nothing
                                     var baseMessage = "Failed to delete session request";
                                     ErrorMessage = $"{baseMessage}: {ex.Message}";
+                                }
+                                finally
+                                {
+                                    deleteResponse?.Dispose();
                                 }
                             }
                             ActiveSessionId = null;
