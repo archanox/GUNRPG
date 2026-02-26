@@ -253,5 +253,42 @@ public class InfilVictoryFlowTests
         Assert.True(
             (DateTimeOffset.UtcNow - afterReinfil.Value!.InfilStartTime!.Value).TotalMinutes < 1,
             "New infil should have a recent (non-expired) start time");
+
+        // Verify the expired infil was properly auto-failed: ExfilFailedEvent and InfilEndedEvent
+        // must appear in the event stream (in that order) before the new InfilStartedEvent.
+        var allEvents = await expiredEventStore.LoadEventsAsync(operatorId);
+
+        var exfilFailedIndex = -1;
+        var infilEndedIndex = -1;
+        var newInfilStartedIndex = -1;
+
+        for (var i = 0; i < allEvents.Count; i++)
+        {
+            if (allEvents[i] is ExfilFailedEvent exfilFailed &&
+                exfilFailed.GetReason() == "Infil timer expired (30 minutes)" &&
+                exfilFailedIndex == -1)
+            {
+                exfilFailedIndex = i;
+            }
+            else if (allEvents[i] is InfilEndedEvent infilEnded &&
+                     infilEnded.GetPayload().Reason == "Infil timer expired (30 minutes)" &&
+                     infilEndedIndex == -1)
+            {
+                infilEndedIndex = i;
+            }
+            else if (allEvents[i] is InfilStartedEvent)
+            {
+                // Track the last InfilStartedEvent as the new infil (skip the first/expired one)
+                newInfilStartedIndex = i;
+            }
+        }
+
+        Assert.NotEqual(-1, exfilFailedIndex);
+        Assert.NotEqual(-1, infilEndedIndex);
+        Assert.NotEqual(-1, newInfilStartedIndex);
+
+        // Ensure the expired infil was failed and ended before the new infil started
+        Assert.True(exfilFailedIndex < infilEndedIndex, "ExfilFailed must precede InfilEnded");
+        Assert.True(infilEndedIndex < newInfilStartedIndex, "InfilEnded must precede new InfilStarted");
     }
 }
