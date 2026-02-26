@@ -21,7 +21,7 @@ using var cts = new CancellationTokenSource();
 var offlineDbPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
     ".gunrpg", "offline.db");
-var (offlineDb, _, backendResolver) = InfrastructureServiceExtensions.CreateConsoleServices(
+var (offlineDb, _, backendResolver) = InfrastructureServiceExtensions.CreateConsoleServices( // offlineStore intentionally unused; combat authority is backend-side
     httpClient, offlineDbPath, jsonOptions);
 using var _ = offlineDb; // ensure disposal
 
@@ -1231,8 +1231,10 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                     // Clear local session state to prevent auto-resume after death
                     ActiveSessionId = null;
                     CurrentSession = null;
+                    RefreshOperator();
                     
-                    Message = CurrentOperator?.IsDead == true
+                    var missionFailed = CurrentOperator?.IsDead is true;
+                    Message = missionFailed
                         ? "MISSION FAILED\n\nYou were eliminated.\n\nPress OK to continue."
                         : "MISSION SUCCESS\n\nTarget eliminated.\n\nPress OK to continue.";
                     CurrentScreen = Screen.MissionComplete;
