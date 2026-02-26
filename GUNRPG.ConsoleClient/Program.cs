@@ -1068,16 +1068,18 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                                 try
                                 {
                                     // Delete the session server-side so it won't auto-resume
-                                    using var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult();
-                                    if (!deleteResponse.IsSuccessStatusCode)
+                                    using var deleteResponseMessage = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult();
+                                    if (!deleteResponseMessage.IsSuccessStatusCode)
                                     {
-                                        ErrorMessage = $"Failed to delete session: {deleteResponse.StatusCode}";
+                                        ErrorMessage = $"Failed to delete session: {deleteResponseMessage.StatusCode}";
                                     }
                                 }
                                 catch (Exception ex)
                                 {
                                     // If delete fails, still clear locally - better than nothing
-                                    ErrorMessage ??= $"Failed to delete session: {ex.Message}";
+                                    ErrorMessage = ErrorMessage == null
+                                        ? $"Failed to delete session: {ex.Message}"
+                                        : $"{ErrorMessage} ({ex.Message})";
                                 }
                             }
                             ActiveSessionId = null;
