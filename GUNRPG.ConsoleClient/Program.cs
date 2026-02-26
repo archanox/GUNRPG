@@ -2165,7 +2165,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             return new TextBlockWidget("  EXFIL WINDOW: --:-- REMAINING");
         }
 
-        return new TextBlockWidget($"  {RaidTimer.FormatRemainingLabel(remaining.Value)}");
+        return new TextBlockWidget($"  {RaidTimer.FormatStyledRemainingLabel(remaining.Value)}");
     }
 
     void SyncRaidStateFromOperator()
@@ -2704,6 +2704,12 @@ enum RaidState
 
 public static class RaidTimer
 {
+    private const string AnsiReset = "\u001b[0m";
+    private const string AnsiYellow = "\u001b[33m";
+    private const string AnsiOrange = "\u001b[38;5;208m";
+    private const string AnsiRed = "\u001b[31m";
+    private const string AnsiBlink = "\u001b[5m";
+
     public static TimeSpan ComputeRemaining(DateTime raidStartTimeUtc, TimeSpan raidDuration, DateTime? nowUtc = null)
     {
         var now = nowUtc ?? DateTime.UtcNow;
@@ -2725,5 +2731,22 @@ public static class RaidTimer
             return $"⚠ {formatted}";
 
         return formatted;
+    }
+
+    public static string FormatStyledRemainingLabel(TimeSpan remaining)
+    {
+        var label = FormatRemainingLabel(remaining);
+        var clamped = remaining <= TimeSpan.Zero ? TimeSpan.Zero : remaining;
+
+        if (clamped <= TimeSpan.FromSeconds(5))
+            return $"{AnsiRed}{AnsiBlink}{label}{AnsiReset}";
+
+        if (clamped <= TimeSpan.FromSeconds(10))
+            return $"{AnsiOrange}{label}{AnsiReset}";
+
+        if (clamped <= TimeSpan.FromSeconds(30))
+            return $"{AnsiYellow}{label}{AnsiReset}";
+
+        return label;
     }
 }
