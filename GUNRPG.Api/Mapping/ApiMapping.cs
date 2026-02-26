@@ -30,7 +30,8 @@ public static class ApiMapping
     {
         return new SubmitIntentsRequest
         {
-            Intents = ToApplicationDto(apiRequest.Intents)
+            Intents = ToApplicationDto(apiRequest.Intents),
+            OperatorId = apiRequest.OperatorId
         };
     }
 

@@ -106,6 +106,7 @@ public class SessionsController : ControllerBase
     /// Advances the combat simulation by one tick.
     /// </summary>
     /// <param name="id">The combat session's unique identifier.</param>
+    /// <param name="request">Optional request body. When OperatorId is provided, it is validated against the session's owning operator.</param>
     /// <returns>The updated combat session state after advancing.</returns>
     /// <response code="200">Combat advanced successfully.</response>
     /// <response code="400">Session is in an invalid state to advance.</response>
@@ -116,9 +117,9 @@ public class SessionsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<ApiCombatSessionDto>> Advance(Guid id)
+    public async Task<ActionResult<ApiCombatSessionDto>> Advance(Guid id, [FromBody] ApiAdvanceRequest? request = null)
     {
-        var result = await _service.AdvanceAsync(id);
+        var result = await _service.AdvanceAsync(id, request?.OperatorId);
         return result.Status switch
         {
             ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
