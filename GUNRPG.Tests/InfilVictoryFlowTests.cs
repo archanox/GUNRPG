@@ -207,4 +207,51 @@ public class InfilVictoryFlowTests
         Assert.Null(afterExfil.Value!.InfilSessionId);
         Assert.Equal(1, afterExfil.Value!.ExfilStreak); // Incremented on successful infil completion (even without combat)
     }
+
+    [Fact]
+    public async Task StartInfil_WhenTimerExpired_AutoFailsExpiredInfilAndStartsNew()
+    {
+        // Validates the fix for: letting the infil timer lapse returns the player to base
+        // in the UI but leaves the server in Infil mode, causing "Operator is already in Infil"
+        // on the next infil attempt. The server should auto-fail a stale infil when the
+        // 30-minute timer has expired.
+
+        // Arrange: create operator with a backdated (expired) infil
+        var expiredEventStore = new InMemoryOperatorEventStore();
+        var expiredService = new OperatorExfilService(expiredEventStore);
+
+        var createResult = await expiredService.CreateOperatorAsync("TestOpExpiredInfil");
+        var operatorId = createResult.Value!;
+
+        // Directly append a backdated InfilStartedEvent (31 minutes ago) to simulate
+        // the timer having lapsed without the server being notified
+        var existingEvents = await expiredEventStore.LoadEventsAsync(operatorId);
+        var previousHash = existingEvents[^1].Hash;
+        var expiredInfilEvent = new InfilStartedEvent(
+            operatorId,
+            sequenceNumber: 1,
+            sessionId: Guid.NewGuid(),
+            lockedLoadout: "SOKOL 545",
+            infilStartTime: DateTimeOffset.UtcNow.AddMinutes(-31),
+            previousHash: previousHash);
+        await expiredEventStore.AppendEventAsync(expiredInfilEvent);
+
+        // Pre-condition: operator is in Infil mode with an expired timer
+        var beforeReinfil = await expiredService.LoadOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Infil, beforeReinfil.Value!.CurrentMode);
+
+        // Act: attempt to start a new infil (should auto-clear the expired one)
+        var reInfilResult = await expiredService.StartInfilAsync(operatorId);
+
+        // Assert: infil succeeds
+        Assert.True(reInfilResult.IsSuccess, reInfilResult.ErrorMessage);
+
+        // Operator should be in Infil mode with a fresh (non-expired) start time
+        var afterReinfil = await expiredService.LoadOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Infil, afterReinfil.Value!.CurrentMode);
+        Assert.NotNull(afterReinfil.Value!.InfilStartTime);
+        Assert.True(
+            (DateTimeOffset.UtcNow - afterReinfil.Value!.InfilStartTime!.Value).TotalMinutes < 1,
+            "New infil should have a recent (non-expired) start time");
+    }
 }
