@@ -1,4 +1,6 @@
-public class RaidTimerTests
+namespace GUNRPG.Tests;
+
+public sealed class RaidTimerTests
 {
     [Fact]
     public void ComputeRemaining_UsesAbsoluteElapsedUtcTime()
@@ -26,5 +28,15 @@ public class RaidTimerTests
 
         Assert.Contains("\u001b[31m", label);
         Assert.Contains("\u001b[5m", label);
+    }
+
+    [Fact]
+    public void FormatRemainingLabel_UsesUpdatedWarningIcons()
+    {
+        var medium = RaidTimer.FormatRemainingLabel(TimeSpan.FromSeconds(25));
+        var high = RaidTimer.FormatRemainingLabel(TimeSpan.FromSeconds(8));
+
+        Assert.StartsWith("⚠️ ", medium);
+        Assert.StartsWith("🚨 ", high);
     }
 }

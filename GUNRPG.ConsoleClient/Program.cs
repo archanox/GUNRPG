@@ -2032,7 +2032,10 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 new TextBlockWidget("  Press OK to return to base."),
                 new TextBlockWidget(""),
                 new ListWidget(new[] { "OK" }).OnItemActivated(_ => {
-                    _raidState = RaidState.Completed;
+                    lock (_raidStateLock)
+                    {
+                        _raidState = RaidState.Completed;
+                    }
                     CurrentScreen = Screen.BaseCamp;
                     ReturnScreen = Screen.BaseCamp;
                 })
@@ -2725,10 +2728,10 @@ public static class RaidTimer
             return $"{formatted} [!!!]";
 
         if (clamped <= TimeSpan.FromSeconds(10))
-            return $"⚠ {formatted}";
+            return $"🚨 {formatted}";
 
         if (clamped <= TimeSpan.FromSeconds(30))
-            return $"⚠ {formatted}";
+            return $"⚠️ {formatted}";
 
         return formatted;
     }
