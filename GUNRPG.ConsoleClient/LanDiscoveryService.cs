@@ -5,7 +5,7 @@ using Makaretu.Dns;
 /// </summary>
 internal static class LanDiscoveryService
 {
-    public record DiscoveredServer(string Hostname, int Port, string? Version, string? Environment);
+    public record DiscoveredServer(string Hostname, int Port, string? Version, string? Environment, string Scheme = "http");
 
     /// <summary>
     /// Queries for _gunrpg._tcp service instances on the LAN and returns any found within the given timeout.
@@ -34,6 +34,9 @@ internal static class LanDiscoveryService
             var env = txt?.Strings
                 .FirstOrDefault(s => s.StartsWith("environment=", StringComparison.Ordinal))
                 ?["environment=".Length..];
+            var scheme = txt?.Strings
+                .FirstOrDefault(s => s.StartsWith("scheme=", StringComparison.Ordinal))
+                ?["scheme=".Length..] ?? "http";
 
             var hostname = srv.Target.ToString().TrimEnd('.');
             var port = srv.Port;
@@ -41,23 +44,28 @@ internal static class LanDiscoveryService
             lock (discovered)
             {
                 if (!discovered.Any(d => d.Hostname == hostname && d.Port == port))
-                    discovered.Add(new DiscoveredServer(hostname, port, version, env));
+                    discovered.Add(new DiscoveredServer(hostname, port, version, env, scheme));
             }
         };
 
-        mdns.Start();
-        sd.QueryServiceInstances("_gunrpg._tcp");
-
         try
         {
-            await Task.Delay(timeout, cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // Timeout expired normally — discovery window has closed.
-        }
+            mdns.Start();
+            sd.QueryServiceInstances("_gunrpg._tcp");
 
-        mdns.Stop();
+            try
+            {
+                await Task.Delay(timeout, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Timeout expired normally — discovery window has closed.
+            }
+        }
+        finally
+        {
+            mdns.Stop();
+        }
         return discovered;
     }
 }

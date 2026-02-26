@@ -77,6 +77,7 @@ catch (OperationCanceledException)
 /// </summary>
 static string ResolveServerAddress(string[] args, string? envAddress)
 {
+    var clientVersion = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.1.0";
     // 1. Check --server command-line argument
     for (var i = 0; i < args.Length; i++)
     {
@@ -116,7 +117,7 @@ static string ResolveServerAddress(string[] args, string? envAddress)
     }
 
     spinnerCts.Cancel();
-    spinnerTask.GetAwaiter().GetResult();
+    try { spinnerTask.GetAwaiter().GetResult(); } catch { /* spinner errors are non-fatal */ }
     Console.WriteLine();
 
     if (servers.Count > 0)
@@ -136,10 +137,9 @@ static string ResolveServerAddress(string[] args, string? envAddress)
         if (int.TryParse(input, out var choice) && choice >= 1 && choice <= servers.Count)
         {
             var selected = servers[choice - 1];
-            var url = $"http://{selected.Hostname}:{selected.Port}";
+            var url = $"{selected.Scheme}://{selected.Hostname}:{selected.Port}";
             if (selected.Version != null)
             {
-                const string clientVersion = "0.1.0";
                 if (selected.Version != clientVersion)
                     Console.WriteLine($"  ⚠ Version mismatch: server={selected.Version}, client={clientVersion}");
             }
