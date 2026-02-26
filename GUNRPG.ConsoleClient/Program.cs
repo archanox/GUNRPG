@@ -1072,7 +1072,10 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                                     if (!deleteResponse.IsSuccessStatusCode)
                                     {
                                         var errorContent = deleteResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                                        ErrorMessage = $"Failed to delete session: {deleteResponse.StatusCode} - {errorContent}";
+                                        var trimmedContent = string.IsNullOrWhiteSpace(errorContent) ? null : errorContent.Trim();
+                                        ErrorMessage = trimmedContent == null
+                                            ? $"Failed to delete session: {deleteResponse.StatusCode}"
+                                            : $"Failed to delete session: {deleteResponse.StatusCode} - {trimmedContent}";
                                     }
                                 }
                                 catch (Exception ex)
