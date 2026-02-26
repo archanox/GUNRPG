@@ -1,11 +1,10 @@
 namespace GUNRPG.Api.Dtos;
 
 /// <summary>
-/// API request for submitting player intents (intent submission only, no auto-resolve).
+/// API request for advancing a combat session by one tick.
 /// </summary>
-public sealed class ApiSubmitIntentsRequest
+public sealed class ApiAdvanceRequest
 {
-    public ApiIntentDto Intents { get; init; } = new();
     /// <summary>
     /// Optional caller operator ID. When provided, validated against the session's owning operator.
     /// </summary>

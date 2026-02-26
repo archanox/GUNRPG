@@ -82,8 +82,8 @@ public sealed class CombatSessionService
             return ServiceResult<CombatSessionDto>.NotFound("Session not found");
         }
 
-        // Validate operator is in Infil mode before allowing combat actions
-        var modeValidation = await ValidateOperatorInInfilModeAsync(session);
+        // Validate operator is in Infil mode and session matches the active session before allowing combat actions
+        var modeValidation = await ValidateOperatorInInfilModeAsync(session, request.OperatorId);
         if (modeValidation != null)
         {
             return ServiceResult<CombatSessionDto>.FromResult(modeValidation);
@@ -121,7 +121,7 @@ public sealed class CombatSessionService
     /// <summary>
     /// Advances the combat turn until the next planning phase or end of combat.
     /// </summary>
-    public async Task<ServiceResult<CombatSessionDto>> AdvanceAsync(Guid sessionId)
+    public async Task<ServiceResult<CombatSessionDto>> AdvanceAsync(Guid sessionId, Guid? callerOperatorId = null)
     {
         var session = await LoadAsync(sessionId);
         if (session == null)
@@ -129,8 +129,8 @@ public sealed class CombatSessionService
             return ServiceResult<CombatSessionDto>.NotFound("Session not found");
         }
 
-        // Validate operator is in Infil mode before allowing combat actions
-        var modeValidation = await ValidateOperatorInInfilModeAsync(session);
+        // Validate operator is in Infil mode and session matches the active session before allowing combat actions
+        var modeValidation = await ValidateOperatorInInfilModeAsync(session, callerOperatorId);
         if (modeValidation != null)
         {
             return ServiceResult<CombatSessionDto>.FromResult(modeValidation);
@@ -221,7 +221,7 @@ public sealed class CombatSessionService
     /// Validates that the operator associated with a session is in Infil mode.
     /// Returns null if validation passes, or an error result if it fails.
     /// </summary>
-    private async Task<ServiceResult?> ValidateOperatorInInfilModeAsync(CombatSession session)
+    private async Task<ServiceResult?> ValidateOperatorInInfilModeAsync(CombatSession session, Guid? callerOperatorId = null)
     {
         // If operator event store is not available, skip validation (e.g., in-memory mode or tests)
         if (_operatorEventStore == null)
@@ -233,6 +233,12 @@ public sealed class CombatSessionService
         if (session.OperatorId.IsEmpty)
         {
             return null;
+        }
+
+        // Validate the caller operator ID matches the session's owning operator (prevents cross-operator tamper)
+        if (callerOperatorId.HasValue && callerOperatorId.Value != session.OperatorId.Value)
+        {
+            return ServiceResult.InvalidState("Session does not belong to the specified operator");
         }
 
         try

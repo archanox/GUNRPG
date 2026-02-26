@@ -705,10 +705,11 @@ public class CombatSessionServiceTests
 
         // Set up operator in Infil mode with matching session ID for intent submission
         operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: session.Id);
-        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
         {
             Intents = new IntentDto { Primary = PrimaryAction.Fire }
         });
+        Assert.True(submitResult.IsSuccess);
 
         // Now set up operator with a DIFFERENT active session ID (tamper scenario for advance)
         operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: Guid.NewGuid());
@@ -743,10 +744,11 @@ public class CombatSessionServiceTests
 
         // Set up operator in Infil mode with matching session ID for intent submission
         operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: session.Id);
-        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
         {
             Intents = new IntentDto { Primary = PrimaryAction.Fire }
         });
+        Assert.True(submitResult.IsSuccess);
 
         // Now set up operator in Infil mode with NO active session ID (e.g., after victory cleared it)
         operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil);
@@ -758,5 +760,77 @@ public class CombatSessionServiceTests
         Assert.False(result.IsSuccess);
         Assert.Equal(ResultStatus.InvalidState, result.Status);
         Assert.Contains("active combat session", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task SubmitIntents_WithWrongCallerOperatorId_ReturnsInvalidStateError()
+    {
+        // Arrange
+        var store = new InMemoryCombatSessionStore();
+        var operatorEventStore = new StubOperatorEventStore();
+        var ownerOperatorId = Guid.NewGuid();
+        var attackerOperatorId = Guid.NewGuid(); // different operator trying to tamper
+
+        var service = new CombatSessionService(store, operatorEventStore);
+
+        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest
+        {
+            OperatorId = ownerOperatorId,
+            Seed = 123
+        });
+        Assert.True(sessionResult.IsSuccess);
+        var session = sessionResult.Value!;
+
+        // Owner operator is set up in Infil mode with the correct active session
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(ownerOperatorId), OperatorMode.Infil, activeCombatSessionId: session.Id);
+
+        // Act - attacker provides their own operatorId but tries to act on owner's session
+        var result = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire },
+            OperatorId = attackerOperatorId
+        });
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("belong to the specified operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Advance_WithWrongCallerOperatorId_ReturnsInvalidStateError()
+    {
+        // Arrange
+        var store = new InMemoryCombatSessionStore();
+        var operatorEventStore = new StubOperatorEventStore();
+        var ownerOperatorId = Guid.NewGuid();
+        var attackerOperatorId = Guid.NewGuid(); // different operator trying to tamper
+
+        var service = new CombatSessionService(store, operatorEventStore);
+
+        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest
+        {
+            OperatorId = ownerOperatorId,
+            Seed = 123
+        });
+        Assert.True(sessionResult.IsSuccess);
+        var session = sessionResult.Value!;
+
+        // Owner operator is set up in Infil mode with the correct active session
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(ownerOperatorId), OperatorMode.Infil, activeCombatSessionId: session.Id);
+        var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire },
+            OperatorId = ownerOperatorId
+        });
+        Assert.True(submitResult.IsSuccess);
+
+        // Act - attacker provides their own operatorId but tries to advance owner's session
+        var result = await service.AdvanceAsync(session.Id, callerOperatorId: attackerOperatorId);
+
+        // Assert
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("belong to the specified operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 }
