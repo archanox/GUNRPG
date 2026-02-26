@@ -264,6 +264,28 @@ public sealed class OperatorService
 
     public async Task<ServiceResult<OperatorStateDto>> ProcessCombatOutcomeAsync(Guid operatorId, ProcessOutcomeRequest request)
     {
+        if (request.SessionId == Guid.Empty)
+        {
+            return ServiceResult<OperatorStateDto>.ValidationError("Session ID cannot be empty");
+        }
+
+        var operatorLoadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+        if (!operatorLoadResult.IsSuccess)
+        {
+            return ServiceResult<OperatorStateDto>.FromResult(operatorLoadResult);
+        }
+
+        var operatorAggregate = operatorLoadResult.Value!;
+        if (operatorAggregate.ActiveCombatSessionId == null)
+        {
+            return ServiceResult<OperatorStateDto>.InvalidState("No active combat session found for operator");
+        }
+
+        if (operatorAggregate.ActiveCombatSessionId.Value != request.SessionId)
+        {
+            return ServiceResult<OperatorStateDto>.InvalidState("Combat session does not belong to operator");
+        }
+
         // Load the combat session and get the authoritative outcome
         var outcomeResult = await _sessionService.GetCombatOutcomeAsync(request.SessionId);
         if (outcomeResult.Status != ResultStatus.Success)
