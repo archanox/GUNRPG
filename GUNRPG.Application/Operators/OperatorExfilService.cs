@@ -21,6 +21,8 @@ namespace GUNRPG.Application.Operators;
 /// </summary>
 public sealed class OperatorExfilService
 {
+    private const int InfilTimerMinutes = 30;
+
     private readonly IOperatorEventStore _eventStore;
 
     public OperatorExfilService(IOperatorEventStore eventStore)
@@ -354,10 +356,11 @@ public sealed class OperatorExfilService
         // If operator is already in Infil mode, check whether the 30-minute timer has expired.
         // A lapsed timer means the client-side expiry fired but the server was never notified —
         // auto-fail the stale infil so the player can re-infil without manual intervention.
+        // A missing InfilStartTime indicates data corruption; auto-fail in that case too.
         if (aggregate.CurrentMode == OperatorMode.Infil)
         {
-            if (aggregate.InfilStartTime.HasValue &&
-                (DateTimeOffset.UtcNow - aggregate.InfilStartTime.Value).TotalMinutes >= 30)
+            if (!aggregate.InfilStartTime.HasValue ||
+                (DateTimeOffset.UtcNow - aggregate.InfilStartTime.Value).TotalMinutes >= InfilTimerMinutes)
             {
                 var failResult = await FailInfilAsync(operatorId, "Infil timer expired (30 minutes)");
                 if (!failResult.IsSuccess)
@@ -368,6 +371,10 @@ public sealed class OperatorExfilService
                 if (!loadResult.IsSuccess)
                     return ServiceResult<Guid>.FromResult(MapLoadResultStatus(loadResult));
                 aggregate = loadResult.Value!;
+
+                // Defensive check: ensure operator is now in Base mode before starting a new infil
+                if (aggregate.CurrentMode != OperatorMode.Base)
+                    return ServiceResult<Guid>.InvalidState("Failed to clear expired infil - operator not in Base mode");
             }
             else
             {
@@ -591,7 +598,7 @@ public sealed class OperatorExfilService
             return ServiceResult<bool>.Success(false);
 
         var elapsed = DateTimeOffset.UtcNow - aggregate.InfilStartTime.Value;
-        var isTimedOut = elapsed.TotalMinutes >= 30;
+        var isTimedOut = elapsed.TotalMinutes >= InfilTimerMinutes;
 
         return ServiceResult<bool>.Success(isTimedOut);
     }
@@ -686,7 +693,7 @@ public sealed class OperatorExfilService
         if (aggregate.InfilStartTime.HasValue)
         {
             var elapsed = DateTimeOffset.UtcNow - aggregate.InfilStartTime.Value;
-            if (elapsed.TotalMinutes >= 30)
+            if (elapsed.TotalMinutes >= InfilTimerMinutes)
             {
                 // Timer expired - automatically fail the infil
                 return await FailInfilAsync(outcome.OperatorId, "Infil timer expired (30 minutes)");
