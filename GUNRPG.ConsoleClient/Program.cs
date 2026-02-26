@@ -42,7 +42,34 @@ gameState.LoadSavedOperatorId();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
 using var app = new Hex1bApp(ctx => gameState.BuildUI(ctx, cts));
+var raidTickTask = Task.Run(async () =>
+{
+    while (!cts.IsCancellationRequested)
+    {
+        gameState.Tick();
+        app.Invalidate();
+        try
+        {
+            await Task.Delay(50, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            break;
+        }
+    }
+}, cts.Token);
 await app.RunAsync(cts.Token);
+if (!cts.IsCancellationRequested)
+{
+    cts.Cancel();
+}
+try
+{
+    await raidTickTask;
+}
+catch (OperationCanceledException)
+{
+}
 
 class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver, OfflineStore? offlineStore = null, LiteDB.LiteDatabase? offlineDb = null)
 {
@@ -81,11 +108,13 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     private DateTime? _raidStartTimeUtc;
     private static readonly TimeSpan RaidDuration = TimeSpan.FromMinutes(30);
     private RaidState _raidState = RaidState.Completed;
+    private bool _exfilFailureRequested;
+    private readonly object _raidStateLock = new();
 
     public Task<Hex1bWidget> BuildUI(RootContext ctx, CancellationTokenSource cts)
     {
         SyncRaidStateFromOperator();
-        TryHandleExfilExpiry();
+        ApplyPendingRaidStateTransitions();
 
         var widget = CurrentScreen switch
         {
@@ -106,12 +135,22 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             _ => new TextBlockWidget("Unknown screen")
         };
 
-        if (_raidState is RaidState.Infil or RaidState.Combat)
-        {
-            widget = widget.RedrawAfter(250);
-        }
-
         return Task.FromResult(widget);
+    }
+
+    public void Tick()
+    {
+        lock (_raidStateLock)
+        {
+            if (_raidState is not (RaidState.Infil or RaidState.Combat))
+                return;
+
+            var remaining = GetRemainingRaidTimeCore();
+            if (remaining.HasValue && remaining.Value <= TimeSpan.Zero)
+            {
+                _exfilFailureRequested = true;
+            }
+        }
     }
 
     Hex1bWidget BuildMainMenu(CancellationTokenSource cts)
@@ -987,7 +1026,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     Hex1bWidget BuildCombatSession()
     {
-        if (TryHandleExfilExpiry())
+        if (_raidState == RaidState.ExfilFailed)
         {
             return BuildExfilFailed();
         }
@@ -1070,7 +1109,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 new TextBlockWidget($"  TURN: {session.TurnNumber}  PHASE: {session.Phase}  TIME: {session.CurrentTimeMs}ms"),
                 new TextBlockWidget(""),
                 new ListWidget(actionItems.ToArray()).OnItemActivated(e => {
-                    if (TryHandleExfilExpiry())
+                    if (_raidState == RaidState.ExfilFailed)
                     {
                         return;
                     }
@@ -1260,7 +1299,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     void AdvanceCombat()
     {
-        if (TryHandleExfilExpiry())
+        if (_raidState == RaidState.ExfilFailed)
         {
             return;
         }
@@ -1285,8 +1324,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             if (sessionData != null)
             {
                 CurrentSession = sessionData;
-
-                if (TryHandleExfilExpiry())
+                ApplyPendingRaidStateTransitions();
+                if (_raidState == RaidState.ExfilFailed)
                 {
                     return;
                 }
@@ -1315,7 +1354,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     void AdvanceCombatOffline()
     {
-        if (TryHandleExfilExpiry())
+        if (_raidState == RaidState.ExfilFailed)
         {
             return;
         }
@@ -1330,8 +1369,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             }
 
             CurrentSession = ToLocalDto(result.Value!);
-
-            if (TryHandleExfilExpiry())
+            ApplyPendingRaidStateTransitions();
+            if (_raidState == RaidState.ExfilFailed)
             {
                 return;
             }
@@ -1369,7 +1408,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     void ProcessCombatOutcome()
     {
-        if (TryHandleExfilExpiry())
+        ApplyPendingRaidStateTransitions();
+        if (_raidState == RaidState.ExfilFailed)
         {
             return;
         }
@@ -1421,7 +1461,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     /// </summary>
     void ProcessCombatOutcomeOffline()
     {
-        if (TryHandleExfilExpiry())
+        ApplyPendingRaidStateTransitions();
+        if (_raidState == RaidState.ExfilFailed)
             return;
 
         if (CurrentOperator == null || offlineStore == null)
@@ -1554,7 +1595,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     bool SubmitPlayerIntents()
     {
-        if (TryHandleExfilExpiry())
+        ApplyPendingRaidStateTransitions();
+        if (_raidState == RaidState.ExfilFailed)
         {
             return false;
         }
@@ -1596,7 +1638,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             if (sessionData != null)
             {
                 CurrentSession = sessionData;
-                if (TryHandleExfilExpiry())
+                ApplyPendingRaidStateTransitions();
+                if (_raidState == RaidState.ExfilFailed)
                 {
                     return false;
                 }
@@ -1616,7 +1659,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     bool SubmitPlayerIntentsOffline()
     {
-        if (TryHandleExfilExpiry())
+        ApplyPendingRaidStateTransitions();
+        if (_raidState == RaidState.ExfilFailed)
         {
             return false;
         }
@@ -1647,7 +1691,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             }
 
             CurrentSession = ToLocalDto(result.Value!);
-            if (TryHandleExfilExpiry())
+            ApplyPendingRaidStateTransitions();
+            if (_raidState == RaidState.ExfilFailed)
             {
                 return false;
             }
@@ -2125,22 +2170,33 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     void SyncRaidStateFromOperator()
     {
-        if (CurrentOperator?.CurrentMode != "Infil" || !CurrentOperator.InfilStartTime.HasValue)
+        lock (_raidStateLock)
         {
-            _raidStartTimeUtc = null;
-            if (_raidState != RaidState.ExfilFailed)
-                _raidState = RaidState.Completed;
-            return;
-        }
+            if (CurrentOperator?.CurrentMode != "Infil" || !CurrentOperator.InfilStartTime.HasValue)
+            {
+                _raidStartTimeUtc = null;
+                if (_raidState != RaidState.ExfilFailed)
+                    _raidState = RaidState.Completed;
+                return;
+            }
 
-        _raidStartTimeUtc = CurrentOperator.InfilStartTime.Value.UtcDateTime;
-        if (CurrentScreen == Screen.CombatSession)
-            _raidState = RaidState.Combat;
-        else if (_raidState != RaidState.ExfilFailed)
-            _raidState = RaidState.Infil;
+            _raidStartTimeUtc = CurrentOperator.InfilStartTime.Value.UtcDateTime;
+            if (CurrentScreen == Screen.CombatSession)
+                _raidState = RaidState.Combat;
+            else if (_raidState != RaidState.ExfilFailed)
+                _raidState = RaidState.Infil;
+        }
     }
 
     TimeSpan? GetRemainingRaidTime()
+    {
+        lock (_raidStateLock)
+        {
+            return GetRemainingRaidTimeCore();
+        }
+    }
+
+    TimeSpan? GetRemainingRaidTimeCore()
     {
         if (!_raidStartTimeUtc.HasValue)
             return null;
@@ -2148,12 +2204,23 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         return RaidTimer.ComputeRemaining(_raidStartTimeUtc.Value, RaidDuration);
     }
 
-    bool TryHandleExfilExpiry()
+    void ApplyPendingRaidStateTransitions()
     {
-        var remaining = GetRemainingRaidTime();
-        if (!remaining.HasValue || remaining.Value > TimeSpan.Zero || _raidState == RaidState.ExfilFailed)
+        lock (_raidStateLock)
         {
-            return false;
+            if (_exfilFailureRequested)
+            {
+                _exfilFailureRequested = false;
+                ForceExfilFailure();
+            }
+        }
+    }
+
+    void ForceExfilFailure()
+    {
+        if (_raidState == RaidState.ExfilFailed)
+        {
+            return;
         }
 
         _raidState = RaidState.ExfilFailed;
@@ -2185,7 +2252,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         _raidStartTimeUtc = null;
         CurrentScreen = Screen.ExfilFailed;
-        return true;
     }
 
     Hex1bWidget BuildPetActions()
