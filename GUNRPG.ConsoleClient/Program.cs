@@ -21,9 +21,10 @@ using var cts = new CancellationTokenSource();
 var offlineDbPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
     ".gunrpg", "offline.db");
-var (offlineDb, offlineStore, backendResolver) = InfrastructureServiceExtensions.CreateConsoleServices(
+var consoleServices = InfrastructureServiceExtensions.CreateConsoleServices(
     httpClient, offlineDbPath, jsonOptions);
-using var _ = offlineDb; // ensure disposal
+using var _ = consoleServices.offlineDb; // ensure disposal
+var backendResolver = consoleServices.backendResolver;
 
 // Resolve game backend based on server reachability and local state
 var backend = await backendResolver.ResolveAsync();
