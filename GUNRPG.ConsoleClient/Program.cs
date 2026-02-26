@@ -1,8 +1,13 @@
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using GUNRPG.Application.Backend;
+using GUNRPG.Application.Combat;
 using GUNRPG.Application.Dtos;
+using GUNRPG.Application.Requests;
+using GUNRPG.Application.Sessions;
+using GUNRPG.Core.Intents;
 using GUNRPG.Infrastructure;
 using GUNRPG.Infrastructure.Backend;
 using GUNRPG.Infrastructure.Persistence;
@@ -21,14 +26,14 @@ using var cts = new CancellationTokenSource();
 var offlineDbPath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
     ".gunrpg", "offline.db");
-var (offlineDb, _, backendResolver) = InfrastructureServiceExtensions.CreateConsoleServices( // offlineStore intentionally unused; combat authority is backend-side
+var (offlineDb, offlineStore, backendResolver) = InfrastructureServiceExtensions.CreateConsoleServices(
     httpClient, offlineDbPath, jsonOptions);
 using var _ = offlineDb; // ensure disposal
 
 // Resolve game backend based on server reachability and local state
 var backend = await backendResolver.ResolveAsync();
 
-var gameState = new GameState(httpClient, jsonOptions, backend, backendResolver);
+var gameState = new GameState(httpClient, jsonOptions, backend, backendResolver, offlineStore, offlineDb);
 
 // Try to auto-load last used operator
 gameState.LoadSavedOperatorId();
@@ -66,7 +71,7 @@ catch (OperationCanceledException)
 {
 }
 
-class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver)
+class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver, OfflineStore? offlineStore = null, LiteDB.LiteDatabase? offlineDb = null)
 {
     public Screen CurrentScreen { get; set; } = Screen.MainMenu;
     public Screen ReturnScreen { get; set; } = Screen.MainMenu;
@@ -95,6 +100,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         public const string Stance = "STANCE";
         public const string Cover = "COVER";
     }
+    // Disk-persisted combat service for offline play (uses same LiteDB file as operator snapshots)
+    private CombatSessionService? _localCombatService;
+    private bool _usingLocalCombat;
+    private int _activeOfflineMissionSeed;
+    private readonly IDeterministicCombatEngine _deterministicEngine = new DeterministicCombatEngine();
     private DateTime? _raidStartTimeUtc;
     private static readonly TimeSpan RaidDuration = TimeSpan.FromMinutes(30);
     private RaidState _raidState = RaidState.Completed;
@@ -589,6 +599,20 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             ActiveSessionId ??= op.ActiveCombatSessionId;
                             LoadSession();
                         }
+                        else if (backend is not OnlineGameBackend)
+                        {
+                            // Offline: run combat using a local in-memory session (no server required)
+                            if (StartOfflineCombatSession())
+                            {
+                                CurrentScreen = Screen.CombatSession;
+                            }
+                            else
+                            {
+                                Message = $"Failed to start offline combat.\n\n{ErrorMessage ?? "Unknown error"}\n\nPress OK to continue.";
+                                CurrentScreen = Screen.Message;
+                                ReturnScreen = Screen.BaseCamp;
+                            }
+                        }
                         else
                         {
                             // After a victory, ActiveCombatSessionId is cleared but operator stays in Infil
@@ -880,6 +904,65 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         }
     }
 
+    /// <summary>
+    /// Starts a new offline combat session backed by the disk-persisted LiteDB store.
+    /// Used when the server is unreachable but the operator has an active infil snapshot.
+    /// </summary>
+    bool StartOfflineCombatSession()
+    {
+        ErrorMessage = null;
+
+        if (CurrentOperator == null || CurrentOperatorId == null)
+            return false;
+
+        if (CurrentOperator.CurrentMode != "Infil")
+        {
+            ErrorMessage = "Cannot start combat: operator is not in Infil mode.";
+            return false;
+        }
+
+        if (offlineDb == null)
+        {
+            ErrorMessage = "Offline database unavailable";
+            return false;
+        }
+
+        try
+        {
+            // Lazy-initialize the local combat service (reused across combats within a session)
+            if (_localCombatService == null)
+            {
+                var localStore = new LiteDbCombatSessionStore(offlineDb);
+                _localCombatService = new CombatSessionService(localStore);
+            }
+
+            var request = new SessionCreateRequest
+            {
+                OperatorId = CurrentOperatorId,
+                PlayerName = CurrentOperator.Name,
+                Seed = RandomNumberGenerator.GetInt32(int.MaxValue)
+            };
+            _activeOfflineMissionSeed = request.Seed.Value;
+
+            var result = _localCombatService.CreateSessionAsync(request).GetAwaiter().GetResult();
+            if (!result.IsSuccess)
+            {
+                ErrorMessage = result.ErrorMessage;
+                return false;
+            }
+
+            CurrentSession = ToLocalDto(result.Value!);
+            ActiveSessionId = CurrentSession.Id;
+            _usingLocalCombat = true;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            return false;
+        }
+    }
+
     bool StartNewCombatSession()
     {
         ErrorMessage = null;
@@ -1053,22 +1136,40 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             // Process combat outcome if ended
                             if (combatEnded)
                             {
-                                ProcessCombatOutcome();
+                                if (_usingLocalCombat)
+                                    ProcessCombatOutcomeOffline();
+                                else
+                                    ProcessCombatOutcome();
                             }
                             // Retreat: delete the combat session and return to Infil mode
                             if (ActiveSessionId.HasValue)
                             {
-                                try
+                                if (_usingLocalCombat)
                                 {
-                                    // Delete the session server-side so it won't auto-resume
-                                    var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult();
-                                    deleteResponse.Dispose();
+                                    try
+                                    {
+                                        _localCombatService!.DeleteSessionAsync(ActiveSessionId.Value).GetAwaiter().GetResult();
+                                    }
+                                    catch
+                                    {
+                                        // Non-fatal — session will be orphaned in offline.db but won't affect gameplay
+                                    }
                                 }
-                                catch
+                                else
                                 {
-                                    // If delete fails, still clear locally - better than nothing
+                                    try
+                                    {
+                                        // Delete the session server-side so it won't auto-resume
+                                        var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult();
+                                        deleteResponse.Dispose();
+                                    }
+                                    catch
+                                    {
+                                        // If delete fails, still clear locally - better than nothing
+                                    }
                                 }
                             }
+                            _usingLocalCombat = false;
                             ActiveSessionId = null;
                             CurrentSession = null;
                             RefreshOperator();
@@ -1203,6 +1304,12 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             return;
         }
 
+        if (_usingLocalCombat)
+        {
+            AdvanceCombatOffline();
+            return;
+        }
+
         try
         {
             var response = client.PostAsync($"sessions/{ActiveSessionId}/advance", null).GetAwaiter().GetResult();
@@ -1223,7 +1330,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                     return;
                 }
                 
-                if (sessionData.Phase == "Completed")
+                if (sessionData.Player.Health <= 0 || sessionData.Enemy.Health <= 0)
                 {
                     // Combat has ended - process the outcome
                     ProcessCombatOutcome();
@@ -1231,14 +1338,66 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                     // Clear local session state to prevent auto-resume after death
                     ActiveSessionId = null;
                     CurrentSession = null;
-                    RefreshOperator();
                     
-                    var missionFailed = CurrentOperator?.IsDead is true;
-                    Message = missionFailed
+                    Message = sessionData.Player.Health <= 0 
                         ? "MISSION FAILED\n\nYou were eliminated.\n\nPress OK to continue."
                         : "MISSION SUCCESS\n\nTarget eliminated.\n\nPress OK to continue.";
                     CurrentScreen = Screen.MissionComplete;
                 }
+            }
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+    }
+
+    void AdvanceCombatOffline()
+    {
+        if (_raidState == RaidState.ExfilFailed)
+        {
+            return;
+        }
+
+        try
+        {
+            var result = _localCombatService!.AdvanceAsync(ActiveSessionId!.Value).GetAwaiter().GetResult();
+            if (!result.IsSuccess)
+            {
+                ErrorMessage = $"Advance failed: {result.ErrorMessage}";
+                return;
+            }
+
+            CurrentSession = ToLocalDto(result.Value!);
+            ApplyPendingRaidStateTransitions();
+            if (_raidState == RaidState.ExfilFailed)
+            {
+                return;
+            }
+
+            if (CurrentSession.Player.Health <= 0 || CurrentSession.Enemy.Health <= 0)
+            {
+                // Combat ended — update offline snapshot with outcome, then clear local combat flag
+                ProcessCombatOutcomeOffline();
+                _usingLocalCombat = false;
+
+                // Delete the completed local session to keep offline.db clean
+                try
+                {
+                    _localCombatService!.DeleteSessionAsync(ActiveSessionId!.Value).GetAwaiter().GetResult();
+                }
+                catch
+                {
+                    // Non-fatal — orphaned session won't affect gameplay
+                }
+
+                // Keep CurrentSession for display on MissionComplete screen
+                ActiveSessionId = null;
+
+                Message = CurrentSession.Player.Health <= 0
+                    ? "MISSION FAILED\n\nYou were eliminated.\n\nPress OK to continue."
+                    : "MISSION SUCCESS\n\nTarget eliminated.\n\nPress OK to continue.";
+                CurrentScreen = Screen.MissionComplete;
             }
         }
         catch (Exception ex)
@@ -1293,6 +1452,86 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         {
             ErrorMessage = $"Outcome processing error: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// Processes a combat outcome for an offline session using the deterministic combat engine.
+    /// The engine computes the authoritative result from the initial operator state and seed,
+    /// ensuring the server can independently replay and verify the outcome.
+    /// </summary>
+    void ProcessCombatOutcomeOffline()
+    {
+        ApplyPendingRaidStateTransitions();
+        if (_raidState == RaidState.ExfilFailed)
+            return;
+
+        if (CurrentOperator == null || offlineStore == null)
+            return;
+
+        var initialDto = ToBackendDto(CurrentOperator);
+        var initialHash = OfflineMissionHashing.ComputeOperatorStateHash(initialDto);
+
+        // Run the deterministic combat engine — same engine the server will use to verify.
+        var combatResult = _deterministicEngine.Execute(initialDto, _activeOfflineMissionSeed);
+        var updatedDto = combatResult.ResultOperator;
+
+        var resultHash = OfflineMissionHashing.ComputeOperatorStateHash(updatedDto);
+        var nextSequence = offlineStore.GetNextMissionSequence(updatedDto.Id);
+
+        var initialSnapshotJson = JsonSerializer.Serialize(initialDto, options);
+        var resultSnapshotJson = JsonSerializer.Serialize(updatedDto, options);
+
+        Console.WriteLine($"[OFFLINE] Envelope seq={nextSequence} seed={_activeOfflineMissionSeed} initialHash={initialHash} resultHash={resultHash}");
+
+        var envelope = new OfflineMissionEnvelope
+        {
+            OperatorId = updatedDto.Id,
+            SequenceNumber = nextSequence,
+            RandomSeed = _activeOfflineMissionSeed,
+            InitialSnapshotJson = initialSnapshotJson,
+            ResultSnapshotJson = resultSnapshotJson,
+            InitialOperatorStateHash = initialHash,
+            ResultOperatorStateHash = resultHash,
+            FullBattleLog = combatResult.BattleLog,
+            ExecutedUtc = DateTime.UtcNow,
+            Synced = false
+        };
+
+        offlineStore.SaveMissionResult(envelope);
+        offlineStore.UpdateOperatorSnapshot(updatedDto.Id, updatedDto);
+        CurrentOperator = OperatorStateFromDto(updatedDto);
+    }
+
+    private static OperatorDto ToBackendDto(OperatorState state)
+    {
+        return new OperatorDto
+        {
+            Id = state.Id.ToString(),
+            Name = state.Name,
+            TotalXp = state.TotalXp,
+            CurrentHealth = state.CurrentHealth,
+            MaxHealth = state.MaxHealth,
+            EquippedWeaponName = state.EquippedWeaponName,
+            UnlockedPerks = state.UnlockedPerks,
+            ExfilStreak = state.ExfilStreak,
+            IsDead = state.IsDead,
+            CurrentMode = state.CurrentMode,
+            ActiveCombatSessionId = state.ActiveCombatSessionId,
+            InfilSessionId = state.InfilSessionId,
+            InfilStartTime = state.InfilStartTime,
+            LockedLoadout = state.LockedLoadout,
+            Pet = state.Pet == null ? null : new GUNRPG.Application.Dtos.PetStateDto
+            {
+                Health = state.Pet.Health,
+                Fatigue = state.Pet.Fatigue,
+                Injury = state.Pet.Injury,
+                Stress = state.Pet.Stress,
+                Morale = state.Pet.Morale,
+                Hunger = state.Pet.Hunger,
+                Hydration = state.Pet.Hydration,
+                LastUpdated = state.Pet.LastUpdated
+            }
+        };
     }
 
     void RefreshOperator()
@@ -1362,6 +1601,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             return false;
         }
 
+        if (_usingLocalCombat)
+        {
+            return SubmitPlayerIntentsOffline();
+        }
+
         try
         {
             var request = new
@@ -1401,6 +1645,57 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 }
             }
 
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+            Message = $"Error submitting intents:\n\n{ex.Message}\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.CombatSession;
+            return false;
+        }
+    }
+
+    bool SubmitPlayerIntentsOffline()
+    {
+        ApplyPendingRaidStateTransitions();
+        if (_raidState == RaidState.ExfilFailed)
+        {
+            return false;
+        }
+
+        try
+        {
+            var intents = new GUNRPG.Application.Dtos.IntentDto
+            {
+                Primary = Enum.TryParse<PrimaryAction>(SelectedPrimary, out var p) ? p : PrimaryAction.None,
+                Movement = Enum.TryParse<MovementAction>(SelectedMovement, out var m) ? m : MovementAction.Stand,
+                Stance = Enum.TryParse<StanceAction>(SelectedStance, out var st) ? st : StanceAction.None,
+                Cover = Enum.TryParse<CoverAction>(SelectedCover, out var c) ? c : CoverAction.None,
+                CancelMovement = false
+            };
+
+            var result = _localCombatService!.SubmitPlayerIntentsAsync(
+                ActiveSessionId!.Value,
+                new SubmitIntentsRequest { Intents = intents })
+                .GetAwaiter().GetResult();
+
+            if (!result.IsSuccess)
+            {
+                ErrorMessage = $"Intent submission failed: {result.ErrorMessage}";
+                Message = $"Intent submission failed:\n\n{result.ErrorMessage}\n\nPress OK to continue.";
+                CurrentScreen = Screen.Message;
+                ReturnScreen = Screen.CombatSession;
+                return false;
+            }
+
+            CurrentSession = ToLocalDto(result.Value!);
+            ApplyPendingRaidStateTransitions();
+            if (_raidState == RaidState.ExfilFailed)
+            {
+                return false;
+            }
             return true;
         }
         catch (Exception ex)
@@ -1932,6 +2227,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         }
 
         _raidState = RaidState.ExfilFailed;
+        _usingLocalCombat = false;
         ActiveSessionId = null;
         CurrentSession = null;
 
@@ -2178,6 +2474,16 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         return JsonSerializer.Deserialize<CombatSessionDto>(json.GetRawText(), jsonOptions);
     }
 
+    /// <summary>
+    /// Converts an Application-layer <see cref="GUNRPG.Application.Dtos.CombatSessionDto"/> to the
+    /// console client's local <see cref="CombatSessionDto"/> by serializing with enum-as-string
+    /// converters and then deserializing into the string-typed local model.
+    /// </summary>
+    CombatSessionDto ToLocalDto(GUNRPG.Application.Dtos.CombatSessionDto appDto)
+    {
+        var json = JsonSerializer.Serialize(appDto, options);
+        return JsonSerializer.Deserialize<CombatSessionDto>(json, options)!;
+    }
 }
 
 static class UI
