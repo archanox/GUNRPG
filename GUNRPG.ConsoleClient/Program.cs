@@ -15,7 +15,7 @@ using Hex1b;
 using Hex1b.Widgets;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
-var baseAddress = Environment.GetEnvironmentVariable("GUNRPG_API_BASE") ?? "http://localhost:5209";
+var baseAddress = ResolveServerAddress(args, Environment.GetEnvironmentVariable("GUNRPG_API_BASE"));
 var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 jsonOptions.Converters.Add(new JsonStringEnumConverter());
 
@@ -69,6 +69,90 @@ try
 }
 catch (OperationCanceledException)
 {
+}
+
+/// <summary>
+/// Resolves the server base address.
+/// Precedence: --server arg > GUNRPG_API_BASE env var > mDNS LAN discovery > localhost fallback.
+/// </summary>
+static string ResolveServerAddress(string[] args, string? envAddress)
+{
+    // 1. Check --server command-line argument
+    for (var i = 0; i < args.Length; i++)
+    {
+        if (args[i] == "--server" && i + 1 < args.Length)
+            return args[i + 1];
+        if (args[i].StartsWith("--server=", StringComparison.Ordinal))
+            return args[i]["--server=".Length..];
+    }
+
+    // 2. Check environment variable
+    if (!string.IsNullOrWhiteSpace(envAddress))
+        return envAddress;
+
+    // 3. mDNS LAN discovery
+    Console.Write("Scanning LAN for GUNRPG servers");
+    using var spinnerCts = new CancellationTokenSource();
+    var spinnerTask = Task.Run(async () =>
+    {
+        var frames = new[] { "|", "/", "-", "\\" };
+        var i = 0;
+        while (!spinnerCts.IsCancellationRequested)
+        {
+            Console.Write($"\rScanning LAN for GUNRPG servers... {frames[i++ % frames.Length]}");
+            try { await Task.Delay(100, spinnerCts.Token); }
+            catch (OperationCanceledException) { break; }
+        }
+    }, spinnerCts.Token);
+
+    List<LanDiscoveryService.DiscoveredServer> servers;
+    try
+    {
+        servers = LanDiscoveryService.DiscoverAsync(TimeSpan.FromSeconds(3)).GetAwaiter().GetResult();
+    }
+    catch
+    {
+        servers = [];
+    }
+
+    spinnerCts.Cancel();
+    spinnerTask.GetAwaiter().GetResult();
+    Console.WriteLine();
+
+    if (servers.Count > 0)
+    {
+        Console.WriteLine($"Found {servers.Count} GUNRPG server(s):");
+        for (var i = 0; i < servers.Count; i++)
+        {
+            var s = servers[i];
+            var versionInfo = s.Version != null ? $" v{s.Version}" : "";
+            var envInfo = s.Environment != null ? $" [{s.Environment}]" : "";
+            Console.WriteLine($"  [{i + 1}] {s.Hostname}:{s.Port}{versionInfo}{envInfo}");
+        }
+        Console.WriteLine($"  [0] Offline mode");
+        Console.Write("Select server (0 for offline): ");
+
+        var input = Console.ReadLine()?.Trim() ?? "";
+        if (int.TryParse(input, out var choice) && choice >= 1 && choice <= servers.Count)
+        {
+            var selected = servers[choice - 1];
+            var url = $"http://{selected.Hostname}:{selected.Port}";
+            if (selected.Version != null)
+            {
+                const string clientVersion = "0.1.0";
+                if (selected.Version != clientVersion)
+                    Console.WriteLine($"  ⚠ Version mismatch: server={selected.Version}, client={clientVersion}");
+            }
+            Console.WriteLine($"Connecting to {url}...");
+            return url;
+        }
+
+        Console.WriteLine("Starting in offline mode.");
+        return "http://localhost:5209";
+    }
+
+    Console.WriteLine("No GUNRPG servers found on LAN. Starting in offline mode.");
+    return "http://localhost:5209";
 }
 
 class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver, OfflineStore? offlineStore = null, LiteDB.LiteDatabase? offlineDb = null)
