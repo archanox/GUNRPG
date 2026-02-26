@@ -351,9 +351,29 @@ public sealed class OperatorExfilService
         if (aggregate.IsDead)
             return ServiceResult<Guid>.InvalidState("Dead operators cannot start infil");
 
-        // Must be in Base mode to start infil
-        if (aggregate.CurrentMode != OperatorMode.Base)
-            return ServiceResult<Guid>.InvalidState("Operator is already in Infil mode");
+        // If operator is already in Infil mode, check whether the 30-minute timer has expired.
+        // A lapsed timer means the client-side expiry fired but the server was never notified —
+        // auto-fail the stale infil so the player can re-infil without manual intervention.
+        if (aggregate.CurrentMode == OperatorMode.Infil)
+        {
+            if (aggregate.InfilStartTime.HasValue &&
+                (DateTimeOffset.UtcNow - aggregate.InfilStartTime.Value).TotalMinutes >= 30)
+            {
+                var failResult = await FailInfilAsync(operatorId, "Infil timer expired (30 minutes)");
+                if (!failResult.IsSuccess)
+                    return ServiceResult<Guid>.InvalidState($"Failed to clear expired infil: {failResult.ErrorMessage}");
+
+                // Reload aggregate with the operator now back in Base mode
+                loadResult = await LoadOperatorAsync(operatorId);
+                if (!loadResult.IsSuccess)
+                    return ServiceResult<Guid>.FromResult(MapLoadResultStatus(loadResult));
+                aggregate = loadResult.Value!;
+            }
+            else
+            {
+                return ServiceResult<Guid>.InvalidState("Operator is already in Infil mode");
+            }
+        }
 
         var sessionId = Guid.NewGuid();
         var infilStartTime = DateTimeOffset.UtcNow;
