@@ -55,16 +55,23 @@ app.Lifetime.ApplicationStarted.Register(() =>
     {
         var server = app.Services.GetRequiredService<IServer>();
         var addressesFeature = server.Features.Get<IServerAddressesFeature>();
-        var httpAddress = addressesFeature?.Addresses.FirstOrDefault(a => a.StartsWith("http://"));
-        if (httpAddress != null && Uri.TryCreate(httpAddress, UriKind.Absolute, out var uri))
+        var addresses = addressesFeature?.Addresses ?? [];
+
+        // Prefer HTTP for LAN discovery; fall back to HTTPS if that's all that's bound.
+        var address = addresses.FirstOrDefault(a => a.StartsWith("http://"))
+                   ?? addresses.FirstOrDefault(a => a.StartsWith("https://"));
+
+        if (address != null && Uri.TryCreate(address, UriKind.Absolute, out var uri))
         {
-            var port = (ushort)(uri.Port > 0 ? uri.Port : 80);
+            var port = (ushort)(uri.Port > 0 ? uri.Port : (uri.Scheme == "https" ? 443 : 80));
+            var version = typeof(Program).Assembly.GetName().Version?.ToString(3) ?? "0.1.0";
             var profile = new ServiceProfile("GUNRPG Server", "_gunrpg._tcp", port);
-            profile.AddProperty("version", "0.1.0");
+            profile.AddProperty("version", version);
             profile.AddProperty("environment", app.Environment.EnvironmentName);
+            profile.AddProperty("scheme", uri.Scheme);
             mdnsDiscovery = new ServiceDiscovery();
             mdnsDiscovery.Advertise(profile);
-            Console.WriteLine($"[mDNS] Advertising _gunrpg._tcp on port {port}");
+            Console.WriteLine($"[mDNS] Advertising _gunrpg._tcp on {uri.Scheme}://:{port}");
         }
     }
     catch (Exception ex)
