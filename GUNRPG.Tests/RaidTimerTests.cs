@@ -14,11 +14,11 @@ public sealed class RaidTimerTests
     }
 
     [Fact]
-    public void FormatRemainingLabel_ShowsCriticalIndicatorWhenUnderFiveSeconds()
+    public void FormatRemainingLabel_UsesCriticalPrefixWhenUnderFiveSeconds()
     {
         var label = RaidTimer.FormatRemainingLabel(TimeSpan.FromSeconds(4));
 
-        Assert.Equal("EXFIL WINDOW: 00:04 REMAINING [!!!]", label);
+        Assert.Equal("🚨 EXFIL WINDOW: 00:04 REMAINING", label);
     }
 
     [Fact]
@@ -37,6 +37,6 @@ public sealed class RaidTimerTests
         var high = RaidTimer.FormatRemainingLabel(TimeSpan.FromSeconds(8));
 
         Assert.StartsWith("⚠️ ", medium);
-        Assert.StartsWith("🚨 ", high);
+        Assert.StartsWith("⚠︎ ", high);
     }
 }

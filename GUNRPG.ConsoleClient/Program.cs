@@ -2725,10 +2725,10 @@ public static class RaidTimer
         var formatted = $"EXFIL WINDOW: {clamped.Minutes:00}:{clamped.Seconds:00} REMAINING";
 
         if (clamped <= TimeSpan.FromSeconds(5))
-            return $"{formatted} [!!!]";
+            return $"🚨 {formatted}";
 
         if (clamped <= TimeSpan.FromSeconds(10))
-            return $"🚨 {formatted}";
+            return $"⚠︎ {formatted}";
 
         if (clamped <= TimeSpan.FromSeconds(30))
             return $"⚠️ {formatted}";
