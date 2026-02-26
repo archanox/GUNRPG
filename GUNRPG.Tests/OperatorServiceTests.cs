@@ -483,4 +483,54 @@ public sealed class OperatorServiceTests : IDisposable
         var afterRepair = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
         Assert.Equal(newSessionId, afterRepair.Value!.ActiveCombatSessionId);
     }
+
+    [Fact]
+    public async Task ProcessCombatOutcomeAsync_WithEmptySessionId_ReturnsValidationError()
+    {
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        var result = await _operatorService.ProcessCombatOutcomeAsync(operatorId, new ProcessOutcomeRequest
+        {
+            SessionId = Guid.Empty
+        });
+
+        Assert.Equal(ResultStatus.ValidationError, result.Status);
+    }
+
+    [Fact]
+    public async Task ProcessCombatOutcomeAsync_WithNoActiveSession_ReturnsInvalidState()
+    {
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        var result = await _operatorService.ProcessCombatOutcomeAsync(operatorId, new ProcessOutcomeRequest
+        {
+            SessionId = Guid.NewGuid()
+        });
+
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+    }
+
+    [Fact]
+    public async Task ProcessCombatOutcomeAsync_WithMismatchedSessionId_ReturnsInvalidState()
+    {
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        var infilResult = await _operatorService.StartInfilAsync(operatorId);
+        Assert.True(infilResult.IsSuccess);
+
+        await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
+
+        var result = await _operatorService.ProcessCombatOutcomeAsync(operatorId, new ProcessOutcomeRequest
+        {
+            SessionId = Guid.NewGuid()
+        });
+
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+    }
 }
