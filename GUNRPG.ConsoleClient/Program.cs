@@ -23,7 +23,7 @@ var offlineDbPath = Path.Combine(
     ".gunrpg", "offline.db");
 var consoleServices = InfrastructureServiceExtensions.CreateConsoleServices(
     httpClient, offlineDbPath, jsonOptions);
-using var _ = consoleServices.offlineDb; // ensure disposal
+using var offlineDbHandle = consoleServices.offlineDb; // ensure disposal
 var backendResolver = consoleServices.backendResolver;
 
 // Resolve game backend based on server reachability and local state
@@ -1068,12 +1068,16 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                                 try
                                 {
                                     // Delete the session server-side so it won't auto-resume
-                                    var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult();
-                                    deleteResponse.Dispose();
+                                    using var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult();
+                                    if (!deleteResponse.IsSuccessStatusCode)
+                                    {
+                                        ErrorMessage = $"Failed to delete session: {deleteResponse.StatusCode}";
+                                    }
                                 }
-                                catch
+                                catch (Exception ex)
                                 {
                                     // If delete fails, still clear locally - better than nothing
+                                    ErrorMessage ??= $"Failed to delete session: {ex.Message}";
                                 }
                             }
                             ActiveSessionId = null;
