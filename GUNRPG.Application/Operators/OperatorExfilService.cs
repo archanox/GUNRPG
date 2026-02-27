@@ -21,7 +21,7 @@ namespace GUNRPG.Application.Operators;
 /// </summary>
 public sealed class OperatorExfilService
 {
-    private const int InfilTimerMinutes = 30;
+    public const int InfilTimerMinutes = 30;
 
     private readonly IOperatorEventStore _eventStore;
 

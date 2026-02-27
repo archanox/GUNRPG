@@ -25,6 +25,9 @@ public sealed class OperatorServiceTests : IDisposable
     private readonly CombatSessionService _sessionService;
     private readonly OperatorService _operatorService;
 
+    /// <summary>Minutes past the 30-minute infil window used to create backdated expired infils in tests.</summary>
+    private const int ExpiredInfilMinutes = -(OperatorExfilService.InfilTimerMinutes + 1);
+
     public OperatorServiceTests()
     {
         _database = new LiteDatabase(":memory:");
@@ -535,56 +538,94 @@ public sealed class OperatorServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task FailInfilAsync_WhileInInfil_TransitionsOperatorToBaseMode()
+    public async Task GetOperatorAsync_WhenInfilTimerExpired_AutoFailsInfilAndReturnsBaseMode()
     {
-        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
+        // Arrange: use an in-memory event store so we can back-date the InfilStartedEvent
+        var expiredEventStore = new InMemoryOperatorEventStore();
+        var expiredExfilService = new OperatorExfilService(expiredEventStore);
+        var sessionStore = new LiteDbCombatSessionStore(_database);
+        var sessionService = new CombatSessionService(sessionStore, expiredEventStore);
+        var svc = new OperatorService(expiredExfilService, sessionService, expiredEventStore);
+
+        var createResult = await expiredExfilService.CreateOperatorAsync("TimerExpiredOp");
         Assert.True(createResult.IsSuccess);
-        var operatorId = createResult.Value!.Id;
+        var operatorId = createResult.Value!;
 
-        var infilResult = await _operatorService.StartInfilAsync(operatorId);
-        Assert.True(infilResult.IsSuccess);
+        // Directly append a backdated InfilStartedEvent (31 minutes ago)
+        var existingEvents = await expiredEventStore.LoadEventsAsync(operatorId);
+        var previousHash = existingEvents[^1].Hash;
+        var expiredInfilEvent = new InfilStartedEvent(
+            operatorId,
+            sequenceNumber: 1,
+            sessionId: Guid.NewGuid(),
+            lockedLoadout: "SOKOL 545",
+            infilStartTime: DateTimeOffset.UtcNow.AddMinutes(ExpiredInfilMinutes),
+            previousHash: previousHash);
+        await expiredEventStore.AppendEventAsync(expiredInfilEvent);
 
-        var failResult = await _operatorService.FailInfilAsync(operatorId, "Infil timer expired");
+        // Pre-condition: operator is in Infil mode
+        var before = await expiredExfilService.LoadOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Infil, before.Value!.CurrentMode);
 
-        Assert.True(failResult.IsSuccess);
+        // Act: GET the operator — server should auto-fail the expired infil
+        var dto = await svc.GetOperatorAsync(operatorId.Value);
 
-        var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
-        Assert.True(loadResult.IsSuccess);
-        var aggregate = loadResult.Value!;
-        Assert.Equal(GUNRPG.Core.Operators.OperatorMode.Base, aggregate.CurrentMode);
-        Assert.Null(aggregate.InfilStartTime);
-        Assert.Equal(0, aggregate.ExfilStreak);
+        // Assert: returned state is Base mode
+        Assert.True(dto.IsSuccess);
+        Assert.Equal(OperatorMode.Base, dto.Value!.CurrentMode);
+        Assert.Null(dto.Value!.InfilStartTime);
     }
 
     [Fact]
-    public async Task FailInfilAsync_WhenNotInInfil_ReturnsInvalidState()
+    public async Task GetOperatorAsync_WhenInfilTimerExpired_ThenChangeLoadoutSucceeds()
     {
-        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
+        // Arrange: operator with an expired infil
+        var expiredEventStore = new InMemoryOperatorEventStore();
+        var expiredExfilService = new OperatorExfilService(expiredEventStore);
+        var sessionStore = new LiteDbCombatSessionStore(_database);
+        var sessionService = new CombatSessionService(sessionStore, expiredEventStore);
+        var svc = new OperatorService(expiredExfilService, sessionService, expiredEventStore);
+
+        var createResult = await expiredExfilService.CreateOperatorAsync("LoadoutTestOp");
         Assert.True(createResult.IsSuccess);
-        var operatorId = createResult.Value!.Id;
+        var operatorId = createResult.Value!;
 
-        // Operator is in Base mode, not Infil
-        var failResult = await _operatorService.FailInfilAsync(operatorId, "Infil timer expired");
+        var existingEvents = await expiredEventStore.LoadEventsAsync(operatorId);
+        var previousHash = existingEvents[^1].Hash;
+        var expiredInfilEvent = new InfilStartedEvent(
+            operatorId,
+            sequenceNumber: 1,
+            sessionId: Guid.NewGuid(),
+            lockedLoadout: "SOKOL 545",
+            infilStartTime: DateTimeOffset.UtcNow.AddMinutes(ExpiredInfilMinutes),
+            previousHash: previousHash);
+        await expiredEventStore.AppendEventAsync(expiredInfilEvent);
 
-        Assert.Equal(ResultStatus.InvalidState, failResult.Status);
-    }
+        // Act: GET auto-fails the infil; then loadout change should work
+        var getResult = await svc.GetOperatorAsync(operatorId.Value);
+        Assert.True(getResult.IsSuccess);
+        Assert.Equal(OperatorMode.Base, getResult.Value!.CurrentMode);
 
-    [Fact]
-    public async Task FailInfilAsync_ThenChangeLoadout_Succeeds()
-    {
-        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
-        Assert.True(createResult.IsSuccess);
-        var operatorId = createResult.Value!.Id;
-
-        var infilResult = await _operatorService.StartInfilAsync(operatorId);
-        Assert.True(infilResult.IsSuccess);
-
-        // Simulate timer expiry: fail the infil server-side
-        var failResult = await _operatorService.FailInfilAsync(operatorId, "Infil timer expired");
-        Assert.True(failResult.IsSuccess);
-
-        // After server-side fail, loadout change should succeed (operator is back in Base mode)
-        var loadoutResult = await _operatorService.ChangeLoadoutAsync(operatorId, new ChangeLoadoutRequest { WeaponName = "SOKOL 545" });
+        var loadoutResult = await svc.ChangeLoadoutAsync(operatorId.Value, new ChangeLoadoutRequest { WeaponName = "STURMWOLF 45" });
         Assert.True(loadoutResult.IsSuccess);
+    }
+
+    [Fact]
+    public async Task GetOperatorAsync_WhenInfilNotExpired_DoesNotAutoFail()
+    {
+        // Arrange: operator with a fresh (non-expired) infil
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "FreshInfilOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        var infilResult = await _operatorService.StartInfilAsync(operatorId);
+        Assert.True(infilResult.IsSuccess);
+
+        // Act: GET should NOT auto-fail a non-expired infil
+        var dto = await _operatorService.GetOperatorAsync(operatorId);
+
+        Assert.True(dto.IsSuccess);
+        Assert.Equal(OperatorMode.Infil, dto.Value!.CurrentMode);
+        Assert.NotNull(dto.Value!.InfilStartTime);
     }
 }

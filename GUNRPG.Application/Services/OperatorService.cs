@@ -61,7 +61,9 @@ public sealed class OperatorService
 
     /// <summary>
     /// Gets the current state of an operator, including their active combat session if present.
-    /// This is a read-only operation that does not modify operator state.
+    /// If the operator is in Infil mode and the 30-minute timer has expired, the infil is
+    /// automatically failed before returning state. This enforces the timer server-side so that
+    /// no client action is required to transition out of a timed-out infil.
     /// </summary>
     public async Task<ServiceResult<OperatorStateDto>> GetOperatorAsync(Guid operatorId)
     {
@@ -71,7 +73,31 @@ public sealed class OperatorService
             return ServiceResult<OperatorStateDto>.FromResult(loadResult);
         }
 
-        var operatorDto = ToDto(loadResult.Value!);
+        var aggregate = loadResult.Value!;
+
+        // Server-authoritative timer enforcement: if the operator is in Infil mode and the
+        // 30-minute window has passed, auto-fail the infil here. This mirrors the same guard
+        // in StartInfilAsync and ensures that any GET (e.g. RefreshOperator after the client
+        // shows the ExfilFailed screen) returns Base-mode state, preventing the client from
+        // re-displaying the ExfilFailed dialog on subsequent screens.
+        if (aggregate.CurrentMode == OperatorMode.Infil &&
+            (!aggregate.InfilStartTime.HasValue ||
+             (DateTimeOffset.UtcNow - aggregate.InfilStartTime.Value).TotalMinutes >= OperatorExfilService.InfilTimerMinutes))
+        {
+            var failResult = await _exfilService.FailInfilAsync(new OperatorId(operatorId), "Infil timer expired (30 minutes)");
+            if (failResult.IsSuccess)
+            {
+                // Reload so the returned DTO reflects Base mode
+                loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+                if (!loadResult.IsSuccess)
+                    return ServiceResult<OperatorStateDto>.FromResult(loadResult);
+                aggregate = loadResult.Value!;
+            }
+            // If auto-fail fails for any reason, fall through and return current (Infil) state;
+            // StartInfilAsync has the same recovery path for the next infil attempt.
+        }
+
+        var operatorDto = ToDto(aggregate);
         
         // If operator has an active combat session, load and include it
         if (operatorDto.ActiveCombatSessionId.HasValue)
@@ -323,11 +349,6 @@ public sealed class OperatorService
     public async Task<ServiceResult> CompleteInfilAsync(Guid operatorId)
     {
         return await _exfilService.CompleteInfilSuccessfullyAsync(new OperatorId(operatorId));
-    }
-
-    public async Task<ServiceResult> FailInfilAsync(Guid operatorId, string reason)
-    {
-        return await _exfilService.FailInfilAsync(new OperatorId(operatorId), reason);
     }
 
     public async Task<ServiceResult<OperatorStateDto>> ChangeLoadoutAsync(Guid operatorId, ChangeLoadoutRequest request)
