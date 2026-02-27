@@ -124,6 +124,55 @@ public sealed class ExfilSyncServiceTests : IDisposable
         Assert.False(result.IsIntegrityFailure); // transient error, allow retry
     }
 
+    [Fact]
+    public async Task SyncAsync_Succeeds_WhenLocalSnapshotMatchesFirstEnvelope_EvenIfServerStateDiffers()
+    {
+        // The local infil snapshot (Infil mode) matches the first envelope's initial hash.
+        // The server returns a Base-mode operator (simulating expired-infil auto-fail).
+        // The sync should succeed by using the local snapshot, not the server state.
+        var store = new OfflineStore(_database);
+        var infilDto = CreateTestOperator("op-1", "TestOp"); // CurrentMode = "Infil"
+        store.SaveInfiledOperator(infilDto);
+        var infilHash = OfflineMissionHashing.ComputeOperatorStateHash(infilDto);
+        SaveEnvelope(store, 1, infilHash, "result-hash");
+
+        // Server returns a Base-mode operator (different hash — would have caused mismatch without the fix)
+        var baseModeDto = CreateTestOperator("op-1", "TestOp");
+        baseModeDto.CurrentMode = "Base";
+        var handler = new QueueHandler(baseModeDto, HttpStatusCode.OK);
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://localhost") };
+        var backend = new OnlineGameBackend(client, store);
+        var service = new ExfilSyncService(store, backend);
+
+        var result = await service.SyncAsync("op-1");
+
+        Assert.True(result.Success);
+        Assert.Equal(1, result.EnvelopesSynced);
+        Assert.Equal(new long[] { 1 }, handler.SequenceNumbers);
+    }
+
+    [Fact]
+    public async Task SyncAsync_IntegrityFailure_WhenLocalSnapshotDoesNotMatchFirstEnvelope()
+    {
+        // A local snapshot exists but does not match the first envelope — integrity failure.
+        var store = new OfflineStore(_database);
+        var infilDto = CreateTestOperator("op-1", "TestOp");
+        store.SaveInfiledOperator(infilDto);
+        // Envelope initial hash intentionally does NOT match the snapshot
+        SaveEnvelope(store, 1, "wrong_initial_hash", "h1");
+
+        var handler = new QueueHandler(); // No GET or POST expected
+        using var client = new HttpClient(handler) { BaseAddress = new Uri("http://localhost") };
+        var backend = new OnlineGameBackend(client, store);
+        var service = new ExfilSyncService(store, backend);
+
+        var result = await service.SyncAsync("op-1");
+
+        Assert.False(result.Success);
+        Assert.True(result.IsIntegrityFailure);
+        Assert.Empty(handler.SequenceNumbers);
+    }
+
     private static OperatorDto CreateTestOperator(string id, string name) => new()
     {
         Id = id,

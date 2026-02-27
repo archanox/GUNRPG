@@ -466,19 +466,23 @@ public sealed class OperatorService
             return ServiceResult.InvalidState("First offline mission envelope must begin at sequence 1");
         }
 
-        var currentStateResult = await GetOperatorAsync(operatorId);
-        if (!currentStateResult.IsSuccess)
+        // Load raw operator state without the infil timer auto-fail mutation.
+        // GetOperatorAsync would transition Infil→Base before returning state, causing a
+        // spurious hash mismatch against the first envelope's InitialOperatorStateHash which
+        // was computed while the operator was still in Infil mode.
+        var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+        if (!loadResult.IsSuccess)
         {
-            return currentStateResult.Status switch
+            return loadResult.Status switch
             {
-                ResultStatus.NotFound => ServiceResult.NotFound(currentStateResult.ErrorMessage),
-                ResultStatus.InvalidState => ServiceResult.InvalidState(currentStateResult.ErrorMessage!),
-                ResultStatus.ValidationError => ServiceResult.ValidationError(currentStateResult.ErrorMessage!),
-                _ => ServiceResult.InvalidState(currentStateResult.ErrorMessage!)
+                ResultStatus.NotFound => ServiceResult.NotFound(loadResult.ErrorMessage),
+                ResultStatus.InvalidState => ServiceResult.InvalidState(loadResult.ErrorMessage!),
+                ResultStatus.ValidationError => ServiceResult.ValidationError(loadResult.ErrorMessage!),
+                _ => ServiceResult.InvalidState(loadResult.ErrorMessage!)
             };
         }
 
-        var currentState = currentStateResult.Value!;
+        var currentState = ToDto(loadResult.Value!);
         if (previous == null)
         {
             // First accepted envelope for this operator is anchored to current server operator state.

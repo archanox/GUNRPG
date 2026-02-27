@@ -1,3 +1,4 @@
+using System.Text.Json;
 using GUNRPG.Application.Backend;
 using GUNRPG.Infrastructure.Persistence;
 
@@ -32,18 +33,33 @@ public sealed class ExfilSyncService : IExfilSyncService
         OfflineMissionEnvelope? previous = latestSynced;
 
         // When there is no previously synced envelope, validate the first envelope's
-        // InitialOperatorStateHash against the server's current operator state.
-        // This detects fabricated chains early and provides faster user feedback.
+        // InitialOperatorStateHash against the locally stored infil snapshot.
+        // Using the local snapshot (rather than fetching from the server) avoids triggering
+        // the server-side auto-fail of an expired infil timer, which would mutate the operator
+        // from Infil mode to Base mode and cause a spurious hash mismatch.
         if (previous == null)
         {
-            var serverDto = await _onlineBackend.GetOperatorAsync(operatorId);
-            if (serverDto != null)
+            var infiledSnapshot = _offlineStore.GetInfiledOperator(operatorId);
+            OperatorDto? anchorDto = null;
+            if (infiledSnapshot != null)
             {
-                var serverHash = OfflineMissionHashing.ComputeOperatorStateHash(serverDto);
+                anchorDto = JsonSerializer.Deserialize<OperatorDto>(infiledSnapshot.SnapshotJson,
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            }
+
+            if (anchorDto == null)
+            {
+                // No local snapshot available — fall back to server state for validation.
+                anchorDto = await _onlineBackend.GetOperatorAsync(operatorId);
+            }
+
+            if (anchorDto != null)
+            {
+                var anchorHash = OfflineMissionHashing.ComputeOperatorStateHash(anchorDto);
                 var firstEnvelope = pending[0];
-                if (!string.Equals(firstEnvelope.InitialOperatorStateHash, serverHash, StringComparison.Ordinal))
+                if (!string.Equals(firstEnvelope.InitialOperatorStateHash, anchorHash, StringComparison.Ordinal))
                 {
-                    var reason = $"Initial state hash mismatch for operator {operatorId}: server hash does not match first envelope's initial hash (seq={firstEnvelope.SequenceNumber}).";
+                    var reason = $"Initial state hash mismatch for operator {operatorId}: snapshot hash does not match first envelope's initial hash (seq={firstEnvelope.SequenceNumber}).";
                     Console.WriteLine($"[SYNC] FAIL — {reason}");
                     return SyncResult.Fail(reason, isIntegrityFailure: true);
                 }

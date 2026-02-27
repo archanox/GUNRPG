@@ -1,5 +1,6 @@
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Backend;
+using GUNRPG.Application.Mapping;
 using GUNRPG.Application.Operators;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Results;
@@ -664,5 +665,104 @@ public sealed class OperatorServiceTests : IDisposable
         Assert.True(dto.IsSuccess);
         Assert.Equal(OperatorMode.Base, dto.Value!.CurrentMode);
         Assert.Equal(0, dto.Value!.ExfilStreak);
+    }
+
+    [Fact]
+    public async Task SyncOfflineMission_WithExpiredInfil_SucceedsUsingRawStateHash()
+    {
+        // When an infil timer expires, GetOperatorAsync would auto-fail (Infil→Base), which
+        // previously caused SyncOfflineMission to fail because the Base-mode hash didn't match
+        // the first envelope's InitialOperatorStateHash (computed while the operator was in Infil mode).
+        // The fix loads raw state without triggering auto-fail, so the hash still matches.
+
+        var expiredEventStore = new InMemoryOperatorEventStore();
+        var expiredExfilService = new OperatorExfilService(expiredEventStore);
+        var sessionStore = new LiteDbCombatSessionStore(_database);
+        var sessionService = new CombatSessionService(sessionStore, expiredEventStore);
+        var svc = new OperatorService(expiredExfilService, sessionService, expiredEventStore);
+
+        var createResult = await expiredExfilService.CreateOperatorAsync("ExpiredSyncOp");
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!;
+
+        // Append a backdated InfilStartedEvent so the timer appears expired
+        var existingEvents = await expiredEventStore.LoadEventsAsync(operatorId);
+        var lastEvent = existingEvents[^1];
+        var expiredInfilEvent = new InfilStartedEvent(
+            operatorId,
+            sequenceNumber: lastEvent.SequenceNumber + 1,
+            sessionId: Guid.NewGuid(),
+            lockedLoadout: "SOKOL 545",
+            infilStartTime: DateTimeOffset.UtcNow.AddMinutes(ExpiredInfilMinutes),
+            previousHash: lastEvent.Hash);
+        await expiredEventStore.AppendEventAsync(expiredInfilEvent);
+
+        // Load the raw aggregate — still in Infil mode before any auto-fail
+        var rawLoad = await expiredExfilService.LoadOperatorAsync(operatorId);
+        var agg = rawLoad.Value!;
+        Assert.Equal(OperatorMode.Infil, agg.CurrentMode);
+
+        var petDto = agg.PetState != null ? SessionMapping.ToDto(agg.PetState) : null;
+
+        // Build the initial hash from the raw Infil-mode state
+        var infilStateDto = new OperatorStateDto
+        {
+            Id = agg.Id.Value,
+            Name = agg.Name,
+            TotalXp = agg.TotalXp,
+            CurrentHealth = agg.CurrentHealth,
+            MaxHealth = agg.MaxHealth,
+            EquippedWeaponName = agg.EquippedWeaponName,
+            UnlockedPerks = agg.UnlockedPerks.ToList(),
+            ExfilStreak = agg.ExfilStreak,
+            IsDead = agg.IsDead,
+            CurrentMode = agg.CurrentMode,
+            InfilStartTime = agg.InfilStartTime,
+            InfilSessionId = agg.InfilSessionId,
+            ActiveCombatSessionId = agg.ActiveCombatSessionId,
+            LockedLoadout = agg.LockedLoadout,
+            Pet = petDto
+        };
+        var initialHash = OfflineMissionHashing.ComputeOperatorStateHash(infilStateDto);
+
+        // Build the expected result hash: victory (+100 XP, operator alive, still Infil mode)
+        var resultDto = new OperatorDto
+        {
+            Id = agg.Id.Value.ToString(),
+            Name = agg.Name,
+            TotalXp = agg.TotalXp + 100,
+            CurrentHealth = agg.CurrentHealth,
+            MaxHealth = agg.MaxHealth,
+            EquippedWeaponName = agg.EquippedWeaponName,
+            UnlockedPerks = agg.UnlockedPerks.ToList(),
+            ExfilStreak = agg.ExfilStreak,
+            IsDead = false,
+            CurrentMode = "Infil",
+            ActiveCombatSessionId = null,
+            InfilSessionId = agg.InfilSessionId,
+            InfilStartTime = agg.InfilStartTime,
+            LockedLoadout = agg.LockedLoadout,
+            Pet = petDto
+        };
+        var resultHash = OfflineMissionHashing.ComputeOperatorStateHash(resultDto);
+
+        var envelope = new OfflineMissionEnvelope
+        {
+            OperatorId = operatorId.Value.ToString(),
+            SequenceNumber = 1,
+            RandomSeed = 42,
+            InitialOperatorStateHash = initialHash,
+            ResultOperatorStateHash = resultHash,
+            FullBattleLog = new List<BattleLogEntryDto>
+            {
+                new() { EventType = "Damage", TimeMs = 1, Message = "Enemy took 10 damage (Torso)!" }
+            },
+            ExecutedUtc = DateTime.UtcNow
+        };
+
+        // Act: SyncOfflineMission should succeed using raw state (not the auto-failed Base state)
+        var result = await svc.SyncOfflineMission(envelope);
+
+        Assert.True(result.IsSuccess, $"Expected success but got: {result.ErrorMessage}");
     }
 }
