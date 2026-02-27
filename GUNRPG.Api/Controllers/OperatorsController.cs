@@ -247,33 +247,6 @@ public class OperatorsController : ControllerBase
     }
 
     /// <summary>
-    /// Fails the current infiltration (timer expired client-side).
-    /// </summary>
-    /// <param name="id">The operator's unique identifier.</param>
-    /// <returns>Success on infil failure processing.</returns>
-    /// <response code="200">Infiltration failure processed successfully.</response>
-    /// <response code="400">Operator is in an invalid state to fail infiltration.</response>
-    /// <response code="404">Operator not found.</response>
-    /// <response code="500">An unexpected error occurred.</response>
-    [HttpPost("{id:guid}/infil/fail")]
-    [ProducesResponseType(StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult> FailInfil(Guid id)
-    {
-        var result = await _service.FailInfilAsync(id, "Infil timer expired");
-        
-        return result.Status switch
-        {
-            ResultStatus.Success => Ok(),
-            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
-            ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
-            _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
-        };
-    }
-
-    /// <summary>
     /// Changes the operator's weapon loadout.
     /// </summary>
     /// <param name="id">The operator's unique identifier.</param>
