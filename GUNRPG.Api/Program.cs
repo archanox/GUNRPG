@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json.Serialization;
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Combat;
@@ -69,6 +70,20 @@ app.Lifetime.ApplicationStarted.Register(() =>
             profile.AddProperty("version", version);
             profile.AddProperty("environment", app.Environment.EnvironmentName);
             profile.AddProperty("scheme", uri.Scheme);
+            // ServiceProfile derives HostName from the instance name, so "GUNRPG Server"
+            // produces "GUNRPG\032Server.gunrpg.local" as the SRV Target — not a valid URI
+            // host. The library offers no way to specify a custom hostname at construction
+            // time, so we post-mutate the Resources to override the SRV Target and address
+            // record Names with the machine's actual hostname. Dns.GetHostName() returns the
+            // OS-level hostname (always a valid DNS label); appending ".local" is correct for
+            // mDNS (RFC 6762).
+            var machineHost = new DomainName(Dns.GetHostName().ToLower() + ".local");
+            profile.HostName = machineHost;
+            foreach (var rec in profile.Resources)
+            {
+                if (rec is SRVRecord srvRec) srvRec.Target = machineHost;
+                else if (rec is AddressRecord addrRec) addrRec.Name = machineHost;
+            }
             mdnsDiscovery = new ServiceDiscovery();
             mdnsDiscovery.Advertise(profile);
             Console.WriteLine($"[mDNS] Advertising _gunrpg._tcp on {uri.Scheme}://:{port}");

@@ -128,7 +128,7 @@ static string ResolveServerAddress(string[] args, string? envAddress)
             var s = servers[i];
             var versionInfo = s.Version != null ? $" v{s.Version}" : "";
             var envInfo = s.Environment != null ? $" [{s.Environment}]" : "";
-            Console.WriteLine($"  [{i + 1}] {s.Hostname}:{s.Port}{versionInfo}{envInfo}");
+            Console.WriteLine($"  [{i + 1}] {s.DisplayName} ({s.Hostname}:{s.Port}){versionInfo}{envInfo}");
         }
         Console.WriteLine($"  [0] Offline mode");
         Console.Write("Select server (0 for offline): ");
