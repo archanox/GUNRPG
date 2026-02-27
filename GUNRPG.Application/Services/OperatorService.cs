@@ -85,16 +85,18 @@ public sealed class OperatorService
              (DateTimeOffset.UtcNow - aggregate.InfilStartTime.Value).TotalMinutes >= OperatorExfilService.InfilTimerMinutes))
         {
             var failResult = await _exfilService.FailInfilAsync(new OperatorId(operatorId), "Infil timer expired (30 minutes)");
-            if (failResult.IsSuccess)
+            if (!failResult.IsSuccess)
             {
-                // Reload so the returned DTO reflects Base mode
-                loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
-                if (!loadResult.IsSuccess)
-                    return ServiceResult<OperatorStateDto>.FromResult(loadResult);
-                aggregate = loadResult.Value!;
+                // If the auto-fail write fails (including due to a concurrent state change),
+                // surface the error instead of returning potentially stale Infil state.
+                return ServiceResult<OperatorStateDto>.FromResult(failResult);
             }
-            // If auto-fail fails for any reason, fall through and return current (Infil) state;
-            // StartInfilAsync has the same recovery path for the next infil attempt.
+
+            // Reload so the returned DTO reflects Base mode
+            loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+            if (!loadResult.IsSuccess)
+                return ServiceResult<OperatorStateDto>.FromResult(loadResult);
+            aggregate = loadResult.Value!;
         }
 
         var operatorDto = ToDto(aggregate);
