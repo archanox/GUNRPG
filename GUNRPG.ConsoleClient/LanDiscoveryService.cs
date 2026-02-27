@@ -1,3 +1,5 @@
+using System.Net;
+using System.Text.RegularExpressions;
 using Makaretu.Dns;
 
 /// <summary>
@@ -5,6 +7,9 @@ using Makaretu.Dns;
 /// </summary>
 internal static class LanDiscoveryService
 {
+    // Matches DNS master-zone decimal escape sequences, e.g. \032 (space).
+    private static readonly Regex DnsEscapeRegex = new(@"\\(\d{3})", RegexOptions.Compiled);
+
     public record DiscoveredServer(string Hostname, int Port, string? Version, string? Environment, string Scheme = "http");
 
     /// <summary>
@@ -38,7 +43,25 @@ internal static class LanDiscoveryService
                 .FirstOrDefault(s => s.StartsWith("scheme=", StringComparison.Ordinal))
                 ?["scheme=".Length..] ?? "http";
 
-            var hostname = srv.Target.ToString().TrimEnd('.');
+            // Decode DNS master-zone escape sequences (e.g., \032 → space).
+            var hostname = DnsEscapeRegex.Replace(
+                srv.Target.ToString().TrimEnd('.'),
+                m => ((char)int.Parse(m.Groups[1].Value)).ToString());
+
+            // If the decoded hostname is still not valid in a URI (e.g., contains spaces
+            // from a server machine whose hostname has special characters), fall back to a
+            // routable IPv4 address from the additional A records in the mDNS response.
+            if (Uri.CheckHostName(hostname) == UriHostNameType.Unknown)
+            {
+                var ip = e.Message.AdditionalRecords.OfType<ARecord>()
+                    .Select(a => a.Address)
+                    .FirstOrDefault(a => !IPAddress.IsLoopback(a) && !a.IsIPv6LinkLocal
+                        && !(a.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+                             && a.GetAddressBytes() is [169, 254, ..]));
+                if (ip == null) return;
+                hostname = ip.ToString();
+            }
+
             var port = srv.Port;
 
             lock (discovered)
