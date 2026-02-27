@@ -2293,12 +2293,36 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     void ApplyPendingRaidStateTransitions()
     {
+        bool failureTriggered;
         lock (_raidStateLock)
         {
+            failureTriggered = _exfilFailureRequested;
             if (_exfilFailureRequested)
             {
                 _exfilFailureRequested = false;
                 ForceExfilFailure();
+            }
+        }
+
+        // Notify the server that the infil timer expired so its state matches the client.
+        // This prevents RefreshOperator() from fetching stale Infil-mode state and re-triggering
+        // the ExfilFailed dialog. Done outside the lock to avoid blocking it during HTTP.
+        // NOTE: GetAwaiter().GetResult() is consistent with all other HTTP calls in this codebase;
+        // hex1b event handlers are synchronous and run outside ASP.NET SynchronizationContext.
+        if (failureTriggered && CurrentOperatorId.HasValue && backend is OnlineGameBackend)
+        {
+            try
+            {
+                client.PostAsync($"operators/{CurrentOperatorId}/infil/fail", null).GetAwaiter().GetResult();
+            }
+            catch (HttpRequestException)
+            {
+                // Non-fatal: local state is already cleared; StartInfilAsync will auto-fail
+                // any stale infil on the next infil attempt.
+            }
+            catch (TaskCanceledException)
+            {
+                // Non-fatal: request timed out; same recovery path as HttpRequestException.
             }
         }
     }
