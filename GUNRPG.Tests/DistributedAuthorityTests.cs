@@ -273,7 +273,7 @@ public class DistributedAuthorityTests
         await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
 
         Assert.Equal(3, authorityA.GetActionLog().Count);
-        Assert.Equal(1, authorityB.GetActionLog().Count);
+        Assert.Single(authorityB.GetActionLog());
 
         // Reconnect
         transportA.ConnectTo(transportB);

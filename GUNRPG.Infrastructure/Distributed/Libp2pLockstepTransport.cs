@@ -47,7 +47,7 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
         await HandleChannelAsync(channel, context);
     }
 
-    // ISessionProtocol - called when a remote peer connects
+    // ISessionListenerProtocol - called when a remote peer connects
     public async Task ListenAsync(IChannel channel, ISessionContext context)
     {
         await HandleChannelAsync(channel, context);
