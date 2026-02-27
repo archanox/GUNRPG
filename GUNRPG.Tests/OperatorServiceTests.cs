@@ -553,14 +553,14 @@ public sealed class OperatorServiceTests : IDisposable
 
         // Directly append a backdated InfilStartedEvent (31 minutes ago)
         var existingEvents = await expiredEventStore.LoadEventsAsync(operatorId);
-        var previousHash = existingEvents[^1].Hash;
+        var lastEvent = existingEvents[^1];
         var expiredInfilEvent = new InfilStartedEvent(
             operatorId,
-            sequenceNumber: 1,
+            sequenceNumber: lastEvent.SequenceNumber + 1,
             sessionId: Guid.NewGuid(),
             lockedLoadout: "SOKOL 545",
             infilStartTime: DateTimeOffset.UtcNow.AddMinutes(ExpiredInfilMinutes),
-            previousHash: previousHash);
+            previousHash: lastEvent.Hash);
         await expiredEventStore.AppendEventAsync(expiredInfilEvent);
 
         // Pre-condition: operator is in Infil mode
@@ -591,14 +591,14 @@ public sealed class OperatorServiceTests : IDisposable
         var operatorId = createResult.Value!;
 
         var existingEvents = await expiredEventStore.LoadEventsAsync(operatorId);
-        var previousHash = existingEvents[^1].Hash;
+        var lastEvent = existingEvents[^1];
         var expiredInfilEvent = new InfilStartedEvent(
             operatorId,
-            sequenceNumber: 1,
+            sequenceNumber: lastEvent.SequenceNumber + 1,
             sessionId: Guid.NewGuid(),
             lockedLoadout: "SOKOL 545",
             infilStartTime: DateTimeOffset.UtcNow.AddMinutes(ExpiredInfilMinutes),
-            previousHash: previousHash);
+            previousHash: lastEvent.Hash);
         await expiredEventStore.AppendEventAsync(expiredInfilEvent);
 
         // Act: GET auto-fails the infil; then loadout change should work
@@ -627,5 +627,42 @@ public sealed class OperatorServiceTests : IDisposable
         Assert.True(dto.IsSuccess);
         Assert.Equal(OperatorMode.Infil, dto.Value!.CurrentMode);
         Assert.NotNull(dto.Value!.InfilStartTime);
+    }
+
+    [Fact]
+    public async Task GetOperatorAsync_WhenInfilTimerExpired_ResetsExfilStreak()
+    {
+        // Validates that the auto-fail triggered by GetOperatorAsync applies the streak reset
+        // penalty (same as a regular ExfilFailed), not just the mode transition.
+
+        // Arrange: operator with a backdated (expired) infil
+        var expiredEventStore = new InMemoryOperatorEventStore();
+        var expiredExfilService = new OperatorExfilService(expiredEventStore);
+        var sessionStore = new LiteDbCombatSessionStore(_database);
+        var sessionService = new CombatSessionService(sessionStore, expiredEventStore);
+        var svc = new OperatorService(expiredExfilService, sessionService, expiredEventStore);
+
+        var createResult = await expiredExfilService.CreateOperatorAsync("StreakTestOp");
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!;
+
+        var existingEvents = await expiredEventStore.LoadEventsAsync(operatorId);
+        var lastEvent = existingEvents[^1];
+        var expiredInfilEvent = new InfilStartedEvent(
+            operatorId,
+            sequenceNumber: lastEvent.SequenceNumber + 1,
+            sessionId: Guid.NewGuid(),
+            lockedLoadout: "SOKOL 545",
+            infilStartTime: DateTimeOffset.UtcNow.AddMinutes(ExpiredInfilMinutes),
+            previousHash: lastEvent.Hash);
+        await expiredEventStore.AppendEventAsync(expiredInfilEvent);
+
+        // Act: GET the operator — server should auto-fail the expired infil
+        var dto = await svc.GetOperatorAsync(operatorId.Value);
+
+        // Assert: ExfilStreak is reset to 0 (penalty for losing the infil to the timer)
+        Assert.True(dto.IsSuccess);
+        Assert.Equal(OperatorMode.Base, dto.Value!.CurrentMode);
+        Assert.Equal(0, dto.Value!.ExfilStreak);
     }
 }
