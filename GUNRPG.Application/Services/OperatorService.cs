@@ -325,6 +325,11 @@ public sealed class OperatorService
         return await _exfilService.CompleteInfilSuccessfullyAsync(new OperatorId(operatorId));
     }
 
+    public async Task<ServiceResult> FailInfilAsync(Guid operatorId, string reason)
+    {
+        return await _exfilService.FailInfilAsync(new OperatorId(operatorId), reason);
+    }
+
     public async Task<ServiceResult<OperatorStateDto>> ChangeLoadoutAsync(Guid operatorId, ChangeLoadoutRequest request)
     {
         var result = await _exfilService.ChangeLoadoutAsync(new OperatorId(operatorId), request.WeaponName);

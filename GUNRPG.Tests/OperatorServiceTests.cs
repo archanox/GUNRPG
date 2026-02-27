@@ -533,4 +533,58 @@ public sealed class OperatorServiceTests : IDisposable
 
         Assert.Equal(ResultStatus.InvalidState, result.Status);
     }
+
+    [Fact]
+    public async Task FailInfilAsync_WhileInInfil_TransitionsOperatorToBaseMode()
+    {
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        var infilResult = await _operatorService.StartInfilAsync(operatorId);
+        Assert.True(infilResult.IsSuccess);
+
+        var failResult = await _operatorService.FailInfilAsync(operatorId, "Infil timer expired");
+
+        Assert.True(failResult.IsSuccess);
+
+        var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+        Assert.True(loadResult.IsSuccess);
+        var aggregate = loadResult.Value!;
+        Assert.Equal(GUNRPG.Core.Operators.OperatorMode.Base, aggregate.CurrentMode);
+        Assert.Null(aggregate.InfilStartTime);
+        Assert.Equal(0, aggregate.ExfilStreak);
+    }
+
+    [Fact]
+    public async Task FailInfilAsync_WhenNotInInfil_ReturnsInvalidState()
+    {
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        // Operator is in Base mode, not Infil
+        var failResult = await _operatorService.FailInfilAsync(operatorId, "Infil timer expired");
+
+        Assert.Equal(ResultStatus.InvalidState, failResult.Status);
+    }
+
+    [Fact]
+    public async Task FailInfilAsync_ThenChangeLoadout_Succeeds()
+    {
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        var infilResult = await _operatorService.StartInfilAsync(operatorId);
+        Assert.True(infilResult.IsSuccess);
+
+        // Simulate timer expiry: fail the infil server-side
+        var failResult = await _operatorService.FailInfilAsync(operatorId, "Infil timer expired");
+        Assert.True(failResult.IsSuccess);
+
+        // After server-side fail, loadout change should succeed (operator is back in Base mode)
+        var loadoutResult = await _operatorService.ChangeLoadoutAsync(operatorId, new ChangeLoadoutRequest { WeaponName = "SOKOL 545" });
+        Assert.True(loadoutResult.IsSuccess);
+    }
 }
