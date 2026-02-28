@@ -7,6 +7,7 @@ namespace GUNRPG.Tests;
 public class DistributedAuthorityTests
 {
     private static readonly Guid OperatorA = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static readonly IDeterministicGameEngine Engine = new DefaultGameEngine();
 
     // --- Core Functionality ---
 
@@ -15,7 +16,7 @@ public class DistributedAuthorityTests
     {
         var nodeId = Guid.NewGuid();
         var transport = new InMemoryLockstepTransport(nodeId);
-        var authority = new DistributedAuthority(nodeId, transport);
+        var authority = new DistributedAuthority(nodeId, transport, Engine);
 
         var action = new PlayerActionDto
         {
@@ -38,7 +39,7 @@ public class DistributedAuthorityTests
     {
         var nodeId = Guid.NewGuid();
         var transport = new InMemoryLockstepTransport(nodeId);
-        var authority = new DistributedAuthority(nodeId, transport);
+        var authority = new DistributedAuthority(nodeId, transport, Engine);
 
         await authority.SubmitActionAsync(new PlayerActionDto
         {
@@ -58,7 +59,7 @@ public class DistributedAuthorityTests
     {
         var nodeId = Guid.NewGuid();
         var transport = new InMemoryLockstepTransport(nodeId);
-        var authority = new DistributedAuthority(nodeId, transport);
+        var authority = new DistributedAuthority(nodeId, transport, Engine);
 
         await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
         await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload });
@@ -76,7 +77,7 @@ public class DistributedAuthorityTests
     {
         var nodeId = Guid.NewGuid();
         var transport = new InMemoryLockstepTransport(nodeId);
-        var authority = new DistributedAuthority(nodeId, transport);
+        var authority = new DistributedAuthority(nodeId, transport, Engine);
 
         await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
 
@@ -94,8 +95,8 @@ public class DistributedAuthorityTests
         var nodeB = Guid.NewGuid();
         var transportA = new InMemoryLockstepTransport(nodeA);
         var transportB = new InMemoryLockstepTransport(nodeB);
-        var authorityA = new DistributedAuthority(nodeA, transportA);
-        var authorityB = new DistributedAuthority(nodeB, transportB);
+        var authorityA = new DistributedAuthority(nodeA, transportA, Engine);
+        var authorityB = new DistributedAuthority(nodeB, transportB, Engine);
 
         var action1 = new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire };
         var action2 = new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload };
@@ -116,8 +117,8 @@ public class DistributedAuthorityTests
         var nodeB = Guid.NewGuid();
         var transportA = new InMemoryLockstepTransport(nodeA);
         var transportB = new InMemoryLockstepTransport(nodeB);
-        var authorityA = new DistributedAuthority(nodeA, transportA);
-        var authorityB = new DistributedAuthority(nodeB, transportB);
+        var authorityA = new DistributedAuthority(nodeA, transportA, Engine);
+        var authorityB = new DistributedAuthority(nodeB, transportB, Engine);
 
         await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
         await authorityB.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload });
@@ -130,7 +131,7 @@ public class DistributedAuthorityTests
     {
         var nodeId = Guid.NewGuid();
         var transport = new InMemoryLockstepTransport(nodeId);
-        var authority = new DistributedAuthority(nodeId, transport);
+        var authority = new DistributedAuthority(nodeId, transport, Engine);
 
         await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
 
@@ -195,7 +196,7 @@ public class DistributedAuthorityTests
     {
         var nodeId = Guid.NewGuid();
         var transport = new InMemoryLockstepTransport(nodeId);
-        var authority = new DistributedAuthority(nodeId, transport);
+        var authority = new DistributedAuthority(nodeId, transport, Engine);
 
         Assert.False(authority.IsDesynced);
     }
@@ -205,7 +206,7 @@ public class DistributedAuthorityTests
     {
         var nodeId = Guid.NewGuid();
         var transport = new InMemoryLockstepTransport(nodeId);
-        var authority = new DistributedAuthority(nodeId, transport);
+        var authority = new DistributedAuthority(nodeId, transport, Engine);
 
         // Submit an action first
         await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
@@ -233,8 +234,8 @@ public class DistributedAuthorityTests
         var nodeIdB = Guid.NewGuid();
         var transportA = new InMemoryLockstepTransport(nodeIdA);
         var transportB = new InMemoryLockstepTransport(nodeIdB);
-        var authorityA = new DistributedAuthority(nodeIdA, transportA);
-        var authorityB = new DistributedAuthority(nodeIdB, transportB);
+        var authorityA = new DistributedAuthority(nodeIdA, transportA, Engine);
+        var authorityB = new DistributedAuthority(nodeIdB, transportB, Engine);
 
         // Node A submits actions while solo
         await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
@@ -260,8 +261,8 @@ public class DistributedAuthorityTests
         var nodeIdB = Guid.NewGuid();
         var transportA = new InMemoryLockstepTransport(nodeIdA);
         var transportB = new InMemoryLockstepTransport(nodeIdB);
-        var authorityA = new DistributedAuthority(nodeIdA, transportA);
-        var authorityB = new DistributedAuthority(nodeIdB, transportB);
+        var authorityA = new DistributedAuthority(nodeIdA, transportA, Engine);
+        var authorityB = new DistributedAuthority(nodeIdB, transportB, Engine);
 
         // Connect and submit initial action
         transportA.ConnectTo(transportB);
@@ -392,7 +393,7 @@ public class DistributedAuthorityTests
     {
         var nodeId = Guid.NewGuid();
         var transport = new InMemoryLockstepTransport(nodeId);
-        var authority = new DistributedAuthority(nodeId, transport);
+        var authority = new DistributedAuthority(nodeId, transport, Engine);
 
         var opB = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
         var opA = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
@@ -415,7 +416,7 @@ public class DistributedAuthorityTests
     {
         var nodeId = Guid.NewGuid();
         var transport = new InMemoryLockstepTransport(nodeId);
-        IGameAuthority authority = new DistributedAuthority(nodeId, transport);
+        IGameAuthority authority = new DistributedAuthority(nodeId, transport, Engine);
 
         Assert.NotEqual(Guid.Empty, authority.NodeId);
         Assert.False(authority.IsDesynced);
@@ -437,6 +438,179 @@ public class DistributedAuthorityTests
         Assert.Single(authorityA.GetActionLog());
     }
 
+    // --- Local vs Distributed Produce Identical Outcomes ---
+
+    [Fact]
+    public async Task LocalAndDistributed_IdenticalActions_ProduceIdenticalOutcomes()
+    {
+        var nodeId = Guid.NewGuid();
+        var transport = new InMemoryLockstepTransport(nodeId);
+        var distributed = new DistributedAuthority(nodeId, transport, Engine);
+        var local = new LocalGameAuthority(nodeId, Engine);
+
+        var actions = new[]
+        {
+            new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire },
+            new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload },
+            new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire },
+        };
+
+        foreach (var action in actions)
+        {
+            await distributed.SubmitActionAsync(action);
+            await local.SubmitActionAsync(action);
+        }
+
+        Assert.Equal(local.GetCurrentStateHash(), distributed.GetCurrentStateHash());
+        Assert.Equal(local.GetCurrentState().ActionCount, distributed.GetCurrentState().ActionCount);
+        Assert.Equal(local.GetActionLog().Count, distributed.GetActionLog().Count);
+
+        for (int i = 0; i < local.GetActionLog().Count; i++)
+        {
+            Assert.Equal(
+                local.GetActionLog()[i].StateHashAfterApply,
+                distributed.GetActionLog()[i].StateHashAfterApply);
+        }
+    }
+
+    [Fact]
+    public async Task LocalAndDistributed_MultipleOperators_ProduceSameState()
+    {
+        var opB = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var nodeId = Guid.NewGuid();
+        var transport = new InMemoryLockstepTransport(nodeId);
+        var distributed = new DistributedAuthority(nodeId, transport, Engine);
+        var local = new LocalGameAuthority(nodeId, Engine);
+
+        var actions = new[]
+        {
+            new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire },
+            new PlayerActionDto { OperatorId = opB, Primary = PrimaryAction.Reload },
+            new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload },
+            new PlayerActionDto { OperatorId = opB, Primary = PrimaryAction.Fire },
+        };
+
+        foreach (var action in actions)
+        {
+            await distributed.SubmitActionAsync(action);
+            await local.SubmitActionAsync(action);
+        }
+
+        Assert.Equal(local.GetCurrentStateHash(), distributed.GetCurrentStateHash());
+
+        var localState = local.GetCurrentState();
+        var distState = distributed.GetCurrentState();
+        Assert.Equal(localState.Operators.Count, distState.Operators.Count);
+        for (int i = 0; i < localState.Operators.Count; i++)
+        {
+            Assert.Equal(localState.Operators[i].OperatorId, distState.Operators[i].OperatorId);
+            Assert.Equal(localState.Operators[i].TotalXp, distState.Operators[i].TotalXp);
+        }
+    }
+
+    // --- Log Replay Produces Identical Final State Hash ---
+
+    [Fact]
+    public async Task DistributedAuthority_LogReplay_YieldsIdenticalStateHash()
+    {
+        // Build a log on authority A
+        var nodeId = Guid.NewGuid();
+        var transport = new InMemoryLockstepTransport(nodeId);
+        var authorityA = new DistributedAuthority(nodeId, transport, Engine);
+
+        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload });
+        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+
+        var logA = authorityA.GetActionLog();
+        var hashA = authorityA.GetCurrentStateHash();
+
+        // Replay the log on a fresh authority B via sync response
+        var nodeIdB = Guid.NewGuid();
+        var transportB = new InMemoryLockstepTransport(nodeIdB);
+        var authorityB = new DistributedAuthority(nodeIdB, transportB, Engine);
+
+        // Connect B to A — sync should replay the log
+        transportB.ConnectTo(transport);
+
+        Assert.Equal(hashA, authorityB.GetCurrentStateHash());
+        Assert.Equal(logA.Count, authorityB.GetActionLog().Count);
+    }
+
+    // --- DefaultGameEngine ---
+
+    [Fact]
+    public void DefaultGameEngine_Step_AppliesFireAction()
+    {
+        var engine = new DefaultGameEngine();
+        var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
+
+        var result = engine.Step(state, new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+
+        Assert.Equal(1, result.ActionCount);
+        Assert.Single(result.Operators);
+        Assert.Equal(10, result.Operators[0].TotalXp);
+    }
+
+    [Fact]
+    public void DefaultGameEngine_Step_AppliesReloadAction()
+    {
+        var engine = new DefaultGameEngine();
+        var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
+
+        var result = engine.Step(state, new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload });
+
+        Assert.Equal(1, result.ActionCount);
+        Assert.Single(result.Operators);
+        Assert.Equal(1, result.Operators[0].TotalXp);
+    }
+
+    [Fact]
+    public void DefaultGameEngine_Step_IsPure()
+    {
+        var engine = new DefaultGameEngine();
+        var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
+        var action = new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire };
+
+        var result1 = engine.Step(state, action);
+        var result2 = engine.Step(state, action);
+
+        Assert.Equal(result1.ActionCount, result2.ActionCount);
+        Assert.Equal(result1.Operators[0].TotalXp, result2.Operators[0].TotalXp);
+        Assert.Equal(0, state.ActionCount); // Original state unchanged
+    }
+
+    // --- LocalGameAuthority ---
+
+    [Fact]
+    public async Task LocalGameAuthority_SubmitAction_AppliesImmediately()
+    {
+        var nodeId = Guid.NewGuid();
+        var local = new LocalGameAuthority(nodeId, Engine);
+
+        await local.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+
+        Assert.Single(local.GetActionLog());
+        Assert.Equal(1, local.GetCurrentState().ActionCount);
+        Assert.False(local.IsDesynced);
+    }
+
+    [Fact]
+    public async Task LocalGameAuthority_StateHash_MatchesDistributed()
+    {
+        var nodeId = Guid.NewGuid();
+        var local = new LocalGameAuthority(nodeId, Engine);
+        var transport = new InMemoryLockstepTransport(nodeId);
+        var distributed = new DistributedAuthority(nodeId, transport, Engine);
+
+        var action = new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire };
+
+        await local.SubmitActionAsync(action);
+        await distributed.SubmitActionAsync(action);
+
+        Assert.Equal(local.GetCurrentStateHash(), distributed.GetCurrentStateHash());
+    }
+
     // --- Helpers ---
 
     private static (DistributedAuthority authorityA, DistributedAuthority authorityB,
@@ -446,8 +620,8 @@ public class DistributedAuthorityTests
         var nodeIdB = Guid.NewGuid();
         var transportA = new InMemoryLockstepTransport(nodeIdA);
         var transportB = new InMemoryLockstepTransport(nodeIdB);
-        var authorityA = new DistributedAuthority(nodeIdA, transportA);
-        var authorityB = new DistributedAuthority(nodeIdB, transportB);
+        var authorityA = new DistributedAuthority(nodeIdA, transportA, Engine);
+        var authorityB = new DistributedAuthority(nodeIdB, transportB, Engine);
         transportA.ConnectTo(transportB);
         return (authorityA, authorityB, transportA, transportB);
     }

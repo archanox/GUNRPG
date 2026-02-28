@@ -8,13 +8,15 @@ namespace GUNRPG.Application.Distributed;
 /// Deterministic lockstep distributed authority.
 /// Every node runs this independently, applies actions in the same order,
 /// and verifies state hashes match across all peers.
+/// Game logic is delegated to the shared <see cref="IDeterministicGameEngine"/>;
+/// this class is responsible only for replication ordering, hashing, and peer consensus.
 /// </summary>
 public sealed class DistributedAuthority : IGameAuthority
 {
     private readonly ILockstepTransport _transport;
+    private readonly IDeterministicGameEngine _engine;
     private readonly List<DistributedActionEntry> _actionLog = new();
     private readonly HashSet<Guid> _appliedActionIds = new();
-    private readonly Dictionary<Guid, GameStateDto.OperatorSnapshot> _operatorStates = new();
     private readonly object _lock = new();
 
     // Pending outbound actions awaiting acknowledgment from all peers
@@ -23,8 +25,9 @@ public sealed class DistributedAuthority : IGameAuthority
     // Buffered inbound actions waiting for their sequence turn
     private readonly SortedDictionary<long, ActionBroadcastMessage> _inboundBuffer = new();
 
+    private GameStateDto _currentState;
     private long _nextSequenceNumber;
-    private string _currentStateHash = ComputeEmptyHash();
+    private string _currentStateHash;
     private bool _isDesynced;
 
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
@@ -33,10 +36,13 @@ public sealed class DistributedAuthority : IGameAuthority
         WriteIndented = false
     };
 
-    public DistributedAuthority(Guid nodeId, ILockstepTransport transport)
+    public DistributedAuthority(Guid nodeId, ILockstepTransport transport, IDeterministicGameEngine engine)
     {
         NodeId = nodeId;
         _transport = transport;
+        _engine = engine;
+        _currentState = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
+        _currentStateHash = ComputeHash(_currentState);
 
         _transport.OnActionReceived += HandleActionReceived;
         _transport.OnAckReceived += HandleAckReceived;
@@ -118,14 +124,7 @@ public sealed class DistributedAuthority : IGameAuthority
     {
         lock (_lock)
         {
-            return new GameStateDto
-            {
-                ActionCount = _actionLog.Count,
-                Operators = _operatorStates
-                    .OrderBy(kv => kv.Key)
-                    .Select(kv => kv.Value)
-                    .ToList()
-            };
+            return _currentState;
         }
     }
 
@@ -149,28 +148,11 @@ public sealed class DistributedAuthority : IGameAuthority
 
     private void ApplyActionInternal(PlayerActionDto action, Guid originNodeId)
     {
-        // Ensure operator exists in state
-        if (!_operatorStates.ContainsKey(action.OperatorId))
-        {
-            _operatorStates[action.OperatorId] = new GameStateDto.OperatorSnapshot
-            {
-                OperatorId = action.OperatorId,
-                Name = $"Operator-{action.OperatorId.ToString()[..8]}",
-                CurrentHealth = 100f,
-                MaxHealth = 100f,
-                EquippedWeaponName = "Default",
-                UnlockedPerks = new List<string>()
-            };
-        }
-
-        // Apply action deterministically
-        var snapshot = _operatorStates[action.OperatorId];
-        _operatorStates[action.OperatorId] = ApplyActionToSnapshot(snapshot, action);
-
-        var seq = _nextSequenceNumber++;
-        var hash = ComputeStateHash();
+        _currentState = _engine.Step(_currentState, action);
+        var hash = ComputeHash(_currentState);
         _currentStateHash = hash;
 
+        var seq = _nextSequenceNumber++;
         _appliedActionIds.Add(action.ActionId);
         _actionLog.Add(new DistributedActionEntry
         {
@@ -181,68 +163,9 @@ public sealed class DistributedAuthority : IGameAuthority
         });
     }
 
-    private static GameStateDto.OperatorSnapshot ApplyActionToSnapshot(
-        GameStateDto.OperatorSnapshot snapshot, PlayerActionDto action)
+    private static string ComputeHash(GameStateDto state)
     {
-        // Deterministic action application
-        var health = snapshot.CurrentHealth;
-        var xp = snapshot.TotalXp;
-
-        if (action.Primary == Core.Intents.PrimaryAction.Fire)
-        {
-            // Firing costs no health but earns XP
-            xp += 10;
-        }
-
-        if (action.Primary == Core.Intents.PrimaryAction.Reload)
-        {
-            // Reload is a non-damaging action
-            xp += 1;
-        }
-
-        return new GameStateDto.OperatorSnapshot
-        {
-            OperatorId = snapshot.OperatorId,
-            Name = snapshot.Name,
-            TotalXp = xp,
-            CurrentHealth = health,
-            MaxHealth = snapshot.MaxHealth,
-            EquippedWeaponName = snapshot.EquippedWeaponName,
-            UnlockedPerks = snapshot.UnlockedPerks.ToList(),
-            ExfilStreak = snapshot.ExfilStreak,
-            IsDead = snapshot.IsDead
-        };
-    }
-
-    private string ComputeStateHash()
-    {
-        var state = new GameStateDto
-        {
-            ActionCount = _actionLog.Count + 1, // Include the action being added
-            Operators = _operatorStates
-                .OrderBy(kv => kv.Key)
-                .Select(kv => kv.Value)
-                .ToList()
-        };
-
         var json = JsonSerializer.Serialize(state, SerializerOptions);
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
-        return Convert.ToHexString(bytes);
-    }
-
-    private static string ComputeEmptyHash()
-    {
-        var emptyState = new GameStateDto
-        {
-            ActionCount = 0,
-            Operators = new List<GameStateDto.OperatorSnapshot>()
-        };
-
-        var json = JsonSerializer.Serialize(emptyState, new JsonSerializerOptions(JsonSerializerDefaults.Web)
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            WriteIndented = false
-        });
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(json));
         return Convert.ToHexString(bytes);
     }
@@ -363,9 +286,9 @@ public sealed class DistributedAuthority : IGameAuthority
                 // Full replay from genesis
                 _actionLog.Clear();
                 _appliedActionIds.Clear();
-                _operatorStates.Clear();
+                _currentState = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
                 _nextSequenceNumber = 0;
-                _currentStateHash = ComputeEmptyHash();
+                _currentStateHash = ComputeHash(_currentState);
             }
 
             foreach (var entry in msg.Entries)
