@@ -2,10 +2,12 @@ using System.Net;
 using System.Text.Json.Serialization;
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Combat;
+using GUNRPG.Application.Distributed;
 using GUNRPG.Application.Operators;
 using GUNRPG.Application.Services;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Infrastructure;
+using GUNRPG.Infrastructure.Distributed;
 using Makaretu.Dns;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -37,6 +39,18 @@ builder.Services.AddSingleton<OperatorService>(sp =>
     var offlineSyncHeadStore = sp.GetRequiredService<IOfflineSyncHeadStore>();
     var combatEngine = sp.GetRequiredService<IDeterministicCombatEngine>();
     return new OperatorService(exfilService, sessionService, eventStore, offlineSyncHeadStore, combatEngine);
+});
+
+// Distributed game authority: deterministic lockstep replication via libp2p transport
+var serverNodeId = Guid.NewGuid();
+builder.Services.AddSingleton<IDeterministicGameEngine, DefaultGameEngine>();
+builder.Services.AddSingleton(new Libp2pLockstepTransport(serverNodeId));
+builder.Services.AddSingleton<ILockstepTransport>(sp => sp.GetRequiredService<Libp2pLockstepTransport>());
+builder.Services.AddSingleton<IGameAuthority>(sp =>
+{
+    var transport = sp.GetRequiredService<ILockstepTransport>();
+    var engine = sp.GetRequiredService<IDeterministicGameEngine>();
+    return new DistributedAuthority(serverNodeId, transport, engine);
 });
 
 var app = builder.Build();
@@ -93,6 +107,10 @@ app.Lifetime.ApplicationStarted.Register(() =>
     {
         Console.WriteLine($"[mDNS] Advertising failed: {ex.Message}");
     }
+
+    // Eagerly resolve the distributed game authority so transport is ready
+    var authority = app.Services.GetRequiredService<IGameAuthority>();
+    Console.WriteLine($"[Distributed] Game authority initialized (NodeId={authority.NodeId}, protocol={LockstepProtocol.Id})");
 });
 
 app.Lifetime.ApplicationStopping.Register(() =>
