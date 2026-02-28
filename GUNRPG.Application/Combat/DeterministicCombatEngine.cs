@@ -1,5 +1,7 @@
 using GUNRPG.Application.Backend;
+using GUNRPG.Application.Distributed;
 using GUNRPG.Application.Dtos;
+using GUNRPG.Core.Intents;
 
 namespace GUNRPG.Application.Combat;
 
@@ -8,8 +10,13 @@ namespace GUNRPG.Application.Combat;
 /// All randomness derives from the provided seed via <c>new Random(seed)</c>.
 /// Uses no external state, no <c>DateTime.Now</c>, and no static <c>Random</c>.
 /// Offline and server both reference this same engine to ensure replay parity.
+/// <para>
+/// Also implements <see cref="IDeterministicGameEngine"/> for the distributed lockstep
+/// authority, providing the deterministic action ledger used for P2P state consistency
+/// verification.
+/// </para>
 /// </summary>
-public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
+public sealed class DeterministicCombatEngine : IDeterministicCombatEngine, IDeterministicGameEngine
 {
     private const int VictoryXpReward = 100;
     private const int SurvivalXpReward = 50;
@@ -112,6 +119,81 @@ public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
             IsVictory = isVictory,
             OperatorDied = operatorDied,
             BattleLog = log
+        };
+    }
+
+    /// <inheritdoc />
+    public GameStateDto Step(GameStateDto state, PlayerActionDto action)
+    {
+        var operators = state.Operators
+            .Select(op => op.OperatorId == action.OperatorId ? ApplyActionToSnapshot(op, action) : CloneSnapshot(op))
+            .ToList();
+
+        // If the operator doesn't exist yet, create and apply
+        if (!operators.Any(op => op.OperatorId == action.OperatorId))
+        {
+            var newOp = new GameStateDto.OperatorSnapshot
+            {
+                OperatorId = action.OperatorId,
+                Name = $"Operator-{action.OperatorId.ToString()[..8]}",
+                CurrentHealth = 100f,
+                MaxHealth = 100f,
+                EquippedWeaponName = "Default",
+                UnlockedPerks = new List<string>()
+            };
+            operators.Add(ApplyActionToSnapshot(newOp, action));
+        }
+
+        return new GameStateDto
+        {
+            ActionCount = state.ActionCount + 1,
+            Operators = operators.OrderBy(op => op.OperatorId).ToList()
+        };
+    }
+
+    private static GameStateDto.OperatorSnapshot ApplyActionToSnapshot(
+        GameStateDto.OperatorSnapshot snapshot, PlayerActionDto action)
+    {
+        var health = snapshot.CurrentHealth;
+        var xp = snapshot.TotalXp;
+
+        if (action.Primary == PrimaryAction.Fire)
+        {
+            xp += 10;
+        }
+
+        if (action.Primary == PrimaryAction.Reload)
+        {
+            xp += 1;
+        }
+
+        return new GameStateDto.OperatorSnapshot
+        {
+            OperatorId = snapshot.OperatorId,
+            Name = snapshot.Name,
+            TotalXp = xp,
+            CurrentHealth = health,
+            MaxHealth = snapshot.MaxHealth,
+            EquippedWeaponName = snapshot.EquippedWeaponName,
+            UnlockedPerks = snapshot.UnlockedPerks.ToList(),
+            ExfilStreak = snapshot.ExfilStreak,
+            IsDead = snapshot.IsDead
+        };
+    }
+
+    private static GameStateDto.OperatorSnapshot CloneSnapshot(GameStateDto.OperatorSnapshot snapshot)
+    {
+        return new GameStateDto.OperatorSnapshot
+        {
+            OperatorId = snapshot.OperatorId,
+            Name = snapshot.Name,
+            TotalXp = snapshot.TotalXp,
+            CurrentHealth = snapshot.CurrentHealth,
+            MaxHealth = snapshot.MaxHealth,
+            EquippedWeaponName = snapshot.EquippedWeaponName,
+            UnlockedPerks = snapshot.UnlockedPerks.ToList(),
+            ExfilStreak = snapshot.ExfilStreak,
+            IsDead = snapshot.IsDead
         };
     }
 }

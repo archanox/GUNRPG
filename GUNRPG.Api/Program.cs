@@ -27,8 +27,10 @@ builder.Services.AddCombatSessionStore(builder.Configuration);
 builder.Services.AddSingleton<IDeterministicCombatEngine, DeterministicCombatEngine>();
 
 // Distributed game authority: deterministic lockstep replication via libp2p transport
-var serverNodeId = Guid.NewGuid();
-builder.Services.AddSingleton<IDeterministicGameEngine, DefaultGameEngine>();
+// Persist server node ID so restarts reuse the same identity
+const string nodeIdFileName = "server_node_id";
+var serverNodeId = LoadOrCreateNodeId(nodeIdFileName);
+builder.Services.AddSingleton<IDeterministicGameEngine>(sp => (IDeterministicGameEngine)sp.GetRequiredService<IDeterministicCombatEngine>());
 builder.Services.AddSingleton(new Libp2pLockstepTransport(serverNodeId));
 builder.Services.AddSingleton<ILockstepTransport>(sp => sp.GetRequiredService<Libp2pLockstepTransport>());
 builder.Services.AddSingleton<IGameAuthority>(sp =>
@@ -121,3 +123,16 @@ app.Lifetime.ApplicationStopping.Register(() =>
 });
 
 app.Run();
+
+static Guid LoadOrCreateNodeId(string fileName)
+{
+    if (File.Exists(fileName) &&
+        Guid.TryParse(File.ReadAllText(fileName).Trim(), out var existing))
+    {
+        return existing;
+    }
+
+    var id = Guid.NewGuid();
+    File.WriteAllText(fileName, id.ToString("D"));
+    return id;
+}
