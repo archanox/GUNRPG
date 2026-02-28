@@ -1,4 +1,5 @@
 using GUNRPG.Application.Combat;
+using GUNRPG.Application.Distributed;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Results;
@@ -24,10 +25,12 @@ public sealed class OperatorExfilService
     public const int InfilTimerMinutes = 30;
 
     private readonly IOperatorEventStore _eventStore;
+    private readonly OperatorEventReplicator? _replicator;
 
-    public OperatorExfilService(IOperatorEventStore eventStore)
+    public OperatorExfilService(IOperatorEventStore eventStore, OperatorEventReplicator? replicator = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
+        _replicator = replicator;
     }
 
     /// <summary>
@@ -43,7 +46,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventAsync(createdEvent);
+            await AppendAsync(createdEvent);
             return ServiceResult<OperatorId>.Success(operatorId);
         }
         catch (Exception ex)
@@ -115,7 +118,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventAsync(xpEvent);
+            await AppendAsync(xpEvent);
             return ServiceResult.Success();
         }
         catch (Exception ex)
@@ -157,7 +160,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventAsync(woundsEvent);
+            await AppendAsync(woundsEvent);
             return ServiceResult.Success();
         }
         catch (Exception ex)
@@ -199,7 +202,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventAsync(loadoutEvent);
+            await AppendAsync(loadoutEvent);
             return ServiceResult.Success();
         }
         catch (Exception ex)
@@ -245,7 +248,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventAsync(perkEvent);
+            await AppendAsync(perkEvent);
             return ServiceResult.Success();
         }
         catch (Exception ex)
@@ -288,7 +291,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventAsync(exfilEvent);
+            await AppendAsync(exfilEvent);
             return ServiceResult.Success();
         }
         catch (Exception ex)
@@ -327,7 +330,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventAsync(exfilEvent);
+            await AppendAsync(exfilEvent);
             return ServiceResult.Success();
         }
         catch (Exception ex)
@@ -399,7 +402,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventAsync(infilEvent);
+            await AppendAsync(infilEvent);
             return ServiceResult<Guid>.Success(sessionId);
         }
         catch (Exception ex)
@@ -446,7 +449,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventAsync(combatEvent);
+            await AppendAsync(combatEvent);
             return ServiceResult<Guid>.Success(combatSessionId);
         }
         catch (Exception ex)
@@ -478,7 +481,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventAsync(clearEvent);
+            await AppendAsync(clearEvent);
             return ServiceResult.Success();
         }
         catch (Exception ex)
@@ -529,7 +532,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventsAsync(eventsToAppend);
+            await AppendBatchAsync(eventsToAppend);
             return ServiceResult.Success();
         }
         catch (Exception ex)
@@ -568,7 +571,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventAsync(infilEndedEvent);
+            await AppendAsync(infilEndedEvent);
             return ServiceResult.Success();
         }
         catch (Exception)
@@ -633,7 +636,7 @@ public sealed class OperatorExfilService
 
         try
         {
-            await _eventStore.AppendEventAsync(deathEvent);
+            await AppendAsync(deathEvent);
             return ServiceResult.Success();
         }
         catch (Exception ex)
@@ -789,7 +792,7 @@ public sealed class OperatorExfilService
         {
             try
             {
-                await _eventStore.AppendEventsAsync(eventsToAppend);
+                await AppendBatchAsync(eventsToAppend);
             }
             catch (Exception ex)
             {
@@ -877,7 +880,7 @@ public sealed class OperatorExfilService
         try
         {
             var evt = aggregate.ApplyPetAction(petInput, DateTimeOffset.UtcNow);
-            await _eventStore.AppendEventAsync(evt);
+            await AppendAsync(evt);
         }
         catch (InvalidOperationException ex)
         {
@@ -966,5 +969,29 @@ public sealed class OperatorExfilService
             ResultStatus.InvalidState => ServiceResult.InvalidState(loadResult.ErrorMessage!),
             _ => ServiceResult.InvalidState(loadResult.ErrorMessage!)
         };
+    }
+
+    /// <summary>
+    /// Appends an event to the local store and, if a replicator is configured,
+    /// broadcasts it to all connected peers.
+    /// </summary>
+    private async Task AppendAsync(OperatorEvent evt)
+    {
+        await _eventStore.AppendEventAsync(evt);
+        if (_replicator != null)
+            await _replicator.BroadcastAsync(evt);
+    }
+
+    /// <summary>
+    /// Appends a batch of events to the local store and broadcasts each one.
+    /// </summary>
+    private async Task AppendBatchAsync(IReadOnlyList<OperatorEvent> events)
+    {
+        await _eventStore.AppendEventsAsync(events);
+        if (_replicator != null)
+        {
+            foreach (var evt in events)
+                await _replicator.BroadcastAsync(evt);
+        }
     }
 }

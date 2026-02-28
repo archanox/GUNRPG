@@ -40,6 +40,9 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
     public event Action<LogSyncResponseMessage>? OnSyncResponseReceived;
     public event Action<Guid>? OnPeerConnected;
     public event Action<Guid>? OnPeerDisconnected;
+    public event Action<OperatorEventBroadcastMessage>? OnOperatorEventReceived;
+    public event Action<OperatorEventSyncRequestMessage>? OnOperatorEventSyncRequestReceived;
+    public event Action<OperatorEventSyncResponseMessage>? OnOperatorEventSyncResponseReceived;
 
     // ISessionProtocol - called when dialing a remote peer
     public async Task DialAsync(IChannel channel, ISessionContext context)
@@ -135,6 +138,24 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
                     if (wrapper?.Payload != null) OnSyncResponseReceived?.Invoke(wrapper.Payload);
                     break;
                 }
+                case "operator_event":
+                {
+                    var wrapper = JsonSerializer.Deserialize<MessageWrapper<OperatorEventBroadcastMessage>>(json, JsonOptions);
+                    if (wrapper?.Payload != null) OnOperatorEventReceived?.Invoke(wrapper.Payload);
+                    break;
+                }
+                case "operator_event_sync_request":
+                {
+                    var wrapper = JsonSerializer.Deserialize<MessageWrapper<OperatorEventSyncRequestMessage>>(json, JsonOptions);
+                    if (wrapper?.Payload != null) OnOperatorEventSyncRequestReceived?.Invoke(wrapper.Payload);
+                    break;
+                }
+                case "operator_event_sync_response":
+                {
+                    var wrapper = JsonSerializer.Deserialize<MessageWrapper<OperatorEventSyncResponseMessage>>(json, JsonOptions);
+                    if (wrapper?.Payload != null) OnOperatorEventSyncResponseReceived?.Invoke(wrapper.Payload);
+                    break;
+                }
             }
         }
         catch (JsonException)
@@ -157,6 +178,15 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
 
     public Task SendSyncResponseAsync(Guid peerId, LogSyncResponseMessage message, CancellationToken ct = default)
         => SendToAsync(peerId, "sync_response", message, ct);
+
+    public Task BroadcastOperatorEventAsync(OperatorEventBroadcastMessage message, CancellationToken ct = default)
+        => BroadcastAsync("operator_event", message, ct);
+
+    public Task SendOperatorEventSyncRequestAsync(Guid peerId, OperatorEventSyncRequestMessage message, CancellationToken ct = default)
+        => SendToAsync(peerId, "operator_event_sync_request", message, ct);
+
+    public Task SendOperatorEventSyncResponseAsync(Guid peerId, OperatorEventSyncResponseMessage message, CancellationToken ct = default)
+        => SendToAsync(peerId, "operator_event_sync_response", message, ct);
 
     private async Task BroadcastAsync<T>(string type, T message, CancellationToken ct) where T : class
     {
