@@ -3,10 +3,17 @@ using GUNRPG.Core.Intents;
 namespace GUNRPG.Application.Distributed;
 
 /// <summary>
-/// Default deterministic game engine implementation.
-/// Applies player actions (fire, reload, etc.) to the distributed game state.
-/// This is the single source of truth for game rules used by both
-/// <see cref="LocalGameAuthority"/> and <see cref="DistributedAuthority"/>.
+/// Deterministic game engine for the distributed lockstep authority.
+/// Maintains a lightweight state model that tracks operator actions for hash verification.
+/// Used by both <see cref="LocalGameAuthority"/> and <see cref="DistributedAuthority"/>
+/// to ensure all nodes agree on the action sequence.
+/// <para>
+/// This engine mirrors the intent-level state changes from the existing combat system
+/// (<see cref="Sessions.CombatSessionService"/>). The actual combat resolution (damage, AI,
+/// phases) is handled by <see cref="Sessions.CombatSessionService"/> and
+/// <see cref="Combat.DeterministicCombatEngine"/>; this engine provides the deterministic
+/// action ledger used for P2P state consistency verification.
+/// </para>
 /// </summary>
 public sealed class DefaultGameEngine : IDeterministicGameEngine
 {
@@ -44,6 +51,7 @@ public sealed class DefaultGameEngine : IDeterministicGameEngine
         var health = snapshot.CurrentHealth;
         var xp = snapshot.TotalXp;
 
+        // Mirror intent-level state changes from the combat system
         if (action.Primary == PrimaryAction.Fire)
         {
             xp += 10;

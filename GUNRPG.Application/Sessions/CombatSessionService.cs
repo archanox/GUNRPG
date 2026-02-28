@@ -1,4 +1,5 @@
 using GUNRPG.Application.Combat;
+using GUNRPG.Application.Distributed;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Mapping;
 using GUNRPG.Application.Operators;
@@ -13,6 +14,8 @@ namespace GUNRPG.Application.Sessions;
 
 /// <summary>
 /// Application service that orchestrates combat sessions and exposes UI-agnostic operations.
+/// When an <see cref="IGameAuthority"/> is provided, combat actions are replicated
+/// through the distributed lockstep authority for P2P state verification.
 /// </summary>
 public sealed class CombatSessionService
 {
@@ -22,11 +25,13 @@ public sealed class CombatSessionService
 
     private readonly ICombatSessionStore _store;
     private readonly IOperatorEventStore? _operatorEventStore;
+    private readonly IGameAuthority? _gameAuthority;
 
-    public CombatSessionService(ICombatSessionStore store, IOperatorEventStore? operatorEventStore = null)
+    public CombatSessionService(ICombatSessionStore store, IOperatorEventStore? operatorEventStore = null, IGameAuthority? gameAuthority = null)
     {
         _store = store;
         _operatorEventStore = operatorEventStore;
+        _gameAuthority = gameAuthority;
     }
 
     public async Task<ServiceResult<CombatSessionDto>> CreateSessionAsync(SessionCreateRequest request)
@@ -115,6 +120,21 @@ public sealed class CombatSessionService
 
         session.RecordAction();
         await SaveAsync(session);
+
+        // Replicate the action through the distributed authority for P2P state verification
+        if (_gameAuthority != null && !session.OperatorId.IsEmpty)
+        {
+            await _gameAuthority.SubmitActionAsync(new PlayerActionDto
+            {
+                OperatorId = session.OperatorId.Value,
+                Primary = request.Intents.Primary,
+                Movement = request.Intents.Movement,
+                Stance = request.Intents.Stance,
+                Cover = request.Intents.Cover,
+                CancelMovement = request.Intents.CancelMovement
+            });
+        }
+
         return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
     }
 
