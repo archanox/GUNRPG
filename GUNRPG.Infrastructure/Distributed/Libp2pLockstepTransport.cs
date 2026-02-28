@@ -170,7 +170,7 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
 
         var json = JsonSerializer.Serialize(new MessageWrapper<T> { Type = type, Payload = message }, JsonOptions);
 
-        var tasks = channels.Select(channel => channel.WriteLineAsync(json).AsTask());
+        var tasks = channels.Select(channel => channel.WriteLineAsync(json).AsTask()).ToArray();
         await Task.WhenAll(tasks);
     }
 

@@ -13,6 +13,7 @@ public sealed class DistributedAuthority : IGameAuthority
 {
     private readonly ILockstepTransport _transport;
     private readonly List<DistributedActionEntry> _actionLog = new();
+    private readonly HashSet<Guid> _appliedActionIds = new();
     private readonly Dictionary<Guid, GameStateDto.OperatorSnapshot> _operatorStates = new();
     private readonly object _lock = new();
 
@@ -20,7 +21,7 @@ public sealed class DistributedAuthority : IGameAuthority
     private readonly Dictionary<Guid, PendingAction> _pendingActions = new();
 
     // Buffered inbound actions waiting for their sequence turn
-    private readonly SortedDictionary<long, (ActionBroadcastMessage Message, bool Acked)> _inboundBuffer = new();
+    private readonly SortedDictionary<long, ActionBroadcastMessage> _inboundBuffer = new();
 
     private long _nextSequenceNumber;
     private string _currentStateHash = ComputeEmptyHash();
@@ -170,6 +171,7 @@ public sealed class DistributedAuthority : IGameAuthority
         var hash = ComputeStateHash();
         _currentStateHash = hash;
 
+        _appliedActionIds.Add(action.ActionId);
         _actionLog.Add(new DistributedActionEntry
         {
             SequenceNumber = seq,
@@ -257,10 +259,9 @@ public sealed class DistributedAuthority : IGameAuthority
             if (first.Key != _nextSequenceNumber) break;
 
             _inboundBuffer.Remove(first.Key);
-            var msg = first.Value.Message;
+            var msg = first.Value;
 
-            // Only apply if not already in the log (dedup)
-            if (!_actionLog.Any(e => e.Action.ActionId == msg.Action.ActionId))
+            if (!_appliedActionIds.Contains(msg.Action.ActionId))
             {
                 ApplyActionInternal(msg.Action, msg.SenderId);
             }
@@ -277,9 +278,9 @@ public sealed class DistributedAuthority : IGameAuthority
         {
             // Buffer the action at its proposed sequence position
             if (!_inboundBuffer.ContainsKey(msg.ProposedSequenceNumber) &&
-                !_actionLog.Any(e => e.Action.ActionId == msg.Action.ActionId))
+                !_appliedActionIds.Contains(msg.Action.ActionId))
             {
-                _inboundBuffer[msg.ProposedSequenceNumber] = (msg, false);
+                _inboundBuffer[msg.ProposedSequenceNumber] = msg;
             }
 
             // Apply any buffered actions that are next in sequence
@@ -361,6 +362,7 @@ public sealed class DistributedAuthority : IGameAuthority
             {
                 // Full replay from genesis
                 _actionLog.Clear();
+                _appliedActionIds.Clear();
                 _operatorStates.Clear();
                 _nextSequenceNumber = 0;
                 _currentStateHash = ComputeEmptyHash();
