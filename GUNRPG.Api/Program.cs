@@ -25,21 +25,6 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddCombatSessionStore(builder.Configuration);
 builder.Services.AddSingleton<IDeterministicCombatEngine, DeterministicCombatEngine>();
-builder.Services.AddSingleton<CombatSessionService>(sp =>
-{
-    var sessionStore = sp.GetRequiredService<ICombatSessionStore>();
-    var operatorEventStore = sp.GetRequiredService<IOperatorEventStore>();
-    return new CombatSessionService(sessionStore, operatorEventStore);
-});
-builder.Services.AddSingleton<OperatorService>(sp =>
-{
-    var exfilService = sp.GetRequiredService<OperatorExfilService>();
-    var sessionService = sp.GetRequiredService<CombatSessionService>();
-    var eventStore = sp.GetRequiredService<IOperatorEventStore>();
-    var offlineSyncHeadStore = sp.GetRequiredService<IOfflineSyncHeadStore>();
-    var combatEngine = sp.GetRequiredService<IDeterministicCombatEngine>();
-    return new OperatorService(exfilService, sessionService, eventStore, offlineSyncHeadStore, combatEngine);
-});
 
 // Distributed game authority: deterministic lockstep replication via libp2p transport
 var serverNodeId = Guid.NewGuid();
@@ -51,6 +36,23 @@ builder.Services.AddSingleton<IGameAuthority>(sp =>
     var transport = sp.GetRequiredService<ILockstepTransport>();
     var engine = sp.GetRequiredService<IDeterministicGameEngine>();
     return new DistributedAuthority(serverNodeId, transport, engine);
+});
+
+builder.Services.AddSingleton<CombatSessionService>(sp =>
+{
+    var sessionStore = sp.GetRequiredService<ICombatSessionStore>();
+    var operatorEventStore = sp.GetRequiredService<IOperatorEventStore>();
+    var gameAuthority = sp.GetRequiredService<IGameAuthority>();
+    return new CombatSessionService(sessionStore, operatorEventStore, gameAuthority);
+});
+builder.Services.AddSingleton<OperatorService>(sp =>
+{
+    var exfilService = sp.GetRequiredService<OperatorExfilService>();
+    var sessionService = sp.GetRequiredService<CombatSessionService>();
+    var eventStore = sp.GetRequiredService<IOperatorEventStore>();
+    var offlineSyncHeadStore = sp.GetRequiredService<IOfflineSyncHeadStore>();
+    var combatEngine = sp.GetRequiredService<IDeterministicCombatEngine>();
+    return new OperatorService(exfilService, sessionService, eventStore, offlineSyncHeadStore, combatEngine);
 });
 
 var app = builder.Build();
