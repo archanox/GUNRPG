@@ -1,4 +1,3 @@
-using GUNRPG.Application.Combat;
 using GUNRPG.Application.Distributed;
 using GUNRPG.Core.Intents;
 using GUNRPG.Infrastructure.Distributed;
@@ -8,7 +7,7 @@ namespace GUNRPG.Tests;
 public class DistributedAuthorityTests
 {
     private static readonly Guid OperatorA = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    private static readonly IDeterministicGameEngine Engine = new DeterministicCombatEngine();
+    private static readonly IDeterministicGameEngine Engine = new DefaultGameEngine();
 
     // --- Core Functionality ---
 
@@ -538,12 +537,12 @@ public class DistributedAuthorityTests
         Assert.Equal(logA.Count, authorityB.GetActionLog().Count);
     }
 
-    // --- DeterministicCombatEngine (Step) ---
+    // --- DefaultGameEngine ---
 
     [Fact]
-    public void DeterministicCombatEngine_Step_AppliesFireAction()
+    public void DefaultGameEngine_Step_AppliesFireAction()
     {
-        var engine = new DeterministicCombatEngine();
+        var engine = new DefaultGameEngine();
         var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
 
         var result = engine.Step(state, new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
@@ -554,9 +553,9 @@ public class DistributedAuthorityTests
     }
 
     [Fact]
-    public void DeterministicCombatEngine_Step_AppliesReloadAction()
+    public void DefaultGameEngine_Step_AppliesReloadAction()
     {
-        var engine = new DeterministicCombatEngine();
+        var engine = new DefaultGameEngine();
         var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
 
         var result = engine.Step(state, new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload });
@@ -567,9 +566,9 @@ public class DistributedAuthorityTests
     }
 
     [Fact]
-    public void DeterministicCombatEngine_Step_IsPure()
+    public void DefaultGameEngine_Step_IsPure()
     {
-        var engine = new DeterministicCombatEngine();
+        var engine = new DefaultGameEngine();
         var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
         var action = new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire };
 
