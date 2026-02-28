@@ -121,7 +121,9 @@ public sealed class CombatSessionService
         session.RecordAction();
         await SaveAsync(session);
 
-        // Replicate the action through the distributed authority for P2P state verification
+        // Replicate the action through the distributed authority for P2P state verification.
+        // Sessions without an operator (legacy/test data created without OperatorId) are skipped
+        // because the distributed ledger tracks actions per operator.
         if (_gameAuthority != null && !session.OperatorId.IsEmpty)
         {
             await _gameAuthority.SubmitActionAsync(new PlayerActionDto
