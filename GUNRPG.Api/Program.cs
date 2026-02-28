@@ -30,7 +30,7 @@ builder.Services.AddSingleton<IDeterministicCombatEngine, DeterministicCombatEng
 // Persist server node ID so restarts reuse the same identity
 const string nodeIdFileName = "server_node_id";
 var serverNodeId = LoadOrCreateNodeId(nodeIdFileName);
-builder.Services.AddSingleton<IDeterministicGameEngine>(sp => (IDeterministicGameEngine)sp.GetRequiredService<IDeterministicCombatEngine>());
+builder.Services.AddSingleton<IDeterministicGameEngine, DefaultGameEngine>();
 builder.Services.AddSingleton(new Libp2pLockstepTransport(serverNodeId));
 builder.Services.AddSingleton<ILockstepTransport>(sp => sp.GetRequiredService<Libp2pLockstepTransport>());
 builder.Services.AddSingleton<IGameAuthority>(sp =>
