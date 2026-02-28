@@ -4,12 +4,14 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Combat;
+using GUNRPG.Application.Distributed;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Core.Intents;
 using GUNRPG.Infrastructure;
 using GUNRPG.Infrastructure.Backend;
+using GUNRPG.Infrastructure.Distributed;
 using GUNRPG.Infrastructure.Persistence;
 using Hex1b;
 using Hex1b.Widgets;
@@ -189,6 +191,17 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     private bool _usingLocalCombat;
     private int _activeOfflineMissionSeed;
     private readonly IDeterministicCombatEngine _deterministicEngine = new DeterministicCombatEngine();
+    // Distributed game authority backed by in-memory transport (default mode)
+    private readonly IGameAuthority _gameAuthority = InitializeGameAuthority();
+
+    private static IGameAuthority InitializeGameAuthority()
+    {
+        var nodeId = Guid.NewGuid();
+        var transport = new InMemoryLockstepTransport(nodeId);
+        var engine = new DefaultGameEngine();
+        return new DistributedAuthority(nodeId, transport, engine);
+    }
+
     private DateTime? _raidStartTimeUtc;
     private static readonly TimeSpan RaidDuration = TimeSpan.FromMinutes(30);
     private RaidState _raidState = RaidState.Completed;
@@ -1722,6 +1735,18 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             if (sessionData != null)
             {
                 CurrentSession = sessionData;
+
+                // Replicate the action through the distributed authority
+                _gameAuthority.SubmitActionAsync(new PlayerActionDto
+                {
+                    OperatorId = CurrentOperatorId ?? Guid.Empty,
+                    Primary = Enum.TryParse<PrimaryAction>(SelectedPrimary, out var p) ? p : PrimaryAction.None,
+                    Movement = Enum.TryParse<MovementAction>(SelectedMovement, out var m) ? m : MovementAction.Stand,
+                    Stance = Enum.TryParse<StanceAction>(SelectedStance, out var st) ? st : StanceAction.None,
+                    Cover = Enum.TryParse<CoverAction>(SelectedCover, out var c) ? c : CoverAction.None,
+                    CancelMovement = false
+                }).GetAwaiter().GetResult();
+
                 ApplyPendingRaidStateTransitions();
                 if (_raidState == RaidState.ExfilFailed)
                 {
@@ -1773,6 +1798,17 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 ReturnScreen = Screen.CombatSession;
                 return false;
             }
+
+            // Replicate the action through the distributed authority
+            _gameAuthority.SubmitActionAsync(new PlayerActionDto
+            {
+                OperatorId = CurrentOperatorId ?? Guid.Empty,
+                Primary = intents.Primary,
+                Movement = intents.Movement,
+                Stance = intents.Stance,
+                Cover = intents.Cover,
+                CancelMovement = intents.CancelMovement
+            }).GetAwaiter().GetResult();
 
             CurrentSession = ToLocalDto(result.Value!);
             ApplyPendingRaidStateTransitions();
