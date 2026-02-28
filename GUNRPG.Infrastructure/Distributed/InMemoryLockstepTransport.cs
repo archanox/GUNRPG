@@ -29,6 +29,9 @@ public sealed class InMemoryLockstepTransport : ILockstepTransport
     public event Action<LogSyncResponseMessage>? OnSyncResponseReceived;
     public event Action<Guid>? OnPeerConnected;
     public event Action<Guid>? OnPeerDisconnected;
+    public event Action<OperatorEventBroadcastMessage>? OnOperatorEventReceived;
+    public event Action<OperatorEventSyncRequestMessage>? OnOperatorEventSyncRequestReceived;
+    public event Action<OperatorEventSyncResponseMessage>? OnOperatorEventSyncResponseReceived;
 
     /// <summary>
     /// Connect this transport to another transport instance, simulating a P2P link.
@@ -119,6 +122,36 @@ public sealed class InMemoryLockstepTransport : ILockstepTransport
     {
         var json = JsonSerializer.Serialize(obj, JsonOptions);
         return JsonSerializer.Deserialize<T>(json, JsonOptions)!;
+    }
+
+    public Task BroadcastOperatorEventAsync(OperatorEventBroadcastMessage message, CancellationToken ct = default)
+    {
+        foreach (var peer in _peerTransports.Values.ToList())
+        {
+            var clone = Clone<OperatorEventBroadcastMessage>(message);
+            peer.OnOperatorEventReceived?.Invoke(clone);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task SendOperatorEventSyncRequestAsync(Guid peerId, OperatorEventSyncRequestMessage message, CancellationToken ct = default)
+    {
+        if (_peerTransports.TryGetValue(peerId, out var peer))
+        {
+            var clone = Clone<OperatorEventSyncRequestMessage>(message);
+            peer.OnOperatorEventSyncRequestReceived?.Invoke(clone);
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task SendOperatorEventSyncResponseAsync(Guid peerId, OperatorEventSyncResponseMessage message, CancellationToken ct = default)
+    {
+        if (_peerTransports.TryGetValue(peerId, out var peer))
+        {
+            var clone = Clone<OperatorEventSyncResponseMessage>(message);
+            peer.OnOperatorEventSyncResponseReceived?.Invoke(clone);
+        }
+        return Task.CompletedTask;
     }
 
     /// <summary>

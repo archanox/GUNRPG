@@ -40,6 +40,21 @@ builder.Services.AddSingleton<IGameAuthority>(sp =>
     return new DistributedAuthority(serverNodeId, transport, engine);
 });
 
+builder.Services.AddSingleton<OperatorEventReplicator>(sp =>
+{
+    var transport = sp.GetRequiredService<ILockstepTransport>();
+    var eventStore = sp.GetRequiredService<IOperatorEventStore>();
+    return new OperatorEventReplicator(serverNodeId, transport, eventStore);
+});
+
+// Override OperatorExfilService registration to wire in the distributed replicator
+builder.Services.AddSingleton<OperatorExfilService>(sp =>
+{
+    var eventStore = sp.GetRequiredService<IOperatorEventStore>();
+    var replicator = sp.GetRequiredService<OperatorEventReplicator>();
+    return new OperatorExfilService(eventStore, replicator);
+});
+
 builder.Services.AddSingleton<CombatSessionService>(sp =>
 {
     var sessionStore = sp.GetRequiredService<ICombatSessionStore>();

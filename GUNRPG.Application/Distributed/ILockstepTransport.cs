@@ -24,6 +24,15 @@ public interface ILockstepTransport
     /// <summary>Send a log sync response to a specific peer.</summary>
     Task SendSyncResponseAsync(Guid peerId, LogSyncResponseMessage message, CancellationToken ct = default);
 
+    /// <summary>Broadcast a single operator event to all connected peers.</summary>
+    Task BroadcastOperatorEventAsync(OperatorEventBroadcastMessage message, CancellationToken ct = default);
+
+    /// <summary>Send an operator event sync request to a specific peer.</summary>
+    Task SendOperatorEventSyncRequestAsync(Guid peerId, OperatorEventSyncRequestMessage message, CancellationToken ct = default);
+
+    /// <summary>Send an operator event sync response to a specific peer.</summary>
+    Task SendOperatorEventSyncResponseAsync(Guid peerId, OperatorEventSyncResponseMessage message, CancellationToken ct = default);
+
     /// <summary>Raised when an action broadcast is received from a peer.</summary>
     event Action<ActionBroadcastMessage>? OnActionReceived;
 
@@ -44,4 +53,13 @@ public interface ILockstepTransport
 
     /// <summary>Raised when a peer disconnects.</summary>
     event Action<Guid>? OnPeerDisconnected;
+
+    /// <summary>Raised when an operator event broadcast is received from a peer.</summary>
+    event Action<OperatorEventBroadcastMessage>? OnOperatorEventReceived;
+
+    /// <summary>Raised when an operator event sync request is received from a peer.</summary>
+    event Action<OperatorEventSyncRequestMessage>? OnOperatorEventSyncRequestReceived;
+
+    /// <summary>Raised when an operator event sync response is received from a peer.</summary>
+    event Action<OperatorEventSyncResponseMessage>? OnOperatorEventSyncResponseReceived;
 }
