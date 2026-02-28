@@ -973,17 +973,22 @@ public sealed class OperatorExfilService
 
     /// <summary>
     /// Appends an event to the local store and, if a replicator is configured,
-    /// broadcasts it to all connected peers.
+    /// broadcasts it to all connected peers. Broadcast failures are best-effort and do not
+    /// affect the service result — the local append has already succeeded.
     /// </summary>
     private async Task AppendAsync(OperatorEvent evt)
     {
         await _eventStore.AppendEventAsync(evt);
         if (_replicator != null)
-            await _replicator.BroadcastAsync(evt);
+        {
+            try { await _replicator.BroadcastAsync(evt); }
+            catch (Exception) { /* best-effort: local append succeeded */ }
+        }
     }
 
     /// <summary>
     /// Appends a batch of events to the local store and broadcasts each one.
+    /// Broadcast failures are best-effort — the batch has already been persisted atomically.
     /// </summary>
     private async Task AppendBatchAsync(IReadOnlyList<OperatorEvent> events)
     {
@@ -991,7 +996,10 @@ public sealed class OperatorExfilService
         if (_replicator != null)
         {
             foreach (var evt in events)
-                await _replicator.BroadcastAsync(evt);
+            {
+                try { await _replicator.BroadcastAsync(evt); }
+                catch (Exception) { /* best-effort: local batch already persisted */ }
+            }
         }
     }
 }
