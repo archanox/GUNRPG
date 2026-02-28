@@ -169,6 +169,9 @@ public class DistributedAuthorityTests
         Assert.Single(logB);
         Assert.Equal(logA[0].Action.ActionId, logB[0].Action.ActionId);
         Assert.Equal(logA[0].StateHashAfterApply, logB[0].StateHashAfterApply);
+        // Both logs should record the originating node (A) as the NodeId
+        Assert.Equal(authorityA.NodeId, logA[0].NodeId);
+        Assert.Equal(authorityA.NodeId, logB[0].NodeId);
     }
 
     [Fact]
@@ -416,6 +419,22 @@ public class DistributedAuthorityTests
 
         Assert.NotEqual(Guid.Empty, authority.NodeId);
         Assert.False(authority.IsDesynced);
+    }
+
+    // --- Peer Disconnect ---
+
+    [Fact]
+    public async Task PeerDisconnect_UnblocksPendingAction()
+    {
+        var (authorityA, _, transportA, transportB) = CreateConnectedPair();
+
+        // Disconnect B while A is submitting — should not hang
+        transportA.DisconnectFrom(transportB);
+
+        // Solo mode now: should apply immediately without blocking
+        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+
+        Assert.Single(authorityA.GetActionLog());
     }
 
     // --- Helpers ---

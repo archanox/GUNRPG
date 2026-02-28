@@ -91,31 +91,55 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
 
     private void DispatchMessage(string json)
     {
-        // Messages are prefixed with type indicator
-        if (json.StartsWith("{\"type\":\"action_broadcast\""))
+        try
         {
-            var wrapper = JsonSerializer.Deserialize<MessageWrapper<ActionBroadcastMessage>>(json, JsonOptions);
-            if (wrapper?.Payload != null) OnActionReceived?.Invoke(wrapper.Payload);
+            using var document = JsonDocument.Parse(json);
+            var root = document.RootElement;
+
+            if (!root.TryGetProperty("type", out var typeProperty))
+                return;
+
+            var type = typeProperty.GetString();
+            if (string.IsNullOrEmpty(type))
+                return;
+
+            switch (type)
+            {
+                case "action_broadcast":
+                {
+                    var wrapper = JsonSerializer.Deserialize<MessageWrapper<ActionBroadcastMessage>>(json, JsonOptions);
+                    if (wrapper?.Payload != null) OnActionReceived?.Invoke(wrapper.Payload);
+                    break;
+                }
+                case "action_ack":
+                {
+                    var wrapper = JsonSerializer.Deserialize<MessageWrapper<ActionAckMessage>>(json, JsonOptions);
+                    if (wrapper?.Payload != null) OnAckReceived?.Invoke(wrapper.Payload);
+                    break;
+                }
+                case "hash_broadcast":
+                {
+                    var wrapper = JsonSerializer.Deserialize<MessageWrapper<HashBroadcastMessage>>(json, JsonOptions);
+                    if (wrapper?.Payload != null) OnHashReceived?.Invoke(wrapper.Payload);
+                    break;
+                }
+                case "sync_request":
+                {
+                    var wrapper = JsonSerializer.Deserialize<MessageWrapper<LogSyncRequestMessage>>(json, JsonOptions);
+                    if (wrapper?.Payload != null) OnSyncRequestReceived?.Invoke(wrapper.Payload);
+                    break;
+                }
+                case "sync_response":
+                {
+                    var wrapper = JsonSerializer.Deserialize<MessageWrapper<LogSyncResponseMessage>>(json, JsonOptions);
+                    if (wrapper?.Payload != null) OnSyncResponseReceived?.Invoke(wrapper.Payload);
+                    break;
+                }
+            }
         }
-        else if (json.StartsWith("{\"type\":\"action_ack\""))
+        catch (JsonException)
         {
-            var wrapper = JsonSerializer.Deserialize<MessageWrapper<ActionAckMessage>>(json, JsonOptions);
-            if (wrapper?.Payload != null) OnAckReceived?.Invoke(wrapper.Payload);
-        }
-        else if (json.StartsWith("{\"type\":\"hash_broadcast\""))
-        {
-            var wrapper = JsonSerializer.Deserialize<MessageWrapper<HashBroadcastMessage>>(json, JsonOptions);
-            if (wrapper?.Payload != null) OnHashReceived?.Invoke(wrapper.Payload);
-        }
-        else if (json.StartsWith("{\"type\":\"sync_request\""))
-        {
-            var wrapper = JsonSerializer.Deserialize<MessageWrapper<LogSyncRequestMessage>>(json, JsonOptions);
-            if (wrapper?.Payload != null) OnSyncRequestReceived?.Invoke(wrapper.Payload);
-        }
-        else if (json.StartsWith("{\"type\":\"sync_response\""))
-        {
-            var wrapper = JsonSerializer.Deserialize<MessageWrapper<LogSyncResponseMessage>>(json, JsonOptions);
-            if (wrapper?.Payload != null) OnSyncResponseReceived?.Invoke(wrapper.Payload);
+            // Malformed JSON; ignore to avoid tearing down the session loop
         }
     }
 
@@ -136,6 +160,8 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
 
     private async Task BroadcastAsync<T>(string type, T message, CancellationToken ct) where T : class
     {
+        ct.ThrowIfCancellationRequested();
+
         List<IChannel> channels;
         lock (_lock)
         {
@@ -144,14 +170,14 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
 
         var json = JsonSerializer.Serialize(new MessageWrapper<T> { Type = type, Payload = message }, JsonOptions);
 
-        foreach (var channel in channels)
-        {
-            await channel.WriteLineAsync(json);
-        }
+        var tasks = channels.Select(channel => channel.WriteLineAsync(json).AsTask());
+        await Task.WhenAll(tasks);
     }
 
     private async Task SendToAsync<T>(Guid peerId, string type, T message, CancellationToken ct) where T : class
     {
+        ct.ThrowIfCancellationRequested();
+
         IChannel? channel;
         lock (_lock)
         {
