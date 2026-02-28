@@ -126,13 +126,28 @@ app.Run();
 
 static Guid LoadOrCreateNodeId(string fileName)
 {
-    if (File.Exists(fileName) &&
-        Guid.TryParse(File.ReadAllText(fileName).Trim(), out var existing))
+    try
     {
-        return existing;
+        if (File.Exists(fileName) &&
+            Guid.TryParse(File.ReadAllText(fileName).Trim(), out var existing))
+        {
+            return existing;
+        }
+    }
+    catch (IOException ex)
+    {
+        Console.WriteLine($"[Distributed] Warning: could not read {fileName}: {ex.Message}");
     }
 
     var id = Guid.NewGuid();
-    File.WriteAllText(fileName, id.ToString("D"));
+    try
+    {
+        File.WriteAllText(fileName, id.ToString("D"));
+    }
+    catch (IOException ex)
+    {
+        Console.WriteLine($"[Distributed] Warning: could not persist node ID to {fileName}: {ex.Message}");
+    }
+
     return id;
 }
