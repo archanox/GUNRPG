@@ -20,7 +20,7 @@ public sealed class InMemoryLockstepTransport : ILockstepTransport
         _nodeId = nodeId;
     }
 
-    public IReadOnlySet<Guid> ConnectedPeers => _connectedPeers;
+    public IReadOnlySet<Guid> ConnectedPeers => new HashSet<Guid>(_connectedPeers);
 
     public event Action<ActionBroadcastMessage>? OnActionReceived;
     public event Action<ActionAckMessage>? OnAckReceived;

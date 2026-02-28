@@ -16,8 +16,11 @@ public sealed class DistributedAuthority : IGameAuthority
     private readonly Dictionary<Guid, GameStateDto.OperatorSnapshot> _operatorStates = new();
     private readonly object _lock = new();
 
-    // Pending actions awaiting acknowledgment from all peers
+    // Pending outbound actions awaiting acknowledgment from all peers
     private readonly Dictionary<Guid, PendingAction> _pendingActions = new();
+
+    // Buffered inbound actions waiting for their sequence turn
+    private readonly SortedDictionary<long, (ActionBroadcastMessage Message, bool Acked)> _inboundBuffer = new();
 
     private long _nextSequenceNumber;
     private string _currentStateHash = ComputeEmptyHash();
@@ -40,6 +43,7 @@ public sealed class DistributedAuthority : IGameAuthority
         _transport.OnSyncRequestReceived += HandleSyncRequestReceived;
         _transport.OnSyncResponseReceived += HandleSyncResponseReceived;
         _transport.OnPeerConnected += HandlePeerConnected;
+        _transport.OnPeerDisconnected += HandlePeerDisconnected;
     }
 
     public Guid NodeId { get; }
@@ -69,7 +73,7 @@ public sealed class DistributedAuthority : IGameAuthority
             // Solo mode: apply immediately
             lock (_lock)
             {
-                ApplyActionInternal(action);
+                ApplyActionInternal(action, NodeId);
             }
             return;
         }
@@ -89,7 +93,7 @@ public sealed class DistributedAuthority : IGameAuthority
         lock (_lock)
         {
             _pendingActions.Remove(action.ActionId);
-            ApplyActionInternal(action);
+            ApplyActionInternal(action, NodeId);
         }
 
         // Broadcast resulting hash
@@ -142,7 +146,7 @@ public sealed class DistributedAuthority : IGameAuthority
 
     // --- Internal action application ---
 
-    private void ApplyActionInternal(PlayerActionDto action)
+    private void ApplyActionInternal(PlayerActionDto action, Guid originNodeId)
     {
         // Ensure operator exists in state
         if (!_operatorStates.ContainsKey(action.OperatorId))
@@ -169,7 +173,7 @@ public sealed class DistributedAuthority : IGameAuthority
         _actionLog.Add(new DistributedActionEntry
         {
             SequenceNumber = seq,
-            NodeId = NodeId,
+            NodeId = originNodeId,
             Action = action,
             StateHashAfterApply = hash
         });
@@ -241,20 +245,45 @@ public sealed class DistributedAuthority : IGameAuthority
         return Convert.ToHexString(bytes);
     }
 
+    /// <summary>
+    /// Drains the inbound buffer, applying any actions whose sequence number
+    /// matches _nextSequenceNumber in order.
+    /// </summary>
+    private void DrainInboundBuffer()
+    {
+        while (_inboundBuffer.Count > 0)
+        {
+            var first = _inboundBuffer.First();
+            if (first.Key != _nextSequenceNumber) break;
+
+            _inboundBuffer.Remove(first.Key);
+            var msg = first.Value.Message;
+
+            // Only apply if not already in the log (dedup)
+            if (!_actionLog.Any(e => e.Action.ActionId == msg.Action.ActionId))
+            {
+                ApplyActionInternal(msg.Action, msg.SenderId);
+            }
+        }
+    }
+
     // --- Peer message handlers ---
 
     private void HandleActionReceived(ActionBroadcastMessage msg)
     {
         if (_isDesynced) return;
 
-        // Apply the remote action immediately upon receipt
         lock (_lock)
         {
-            // Only apply if not already in the log (dedup)
-            if (!_actionLog.Any(e => e.Action.ActionId == msg.Action.ActionId))
+            // Buffer the action at its proposed sequence position
+            if (!_inboundBuffer.ContainsKey(msg.ProposedSequenceNumber) &&
+                !_actionLog.Any(e => e.Action.ActionId == msg.Action.ActionId))
             {
-                ApplyActionInternal(msg.Action);
+                _inboundBuffer[msg.ProposedSequenceNumber] = (msg, false);
             }
+
+            // Apply any buffered actions that are next in sequence
+            DrainInboundBuffer();
         }
 
         // Send acknowledgment back to the sender
@@ -341,7 +370,7 @@ public sealed class DistributedAuthority : IGameAuthority
             {
                 if (entry.SequenceNumber >= _nextSequenceNumber)
                 {
-                    ApplyActionInternal(entry.Action);
+                    ApplyActionInternal(entry.Action, entry.NodeId);
 
                     // Verify hash after apply
                     if (_currentStateHash != entry.StateHashAfterApply)
@@ -374,6 +403,19 @@ public sealed class DistributedAuthority : IGameAuthority
             FromSequenceNumber = logLength,
             LatestHash = hash
         });
+    }
+
+    private void HandlePeerDisconnected(Guid peerId)
+    {
+        // When a peer disconnects, mark it as acknowledged on all pending
+        // outbound actions so SubmitActionAsync does not hang indefinitely.
+        lock (_lock)
+        {
+            foreach (var pending in _pendingActions.Values)
+            {
+                pending.Acknowledge(peerId);
+            }
+        }
     }
 
     // --- Pending action tracking ---
@@ -417,10 +459,12 @@ public sealed class DistributedAuthority : IGameAuthority
             }
         }
 
-        public Task WaitForConsensusAsync(CancellationToken ct)
+        public async Task WaitForConsensusAsync(CancellationToken ct)
         {
-            ct.Register(() => _consensusTcs.TrySetCanceled(ct));
-            return _consensusTcs.Task;
+            using (ct.Register(() => _consensusTcs.TrySetCanceled(ct)))
+            {
+                await _consensusTcs.Task.ConfigureAwait(false);
+            }
         }
     }
 }
