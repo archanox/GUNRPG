@@ -17,7 +17,8 @@ public sealed class OperatorEventReplicator
     private readonly Guid _nodeId;
     private readonly ILockstepTransport _transport;
     private readonly IOperatorEventStore _eventStore;
-    private readonly object _applyLock = new();
+    // Serializes all incoming-event applications to prevent sequence-check races across concurrent handler calls.
+    private readonly SemaphoreSlim _applyGate = new(1, 1);
 
     public OperatorEventReplicator(Guid nodeId, ILockstepTransport transport, IOperatorEventStore eventStore)
     {
@@ -95,6 +96,8 @@ public sealed class OperatorEventReplicator
 
     private async Task HandleSyncResponseAsync(OperatorEventSyncResponseMessage msg)
     {
+        if (msg.Events is not { Count: > 0 }) return;
+
         // Group by operator and sort by sequence to apply in order
         var grouped = msg.Events
             .GroupBy(e => e.OperatorId)
@@ -111,6 +114,7 @@ public sealed class OperatorEventReplicator
 
     private async Task ApplyEventIfNewAsync(OperatorEventBroadcastMessage msg)
     {
+        await _applyGate.WaitAsync();
         try
         {
             var opId = OperatorId.FromGuid(msg.OperatorId);
@@ -129,15 +133,19 @@ public sealed class OperatorEventReplicator
         {
             // Best-effort: ignore replication errors (e.g. race conditions, hash mismatches)
         }
+        finally
+        {
+            _applyGate.Release();
+        }
     }
 
     // --- Conversion helpers ---
 
-    private static OperatorEventBroadcastMessage ToMessage(OperatorEvent evt)
+    private OperatorEventBroadcastMessage ToMessage(OperatorEvent evt)
     {
         return new OperatorEventBroadcastMessage
         {
-            SenderId = Guid.Empty, // filled by caller/transport
+            SenderId = _nodeId,
             OperatorId = evt.OperatorId.Value,
             SequenceNumber = evt.SequenceNumber,
             EventType = evt.EventType,

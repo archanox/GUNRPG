@@ -52,11 +52,8 @@ public class OperatorEventReplicatorTests
         await storeA.AppendEventAsync(createdEvent);
         await replicatorA.BroadcastAsync(createdEvent);
 
-        // Give async handlers a tick to execute
-        await Task.Yield();
-
         // storeB should now have the operator
-        var events = await storeB.LoadEventsAsync(operatorId);
+        var events = await WaitForEventsAsync(storeB, operatorId, expectedCount: 1);
         Assert.Single(events);
         Assert.Equal("OperatorCreated", events[0].EventType);
         Assert.Equal(operatorId, events[0].OperatorId);
@@ -81,9 +78,7 @@ public class OperatorEventReplicatorTests
         await storeA.AppendEventAsync(createdEvent);
         await replicatorA.BroadcastAsync(createdEvent);
 
-        await Task.Yield();
-
-        var events = await storeB.LoadEventsAsync(operatorId);
+        var events = await WaitForEventsAsync(storeB, operatorId, expectedCount: 1);
         Assert.Single(events);
         Assert.Equal(createdEvent.OperatorId, events[0].OperatorId);
         Assert.Equal(createdEvent.SequenceNumber, events[0].SequenceNumber);
@@ -115,9 +110,7 @@ public class OperatorEventReplicatorTests
         await storeA.AppendEventAsync(xpEvent);
         await replicatorA.BroadcastAsync(xpEvent);
 
-        await Task.Yield();
-
-        var events = await storeB.LoadEventsAsync(operatorId);
+        var events = await WaitForEventsAsync(storeB, operatorId, expectedCount: 2);
         Assert.Equal(2, events.Count);
         Assert.Equal("OperatorCreated", events[0].EventType);
         Assert.Equal("XpGained", events[1].EventType);
@@ -145,11 +138,8 @@ public class OperatorEventReplicatorTests
         _ = new OperatorEventReplicator(nodeIdB, transportB, storeB);
         transportA.ConnectTo(transportB);
 
-        // Give async handlers a tick to execute
-        await Task.Yield();
-
         // B should now have the operator
-        var events = await storeB.LoadEventsAsync(operatorId);
+        var events = await WaitForEventsAsync(storeB, operatorId, expectedCount: 1);
         Assert.Single(events);
         Assert.Equal("OperatorCreated", events[0].EventType);
     }
@@ -176,10 +166,8 @@ public class OperatorEventReplicatorTests
         _ = new OperatorEventReplicator(nodeIdB, transportB, storeB);
         transportA.ConnectTo(transportB);
 
-        await Task.Yield();
-
-        Assert.Single(await storeB.LoadEventsAsync(opId1));
-        Assert.Single(await storeB.LoadEventsAsync(opId2));
+        Assert.Single(await WaitForEventsAsync(storeB, opId1, expectedCount: 1));
+        Assert.Single(await WaitForEventsAsync(storeB, opId2, expectedCount: 1));
     }
 
     [Fact]
@@ -202,11 +190,9 @@ public class OperatorEventReplicatorTests
         _ = new OperatorEventReplicator(nodeIdB, transportB, storeB);
         transportA.ConnectTo(transportB);
 
-        await Task.Yield();
-
         // A should now have B's operator and vice versa
-        Assert.Single(await storeA.LoadEventsAsync(opIdB));
-        Assert.Single(await storeB.LoadEventsAsync(opIdA));
+        Assert.Single(await WaitForEventsAsync(storeA, opIdB, expectedCount: 1));
+        Assert.Single(await WaitForEventsAsync(storeB, opIdA, expectedCount: 1));
     }
 
     // --- Duplicate handling ---
@@ -229,11 +215,12 @@ public class OperatorEventReplicatorTests
         var createdEvent = new OperatorCreatedEvent(operatorId, "India");
         await storeA.AppendEventAsync(createdEvent);
 
-        // Broadcast same event twice
+        // Broadcast same event twice; second should be silently skipped
         await replicatorA.BroadcastAsync(createdEvent);
-        await Task.Yield();
+        await WaitForEventsAsync(storeB, operatorId, expectedCount: 1);
         await replicatorA.BroadcastAsync(createdEvent);
-        await Task.Yield();
+        // Give the second broadcast a chance to be processed
+        await Task.Delay(50);
 
         // B should still have exactly one event (no duplicates)
         var events = await storeB.LoadEventsAsync(operatorId);
@@ -289,7 +276,33 @@ public class OperatorEventReplicatorTests
         Assert.Throws<InvalidOperationException>(() => OperatorEventReplicator.RehydrateEvent(msg));
     }
 
-    // --- Helper ---
+    // --- Helpers ---
+
+    /// <summary>
+    /// Polls <paramref name="store"/> until it contains at least <paramref name="expectedCount"/>
+    /// events for <paramref name="operatorId"/>, or throws a <see cref="TimeoutException"/> after 1 s.
+    /// </summary>
+    private static async Task<IReadOnlyList<OperatorEvent>> WaitForEventsAsync(
+        IOperatorEventStore store,
+        OperatorId operatorId,
+        int expectedCount,
+        int timeoutMs = 1000)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (true)
+        {
+            var events = await store.LoadEventsAsync(operatorId);
+            if (events.Count >= expectedCount)
+                return events;
+
+            if (DateTime.UtcNow >= deadline)
+                throw new TimeoutException(
+                    $"Timed out waiting for {expectedCount} replicated operator event(s) " +
+                    $"(got {events.Count}).");
+
+            await Task.Delay(10);
+        }
+    }
 
     private static OperatorEventBroadcastMessage CreateMessage(OperatorEvent evt)
     {

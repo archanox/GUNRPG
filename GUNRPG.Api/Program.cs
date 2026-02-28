@@ -11,6 +11,7 @@ using GUNRPG.Infrastructure.Distributed;
 using Makaretu.Dns;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -47,13 +48,14 @@ builder.Services.AddSingleton<OperatorEventReplicator>(sp =>
     return new OperatorEventReplicator(serverNodeId, transport, eventStore);
 });
 
-// Override OperatorExfilService registration to wire in the distributed replicator
-builder.Services.AddSingleton<OperatorExfilService>(sp =>
+// Replace the OperatorExfilService registered by AddCombatSessionStore with one that
+// includes the distributed replicator, so there is a single definitive registration.
+builder.Services.Replace(ServiceDescriptor.Singleton<OperatorExfilService>(sp =>
 {
     var eventStore = sp.GetRequiredService<IOperatorEventStore>();
     var replicator = sp.GetRequiredService<OperatorEventReplicator>();
     return new OperatorExfilService(eventStore, replicator);
-});
+}));
 
 builder.Services.AddSingleton<CombatSessionService>(sp =>
 {
