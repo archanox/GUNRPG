@@ -1,7 +1,10 @@
+using System.Text.Json;
 using GUNRPG.Api.Dtos;
 using GUNRPG.Api.Mapping;
+using GUNRPG.Application.Distributed;
 using GUNRPG.Application.Results;
 using GUNRPG.Application.Services;
+using GUNRPG.Core.Operators;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
 
@@ -16,10 +19,13 @@ namespace GUNRPG.Api.Controllers;
 public class OperatorsController : ControllerBase
 {
     private readonly OperatorService _service;
+    private readonly OperatorUpdateHub _updateHub;
+    private static readonly JsonSerializerOptions SseJsonOptions = new(JsonSerializerDefaults.Web);
 
-    public OperatorsController(OperatorService service)
+    public OperatorsController(OperatorService service, OperatorUpdateHub updateHub)
     {
         _service = service;
+        _updateHub = updateHub;
     }
 
     /// <summary>
@@ -394,5 +400,46 @@ public class OperatorsController : ControllerBase
             ResultStatus.ValidationError => BadRequest(new { error = result.ErrorMessage }),
             _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
         };
+    }
+
+    /// <summary>
+    /// Streams real-time operator state change notifications via Server-Sent Events.
+    /// Each event carries the event type and sequence number so the client knows to
+    /// re-fetch the full operator state.
+    /// </summary>
+    /// <param name="id">The operator's unique identifier.</param>
+    /// <param name="ct">Cancellation token (connection close).</param>
+    /// <remarks>
+    /// Clients subscribe to this endpoint to receive live updates whenever another
+    /// client or server peer mutates the operator's state. This enables cross-client
+    /// real-time synchronisation without requiring libp2p on the client.
+    /// </remarks>
+    [HttpGet("{id:guid}/stream")]
+    public async Task StreamOperatorEvents(Guid id, CancellationToken ct)
+    {
+        // Validate the operator exists before opening the stream
+        var check = await _service.GetOperatorAsync(id);
+        if (check.Status == ResultStatus.NotFound)
+        {
+            Response.StatusCode = StatusCodes.Status404NotFound;
+            await Response.WriteAsJsonAsync(new { error = check.ErrorMessage }, ct);
+            return;
+        }
+
+        Response.Headers.Append("Content-Type", "text/event-stream");
+        Response.Headers.Append("Cache-Control", "no-cache");
+        Response.Headers.Append("X-Accel-Buffering", "no");
+
+        var operatorId = OperatorId.FromGuid(id);
+
+        await foreach (var evt in _updateHub.SubscribeAsync(operatorId, ct))
+        {
+            var data = JsonSerializer.Serialize(
+                new { eventType = evt.EventType, sequenceNumber = evt.SequenceNumber, timestamp = evt.Timestamp },
+                SseJsonOptions);
+
+            await Response.WriteAsync($"data: {data}\n\n", ct);
+            await Response.Body.FlushAsync(ct);
+        }
     }
 }
