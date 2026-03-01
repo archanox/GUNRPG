@@ -21,22 +21,12 @@ public class OperatorUpdateHubTests
 
         using var cts = new CancellationTokenSource();
         var received = new List<OperatorEvent>();
+        var subscriberReady = new TaskCompletionSource();
 
-        var subscribeTask = Task.Run(async () =>
-        {
-            try
-            {
-                await foreach (var e in hub.SubscribeAsync(operatorId, cts.Token))
-                {
-                    received.Add(e);
-                    cts.Cancel(); // stop after first event
-                }
-            }
-            catch (OperationCanceledException) { }
-        });
+        var subscribeTask = StartSubscriberAsync(hub, operatorId, received, subscriberReady, cts);
 
-        // Give the subscriber a moment to register
-        await Task.Delay(10);
+        // Wait until the channel is registered before publishing
+        await subscriberReady.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
         hub.Publish(evt);
 
@@ -70,34 +60,16 @@ public class OperatorUpdateHubTests
         using var cts2 = new CancellationTokenSource();
         var received1 = new List<OperatorEvent>();
         var received2 = new List<OperatorEvent>();
+        var ready1 = new TaskCompletionSource();
+        var ready2 = new TaskCompletionSource();
 
-        var sub1 = Task.Run(async () =>
-        {
-            try
-            {
-                await foreach (var e in hub.SubscribeAsync(operatorId, cts1.Token))
-                {
-                    received1.Add(e);
-                    cts1.Cancel();
-                }
-            }
-            catch (OperationCanceledException) { }
-        });
+        var sub1 = StartSubscriberAsync(hub, operatorId, received1, ready1, cts1);
+        var sub2 = StartSubscriberAsync(hub, operatorId, received2, ready2, cts2);
 
-        var sub2 = Task.Run(async () =>
-        {
-            try
-            {
-                await foreach (var e in hub.SubscribeAsync(operatorId, cts2.Token))
-                {
-                    received2.Add(e);
-                    cts2.Cancel();
-                }
-            }
-            catch (OperationCanceledException) { }
-        });
-
-        await Task.Delay(20); // let both subscribers register
+        // Both must be registered before we publish
+        await Task.WhenAll(
+            ready1.Task.WaitAsync(TimeSpan.FromSeconds(2)),
+            ready2.Task.WaitAsync(TimeSpan.FromSeconds(2)));
 
         hub.Publish(evt);
 
@@ -117,22 +89,16 @@ public class OperatorUpdateHubTests
         var operatorIdB = OperatorId.NewId();
         var evtB = new OperatorCreatedEvent(operatorIdB, "Delta");
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
         var received = new List<OperatorEvent>();
+        var ready = new TaskCompletionSource();
 
-        var subscribeTask = Task.Run(async () =>
-        {
-            try
-            {
-                await foreach (var e in hub.SubscribeAsync(operatorIdA, cts.Token))
-                    received.Add(e);
-            }
-            catch (OperationCanceledException) { }
-        });
+        var subscribeTask = StartSubscriberAsync(hub, operatorIdA, received, ready, cts);
 
-        await Task.Delay(10);
+        await ready.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
         hub.Publish(evtB); // publish for B, not A
-        await subscribeTask;
+        await subscribeTask; // cancels via timeout CTS
 
         Assert.Empty(received);
     }
@@ -144,17 +110,11 @@ public class OperatorUpdateHubTests
         var operatorId = OperatorId.NewId();
 
         using var cts = new CancellationTokenSource();
+        var ready = new TaskCompletionSource();
 
-        var subscribeTask = Task.Run(async () =>
-        {
-            try
-            {
-                await foreach (var _ in hub.SubscribeAsync(operatorId, cts.Token)) { }
-            }
-            catch (OperationCanceledException) { }
-        });
+        var subscribeTask = StartSubscriberAsync(hub, operatorId, new List<OperatorEvent>(), ready, cts);
 
-        await Task.Delay(10);
+        await ready.Task.WaitAsync(TimeSpan.FromSeconds(2));
         cts.Cancel();
 
         // Should complete without hanging
@@ -171,21 +131,29 @@ public class OperatorUpdateHubTests
 
         using var cts = new CancellationTokenSource();
         var received = new List<OperatorEvent>();
+        var ready = new TaskCompletionSource();
 
         var subscribeTask = Task.Run(async () =>
         {
             try
             {
-                await foreach (var e in hub.SubscribeAsync(operatorId, cts.Token))
+                await using var enumerator = hub.SubscribeAsync(operatorId, cts.Token)
+                    .GetAsyncEnumerator(cts.Token);
+
+                var pending = enumerator.MoveNextAsync();
+                ready.TrySetResult(); // channel registered; safe to publish
+
+                while (await pending)
                 {
-                    received.Add(e);
+                    received.Add(enumerator.Current);
                     if (received.Count >= 2) cts.Cancel();
+                    pending = enumerator.MoveNextAsync();
                 }
             }
             catch (OperationCanceledException) { }
         });
 
-        await Task.Delay(10);
+        await ready.Task.WaitAsync(TimeSpan.FromSeconds(2));
         hub.Publish(created);
         hub.Publish(xp);
 
@@ -218,21 +186,11 @@ public class OperatorUpdateHubTests
 
         using var cts = new CancellationTokenSource();
         var received = new List<OperatorEvent>();
+        var ready = new TaskCompletionSource();
 
-        var subscribeTask = Task.Run(async () =>
-        {
-            try
-            {
-                await foreach (var e in hubB.SubscribeAsync(operatorId, cts.Token))
-                {
-                    received.Add(e);
-                    cts.Cancel();
-                }
-            }
-            catch (OperationCanceledException) { }
-        });
+        var subscribeTask = StartSubscriberAsync(hubB, operatorId, received, ready, cts);
 
-        await Task.Delay(10);
+        await ready.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
         await storeA.AppendEventAsync(created);
         await replicatorA.BroadcastAsync(created);
@@ -241,5 +199,45 @@ public class OperatorUpdateHubTests
 
         Assert.Single(received);
         Assert.Equal("OperatorCreated", received[0].EventType);
+    }
+
+    // --- Helpers ---
+
+    /// <summary>
+    /// Starts a background subscriber task that collects received events into
+    /// <paramref name="received"/> and signals <paramref name="subscriberReady"/> once
+    /// the channel subscription is registered (guaranteed before any publish can reach it).
+    /// Cancels <paramref name="cts"/> after the first event is received, then stops.
+    /// </summary>
+    private static Task StartSubscriberAsync(
+        OperatorUpdateHub hub,
+        OperatorId operatorId,
+        List<OperatorEvent> received,
+        TaskCompletionSource subscriberReady,
+        CancellationTokenSource cts)
+    {
+        return Task.Run(async () =>
+        {
+            try
+            {
+                await using var enumerator = hub.SubscribeAsync(operatorId, cts.Token)
+                    .GetAsyncEnumerator(cts.Token);
+
+                // Calling MoveNextAsync executes SubscribeAsync up to the first await
+                // (inside ReadAllAsync), where the channel is registered synchronously.
+                // Signalling ready here guarantees the hub has the subscription before
+                // the caller publishes.
+                var pending = enumerator.MoveNextAsync();
+                subscriberReady.TrySetResult();
+
+                while (await pending)
+                {
+                    received.Add(enumerator.Current);
+                    cts.Cancel(); // stop after first event
+                    pending = enumerator.MoveNextAsync();
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
     }
 }

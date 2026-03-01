@@ -419,16 +419,20 @@ public class OperatorsController : ControllerBase
     {
         // Validate the operator exists before opening the stream
         var check = await _service.GetOperatorAsync(id);
-        if (check.Status == ResultStatus.NotFound)
+        if (check.Status != ResultStatus.Success)
         {
-            Response.StatusCode = StatusCodes.Status404NotFound;
-            await Response.WriteAsJsonAsync(new { error = check.ErrorMessage }, ct);
+            Response.StatusCode = check.Status == ResultStatus.NotFound
+                ? StatusCodes.Status404NotFound
+                : StatusCodes.Status500InternalServerError;
+            await Response.WriteAsJsonAsync(
+                new { error = check.ErrorMessage ?? "An error occurred while retrieving the operator." },
+                ct);
             return;
         }
 
-        Response.Headers.Append("Content-Type", "text/event-stream");
-        Response.Headers.Append("Cache-Control", "no-cache");
-        Response.Headers.Append("X-Accel-Buffering", "no");
+        Response.ContentType = "text/event-stream";
+        Response.Headers["Cache-Control"] = "no-cache";
+        Response.Headers["X-Accel-Buffering"] = "no";
 
         var operatorId = OperatorId.FromGuid(id);
 

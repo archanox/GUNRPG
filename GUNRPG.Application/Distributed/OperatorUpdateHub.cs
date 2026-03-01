@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using GUNRPG.Core.Operators;
@@ -20,12 +19,13 @@ namespace GUNRPG.Application.Distributed;
 /// </summary>
 public sealed class OperatorUpdateHub
 {
-    private readonly ConcurrentDictionary<Guid, List<Channel<OperatorEvent>>> _subscriptions = new();
+    private readonly Dictionary<Guid, List<Channel<OperatorEvent>>> _subscriptions = new();
     private readonly object _subLock = new();
 
     /// <summary>
     /// Publishes an operator event to all active subscribers for that operator.
-    /// Non-blocking; slow or disconnected subscribers are dropped.
+    /// Non-blocking; if a subscriber's channel buffer is full, the oldest buffered
+    /// message is dropped to make room (see <see cref="BoundedChannelFullMode.DropOldest"/>).
     /// </summary>
     public void Publish(OperatorEvent evt)
     {
@@ -41,7 +41,7 @@ public sealed class OperatorUpdateHub
 
         foreach (var channel in snapshot)
         {
-            // TryWrite is non-blocking; drop if the channel buffer is full
+            // TryWrite is non-blocking; oldest buffered event is dropped when the channel is full
             channel.Writer.TryWrite(evt);
         }
     }
@@ -93,7 +93,7 @@ public sealed class OperatorUpdateHub
             {
                 list.Remove(channel);
                 if (list.Count == 0)
-                    _subscriptions.TryRemove(operatorId, out _);
+                    _subscriptions.Remove(operatorId);
             }
         }
         channel.Writer.TryComplete();
