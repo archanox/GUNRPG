@@ -17,14 +17,16 @@ public sealed class OperatorEventReplicator
     private readonly Guid _nodeId;
     private readonly ILockstepTransport _transport;
     private readonly IOperatorEventStore _eventStore;
+    private readonly OperatorUpdateHub? _updateHub;
     // Serializes all incoming-event applications to prevent sequence-check races across concurrent handler calls.
     private readonly SemaphoreSlim _applyGate = new(1, 1);
 
-    public OperatorEventReplicator(Guid nodeId, ILockstepTransport transport, IOperatorEventStore eventStore)
+    public OperatorEventReplicator(Guid nodeId, ILockstepTransport transport, IOperatorEventStore eventStore, OperatorUpdateHub? updateHub = null)
     {
         _nodeId = nodeId;
         _transport = transport;
         _eventStore = eventStore;
+        _updateHub = updateHub;
 
         _transport.OnPeerConnected += OnPeerConnected;
         _transport.OnOperatorEventReceived += OnOperatorEventReceived;
@@ -128,6 +130,7 @@ public sealed class OperatorEventReplicator
 
             var domainEvent = RehydrateEvent(msg);
             await _eventStore.AppendEventAsync(domainEvent);
+            _updateHub?.Publish(domainEvent);
         }
         catch (Exception)
         {

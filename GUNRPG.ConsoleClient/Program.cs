@@ -196,10 +196,90 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     private bool _exfilFailureRequested;
     private readonly object _raidStateLock = new();
 
+    // Background SSE stream for real-time operator state updates
+    private CancellationTokenSource? _streamCts;
+    private CancellationToken _appCt;
+
+    /// <summary>
+    /// Starts a background SSE subscription for real-time operator updates from the server.
+    /// When the server appends a new operator event (from this or any other connected client),
+    /// the SSE stream delivers a notification and the client re-fetches the full operator state.
+    /// Only active in online mode; no-ops otherwise.
+    /// </summary>
+    public void StartOperatorStream(Guid operatorId, CancellationToken appCt)
+    {
+        if (backend is not OnlineGameBackend) return;
+
+        // Cancel any previous stream subscription
+        _streamCts?.Cancel();
+        _streamCts?.Dispose();
+        _streamCts = CancellationTokenSource.CreateLinkedTokenSource(appCt);
+        var ct = _streamCts.Token;
+
+        var streamTask = Task.Run(async () =>
+        {
+            try
+            {
+                using var response = await client.GetAsync(
+                    $"operators/{operatorId}/stream",
+                    HttpCompletionOption.ResponseHeadersRead,
+                    ct);
+
+                if (!response.IsSuccessStatusCode) return;
+
+                using var stream = await response.Content.ReadAsStreamAsync(ct);
+                using var reader = new System.IO.StreamReader(stream);
+
+                while (!ct.IsCancellationRequested)
+                {
+                    var line = await reader.ReadLineAsync(ct);
+                    if (line == null) break; // server closed the connection
+
+                    if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
+
+                    // Refresh operator state on any event notification
+                    if (CurrentOperatorId != operatorId) break;
+
+                    try
+                    {
+                        using var refreshResponse = await client.GetAsync(
+                            $"operators/{operatorId}", ct);
+                        if (!refreshResponse.IsSuccessStatusCode) continue;
+
+                        var json = await refreshResponse.Content
+                            .ReadAsStringAsync(ct);
+                        using var doc = System.Text.Json.JsonDocument.Parse(json);
+                        var updatedOp = ParseOperator(doc.RootElement);
+                        if (updatedOp != null)
+                        {
+                            CurrentOperator = updatedOp;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // Best-effort: ignore transient refresh errors
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception)
+            {
+                // Non-fatal: SSE stream closed or server unavailable
+            }
+        }, ct);
+    }
+
     public Task<Hex1bWidget> BuildUI(RootContext ctx, CancellationTokenSource cts)
     {
+        _appCt = cts.Token;
         SyncRaidStateFromOperator();
         ApplyPendingRaidStateTransitions();
+
+        // Start the SSE stream on first render if an operator was auto-loaded at startup
+        if (CurrentOperatorId.HasValue && _streamCts == null)
+        {
+            StartOperatorStream(CurrentOperatorId.Value, _appCt);
+        }
 
         var widget = CurrentScreen switch
         {
@@ -395,6 +475,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             CurrentOperatorId = operatorId;
             SaveCurrentOperatorId();
             LoadOperator(operatorId);
+            StartOperatorStream(operatorId, _appCt);
             // LoadOperator may set screen to CombatSession if auto-resuming, so only set BaseCamp if not already set
             if (CurrentScreen != Screen.CombatSession)
             {

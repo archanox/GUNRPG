@@ -26,6 +26,7 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddCombatSessionStore(builder.Configuration);
 builder.Services.AddSingleton<IDeterministicCombatEngine, DeterministicCombatEngine>();
+builder.Services.AddSingleton<OperatorUpdateHub>();
 
 // Distributed game authority: deterministic lockstep replication via libp2p transport
 // Persist server node ID so restarts reuse the same identity
@@ -45,16 +46,18 @@ builder.Services.AddSingleton<OperatorEventReplicator>(sp =>
 {
     var transport = sp.GetRequiredService<ILockstepTransport>();
     var eventStore = sp.GetRequiredService<IOperatorEventStore>();
-    return new OperatorEventReplicator(serverNodeId, transport, eventStore);
+    var updateHub = sp.GetRequiredService<OperatorUpdateHub>();
+    return new OperatorEventReplicator(serverNodeId, transport, eventStore, updateHub);
 });
 
 // Replace the OperatorExfilService registered by AddCombatSessionStore with one that
-// includes the distributed replicator, so there is a single definitive registration.
+// includes the distributed replicator and update hub, so there is a single definitive registration.
 builder.Services.Replace(ServiceDescriptor.Singleton<OperatorExfilService>(sp =>
 {
     var eventStore = sp.GetRequiredService<IOperatorEventStore>();
     var replicator = sp.GetRequiredService<OperatorEventReplicator>();
-    return new OperatorExfilService(eventStore, replicator);
+    var updateHub = sp.GetRequiredService<OperatorUpdateHub>();
+    return new OperatorExfilService(eventStore, replicator, updateHub);
 }));
 
 builder.Services.AddSingleton<CombatSessionService>(sp =>

@@ -26,11 +26,13 @@ public sealed class OperatorExfilService
 
     private readonly IOperatorEventStore _eventStore;
     private readonly OperatorEventReplicator? _replicator;
+    private readonly OperatorUpdateHub? _updateHub;
 
-    public OperatorExfilService(IOperatorEventStore eventStore, OperatorEventReplicator? replicator = null)
+    public OperatorExfilService(IOperatorEventStore eventStore, OperatorEventReplicator? replicator = null, OperatorUpdateHub? updateHub = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _replicator = replicator;
+        _updateHub = updateHub;
     }
 
     /// <summary>
@@ -979,6 +981,7 @@ public sealed class OperatorExfilService
     private async Task AppendAsync(OperatorEvent evt)
     {
         await _eventStore.AppendEventAsync(evt);
+        _updateHub?.Publish(evt);
         if (_replicator != null)
         {
             try { await _replicator.BroadcastAsync(evt); }
@@ -993,6 +996,10 @@ public sealed class OperatorExfilService
     private async Task AppendBatchAsync(IReadOnlyList<OperatorEvent> events)
     {
         await _eventStore.AppendEventsAsync(events);
+        foreach (var evt in events)
+        {
+            _updateHub?.Publish(evt);
+        }
         if (_replicator != null)
         {
             foreach (var evt in events)
