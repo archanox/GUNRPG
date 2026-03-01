@@ -199,6 +199,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     // Background SSE stream for real-time operator state updates
     private CancellationTokenSource? _streamCts;
     private CancellationToken _appCt;
+    private Task? _sseTask;
 
     /// <summary>
     /// Starts a background SSE subscription for real-time operator updates from the server.
@@ -216,7 +217,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         _streamCts = CancellationTokenSource.CreateLinkedTokenSource(appCt);
         var ct = _streamCts.Token;
 
-        var streamTask = Task.Run(async () =>
+        _sseTask = Task.Run(async () =>
         {
             try
             {
