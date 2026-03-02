@@ -63,11 +63,19 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
         var remotePeerIdStr = await channel.ReadLineAsync();
         if (!Guid.TryParse(remotePeerIdStr, out var remotePeerId)) return;
 
+        bool isNewPeer;
         lock (_lock)
         {
-            _connectedPeers.Add(remotePeerId);
-            _peerChannels[remotePeerId] = channel;
+            isNewPeer = !_connectedPeers.Contains(remotePeerId);
+            if (isNewPeer)
+            {
+                _connectedPeers.Add(remotePeerId);
+                _peerChannels[remotePeerId] = channel;
+            }
         }
+
+        // Reject duplicate sessions (e.g. both peers dialing each other simultaneously).
+        if (!isNewPeer) return;
 
         OnPeerConnected?.Invoke(remotePeerId);
 

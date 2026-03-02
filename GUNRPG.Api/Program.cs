@@ -33,7 +33,8 @@ builder.Services.AddSingleton<OperatorUpdateHub>();
 const string nodeIdFileName = "server_node_id";
 var serverNodeId = LoadOrCreateNodeId(nodeIdFileName);
 builder.Services.AddSingleton<IDeterministicGameEngine, DefaultGameEngine>();
-builder.Services.AddSingleton(new Libp2pLockstepTransport(serverNodeId));
+var lockstepTransport = new Libp2pLockstepTransport(serverNodeId);
+builder.Services.AddSingleton(lockstepTransport);
 builder.Services.AddSingleton<ILockstepTransport>(sp => sp.GetRequiredService<Libp2pLockstepTransport>());
 builder.Services.AddSingleton<IGameAuthority>(sp =>
 {
@@ -41,6 +42,11 @@ builder.Services.AddSingleton<IGameAuthority>(sp =>
     var engine = sp.GetRequiredService<IDeterministicGameEngine>();
     return new DistributedAuthority(serverNodeId, transport, engine);
 });
+
+// Register libp2p peer service for server-to-server operator event replication.
+// Starts a libp2p listener and mDNS discovery so servers can find each other and
+// sync operator events, making operators created on any server visible from all others.
+builder.Services.AddLibp2pPeer(lockstepTransport, serverNodeId);
 
 builder.Services.AddSingleton<OperatorEventReplicator>(sp =>
 {
@@ -135,6 +141,11 @@ app.Lifetime.ApplicationStarted.Register(() =>
     // Eagerly resolve the distributed game authority so transport is ready
     var authority = app.Services.GetRequiredService<IGameAuthority>();
     Console.WriteLine($"[Distributed] Game authority initialized (NodeId={authority.NodeId}, protocol={LockstepProtocol.Id})");
+
+    // Eagerly resolve the operator event replicator so it subscribes to OnPeerConnected
+    // before any peers connect, ensuring sync requests are sent on the first connection.
+    app.Services.GetRequiredService<OperatorEventReplicator>();
+    Console.WriteLine("[Distributed] Operator event replicator initialized");
 });
 
 app.Lifetime.ApplicationStopping.Register(() =>
