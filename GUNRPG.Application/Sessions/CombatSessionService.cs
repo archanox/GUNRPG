@@ -26,12 +26,14 @@ public sealed class CombatSessionService
     private readonly ICombatSessionStore _store;
     private readonly IOperatorEventStore? _operatorEventStore;
     private readonly IGameAuthority? _gameAuthority;
+    private readonly CombatSessionUpdateHub? _updateHub;
 
-    public CombatSessionService(ICombatSessionStore store, IOperatorEventStore? operatorEventStore = null, IGameAuthority? gameAuthority = null)
+    public CombatSessionService(ICombatSessionStore store, IOperatorEventStore? operatorEventStore = null, IGameAuthority? gameAuthority = null, CombatSessionUpdateHub? updateHub = null)
     {
         _store = store;
         _operatorEventStore = operatorEventStore;
         _gameAuthority = gameAuthority;
+        _updateHub = updateHub;
     }
 
     public async Task<ServiceResult<CombatSessionDto>> CreateSessionAsync(SessionCreateRequest request)
@@ -237,6 +239,7 @@ public sealed class CombatSessionService
     private async Task SaveAsync(CombatSession session)
     {
         await _store.SaveAsync(SessionMapping.ToSnapshot(session));
+        _updateHub?.Publish(session.Id);
     }
 
     /// <summary>

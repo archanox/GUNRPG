@@ -16,10 +16,12 @@ namespace GUNRPG.Api.Controllers;
 public class SessionsController : ControllerBase
 {
     private readonly CombatSessionService _service;
+    private readonly CombatSessionUpdateHub _updateHub;
 
-    public SessionsController(CombatSessionService service)
+    public SessionsController(CombatSessionService service, CombatSessionUpdateHub updateHub)
     {
         _service = service;
+        _updateHub = updateHub;
     }
 
     /// <summary>
@@ -173,5 +175,44 @@ public class SessionsController : ControllerBase
             ResultStatus.Success => NoContent(),
             _ => StatusCode(500, new { error = "Unexpected error" })
         };
+    }
+
+    /// <summary>
+    /// Streams real-time combat session state change notifications via Server-Sent Events.
+    /// Each event notifies the client to re-fetch the full session state.
+    /// </summary>
+    /// <param name="id">The combat session's unique identifier.</param>
+    /// <param name="ct">Cancellation token (connection close).</param>
+    /// <remarks>
+    /// Clients subscribe to this endpoint to receive live updates whenever the combat
+    /// session state changes (e.g. when another connected client submits intents or
+    /// advances the turn). This enables cross-client real-time synchronisation for the
+    /// combat screen without requiring libp2p on the client.
+    /// </remarks>
+    [HttpGet("{id:guid}/stream")]
+    public async Task StreamSessionEvents(Guid id, CancellationToken ct)
+    {
+        var check = await _service.GetStateAsync(id);
+        if (check.Status != ResultStatus.Success)
+        {
+            Response.StatusCode = check.Status == ResultStatus.NotFound
+                ? StatusCodes.Status404NotFound
+                : StatusCodes.Status500InternalServerError;
+            await Response.WriteAsJsonAsync(
+                new { error = check.ErrorMessage ?? "An error occurred while retrieving the session." },
+                ct);
+            return;
+        }
+
+        Response.ContentType = "text/event-stream";
+        Response.Headers["Cache-Control"] = "no-cache";
+        Response.Headers["X-Accel-Buffering"] = "no";
+
+        await foreach (var sessionId in _updateHub.SubscribeAsync(id, ct))
+        {
+            var data = System.Text.Json.JsonSerializer.Serialize(new { sessionId });
+            await Response.WriteAsync($"data: {data}\n\n", ct);
+            await Response.Body.FlushAsync(ct);
+        }
     }
 }
