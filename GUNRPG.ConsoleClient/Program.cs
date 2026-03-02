@@ -125,6 +125,7 @@ static string ResolveServerAddress(string[] args, string? envAddress)
         // Ping each discovered server concurrently using a single client.
         // Local server takes priority; among reachable servers, the lowest latency wins.
         using var pingClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        var machineName = System.Net.Dns.GetHostName();
         var pingResults = Task.WhenAll(servers.Select(async s =>
         {
             var ms = await MeasurePingMsAsync(pingClient, s.Scheme, s.Hostname, s.Port);
@@ -133,7 +134,7 @@ static string ResolveServerAddress(string[] args, string? envAddress)
 
         var best = pingResults
             .Where(p => p.PingMs < long.MaxValue)
-            .OrderBy(p => IsLocalServer(p.Server.Hostname) ? 0 : 1)
+            .OrderBy(p => IsLocalServer(p.Server.Hostname, machineName) ? 0 : 1)
             .ThenBy(p => p.PingMs)
             .Select(p => p.Server)
             .FirstOrDefault();
@@ -146,6 +147,9 @@ static string ResolveServerAddress(string[] args, string? envAddress)
             Console.WriteLine($"Connecting to {best.DisplayName} at {url}...");
             return url;
         }
+
+        Console.WriteLine("GUNRPG servers were discovered on the LAN but none were reachable. Starting in offline mode.");
+        return "http://localhost:5209";
     }
 
     Console.WriteLine("No GUNRPG servers found on LAN. Starting in offline mode.");
@@ -175,14 +179,13 @@ static async Task<long> MeasurePingMsAsync(HttpClient client, string scheme, str
 /// <summary>
 /// Returns <see langword="true"/> if the hostname refers to the current machine.
 /// </summary>
-static bool IsLocalServer(string hostname)
+static bool IsLocalServer(string hostname, string machineName)
 {
     if (hostname.Equals("localhost", StringComparison.OrdinalIgnoreCase)
         || hostname == "127.0.0.1"
         || hostname == "::1")
         return true;
 
-    var machineName = System.Net.Dns.GetHostName();
     return hostname.Equals(machineName, StringComparison.OrdinalIgnoreCase)
         || hostname.Equals(machineName + ".local", StringComparison.OrdinalIgnoreCase);
 }
