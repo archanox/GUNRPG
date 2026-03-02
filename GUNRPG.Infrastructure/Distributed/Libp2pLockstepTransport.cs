@@ -47,34 +47,38 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
     // ISessionProtocol - called when dialing a remote peer
     public async Task DialAsync(IChannel channel, ISessionContext context)
     {
-        await HandleChannelAsync(channel, context);
+        await HandleChannelAsync(channel, context, isListener: false);
     }
 
     // ISessionListenerProtocol - called when a remote peer connects
     public async Task ListenAsync(IChannel channel, ISessionContext context)
     {
-        await HandleChannelAsync(channel, context);
+        await HandleChannelAsync(channel, context, isListener: true);
     }
 
-    private async Task HandleChannelAsync(IChannel channel, ISessionContext context)
+    private async Task HandleChannelAsync(IChannel channel, ISessionContext context, bool isListener)
     {
         // Exchange node IDs as hello using line-based protocol
         await channel.WriteLineAsync(_nodeId.ToString());
         var remotePeerIdStr = await channel.ReadLineAsync();
         if (!Guid.TryParse(remotePeerIdStr, out var remotePeerId)) return;
 
+        // Deterministic tie-break for simultaneous dials so both peers always converge on the
+        // same underlying TCP connection without needing to replace a live channel:
+        //   - Lower-ID peer keeps its outbound (dialer) session.
+        //   - Higher-ID peer keeps its inbound (listener) session.
+        // The losing half returns early before starting a read loop, so the previously
+        // registered channel is never replaced, and no spurious OnPeerDisconnected fires.
+        bool isWinningSession = _nodeId.CompareTo(remotePeerId) < 0
+            ? !isListener   // lower-ID peer: keep outbound, reject inbound
+            : isListener;   // higher-ID peer: keep inbound, reject outbound
+
+        if (!isWinningSession) return;
+
         lock (_lock)
         {
             if (_connectedPeers.Contains(remotePeerId))
-            {
-                // Duplicate connection from a peer we are already tracking (simultaneous dial).
-                // Reject this channel unconditionally so the original channel's read loop
-                // remains the sole active reader/writer for this peer.  Replacing the stored
-                // channel here would cause the old read loop's finally block to fire a
-                // spurious OnPeerDisconnected when the rejected channel closes, evicting the
-                // peer from _connectedPeers and preventing any subsequent sends to them.
-                return;
-            }
+                return; // Safety guard: both winning sessions arrived concurrently (shouldn't occur in practice)
 
             _connectedPeers.Add(remotePeerId);
             _peerChannels[remotePeerId] = channel;
