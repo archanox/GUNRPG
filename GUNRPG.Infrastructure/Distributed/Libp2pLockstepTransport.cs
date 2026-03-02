@@ -63,36 +63,24 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
         var remotePeerIdStr = await channel.ReadLineAsync();
         if (!Guid.TryParse(remotePeerIdStr, out var remotePeerId)) return;
 
-        bool isNewPeer;
         lock (_lock)
         {
-            if (!_connectedPeers.Contains(remotePeerId))
+            if (_connectedPeers.Contains(remotePeerId))
             {
-                isNewPeer = true;
-                _connectedPeers.Add(remotePeerId);
-                _peerChannels[remotePeerId] = channel;
+                // Duplicate connection from a peer we are already tracking (simultaneous dial).
+                // Reject this channel unconditionally so the original channel's read loop
+                // remains the sole active reader/writer for this peer.  Replacing the stored
+                // channel here would cause the old read loop's finally block to fire a
+                // spurious OnPeerDisconnected when the rejected channel closes, evicting the
+                // peer from _connectedPeers and preventing any subsequent sends to them.
+                return;
             }
-            else
-            {
-                isNewPeer = false;
-                // Deterministic tie-break for simultaneous dials: the peer with the higher
-                // node ID keeps the session it currently holds. The lower-ID peer replaces
-                // its stored channel with the incoming one so both sides converge on the
-                // same underlying TCP connection.
-                if (_nodeId.CompareTo(remotePeerId) < 0)
-                {
-                    // We are the lower-ID peer: accept this channel as the canonical one.
-                    _peerChannels[remotePeerId] = channel;
-                }
-                else
-                {
-                    // We are the higher-ID peer: keep the existing channel, reject this one.
-                    return;
-                }
-            }
+
+            _connectedPeers.Add(remotePeerId);
+            _peerChannels[remotePeerId] = channel;
         }
 
-        if (isNewPeer) OnPeerConnected?.Invoke(remotePeerId);
+        OnPeerConnected?.Invoke(remotePeerId);
 
         try
         {
@@ -107,9 +95,7 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
         finally
         {
             // Only clean up peer tracking if this specific channel is still the active one.
-            // In a simultaneous-dial race the lower-ID peer may have replaced its channel,
-            // so the superseded channel's finally block must not evict the new registration
-            // or fire a spurious disconnect event.
+            // Guard against races where a reconnect may have already updated the channel.
             bool wasActive;
             lock (_lock)
             {
