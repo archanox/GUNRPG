@@ -141,11 +141,6 @@ app.Lifetime.ApplicationStarted.Register(() =>
     // Eagerly resolve the distributed game authority so transport is ready
     var authority = app.Services.GetRequiredService<IGameAuthority>();
     Console.WriteLine($"[Distributed] Game authority initialized (NodeId={authority.NodeId}, protocol={LockstepProtocol.Id})");
-
-    // Eagerly resolve the operator event replicator so it subscribes to OnPeerConnected
-    // before any peers connect, ensuring sync requests are sent on the first connection.
-    app.Services.GetRequiredService<OperatorEventReplicator>();
-    Console.WriteLine("[Distributed] Operator event replicator initialized");
 });
 
 app.Lifetime.ApplicationStopping.Register(() =>
