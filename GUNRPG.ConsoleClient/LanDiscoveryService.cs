@@ -22,6 +22,12 @@ internal static class LanDiscoveryService
         {
             if (cts.IsCancellationRequested) return;
 
+            // Filter to only _gunrpg._tcp service instances; the mDNS multicast can
+            // surface responses from unrelated services on the same network.
+            var instLabels = e.ServiceInstanceName.Labels;
+            if (!instLabels.Any(l => string.Equals(l, "_gunrpg", StringComparison.OrdinalIgnoreCase)))
+                return;
+
             var srv = e.Message.Answers.OfType<SRVRecord>().FirstOrDefault()
                    ?? e.Message.AdditionalRecords.OfType<SRVRecord>().FirstOrDefault();
             if (srv == null) return;

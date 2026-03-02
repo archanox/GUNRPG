@@ -122,37 +122,69 @@ static string ResolveServerAddress(string[] args, string? envAddress)
 
     if (servers.Count > 0)
     {
-        Console.WriteLine($"Found {servers.Count} GUNRPG server(s):");
-        for (var i = 0; i < servers.Count; i++)
+        // Ping each discovered server concurrently using a single client.
+        // Local server takes priority; among reachable servers, the lowest latency wins.
+        using var pingClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        var pingResults = Task.WhenAll(servers.Select(async s =>
         {
-            var s = servers[i];
-            var versionInfo = s.Version != null ? $" v{s.Version}" : "";
-            var envInfo = s.Environment != null ? $" [{s.Environment}]" : "";
-            Console.WriteLine($"  [{i + 1}] {s.DisplayName} ({s.Hostname}:{s.Port}){versionInfo}{envInfo}");
-        }
-        Console.WriteLine($"  [0] Offline mode");
-        Console.Write("Select server (0 for offline): ");
+            var ms = await MeasurePingMsAsync(pingClient, s.Scheme, s.Hostname, s.Port);
+            return (Server: s, PingMs: ms);
+        })).GetAwaiter().GetResult();
 
-        var input = Console.ReadLine()?.Trim() ?? "";
-        if (int.TryParse(input, out var choice) && choice >= 1 && choice <= servers.Count)
+        var best = pingResults
+            .Where(p => p.PingMs < long.MaxValue)
+            .OrderBy(p => IsLocalServer(p.Server.Hostname) ? 0 : 1)
+            .ThenBy(p => p.PingMs)
+            .Select(p => p.Server)
+            .FirstOrDefault();
+
+        if (best != null)
         {
-            var selected = servers[choice - 1];
-            var url = $"{selected.Scheme}://{selected.Hostname}:{selected.Port}";
-            if (selected.Version != null)
-            {
-                if (selected.Version != clientVersion)
-                    Console.WriteLine($"  ⚠ Version mismatch: server={selected.Version}, client={clientVersion}");
-            }
-            Console.WriteLine($"Connecting to {url}...");
+            var url = $"{best.Scheme}://{best.Hostname}:{best.Port}";
+            if (best.Version != null && best.Version != clientVersion)
+                Console.WriteLine($"  ⚠ Version mismatch: server={best.Version}, client={clientVersion}");
+            Console.WriteLine($"Connecting to {best.DisplayName} at {url}...");
             return url;
         }
-
-        Console.WriteLine("Starting in offline mode.");
-        return "http://localhost:5209";
     }
 
     Console.WriteLine("No GUNRPG servers found on LAN. Starting in offline mode.");
     return "http://localhost:5209";
+}
+
+/// <summary>
+/// Returns the round-trip time in milliseconds to reach the given server, or <see cref="long.MaxValue"/> if unreachable.
+/// </summary>
+static async Task<long> MeasurePingMsAsync(HttpClient client, string scheme, string hostname, int port)
+{
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    try
+    {
+        using var response = await client.GetAsync(
+            $"{scheme}://{hostname}:{port}/",
+            HttpCompletionOption.ResponseHeadersRead);
+        sw.Stop();
+        return sw.ElapsedMilliseconds;
+    }
+    catch
+    {
+        return long.MaxValue;
+    }
+}
+
+/// <summary>
+/// Returns <see langword="true"/> if the hostname refers to the current machine.
+/// </summary>
+static bool IsLocalServer(string hostname)
+{
+    if (hostname.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+        || hostname == "127.0.0.1"
+        || hostname == "::1")
+        return true;
+
+    var machineName = System.Net.Dns.GetHostName();
+    return hostname.Equals(machineName, StringComparison.OrdinalIgnoreCase)
+        || hostname.Equals(machineName + ".local", StringComparison.OrdinalIgnoreCase);
 }
 
 class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver, OfflineStore? offlineStore = null, LiteDB.LiteDatabase? offlineDb = null)
