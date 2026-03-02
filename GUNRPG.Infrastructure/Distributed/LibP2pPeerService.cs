@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using GUNRPG.Application.Distributed;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Multiformats.Address;
@@ -19,14 +20,18 @@ namespace GUNRPG.Infrastructure.Distributed;
 public sealed class LibP2pPeerService : IHostedService
 {
     private readonly Guid _nodeId;
-    private readonly Libp2pLockstepTransport _transport;
     private readonly IPeerFactory _peerFactory;
     private readonly PeerStore _peerStore;
     private readonly MDnsDiscoveryProtocol _mdns;
     private readonly ILogger<LibP2pPeerService> _logger;
+    // Held to guarantee OperatorEventReplicator is constructed (and subscribed to
+    // OnPeerConnected) before this service's StartAsync runs and discovers peers.
+    private readonly OperatorEventReplicator _replicator;
 
     private ILocalPeer? _localPeer;
     private CancellationTokenSource? _cts;
+    // Keep reference to the delegate so it can be unsubscribed in StopAsync.
+    private Action<Multiaddress[]>? _onNewPeerHandler;
 
     // Tracks libp2p peer IDs we've already started dialing to prevent duplicate outbound dials.
     private readonly HashSet<string> _dialedPeers = new(StringComparer.Ordinal);
@@ -34,18 +39,18 @@ public sealed class LibP2pPeerService : IHostedService
 
     public LibP2pPeerService(
         Guid nodeId,
-        Libp2pLockstepTransport transport,
         IPeerFactory peerFactory,
         PeerStore peerStore,
         MDnsDiscoveryProtocol mdns,
-        ILogger<LibP2pPeerService> logger)
+        ILogger<LibP2pPeerService> logger,
+        OperatorEventReplicator replicator)
     {
         _nodeId = nodeId;
-        _transport = transport;
         _peerFactory = peerFactory;
         _peerStore = peerStore;
         _mdns = mdns;
         _logger = logger;
+        _replicator = replicator;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -69,17 +74,30 @@ public sealed class LibP2pPeerService : IHostedService
         _logger.LogInformation("[P2P] Listening on {Addresses}",
             string.Join(", ", _localPeer.ListenAddresses));
 
-        _peerStore.OnNewPeer += addrs => OnPeerDiscovered(addrs, ct);
+        _onNewPeerHandler = addrs => OnPeerDiscovered(addrs, ct);
+        _peerStore.OnNewPeer += _onNewPeerHandler;
 
         _ = _mdns.StartDiscoveryAsync(_localPeer.ListenAddresses.ToArray(), ct);
 
         _logger.LogInformation("[P2P] mDNS peer discovery started");
     }
 
-    public Task StopAsync(CancellationToken cancellationToken)
+    public async Task StopAsync(CancellationToken cancellationToken)
     {
         _cts?.Cancel();
-        return Task.CompletedTask;
+
+        if (_onNewPeerHandler != null)
+            _peerStore.OnNewPeer -= _onNewPeerHandler;
+
+        if (_mdns is IAsyncDisposable asyncDisposableMdns)
+            await asyncDisposableMdns.DisposeAsync().ConfigureAwait(false);
+        else if (_mdns is IDisposable disposableMdns)
+            disposableMdns.Dispose();
+
+        if (_localPeer is IAsyncDisposable asyncDisposablePeer)
+            await asyncDisposablePeer.DisposeAsync().ConfigureAwait(false);
+        else if (_localPeer is IDisposable disposablePeer)
+            disposablePeer.Dispose();
     }
 
     private void OnPeerDiscovered(Multiaddress[] addrs, CancellationToken ct)
@@ -104,10 +122,10 @@ public sealed class LibP2pPeerService : IHostedService
 
         if (!isNew) return;
 
-        _ = DialPeerAsync(addrs, ct);
+        _ = DialPeerAsync(peerId, addrs, ct);
     }
 
-    private async Task DialPeerAsync(Multiaddress[] addrs, CancellationToken ct)
+    private async Task DialPeerAsync(string peerId, Multiaddress[] addrs, CancellationToken ct)
     {
         try
         {
@@ -116,7 +134,12 @@ public sealed class LibP2pPeerService : IHostedService
         }
         catch (Exception ex) when (!ct.IsCancellationRequested)
         {
-            _logger.LogWarning(ex, "[P2P] Failed to connect to discovered peer");
+            // Remove from the dialed set so the next mDNS announcement can retry.
+            lock (_dialedLock)
+            {
+                _dialedPeers.Remove(peerId);
+            }
+            _logger.LogWarning(ex, "[P2P] Failed to connect to discovered peer; will retry on next discovery");
         }
     }
 }

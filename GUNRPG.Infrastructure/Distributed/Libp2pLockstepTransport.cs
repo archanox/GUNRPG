@@ -66,18 +66,33 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
         bool isNewPeer;
         lock (_lock)
         {
-            isNewPeer = !_connectedPeers.Contains(remotePeerId);
-            if (isNewPeer)
+            if (!_connectedPeers.Contains(remotePeerId))
             {
+                isNewPeer = true;
                 _connectedPeers.Add(remotePeerId);
                 _peerChannels[remotePeerId] = channel;
             }
+            else
+            {
+                isNewPeer = false;
+                // Deterministic tie-break for simultaneous dials: the peer with the higher
+                // node ID keeps the session it currently holds. The lower-ID peer replaces
+                // its stored channel with the incoming one so both sides converge on the
+                // same underlying TCP connection.
+                if (_nodeId.CompareTo(remotePeerId) < 0)
+                {
+                    // We are the lower-ID peer: accept this channel as the canonical one.
+                    _peerChannels[remotePeerId] = channel;
+                }
+                else
+                {
+                    // We are the higher-ID peer: keep the existing channel, reject this one.
+                    return;
+                }
+            }
         }
 
-        // Reject duplicate sessions (e.g. both peers dialing each other simultaneously).
-        if (!isNewPeer) return;
-
-        OnPeerConnected?.Invoke(remotePeerId);
+        if (isNewPeer) OnPeerConnected?.Invoke(remotePeerId);
 
         try
         {
@@ -91,12 +106,22 @@ public sealed class Libp2pLockstepTransport : ILockstepTransport, ISessionProtoc
         }
         finally
         {
+            // Only clean up peer tracking if this specific channel is still the active one.
+            // In a simultaneous-dial race the lower-ID peer may have replaced its channel,
+            // so the superseded channel's finally block must not evict the new registration
+            // or fire a spurious disconnect event.
+            bool wasActive;
             lock (_lock)
             {
-                _connectedPeers.Remove(remotePeerId);
-                _peerChannels.Remove(remotePeerId);
+                wasActive = _peerChannels.TryGetValue(remotePeerId, out var activeChannel)
+                            && ReferenceEquals(activeChannel, channel);
+                if (wasActive)
+                {
+                    _connectedPeers.Remove(remotePeerId);
+                    _peerChannels.Remove(remotePeerId);
+                }
             }
-            OnPeerDisconnected?.Invoke(remotePeerId);
+            if (wasActive) OnPeerDisconnected?.Invoke(remotePeerId);
         }
     }
 

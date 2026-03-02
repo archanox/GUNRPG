@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GUNRPG.Application.Backend;
+using GUNRPG.Application.Distributed;
 using GUNRPG.Application.Operators;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Infrastructure.Backend;
@@ -201,13 +202,15 @@ public static class InfrastructureServiceExtensions
         services.AddLibp2p(b => b.AddProtocol(transport, true));
 
         // Register the hosted service that manages the peer lifecycle.
+        // OperatorEventReplicator is resolved here so DI constructs it (subscribing it to
+        // OnPeerConnected) before StartAsync runs and mDNS can discover the first peer.
         services.AddSingleton(sp => new LibP2pPeerService(
             nodeId,
-            transport,
             sp.GetRequiredService<IPeerFactory>(),
             sp.GetRequiredService<PeerStore>(),
             sp.GetRequiredService<MDnsDiscoveryProtocol>(),
-            sp.GetRequiredService<ILogger<LibP2pPeerService>>()));
+            sp.GetRequiredService<ILogger<LibP2pPeerService>>(),
+            sp.GetRequiredService<OperatorEventReplicator>()));
         services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<LibP2pPeerService>());
 
         return services;
