@@ -236,6 +236,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     private CancellationToken _appCt;
     private Task? _sseTask;
 
+    // Background SSE stream for real-time combat session state updates
+    private CancellationTokenSource? _sessionStreamCts;
+    private Task? _sessionSseTask;
+    private Guid? _streamingSessionId;
+
     /// <summary>
     /// Starts a background SSE subscription for real-time operator updates from the server.
     /// When the server appends a new operator event (from this or any other connected client),
@@ -305,6 +310,87 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         }, ct);
     }
 
+    /// <summary>
+    /// Starts a background SSE subscription for real-time combat session state updates.
+    /// When the server saves updated session state (from this or any other connected client),
+    /// the SSE stream delivers a notification and the client re-fetches the full session state.
+    /// Only active in online mode when not using local combat; no-ops otherwise.
+    /// </summary>
+    public void StartCombatSessionStream(Guid sessionId, CancellationToken appCt)
+    {
+        if (backend is not OnlineGameBackend) return;
+
+        // Cancel any previous combat session stream
+        _sessionStreamCts?.Cancel();
+        _sessionStreamCts?.Dispose();
+        _sessionStreamCts = CancellationTokenSource.CreateLinkedTokenSource(appCt);
+        _streamingSessionId = sessionId;
+        var ct = _sessionStreamCts.Token;
+
+        _sessionSseTask = Task.Run(async () =>
+        {
+            try
+            {
+                using var response = await client.GetAsync(
+                    $"sessions/{sessionId}/stream",
+                    HttpCompletionOption.ResponseHeadersRead,
+                    ct);
+
+                if (!response.IsSuccessStatusCode) return;
+
+                using var stream = await response.Content.ReadAsStreamAsync(ct);
+                using var reader = new System.IO.StreamReader(stream);
+
+                while (!ct.IsCancellationRequested)
+                {
+                    var line = await reader.ReadLineAsync(ct);
+                    if (line == null) break; // server closed the connection
+
+                    if (!line.StartsWith("data: ", StringComparison.Ordinal)) continue;
+
+                    // Only refresh if we are still watching the same session
+                    if (ActiveSessionId != sessionId) break;
+
+                    try
+                    {
+                        using var refreshResponse = await client.GetAsync(
+                            $"sessions/{sessionId}/state", ct);
+                        if (!refreshResponse.IsSuccessStatusCode) continue;
+
+                        var sessionData = await refreshResponse.Content
+                            .ReadFromJsonAsync<CombatSessionDto>(options, ct);
+                        if (sessionData != null)
+                        {
+                            CurrentSession = sessionData;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // Best-effort: ignore transient refresh errors
+                    }
+                }
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception)
+            {
+                // Non-fatal: SSE stream closed or server unavailable
+            }
+        }, ct);
+    }
+
+    /// <summary>
+    /// Stops the background combat session SSE stream, if one is running.
+    /// Called when leaving the CombatSession screen.
+    /// </summary>
+    public void StopCombatSessionStream()
+    {
+        _sessionStreamCts?.Cancel();
+        _sessionStreamCts?.Dispose();
+        _sessionStreamCts = null;
+        _sessionSseTask = null;
+        _streamingSessionId = null;
+    }
+
     public Task<Hex1bWidget> BuildUI(RootContext ctx, CancellationTokenSource cts)
     {
         _appCt = cts.Token;
@@ -315,6 +401,20 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         if (CurrentOperatorId.HasValue && _streamCts == null)
         {
             StartOperatorStream(CurrentOperatorId.Value, _appCt);
+        }
+
+        // Manage combat session SSE stream: start when on CombatSession screen (online, not using local combat),
+        // stop when leaving the screen or switching sessions.
+        if (CurrentScreen == Screen.CombatSession && !_usingLocalCombat && ActiveSessionId.HasValue)
+        {
+            if (_sessionStreamCts == null || _streamingSessionId != ActiveSessionId)
+            {
+                StartCombatSessionStream(ActiveSessionId.Value, _appCt);
+            }
+        }
+        else if (_sessionStreamCts != null)
+        {
+            StopCombatSessionStream();
         }
 
         var widget = CurrentScreen switch

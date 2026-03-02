@@ -27,6 +27,7 @@ builder.Services.AddOpenApi();
 builder.Services.AddCombatSessionStore(builder.Configuration);
 builder.Services.AddSingleton<IDeterministicCombatEngine, DeterministicCombatEngine>();
 builder.Services.AddSingleton<OperatorUpdateHub>();
+builder.Services.AddSingleton<CombatSessionUpdateHub>();
 
 // Distributed game authority: deterministic lockstep replication via libp2p transport
 // Persist server node ID so restarts reuse the same identity
@@ -71,7 +72,8 @@ builder.Services.AddSingleton<CombatSessionService>(sp =>
     var sessionStore = sp.GetRequiredService<ICombatSessionStore>();
     var operatorEventStore = sp.GetRequiredService<IOperatorEventStore>();
     var gameAuthority = sp.GetRequiredService<IGameAuthority>();
-    return new CombatSessionService(sessionStore, operatorEventStore, gameAuthority);
+    var sessionUpdateHub = sp.GetRequiredService<CombatSessionUpdateHub>();
+    return new CombatSessionService(sessionStore, operatorEventStore, gameAuthority, sessionUpdateHub);
 });
 builder.Services.AddSingleton<OperatorService>(sp =>
 {

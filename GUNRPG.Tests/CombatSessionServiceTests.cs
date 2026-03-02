@@ -833,4 +833,92 @@ public class CombatSessionServiceTests
         Assert.Equal(ResultStatus.InvalidState, result.Status);
         Assert.Contains("belong to the specified operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public async Task SubmitIntents_WithUpdateHub_PublishesNotification()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var hub = new CombatSessionUpdateHub();
+        var service = new CombatSessionService(store, updateHub: hub);
+        var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
+
+        using var cts = new CancellationTokenSource();
+        var received = new List<Guid>();
+        var ready = new TaskCompletionSource();
+
+        var subscribeTask = Task.Run(async () =>
+        {
+            try
+            {
+                await using var enumerator = hub.SubscribeAsync(session.Id, cts.Token)
+                    .GetAsyncEnumerator(cts.Token);
+                var pending = enumerator.MoveNextAsync();
+                ready.TrySetResult();
+                while (await pending)
+                {
+                    received.Add(enumerator.Current);
+                    cts.Cancel();
+                    pending = enumerator.MoveNextAsync();
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+
+        await ready.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire }
+        });
+
+        await subscribeTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Single(received);
+        Assert.Equal(session.Id, received[0]);
+    }
+
+    [Fact]
+    public async Task Advance_WithUpdateHub_PublishesNotification()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var hub = new CombatSessionUpdateHub();
+        var service = new CombatSessionService(store, updateHub: hub);
+        var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
+
+        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire }
+        });
+
+        using var cts = new CancellationTokenSource();
+        var received = new List<Guid>();
+        var ready = new TaskCompletionSource();
+
+        var subscribeTask = Task.Run(async () =>
+        {
+            try
+            {
+                await using var enumerator = hub.SubscribeAsync(session.Id, cts.Token)
+                    .GetAsyncEnumerator(cts.Token);
+                var pending = enumerator.MoveNextAsync();
+                ready.TrySetResult();
+                while (await pending)
+                {
+                    received.Add(enumerator.Current);
+                    cts.Cancel();
+                    pending = enumerator.MoveNextAsync();
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+
+        await ready.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        await service.AdvanceAsync(session.Id);
+
+        await subscribeTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.Single(received);
+        Assert.Equal(session.Id, received[0]);
+    }
 }
