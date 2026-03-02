@@ -375,6 +375,16 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             {
                 // Non-fatal: SSE stream closed or server unavailable
             }
+            finally
+            {
+                // If the SSE stream loop exits without an explicit cancellation,
+                // allow the UI to restart streaming for the current session.
+                if (!ct.IsCancellationRequested && ActiveSessionId == sessionId)
+                {
+                    _sessionStreamCts = null;
+                    _streamingSessionId = null;
+                }
+            }
         }, ct);
     }
 
