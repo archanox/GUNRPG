@@ -3,12 +3,18 @@ using GUNRPG.Application.Backend;
 using GUNRPG.Application.Operators;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Infrastructure.Backend;
+using GUNRPG.Infrastructure.Distributed;
 using GUNRPG.Infrastructure.Persistence;
 using LiteDB;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Nethermind.Libp2p;
+using Nethermind.Libp2p.Core;
+using Nethermind.Libp2p.Core.Discovery;
+using Nethermind.Libp2p.Protocols;
 
 namespace GUNRPG.Infrastructure;
 
@@ -171,5 +177,39 @@ public static class InfrastructureServiceExtensions
         // Use Id property as the document key
         mapper.Entity<CombatSessionSnapshot>()
             .Id(x => x.Id);
+    }
+
+    /// <summary>
+    /// Registers the libp2p peer service for server-to-server operator event replication.
+    /// <para>
+    /// Starts a libp2p peer that listens for connections from other GUNRPG servers and uses
+    /// mDNS to discover peers on the local network. When peers connect, the
+    /// <see cref="Libp2pLockstepTransport"/> handles the session and fires
+    /// <c>OnPeerConnected</c>, which causes the <c>OperatorEventReplicator</c> to synchronise
+    /// operator events so that operators created on any server are visible from all others.
+    /// </para>
+    /// </summary>
+    /// <param name="services">The service collection to register into.</param>
+    /// <param name="transport">The already-registered lockstep transport singleton.</param>
+    /// <param name="nodeId">The server's persistent node ID (used to derive a stable libp2p identity).</param>
+    public static IServiceCollection AddLibp2pPeer(
+        this IServiceCollection services,
+        Libp2pLockstepTransport transport,
+        Guid nodeId)
+    {
+        // Register libp2p infrastructure with our custom lockstep protocol.
+        services.AddLibp2p(b => b.AddProtocol(transport, true));
+
+        // Register the hosted service that manages the peer lifecycle.
+        services.AddSingleton(sp => new LibP2pPeerService(
+            nodeId,
+            transport,
+            sp.GetRequiredService<IPeerFactory>(),
+            sp.GetRequiredService<PeerStore>(),
+            sp.GetRequiredService<MDnsDiscoveryProtocol>(),
+            sp.GetRequiredService<ILogger<LibP2pPeerService>>()));
+        services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<LibP2pPeerService>());
+
+        return services;
     }
 }
