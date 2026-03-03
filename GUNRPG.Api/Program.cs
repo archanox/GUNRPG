@@ -124,10 +124,10 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
-app.MapControllers();
-
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapControllers();
 
 ServiceDiscovery? mdnsDiscovery = null;
 app.Lifetime.ApplicationStarted.Register(() =>
