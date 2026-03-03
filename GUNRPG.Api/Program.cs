@@ -107,6 +107,31 @@ var verificationUri = builder.Configuration["WebAuthn:VerificationUri"]
     ?? "https://localhost/auth/device/verify";
 builder.Services.AddGunRpgIdentity(verificationUri);
 
+// ── CORS ─────────────────────────────────────────────────────────────────
+// Allowed origins are read from WebAuthn:Origins so there is a single source of truth.
+// In production every listed origin must be HTTPS (validated at startup by WebAuthnService).
+var allowedCorsOrigins = builder.Configuration
+    .GetSection($"{WebAuthnOptions.SectionName}:{nameof(WebAuthnOptions.Origins)}")
+    .GetChildren()
+    .Select(x => x.Value)
+    .Where(x => x is not null)
+    .Cast<string>()
+    .ToArray();
+
+if (allowedCorsOrigins.Length == 0)
+    allowedCorsOrigins = ["https://localhost"];
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("GunRpgPolicy", policy =>
+    {
+        policy.WithOrigins(allowedCorsOrigins)
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+
 // ── JWT Bearer authentication with Ed25519 signature validation ───────────
 // Configure after AddGunRpgIdentity so JwtTokenService is registered.
 builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme)
@@ -124,6 +149,8 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+app.UseHttpsRedirection();
+app.UseCors("GunRpgPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
 

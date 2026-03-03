@@ -24,5 +24,12 @@ public sealed class RefreshToken
     /// <summary>Whether this token was explicitly revoked (logout / security event).</summary>
     public bool IsRevoked { get; set; }
 
+    /// <summary>
+    /// The token value that replaced this one during rotation.
+    /// Provides an audit trail and supports detecting token-reuse attacks:
+    /// if a consumed token is presented again, the entire family can be revoked.
+    /// </summary>
+    public string? ReplacedByToken { get; set; }
+
     public bool IsActive => !IsConsumed && !IsRevoked && ExpiresAt > DateTimeOffset.UtcNow;
 }

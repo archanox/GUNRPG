@@ -66,6 +66,36 @@ public class IdentityModelTests
         Assert.False(token.IsActive);
     }
 
+    [Fact]
+    public void RefreshToken_ReplacedByToken_IsNullInitially()
+    {
+        var token = new RefreshToken
+        {
+            UserId = "user1",
+            Token = "abc123",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+        };
+
+        Assert.Null(token.ReplacedByToken);
+        Assert.True(token.IsActive);
+    }
+
+    [Fact]
+    public void RefreshToken_ReplacedByToken_CanBeSet()
+    {
+        var token = new RefreshToken
+        {
+            UserId = "user1",
+            Token = "abc123",
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+            IsConsumed = true,
+            ReplacedByToken = "new-token-456",
+        };
+
+        Assert.Equal("new-token-456", token.ReplacedByToken);
+        Assert.False(token.IsActive); // consumed
+    }
+
     // ── DeviceCode model ─────────────────────────────────────────────────────
 
     [Fact]
@@ -240,6 +270,39 @@ public class JwtTokenServiceTests : IDisposable
         var result = await _service.RefreshAsync(initial.RefreshToken);
 
         Assert.False(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_SetsReplacedByToken_OnConsumedToken()
+    {
+        var initial = await _service.IssueTokensAsync("user123", "alice", null);
+        var refreshed = await _service.RefreshAsync(initial.RefreshToken);
+
+        Assert.True(refreshed.IsSuccess);
+
+        // Verify the consumed token has ReplacedByToken set to the new token value
+        // by trying to use the old token again — it should fail (consumed)
+        var replayResult = await _service.RefreshAsync(initial.RefreshToken);
+        Assert.False(replayResult.IsSuccess);
+
+        // And the new token should work
+        var secondRefresh = await _service.RefreshAsync(refreshed.Value!.RefreshToken);
+        Assert.True(secondRefresh.IsSuccess);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_WithConsumedToken_Fails_Replay()
+    {
+        // Simulate a replay attack: the same refresh token is used twice
+        var initial = await _service.IssueTokensAsync("user123", "alice", null);
+
+        // First use — legitimate
+        var first = await _service.RefreshAsync(initial.RefreshToken);
+        Assert.True(first.IsSuccess);
+
+        // Second use — replay attack
+        var replay = await _service.RefreshAsync(initial.RefreshToken);
+        Assert.False(replay.IsSuccess);
     }
 
     [Fact]

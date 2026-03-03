@@ -267,8 +267,8 @@ while (true)
 
 Every call to `POST /auth/token/refresh` **consumes** the supplied refresh token and issues a brand-new pair.
 
-- The old refresh token is marked `IsConsumed = true` in LiteDB and is permanently invalid.
-- A second use of the same refresh token returns `401 Unauthorized` with `error: "invalid_grant"`.
+- The old refresh token is marked `IsConsumed = true` and `ReplacedByToken = <new-token-value>` in LiteDB — providing an audit trail for token family tracing.
+- A second use of the same refresh token (replay attack) returns `401 Unauthorized` with `error: "invalid_grant"`.
 - All refresh tokens for a user can be revoked (logout from all devices) via `ITokenService.RevokeAllAsync`.
 
 ---
@@ -291,6 +291,25 @@ Every call to `POST /auth/token/refresh` **consumes** the supplied refresh token
   }
 }
 ```
+
+### Environment variable overrides
+
+All settings can be overridden using ASP.NET Core's environment variable conventions (double-underscore `__` as the separator).
+
+```bash
+# JWT settings
+export Jwt__Issuer="gunrpg"
+export Jwt__AccessTokenExpiryMinutes="15"
+export Jwt__RefreshTokenExpiryDays="30"
+
+# WebAuthn settings
+export WebAuthn__ServerDomain="gunrpg.example.com"
+export WebAuthn__Origins__0="https://gunrpg.example.com"
+export WebAuthn__Origins__1="https://yourname.github.io"
+export WebAuthn__VerificationUri="https://gunrpg.example.com/auth/device/verify"
+```
+
+> **Docker / Kubernetes:** Use the same `__`-separated keys in `environment:` blocks or ConfigMap/Secret references.
 
 ---
 
@@ -321,9 +340,21 @@ Error codes: `InvalidRequest`, `ChallengeMissing`, `AttestationFailed`, `Asserti
 | Method | Path | Auth | Description |
 |---|---|---|---|
 | `POST` | `/auth/token/refresh` | None | Rotate refresh token |
+| `GET` | `/auth/token/public-key` | None | Node's Ed25519 public key (JWK-like) |
 
-Body: `{ "refreshToken": "..." }`  
+Body for refresh: `{ "refreshToken": "..." }`  
 On failure: `401 { "error": "invalid_grant", "error_description": "..." }`
+
+**Public key response** (for node-to-node trust):
+```json
+{
+  "alg": "EdDSA",
+  "crv": "Ed25519",
+  "kty": "OKP",
+  "kid": "<sha256-thumbprint>",
+  "x": "<base64url-encoded-32-byte-public-key>"
+}
+```
 
 ### Device code flow (`/auth/device/`)
 

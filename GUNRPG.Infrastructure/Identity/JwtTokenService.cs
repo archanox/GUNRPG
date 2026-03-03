@@ -24,7 +24,7 @@ namespace GUNRPG.Infrastructure.Identity;
 /// Ed25519 public key bytes — enabling future key rotation: validators can select the correct
 /// public key by looking up the <c>kid</c> in a published JWKS-like endpoint.
 /// </summary>
-public sealed class JwtTokenService : ITokenService
+public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
 {
     private const string MetaCollection = "identity_meta";
     private const string PrivateKeyField = "ed25519_private_key";
@@ -76,9 +76,9 @@ public sealed class JwtTokenService : ITokenService
 
         // Rotate: consume old, issue new
         existing.IsConsumed = true;
-        _refreshTokens.Update(existing);
-
         var newRefresh = await CreateRefreshTokenAsync(existing.UserId, ct);
+        existing.ReplacedByToken = newRefresh.Token;
+        _refreshTokens.Update(existing);
         // On refresh we re-issue with stored userId only; caller should re-establish claims if needed
         var accessToken = BuildAccessToken(existing.UserId, username: null, accountId: null);
 

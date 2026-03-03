@@ -52,6 +52,7 @@ public static class IdentityServiceExtensions
         // ── JWT token service (Ed25519 via BouncyCastle) ─────────────────────
         services.AddSingleton<JwtTokenService>();
         services.AddSingleton<ITokenService>(sp => sp.GetRequiredService<JwtTokenService>());
+        services.AddSingleton<IPublicKeyProvider>(sp => sp.GetRequiredService<JwtTokenService>());
 
         // ── WebAuthn service ─────────────────────────────────────────────────
         services.AddSingleton<IWebAuthnService, WebAuthnService>();
