@@ -7,6 +7,7 @@ using Nethermind.Libp2p.Core;
 using Nethermind.Libp2p.Core.Discovery;
 using Nethermind.Libp2p.Core.Dto;
 using Nethermind.Libp2p.Protocols;
+using Libp2pIdentity = Nethermind.Libp2p.Core.Identity;
 
 namespace GUNRPG.Infrastructure.Distributed;
 
@@ -66,7 +67,7 @@ public sealed class LibP2pPeerService : IHostedService
             outputLength: 32,
             salt: Array.Empty<byte>(),
             info: "gunrpg-p2p-identity"u8.ToArray());
-        var identity = new Identity(keyBytes, KeyType.Ed25519);
+        var identity = new Libp2pIdentity(keyBytes, KeyType.Ed25519);
 
         _localPeer = _peerFactory.Create(identity);
         await _localPeer.StartListenAsync([Multiaddress.Decode("/ip4/0.0.0.0/tcp/0")], ct);

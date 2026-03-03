@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json.Serialization;
+using Fido2NetLib;
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Combat;
 using GUNRPG.Application.Distributed;
@@ -8,6 +9,7 @@ using GUNRPG.Application.Services;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Infrastructure;
 using GUNRPG.Infrastructure.Distributed;
+using GUNRPG.Infrastructure.Identity;
 using Makaretu.Dns;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
@@ -85,6 +87,35 @@ builder.Services.AddSingleton<OperatorService>(sp =>
     return new OperatorService(exfilService, sessionService, eventStore, offlineSyncHeadStore, combatEngine);
 });
 
+// ── Identity System (WebAuthn + JWT + Device Code Flow) ──────────────────
+// Bind Fido2Configuration from appsettings "WebAuthn" section
+builder.Services.Configure<Fido2Configuration>(cfg =>
+{
+    var webAuthnSection = builder.Configuration.GetSection(WebAuthnOptions.SectionName);
+    cfg.ServerDomain = webAuthnSection[nameof(WebAuthnOptions.ServerDomain)] ?? "localhost";
+    cfg.ServerName = webAuthnSection[nameof(WebAuthnOptions.ServerName)] ?? "GunRPG";
+    cfg.Origins = webAuthnSection.GetSection(nameof(WebAuthnOptions.Origins))
+        .GetChildren()
+        .Select(x => x.Value!)
+        .Where(x => x is not null)
+        .ToHashSet();
+    if (cfg.Origins.Count == 0) cfg.Origins = new HashSet<string> { "https://localhost" };
+});
+builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+
+var verificationUri = builder.Configuration["WebAuthn:VerificationUri"]
+    ?? "https://localhost/auth/device/verify";
+builder.Services.AddGunRpgIdentity(verificationUri);
+
+// ── JWT Bearer authentication with Ed25519 signature validation ───────────
+// Configure after AddGunRpgIdentity so JwtTokenService is registered.
+builder.Services.AddAuthentication(Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer();
+builder.Services.AddSingleton<
+    Microsoft.Extensions.Options.IPostConfigureOptions<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>,
+    GUNRPG.Api.Identity.Ed25519JwtBearerPostConfigure>();
+builder.Services.AddAuthorizationBuilder();
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -94,6 +125,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapControllers();
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 ServiceDiscovery? mdnsDiscovery = null;
 app.Lifetime.ApplicationStarted.Register(() =>
