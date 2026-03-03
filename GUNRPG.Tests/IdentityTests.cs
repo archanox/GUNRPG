@@ -427,14 +427,14 @@ public class DeviceCodeServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task PollAsync_BeforeAuthorization_ReturnsPending()
+    public async Task PollAsync_BeforeAuthorization_ReturnsAuthorizationPending()
     {
         var start = await _service.StartAsync();
 
         var pollResult = await _service.PollAsync(start.DeviceCode);
 
         Assert.True(pollResult.IsSuccess);
-        Assert.Equal("pending", pollResult.Value!.Status);
+        Assert.Equal("authorization_pending", pollResult.Value!.Status);
         Assert.Null(pollResult.Value.Tokens);
     }
 
@@ -455,15 +455,16 @@ public class DeviceCodeServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task PollAsync_TooFast_ReturnsRateLimitError()
+    public async Task PollAsync_TooFast_ReturnsSlowDownStatus()
     {
         var start = await _service.StartAsync();
         // First poll sets LastPolledAt
         await _service.PollAsync(start.DeviceCode);
-        // Immediate second poll should be rate-limited
+        // Immediate second poll should return slow_down
         var result = await _service.PollAsync(start.DeviceCode);
 
-        Assert.False(result.IsSuccess);
+        Assert.True(result.IsSuccess);
+        Assert.Equal("slow_down", result.Value!.Status);
     }
 
     // ── Fake token service for testing ──────────────────────────────────────
@@ -482,5 +483,215 @@ public class DeviceCodeServiceTests : IDisposable
             Task.FromResult(GUNRPG.Application.Results.ServiceResult<GUNRPG.Application.Identity.Dtos.TokenResponse>.NotFound());
 
         public Task RevokeAllAsync(string userId, CancellationToken ct = default) => Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// Additional JWT token service tests covering the key ID (kid) and key persistence.
+/// </summary>
+public class JwtTokenServiceKeyTests : IDisposable
+{
+    private readonly LiteDatabase _db;
+    private readonly JwtTokenService _service;
+
+    public JwtTokenServiceKeyTests()
+    {
+        _db = new LiteDatabase(":memory:");
+        var options = Options.Create(new JwtOptions
+        {
+            Issuer = "test-issuer",
+            Audience = "test-audience",
+            AccessTokenExpiryMinutes = 15,
+            RefreshTokenExpiryDays = 30,
+        });
+        _service = new JwtTokenService(options, _db);
+    }
+
+    public void Dispose() => _db.Dispose();
+
+    [Fact]
+    public void GetKeyId_ReturnsNonEmptyString()
+    {
+        var kid = _service.GetKeyId();
+
+        Assert.NotNull(kid);
+        Assert.NotEmpty(kid);
+    }
+
+    [Fact]
+    public async Task AccessToken_ContainsKidHeader()
+    {
+        var response = await _service.IssueTokensAsync("user1", "alice", null);
+        var parts = response.AccessToken.Split('.');
+        Assert.Equal(3, parts.Length);
+
+        // Decode header (base64url part 0)
+        var headerJson = DecodeBase64Url(parts[0]);
+        Assert.Contains("\"kid\"", headerJson, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task AccessToken_ContainsStandardClaims()
+    {
+        var response = await _service.IssueTokensAsync("user1", "alice", null);
+        var parts = response.AccessToken.Split('.');
+        var payloadJson = DecodeBase64Url(parts[1]);
+
+        // Standard JWT claims
+        Assert.Contains("\"sub\"", payloadJson);
+        Assert.Contains("\"jti\"", payloadJson);
+        Assert.Contains("\"iat\"", payloadJson);
+        Assert.Contains("\"exp\"", payloadJson);
+    }
+
+    [Fact]
+    public async Task AccessToken_AlgIsEdDSA()
+    {
+        var response = await _service.IssueTokensAsync("user1", "alice", null);
+        var parts = response.AccessToken.Split('.');
+        var headerJson = DecodeBase64Url(parts[0]);
+
+        Assert.Contains("\"EdDSA\"", headerJson, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void GetKeyId_IsDeterministicFromPublicKey()
+    {
+        var kid1 = _service.GetKeyId();
+        var kid2 = _service.GetKeyId();
+
+        Assert.Equal(kid1, kid2);
+    }
+
+    [Fact]
+    public void KeyId_ChangesWhenPublicKeyChanges()
+    {
+        // Create a fresh DB — new service generates a new key pair
+        using var db2 = new LiteDatabase(":memory:");
+        var options = Options.Create(new JwtOptions
+        {
+            Issuer = "test-issuer",
+            Audience = "test-audience",
+        });
+        var service2 = new JwtTokenService(options, db2);
+
+        // Different DB → different key pair → different kid
+        Assert.NotEqual(_service.GetKeyId(), service2.GetKeyId());
+    }
+
+    private static string DecodeBase64Url(string value)
+    {
+        value = value.Replace('-', '+').Replace('_', '/');
+        switch (value.Length % 4)
+        {
+            case 2: value += "=="; break;
+            case 3: value += "="; break;
+        }
+        return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(value));
+    }
+}
+
+/// <summary>
+/// Tests for device code status values aligned with RFC 8628.
+/// </summary>
+public class DeviceCodeStatusTests : IDisposable
+{
+    private readonly LiteDatabase _db;
+    private readonly DeviceCodeService _service;
+
+    public DeviceCodeStatusTests()
+    {
+        _db = new LiteDatabase(":memory:");
+        _service = new DeviceCodeService(_db, new FakeIssuer(), null!, "https://localhost/verify");
+    }
+
+    public void Dispose() => _db.Dispose();
+
+    [Fact]
+    public async Task PollAsync_ReturnsAuthorizationPending_WhenNotAuthorized()
+    {
+        var start = await _service.StartAsync();
+        var result = await _service.PollAsync(start.DeviceCode);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("authorization_pending", result.Value!.Status);
+    }
+
+    [Fact]
+    public async Task PollAsync_ReturnsSlowDown_WhenPolledTooFast()
+    {
+        var start = await _service.StartAsync();
+        await _service.PollAsync(start.DeviceCode); // First poll
+        var result = await _service.PollAsync(start.DeviceCode); // Immediate second poll
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("slow_down", result.Value!.Status);
+    }
+
+    [Fact]
+    public async Task PollAsync_ReturnsExpiredToken_WhenCodeExpired()
+    {
+        // Insert a pre-expired device code directly via LiteDB (bypasses the service's clock)
+        var codes = _db.GetCollection<GUNRPG.Core.Identity.DeviceCode>("identity_device_codes");
+        var expiredCode = new GUNRPG.Core.Identity.DeviceCode
+        {
+            Code = "expired-device-code",
+            UserCode = "EXPIRXXX",
+            IssuedAt = DateTimeOffset.UtcNow.AddMinutes(-20),
+            ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-5), // Already expired
+        };
+        codes.Insert(expiredCode);
+
+        var result = await _service.PollAsync("expired-device-code");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("expired_token", result.Value!.Status);
+    }
+
+    private sealed class FakeIssuer : GUNRPG.Application.Identity.ITokenService
+    {
+        public Task<GUNRPG.Application.Identity.Dtos.TokenResponse> IssueTokensAsync(
+            string userId, string? username, Guid? accountId, CancellationToken ct = default) =>
+            Task.FromResult(new GUNRPG.Application.Identity.Dtos.TokenResponse(
+                "acc", "ref", DateTimeOffset.UtcNow.AddMinutes(15), DateTimeOffset.UtcNow.AddDays(30)));
+
+        public Task<GUNRPG.Application.Results.ServiceResult<GUNRPG.Application.Identity.Dtos.TokenResponse>> RefreshAsync(
+            string refreshToken, CancellationToken ct = default) =>
+            Task.FromResult(GUNRPG.Application.Results.ServiceResult<GUNRPG.Application.Identity.Dtos.TokenResponse>.NotFound());
+
+        public Task RevokeAllAsync(string userId, CancellationToken ct = default) => Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// Tests for WebAuthn error code parsing and typed error handling.
+/// </summary>
+public class WebAuthnErrorCodeTests
+{
+    [Theory]
+    [InlineData("InvalidRequest")]
+    [InlineData("ChallengeMissing")]
+    [InlineData("AttestationFailed")]
+    [InlineData("AssertionFailed")]
+    [InlineData("CredentialNotFound")]
+    [InlineData("CounterRegression")]
+    [InlineData("UserNotFound")]
+    [InlineData("InternalError")]
+    public void WebAuthnErrorCode_AllValuesAreParseable(string codeName)
+    {
+        // All error code names must be valid enum values so the controller can parse them
+        var parsed = Enum.Parse<GUNRPG.Application.Identity.Dtos.WebAuthnErrorCode>(codeName);
+        Assert.Equal(codeName, parsed.ToString());
+    }
+
+    [Fact]
+    public void WebAuthnErrorResponse_CanBeConstructed()
+    {
+        var error = new GUNRPG.Application.Identity.Dtos.WebAuthnErrorResponse(
+            GUNRPG.Application.Identity.Dtos.WebAuthnErrorCode.AttestationFailed,
+            "Signature mismatch.");
+
+        Assert.Equal(GUNRPG.Application.Identity.Dtos.WebAuthnErrorCode.AttestationFailed, error.Code);
+        Assert.Equal("Signature mismatch.", error.Message);
     }
 }

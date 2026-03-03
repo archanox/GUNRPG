@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using GUNRPG.Application.Identity;
+using GUNRPG.Application.Identity.Dtos;
 using GUNRPG.Application.Results;
 using GUNRPG.Core.Identity;
 using Fido2NetLib;
@@ -14,6 +15,9 @@ namespace GUNRPG.Infrastructure.Identity;
 /// WebAuthn registration and authentication service backed by Fido2NetLib.
 /// Handles challenge generation, credential verification, signature counter tracking,
 /// and replay protection.
+///
+/// Origin validation is performed by Fido2NetLib using the <see cref="Fido2Configuration.Origins"/>
+/// set. All configured origins must be HTTPS (except localhost, which is permitted for development).
 /// </summary>
 public sealed class WebAuthnService : IWebAuthnService
 {
@@ -32,6 +36,8 @@ public sealed class WebAuthnService : IWebAuthnService
         _fido2Config = fido2Config.Value;
         _store = store;
         _userManager = userManager;
+
+        ValidateOrigins(_fido2Config.Origins);
     }
 
     // ── Registration ─────────────────────────────────────────────────────────
@@ -39,7 +45,7 @@ public sealed class WebAuthnService : IWebAuthnService
     public async Task<ServiceResult<string>> BeginRegistrationAsync(string username, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(username))
-            return ServiceResult<string>.ValidationError("Username is required.");
+            return Err(WebAuthnErrorCode.InvalidRequest, "Username is required.");
 
         var user = await _userManager.FindByNameAsync(username);
         if (user is null)
@@ -48,7 +54,7 @@ public sealed class WebAuthnService : IWebAuthnService
             user = new ApplicationUser { UserName = username };
             var result = await _userManager.CreateAsync(user);
             if (!result.Succeeded)
-                return ServiceResult<string>.InvalidState(
+                return Err(WebAuthnErrorCode.InternalError,
                     string.Join("; ", result.Errors.Select(e => e.Description)));
         }
 
@@ -82,11 +88,12 @@ public sealed class WebAuthnService : IWebAuthnService
     {
         var user = await _userManager.FindByNameAsync(username);
         if (user is null)
-            return ServiceResult<string>.NotFound($"User '{username}' not found.");
+            return Err(WebAuthnErrorCode.UserNotFound, $"User '{username}' not found.");
 
         var challenge = _store.ConsumeChallenge(username);
         if (challenge is null)
-            return ServiceResult<string>.InvalidState("No pending registration challenge found. Please restart registration.");
+            return Err(WebAuthnErrorCode.ChallengeMissing,
+                "No pending registration challenge. Restart registration.");
 
         AuthenticatorAttestationRawResponse rawResponse;
         try
@@ -96,7 +103,7 @@ public sealed class WebAuthnService : IWebAuthnService
         }
         catch (JsonException ex)
         {
-            return ServiceResult<string>.ValidationError($"Invalid attestation response: {ex.Message}");
+            return Err(WebAuthnErrorCode.InvalidRequest, $"Malformed attestation response: {ex.Message}");
         }
 
         var options = CredentialCreateOptions.Create(
@@ -140,7 +147,7 @@ public sealed class WebAuthnService : IWebAuthnService
         }
         catch (Fido2VerificationException ex)
         {
-            return ServiceResult<string>.InvalidState($"WebAuthn verification failed: {ex.Message}");
+            return Err(WebAuthnErrorCode.AttestationFailed, ex.Message);
         }
     }
 
@@ -150,14 +157,15 @@ public sealed class WebAuthnService : IWebAuthnService
     {
         var user = await _userManager.FindByNameAsync(username);
         if (user is null)
-            return ServiceResult<string>.NotFound($"User '{username}' not found.");
+            return Err(WebAuthnErrorCode.UserNotFound, $"User '{username}' not found.");
 
         var credentials = _store.GetCredentialsByUserId(user.Id)
             .Select(c => new PublicKeyCredentialDescriptor(Base64UrlDecode(c.Id)))
             .ToList();
 
         if (credentials.Count == 0)
-            return ServiceResult<string>.InvalidState($"No WebAuthn credentials registered for '{username}'.");
+            return Err(WebAuthnErrorCode.CredentialNotFound,
+                $"No WebAuthn credentials registered for '{username}'.");
 
         var options = _fido2.GetAssertionOptions(new GetAssertionOptionsParams
         {
@@ -176,11 +184,12 @@ public sealed class WebAuthnService : IWebAuthnService
     {
         var user = await _userManager.FindByNameAsync(username);
         if (user is null)
-            return ServiceResult<string>.NotFound($"User '{username}' not found.");
+            return Err(WebAuthnErrorCode.UserNotFound, $"User '{username}' not found.");
 
         var challenge = _store.ConsumeChallenge(username);
         if (challenge is null)
-            return ServiceResult<string>.InvalidState("No pending authentication challenge. Please restart login.");
+            return Err(WebAuthnErrorCode.ChallengeMissing,
+                "No pending authentication challenge. Restart login.");
 
         AuthenticatorAssertionRawResponse rawResponse;
         try
@@ -190,13 +199,14 @@ public sealed class WebAuthnService : IWebAuthnService
         }
         catch (JsonException ex)
         {
-            return ServiceResult<string>.ValidationError($"Invalid assertion response: {ex.Message}");
+            return Err(WebAuthnErrorCode.InvalidRequest, $"Malformed assertion response: {ex.Message}");
         }
 
         var credentialId = Base64UrlEncode(rawResponse.RawId);
         var storedCredential = _store.GetCredentialById(credentialId);
         if (storedCredential is null || storedCredential.UserId != user.Id)
-            return ServiceResult<string>.InvalidState("Credential not found or does not belong to this user.");
+            return Err(WebAuthnErrorCode.CredentialNotFound,
+                "Credential not registered or belongs to a different user.");
 
         var assertionOptions = AssertionOptions.Create(
             _fido2Config,
@@ -217,7 +227,13 @@ public sealed class WebAuthnService : IWebAuthnService
                     IsUserHandleOwnerOfCredentialIdCallback = IsUserHandleOwnerOfCredentialIdAsync,
                 }, ct);
 
-            // Update signature counter and last-used timestamp (replay protection)
+            // Verify signature counter increased (replay / authenticator clone protection)
+            if (storedCredential.SignatureCounter > 0 && result.SignCount <= storedCredential.SignatureCounter)
+                return Err(WebAuthnErrorCode.CounterRegression,
+                    $"Signature counter did not increase (stored={storedCredential.SignatureCounter}, received={result.SignCount}). " +
+                    "The authenticator may be cloned.");
+
+            // Update signature counter and last-used timestamp
             storedCredential.SignatureCounter = result.SignCount;
             storedCredential.LastUsedAt = DateTimeOffset.UtcNow;
             _store.UpsertCredential(storedCredential);
@@ -226,7 +242,7 @@ public sealed class WebAuthnService : IWebAuthnService
         }
         catch (Fido2VerificationException ex)
         {
-            return ServiceResult<string>.InvalidState($"WebAuthn assertion failed: {ex.Message}");
+            return Err(WebAuthnErrorCode.AssertionFailed, ex.Message);
         }
     }
 
@@ -247,7 +263,36 @@ public sealed class WebAuthnService : IWebAuthnService
         return Task.FromResult(credential?.UserId == userId);
     }
 
-    // ── Encoding helpers ──────────────────────────────────────────────────────
+    // ── Validation ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Enforces that all configured WebAuthn origins are HTTPS, except localhost
+    /// which is permitted by the WebAuthn spec during development.
+    /// </summary>
+    private static void ValidateOrigins(IReadOnlySet<string> origins)
+    {
+        foreach (var origin in origins)
+        {
+            if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                throw new InvalidOperationException(
+                    $"WebAuthn origin '{origin}' is not a valid absolute URI.");
+
+            var isLocalhost = uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("[::1]", StringComparison.OrdinalIgnoreCase);
+
+            if (!isLocalhost && !uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    $"WebAuthn origin '{origin}' must use HTTPS. " +
+                    "HTTP origins are only permitted for localhost (development).");
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>Builds a typed error result embedding the <see cref="WebAuthnErrorCode"/> in the message.</summary>
+    private static ServiceResult<string> Err(WebAuthnErrorCode code, string message) =>
+        ServiceResult<string>.InvalidState($"{code}: {message}");
 
     private static string Base64UrlEncode(byte[] data) =>
         Convert.ToBase64String(data).TrimEnd('=').Replace('+', '-').Replace('/', '_');

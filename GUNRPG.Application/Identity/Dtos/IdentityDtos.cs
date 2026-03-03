@@ -12,6 +12,7 @@ public sealed record TokenResponse(
 
 /// <summary>
 /// Response returned when a console client starts the device code flow.
+/// Fields follow RFC 8628 §3.2 naming for interoperability.
 /// </summary>
 public sealed record DeviceCodeResponse(
     string DeviceCode,
@@ -48,9 +49,42 @@ public sealed record WebAuthnLoginCompleteRequest(
 );
 
 /// <summary>
+/// Request body for polling the device code flow.
+/// </summary>
+public sealed record DevicePollRequest(string DeviceCode);
+
+/// <summary>
 /// Response for polling the device code flow.
+/// Status values align with RFC 8628 §3.5 error codes:
+///   "authorization_pending" — user has not yet acted
+///   "slow_down"             — client must back off (poll interval increased)
+///   "expired_token"         — device code expired; restart the flow
+///   "authorized"            — user authorized; tokens are present
 /// </summary>
 public sealed record DevicePollResponse(
-    string Status,       // "pending" | "authorized" | "expired"
+    string Status,
     TokenResponse? Tokens
+);
+
+/// <summary>
+/// Categories of WebAuthn errors returned to clients for better debugging.
+/// </summary>
+public enum WebAuthnErrorCode
+{
+    InvalidRequest,       // Missing or malformed request fields
+    ChallengeMissing,     // No pending challenge found (session lost / timeout)
+    AttestationFailed,    // Credential registration verification error
+    AssertionFailed,      // Authentication assertion verification error
+    CredentialNotFound,   // Credential not registered or belongs to another user
+    CounterRegression,    // Signature counter did not increase (possible replay / clone)
+    UserNotFound,
+    InternalError,
+}
+
+/// <summary>
+/// Structured WebAuthn error response for client debugging.
+/// </summary>
+public sealed record WebAuthnErrorResponse(
+    WebAuthnErrorCode Code,
+    string Message
 );

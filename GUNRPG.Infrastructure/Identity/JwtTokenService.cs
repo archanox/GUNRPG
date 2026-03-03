@@ -19,6 +19,10 @@ namespace GUNRPG.Infrastructure.Identity;
 /// JWT token service using Ed25519 (EdDSA) signing via BouncyCastle.
 /// Ed25519 is a modern, compact, and high-performance signing algorithm.
 /// The key pair is generated on first run and persisted to the LiteDB metadata collection.
+///
+/// Each issued token includes a <c>kid</c> (key ID) header — a SHA-256 thumbprint of the
+/// Ed25519 public key bytes — enabling future key rotation: validators can select the correct
+/// public key by looking up the <c>kid</c> in a published JWKS-like endpoint.
 /// </summary>
 public sealed class JwtTokenService : ITokenService
 {
@@ -32,6 +36,8 @@ public sealed class JwtTokenService : ITokenService
 
     private readonly Ed25519PrivateKeyParameters _privateKey;
     private readonly Ed25519PublicKeyParameters _publicKey;
+    /// <summary>SHA-256 thumbprint of the public key, used as the JWT <c>kid</c> header.</summary>
+    private readonly string _keyId;
 
     public JwtTokenService(IOptions<JwtOptions> options, ILiteDatabase db)
     {
@@ -42,6 +48,7 @@ public sealed class JwtTokenService : ITokenService
         _refreshTokens.EnsureIndex(t => t.Token, unique: true);
 
         (_privateKey, _publicKey) = LoadOrGenerateKeyPair();
+        _keyId = ComputeKeyId(_publicKey.GetEncoded());
     }
 
     // ── ITokenService ────────────────────────────────────────────────────────
@@ -117,11 +124,12 @@ public sealed class JwtTokenService : ITokenService
 
     private string BuildPayload(IEnumerable<Claim> claims, DateTime notBefore, DateTime expires)
     {
-        // Build header and payload manually to use Ed25519 (alg: EdDSA)
+        // Build header manually for EdDSA (alg=EdDSA) + key ID for future key rotation.
         var header = new JwtHeader
         {
             { JwtHeaderParameterNames.Alg, "EdDSA" },
             { JwtHeaderParameterNames.Typ, "JWT" },
+            { JwtHeaderParameterNames.Kid, _keyId },
         };
 
         var payload = new JwtPayload(
@@ -185,6 +193,19 @@ public sealed class JwtTokenService : ITokenService
 
     /// <summary>Exposes the Ed25519 public key bytes for node-to-node trust exchange.</summary>
     public byte[] GetPublicKeyBytes() => _publicKey.GetEncoded();
+
+    /// <summary>
+    /// Returns the JWT <c>kid</c> (key ID) — a SHA-256 thumbprint of the public key bytes.
+    /// Future validators can use this to select the correct public key from a JWKS-like endpoint
+    /// when key rotation is implemented.
+    /// </summary>
+    public string GetKeyId() => _keyId;
+
+    private static string ComputeKeyId(byte[] publicKeyBytes)
+    {
+        var hash = SHA256.HashData(publicKeyBytes);
+        return Base64UrlEncode(hash[..16]); // 16 bytes = 128-bit ID, compact but unique
+    }
 
     private static string Base64UrlEncode(byte[] data) =>
         Convert.ToBase64String(data)

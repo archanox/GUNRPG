@@ -1,3 +1,4 @@
+using GUNRPG.Application.Identity.Dtos;
 using GUNRPG.Application.Results;
 
 namespace GUNRPG.Application.Identity;
@@ -16,6 +17,8 @@ public interface IWebAuthnService
 
     /// <summary>
     /// Completes credential registration, persists the credential, and returns the user ID.
+    /// Returns a typed <see cref="WebAuthnErrorCode"/> inside the error message for client debugging.
+    /// Format: "ERROR_CODE: human readable message" when <see cref="ServiceResult{T}.IsSuccess"/> is false.
     /// </summary>
     Task<ServiceResult<string>> CompleteRegistrationAsync(
         string username,
@@ -30,6 +33,8 @@ public interface IWebAuthnService
 
     /// <summary>
     /// Completes WebAuthn authentication, updates the signature counter, and returns the user ID.
+    /// Returns a typed <see cref="WebAuthnErrorCode"/> inside the error message for client debugging.
+    /// Format: "ERROR_CODE: human readable message" when <see cref="ServiceResult{T}.IsSuccess"/> is false.
     /// </summary>
     Task<ServiceResult<string>> CompleteLoginAsync(
         string username,

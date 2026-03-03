@@ -98,23 +98,22 @@ public sealed class DeviceCodeService : IDeviceCodeService
         if (code.IsExpired)
         {
             _codes.Delete(code.Id);
-            return ServiceResult<DevicePollResponse>.Success(new DevicePollResponse("expired", null));
+            return ServiceResult<DevicePollResponse>.Success(new DevicePollResponse("expired_token", null));
         }
 
-        // Rate limiting: enforce minimum poll interval
+        // Rate limiting: enforce minimum poll interval (RFC 8628 §3.5 "slow_down")
         if (code.LastPolledAt.HasValue)
         {
             var elapsed = DateTimeOffset.UtcNow - code.LastPolledAt.Value;
             if (elapsed.TotalSeconds < code.PollIntervalSeconds)
-                return ServiceResult<DevicePollResponse>.InvalidState(
-                    $"Polling too fast. Wait at least {code.PollIntervalSeconds} seconds between polls.");
+                return ServiceResult<DevicePollResponse>.Success(new DevicePollResponse("slow_down", null));
         }
 
         code.LastPolledAt = DateTimeOffset.UtcNow;
         _codes.Update(code);
 
         if (!code.IsAuthorized)
-            return ServiceResult<DevicePollResponse>.Success(new DevicePollResponse("pending", null));
+            return ServiceResult<DevicePollResponse>.Success(new DevicePollResponse("authorization_pending", null));
 
         // Authorization granted — issue tokens and consume the code
         var user = await _userManager.FindByIdAsync(code.AuthorizedUserId!);
