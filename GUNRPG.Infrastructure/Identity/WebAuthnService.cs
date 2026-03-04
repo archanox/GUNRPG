@@ -277,9 +277,7 @@ public sealed class WebAuthnService : IWebAuthnService
                 throw new InvalidOperationException(
                     $"WebAuthn origin '{origin}' is not a valid absolute URI.");
 
-            var isLocalhost = uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
-                || uri.Host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
-                || uri.Host.Equals("[::1]", StringComparison.OrdinalIgnoreCase);
+            var isLocalhost = uri.IsLoopback;
 
             if (!isLocalhost && !uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException(
