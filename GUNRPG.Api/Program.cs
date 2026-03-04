@@ -109,7 +109,7 @@ builder.Services.AddGunRpgIdentity(verificationUri);
 
 // ── CORS ─────────────────────────────────────────────────────────────────
 // Allowed origins are read from WebAuthn:Origins so there is a single source of truth.
-// In production every listed origin must be HTTPS (validated at startup by WebAuthnService).
+// In production every listed origin must be HTTPS (validated at startup by options validation).
 var allowedCorsOrigins = builder.Configuration
     .GetSection($"{WebAuthnOptions.SectionName}:{nameof(WebAuthnOptions.Origins)}")
     .GetChildren()
