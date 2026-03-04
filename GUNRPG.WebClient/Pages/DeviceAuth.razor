@@ -44,7 +44,7 @@
     {
         var baseUrl = await NodeService.GetBaseUrlAsync();
         if (string.IsNullOrEmpty(baseUrl))
-            Nav.NavigateTo("/");
+            Nav.NavigateTo(Nav.BaseUri);
     }
 
     private async Task AuthorizeAsync()

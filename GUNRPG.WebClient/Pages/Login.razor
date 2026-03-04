@@ -52,7 +52,7 @@
     {
         var baseUrl = await NodeService.GetBaseUrlAsync();
         if (string.IsNullOrEmpty(baseUrl))
-            Nav.NavigateTo("/");
+            Nav.NavigateTo(Nav.BaseUri);
     }
 
     private async Task LoginAsync()
@@ -96,7 +96,7 @@
             }
 
             await Auth.SetTokensAsync(tokens.AccessToken, tokens.RefreshToken);
-            Nav.NavigateTo("/dashboard");
+            Nav.NavigateTo("dashboard");
         }
         catch (Exception ex)
         {
@@ -150,7 +150,7 @@
             }
 
             await Auth.SetTokensAsync(tokens.AccessToken, tokens.RefreshToken);
-            Nav.NavigateTo("/dashboard");
+            Nav.NavigateTo("dashboard");
         }
         catch (Exception ex)
         {
