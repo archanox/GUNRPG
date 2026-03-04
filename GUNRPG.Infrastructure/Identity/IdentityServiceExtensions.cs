@@ -55,10 +55,10 @@ public static class IdentityServiceExtensions
         services.AddSingleton<IPublicKeyProvider>(sp => sp.GetRequiredService<JwtTokenService>());
 
         // ── WebAuthn service ─────────────────────────────────────────────────
-        services.AddSingleton<IWebAuthnService, WebAuthnService>();
+        services.AddScoped<IWebAuthnService, WebAuthnService>();
 
         // ── Device Code service ──────────────────────────────────────────────
-        services.AddSingleton<IDeviceCodeService>(sp =>
+        services.AddScoped<IDeviceCodeService>(sp =>
             new DeviceCodeService(
                 sp.GetRequiredService<LiteDB.ILiteDatabase>(),
                 sp.GetRequiredService<ITokenService>(),
