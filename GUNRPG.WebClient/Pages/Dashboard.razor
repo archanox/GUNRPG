@@ -8,7 +8,7 @@
 
     <FluentStack Orientation="Orientation.Horizontal" Style="margin-top: 1rem; gap: 0.5rem;">
         <FluentButton Appearance="Appearance.Accent"
-                      OnClick="@(() => Nav.NavigateTo("/device"))">
+                      OnClick="@(() => Nav.NavigateTo("device"))">
             Device Auth
         </FluentButton>
 
@@ -23,12 +23,12 @@
     protected override void OnInitialized()
     {
         if (!Auth.IsAuthenticated)
-            Nav.NavigateTo("/login");
+            Nav.NavigateTo("login");
     }
 
     private async Task LogoutAsync()
     {
         await Auth.ClearTokensAsync();
-        Nav.NavigateTo("/");
+        Nav.NavigateTo(Nav.BaseUri);
     }
 }
