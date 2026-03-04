@@ -9,8 +9,8 @@ builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddFluentUIComponents();
-builder.Services.AddSingleton<NodeConnectionService>();
-builder.Services.AddSingleton<AuthService>();
+builder.Services.AddScoped<NodeConnectionService>();
+builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped(sp => new HttpClient());
 builder.Services.AddScoped<ApiClient>();
 
