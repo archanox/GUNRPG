@@ -93,6 +93,7 @@ public static class InfrastructureServiceExtensions
                 
                 return database;
             });
+            services.AddSingleton<ILiteDatabase>(sp => sp.GetRequiredService<LiteDatabase>());
 
             services.AddSingleton<ICombatSessionStore, LiteDbCombatSessionStore>();
             services.AddSingleton<IOperatorEventStore, LiteDbOperatorEventStore>();
