@@ -1,0 +1,34 @@
+@page "/dashboard"
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<FluentCard Style="max-width: 480px; margin: 2rem auto; padding: 2rem;">
+    <h2>Welcome to GunRPG</h2>
+    <p>You are connected and authenticated.</p>
+
+    <FluentStack Orientation="Orientation.Horizontal" Style="margin-top: 1rem; gap: 0.5rem;">
+        <FluentButton Appearance="Appearance.Accent"
+                      OnClick="@(() => Nav.NavigateTo("/device"))">
+            Device Auth
+        </FluentButton>
+
+        <FluentButton Appearance="Appearance.Outline"
+                      OnClick="LogoutAsync">
+            Logout
+        </FluentButton>
+    </FluentStack>
+</FluentCard>
+
+@code {
+    protected override void OnInitialized()
+    {
+        if (!Auth.IsAuthenticated)
+            Nav.NavigateTo("/login");
+    }
+
+    private async Task LogoutAsync()
+    {
+        await Auth.ClearTokensAsync();
+        Nav.NavigateTo("/");
+    }
+}

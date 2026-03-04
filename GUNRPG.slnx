@@ -5,4 +5,5 @@
   <Project Path="GUNRPG.Infrastructure/GUNRPG.Infrastructure.csproj" />
   <Project Path="GUNRPG.Api/GUNRPG.Api.csproj" />
   <Project Path="GUNRPG.ConsoleClient/GUNRPG.ConsoleClient.csproj" />
+  <Project Path="GUNRPG.WebClient/GUNRPG.WebClient.csproj" />
 </Solution>

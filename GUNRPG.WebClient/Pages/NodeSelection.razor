@@ -1,0 +1,73 @@
+@page "/"
+@inject NodeConnectionService NodeService
+@inject NavigationManager Nav
+
+<FluentCard Style="max-width: 480px; margin: 2rem auto; padding: 2rem;">
+    <h2>Connect to Node</h2>
+    <p>Enter the HTTPS URL of a GunRPG backend node.</p>
+
+    <FluentTextField @bind-Value="_nodeUrl"
+                     Label="Node URL"
+                     Placeholder="https://node.example.com"
+                     Style="width: 100%;" />
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <FluentMessageBar Title="Error" Intent="MessageIntent.Error" Style="margin-top: 0.5rem;">
+            @_error
+        </FluentMessageBar>
+    }
+
+    <FluentButton Appearance="Appearance.Accent"
+                  Style="margin-top: 1rem;"
+                  OnClick="ConnectAsync"
+                  Disabled="_connecting">
+        @(_connecting ? "Connecting..." : "Connect")
+    </FluentButton>
+</FluentCard>
+
+@code {
+    private string _nodeUrl = string.Empty;
+    private string? _error;
+    private bool _connecting;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var existing = await NodeService.GetBaseUrlAsync();
+        if (!string.IsNullOrEmpty(existing))
+            _nodeUrl = existing;
+    }
+
+    private async Task ConnectAsync()
+    {
+        _error = null;
+        _connecting = true;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_nodeUrl))
+            {
+                _error = "Please enter a URL.";
+                return;
+            }
+
+            if (!Uri.TryCreate(_nodeUrl.Trim(), UriKind.Absolute, out var uri)
+                || uri.Scheme != "https")
+            {
+                _error = "Only HTTPS URLs are allowed.";
+                return;
+            }
+
+            await NodeService.SetBaseUrlAsync(_nodeUrl.Trim());
+            Nav.NavigateTo("/login");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _connecting = false;
+        }
+    }
+}

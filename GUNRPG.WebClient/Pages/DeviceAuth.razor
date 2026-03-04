@@ -1,0 +1,85 @@
+@page "/device"
+@inject ApiClient Api
+@inject NodeConnectionService NodeService
+@inject NavigationManager Nav
+
+<FluentCard Style="max-width: 480px; margin: 2rem auto; padding: 2rem;">
+    <h2>Device Authorization</h2>
+    <p>Enter the user code displayed on your device.</p>
+
+    <FluentTextField @bind-Value="_userCode"
+                     Label="User Code"
+                     Placeholder="XXXX-XXXX"
+                     Style="width: 100%;" />
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <FluentMessageBar Title="Error" Intent="MessageIntent.Error" Style="margin-top: 0.5rem;">
+            @_error
+        </FluentMessageBar>
+    }
+
+    @if (_success)
+    {
+        <FluentMessageBar Title="Success" Intent="MessageIntent.Success" Style="margin-top: 0.5rem;">
+            Device authorized successfully.
+        </FluentMessageBar>
+    }
+
+    <FluentButton Appearance="Appearance.Accent"
+                  Style="margin-top: 1rem;"
+                  OnClick="AuthorizeAsync"
+                  Disabled="_busy">
+        @(_busy ? "Authorizing..." : "Authorize")
+    </FluentButton>
+</FluentCard>
+
+@code {
+    private string _userCode = string.Empty;
+    private string? _error;
+    private bool _success;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var baseUrl = await NodeService.GetBaseUrlAsync();
+        if (string.IsNullOrEmpty(baseUrl))
+            Nav.NavigateTo("/");
+    }
+
+    private async Task AuthorizeAsync()
+    {
+        _error = null;
+        _success = false;
+        _busy = true;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(_userCode))
+            {
+                _error = "Please enter a user code.";
+                return;
+            }
+
+            var encoded = Uri.EscapeDataString(_userCode.Trim());
+            var response = await Api.PostAsync($"/auth/device/authorize?userCode={encoded}");
+
+            if (response.IsSuccessStatusCode)
+            {
+                _success = true;
+            }
+            else
+            {
+                _error = $"Authorization failed: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
