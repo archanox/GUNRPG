@@ -17,46 +17,27 @@ public sealed class ApiClient
         _auth = auth;
     }
 
-    public async Task<HttpResponseMessage> PostAsync<T>(string path, T body)
-    {
-        var response = await SendAsync(HttpMethod.Post, path, body);
+    public Task<HttpResponseMessage> PostAsync<T>(string path, T body) =>
+        SendWithRetryAsync(HttpMethod.Post, path, JsonContent.Create(body));
 
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
-        {
-            if (await _auth.RefreshTokenAsync())
-                response = await SendAsync(HttpMethod.Post, path, body);
-        }
+    public Task<HttpResponseMessage> PostAsync(string path) =>
+        SendWithRetryAsync(HttpMethod.Post, path);
+
+    public Task<HttpResponseMessage> GetAsync(string path) =>
+        SendWithRetryAsync(HttpMethod.Get, path);
+
+    private async Task<HttpResponseMessage> SendWithRetryAsync(
+        HttpMethod method, string path, HttpContent? content = null)
+    {
+        var response = await SendAsync(method, path, content);
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized && await _auth.RefreshTokenAsync())
+            response = await SendAsync(method, path, content);
 
         return response;
     }
 
-    public async Task<HttpResponseMessage> GetAsync(string path)
-    {
-        var response = await SendAsync(HttpMethod.Get, path);
-
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
-        {
-            if (await _auth.RefreshTokenAsync())
-                response = await SendAsync(HttpMethod.Get, path);
-        }
-
-        return response;
-    }
-
-    public async Task<HttpResponseMessage> PostAsync(string path)
-    {
-        var response = await SendAsync(HttpMethod.Post, path);
-
-        if (response.StatusCode == HttpStatusCode.Unauthorized)
-        {
-            if (await _auth.RefreshTokenAsync())
-                response = await SendAsync(HttpMethod.Post, path);
-        }
-
-        return response;
-    }
-
-    private async Task<HttpResponseMessage> SendAsync<T>(HttpMethod method, string path, T? body = default)
+    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, HttpContent? content = null)
     {
         var baseUrl = await _nodeService.GetBaseUrlAsync()
             ?? throw new InvalidOperationException("No node URL configured.");
@@ -67,22 +48,8 @@ public sealed class ApiClient
         if (!string.IsNullOrEmpty(token))
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        if (body is not null)
-            request.Content = JsonContent.Create(body);
-
-        return await _http.SendAsync(request);
-    }
-
-    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path)
-    {
-        var baseUrl = await _nodeService.GetBaseUrlAsync()
-            ?? throw new InvalidOperationException("No node URL configured.");
-
-        var request = new HttpRequestMessage(method, $"{baseUrl}{path}");
-
-        var token = _auth.GetAccessToken();
-        if (!string.IsNullOrEmpty(token))
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        if (content is not null)
+            request.Content = content;
 
         return await _http.SendAsync(request);
     }
