@@ -43,11 +43,8 @@ public static class IdentityServiceExtensions
         services.AddSingleton<LiteDbWebAuthnStore>();
 
         // ── Fido2NetLib ──────────────────────────────────────────────────────
-        services.AddOptions<Fido2Configuration>()
-            .Validate(
-                cfg => HasValidWebAuthnOrigins(cfg.Origins),
-                "WebAuthn origins must be valid absolute URIs and HTTPS (except localhost).")
-            .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<Fido2Configuration>, Fido2ConfigurationValidator>();
+        services.AddOptions<Fido2Configuration>().ValidateOnStart();
         services.AddSingleton<IFido2>(sp =>
         {
             var cfg = sp.GetRequiredService<IOptions<Fido2Configuration>>().Value;
@@ -73,18 +70,30 @@ public static class IdentityServiceExtensions
         return services;
     }
 
-    private static bool HasValidWebAuthnOrigins(IReadOnlySet<string> origins)
+    private sealed class Fido2ConfigurationValidator : IValidateOptions<Fido2Configuration>
     {
-        foreach (var origin in origins)
+        public ValidateOptionsResult Validate(string? name, Fido2Configuration options)
         {
-            if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
-                return false;
-
-            var isLocalhost = uri.IsLoopback;
-            if (!isLocalhost && !uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
-                return false;
+            var errors = GetWebAuthnOriginErrors(options.Origins).ToArray();
+            return errors.Length == 0
+                ? ValidateOptionsResult.Success
+                : ValidateOptionsResult.Fail(errors);
         }
 
-        return true;
+        private static IEnumerable<string> GetWebAuthnOriginErrors(IReadOnlySet<string> origins)
+        {
+            foreach (var origin in origins)
+            {
+                if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                {
+                    yield return $"WebAuthn origin '{origin}' is not a valid absolute URI.";
+                    continue;
+                }
+
+                var isLocalhost = uri.IsLoopback;
+                if (!isLocalhost && !uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
+                    yield return $"WebAuthn origin '{origin}' must use HTTPS. HTTP origins are only permitted for localhost (development).";
+            }
+        }
     }
 }
