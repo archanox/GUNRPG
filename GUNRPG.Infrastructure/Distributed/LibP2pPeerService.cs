@@ -66,7 +66,7 @@ public sealed class LibP2pPeerService : IHostedService
             outputLength: 32,
             salt: Array.Empty<byte>(),
             info: "gunrpg-p2p-identity"u8.ToArray());
-        var identity = new Identity(keyBytes, KeyType.Ed25519);
+        var identity = new Nethermind.Libp2p.Core.Identity(keyBytes, KeyType.Ed25519);
 
         _localPeer = _peerFactory.Create(identity);
         await _localPeer.StartListenAsync([Multiaddress.Decode("/ip4/0.0.0.0/tcp/0")], ct);
