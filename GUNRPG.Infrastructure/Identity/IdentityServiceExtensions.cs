@@ -43,6 +43,11 @@ public static class IdentityServiceExtensions
         services.AddSingleton<LiteDbWebAuthnStore>();
 
         // ── Fido2NetLib ──────────────────────────────────────────────────────
+        services.AddOptions<Fido2Configuration>()
+            .Validate(
+                cfg => HasValidWebAuthnOrigins(cfg.Origins),
+                "WebAuthn origins must be valid absolute URIs and HTTPS (except localhost).")
+            .ValidateOnStart();
         services.AddSingleton<IFido2>(sp =>
         {
             var cfg = sp.GetRequiredService<IOptions<Fido2Configuration>>().Value;
@@ -66,5 +71,20 @@ public static class IdentityServiceExtensions
                 verificationUri));
 
         return services;
+    }
+
+    private static bool HasValidWebAuthnOrigins(IReadOnlySet<string> origins)
+    {
+        foreach (var origin in origins)
+        {
+            if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                return false;
+
+            var isLocalhost = uri.IsLoopback;
+            if (!isLocalhost && !uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+
+        return true;
     }
 }

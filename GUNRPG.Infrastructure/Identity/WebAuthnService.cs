@@ -16,8 +16,7 @@ namespace GUNRPG.Infrastructure.Identity;
 /// Handles challenge generation, credential verification, signature counter tracking,
 /// and replay protection.
 ///
-/// Origin validation is performed by Fido2NetLib using the <see cref="Fido2Configuration.Origins"/>
-/// set. All configured origins must be HTTPS (except localhost, which is permitted for development).
+/// Origin validation is performed during startup via options validation.
 /// </summary>
 public sealed class WebAuthnService : IWebAuthnService
 {
@@ -36,8 +35,6 @@ public sealed class WebAuthnService : IWebAuthnService
         _fido2Config = fido2Config.Value;
         _store = store;
         _userManager = userManager;
-
-        ValidateOrigins(_fido2Config.Origins);
     }
 
     // ── Registration ─────────────────────────────────────────────────────────
@@ -261,29 +258,6 @@ public sealed class WebAuthnService : IWebAuthnService
         var credId = Base64UrlEncode(args.CredentialId.ToArray());
         var credential = _store.GetCredentialById(credId);
         return Task.FromResult(credential?.UserId == userId);
-    }
-
-    // ── Validation ────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Enforces that all configured WebAuthn origins are HTTPS, except localhost
-    /// which is permitted by the WebAuthn spec during development.
-    /// </summary>
-    private static void ValidateOrigins(IReadOnlySet<string> origins)
-    {
-        foreach (var origin in origins)
-        {
-            if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
-                throw new InvalidOperationException(
-                    $"WebAuthn origin '{origin}' is not a valid absolute URI.");
-
-            var isLocalhost = uri.IsLoopback;
-
-            if (!isLocalhost && !uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException(
-                    $"WebAuthn origin '{origin}' must use HTTPS. " +
-                    "HTTP origins are only permitted for localhost (development).");
-        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
