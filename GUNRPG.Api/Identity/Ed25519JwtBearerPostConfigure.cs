@@ -1,3 +1,4 @@
+using GUNRPG.Application.Identity;
 using GUNRPG.Infrastructure.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
@@ -22,12 +23,16 @@ public sealed class Ed25519JwtBearerPostConfigure : IPostConfigureOptions<JwtBea
 
     public void PostConfigure(string? name, JwtBearerOptions options)
     {
+        var jwtOptions = _sp.GetRequiredService<IOptions<JwtOptions>>().Value;
+
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateLifetime = true,
-            ValidateIssuer = false,
-            ValidateAudience = false,
+            ValidateIssuer = true,
+            ValidateAudience = true,
             ValidateIssuerSigningKey = false,
+            ValidIssuer = jwtOptions.Issuer,
+            ValidAudience = jwtOptions.Audience,
             SignatureValidator = (token, _) => ValidateEd25519(token),
         };
     }
@@ -38,7 +43,7 @@ public sealed class Ed25519JwtBearerPostConfigure : IPostConfigureOptions<JwtBea
         if (parts.Length != 3)
             throw new SecurityTokenInvalidSignatureException("Malformed JWT: expected 3 dot-separated parts.");
 
-        var publicKeyBytes = _sp.GetRequiredService<JwtTokenService>().GetPublicKeyBytes();
+        var publicKeyBytes = _sp.GetRequiredService<IPublicKeyProvider>().GetPublicKeyBytes();
         var publicKey = new Ed25519PublicKeyParameters(publicKeyBytes);
 
         var verifier = new Ed25519Signer();

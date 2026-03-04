@@ -60,7 +60,7 @@ public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
         CancellationToken ct = default)
     {
         var accessToken = BuildAccessToken(userId, username, accountId);
-        var refresh = await CreateRefreshTokenAsync(userId, ct);
+        var refresh = await CreateRefreshTokenAsync(userId, username, accountId, ct);
         return new TokenResponse(
             accessToken,
             refresh.Token,
@@ -74,13 +74,13 @@ public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
         if (existing is null || !existing.IsActive)
             return ServiceResult<TokenResponse>.InvalidState("Refresh token is invalid, expired, or already consumed.");
 
-        // Rotate: consume old, issue new
+        // Rotate: consume old, issue new (preserving original username/accountId claims)
         existing.IsConsumed = true;
-        var newRefresh = await CreateRefreshTokenAsync(existing.UserId, ct);
+        var newRefresh = await CreateRefreshTokenAsync(existing.UserId, existing.Username, existing.AccountId, ct);
         existing.ReplacedByToken = newRefresh.Token;
         _refreshTokens.Update(existing);
-        // On refresh we re-issue with stored userId only; caller should re-establish claims if needed
-        var accessToken = BuildAccessToken(existing.UserId, username: null, accountId: null);
+
+        var accessToken = BuildAccessToken(existing.UserId, existing.Username, existing.AccountId);
 
         return ServiceResult<TokenResponse>.Success(new TokenResponse(
             accessToken,
@@ -152,7 +152,7 @@ public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
         return $"{headerDotPayload}.{Base64UrlEncode(signature)}";
     }
 
-    private Task<RefreshToken> CreateRefreshTokenAsync(string userId, CancellationToken _)
+    private Task<RefreshToken> CreateRefreshTokenAsync(string userId, string? username, Guid? accountId, CancellationToken _)
     {
         var tokenBytes = RandomNumberGenerator.GetBytes(32);
         var token = new RefreshToken
@@ -160,6 +160,8 @@ public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
             UserId = userId,
             Token = Base64UrlEncode(tokenBytes),
             ExpiresAt = DateTimeOffset.UtcNow.AddDays(_options.RefreshTokenExpiryDays),
+            Username = username,
+            AccountId = accountId,
         };
         _refreshTokens.Insert(token);
         return Task.FromResult(token);

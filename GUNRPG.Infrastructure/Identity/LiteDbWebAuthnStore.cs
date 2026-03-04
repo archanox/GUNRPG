@@ -82,5 +82,5 @@ public sealed class LiteDbWebAuthnStore
         _accounts.FindOne(a => a.UserId == userId);
 
     public Account? GetAccountById(Guid accountId) =>
-        _accounts.FindById(accountId.ToString());
+        _accounts.FindById(accountId);
 }

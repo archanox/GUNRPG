@@ -81,8 +81,12 @@ public sealed class DeviceCodeController : ControllerBase
     {
         var result = await _deviceCodes.PollAsync(request.DeviceCode, ct);
 
-        if (!result.IsSuccess && result.Status == ResultStatus.NotFound)
-            return NotFound(new { error = result.ErrorMessage });
+        if (!result.IsSuccess)
+        {
+            return result.Status == ResultStatus.NotFound
+                ? NotFound(new { error = result.ErrorMessage })
+                : UnprocessableEntity(new { error = result.ErrorMessage });
+        }
 
         // All recognized poll statuses (authorization_pending, slow_down, expired_token, authorized)
         // return HTTP 200 with the status field — client inspects the field rather than the status code.

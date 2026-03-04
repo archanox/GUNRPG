@@ -242,6 +242,23 @@ public class JwtTokenServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task RefreshAsync_PreservesUsernameClaim()
+    {
+        // username and accountId must survive token rotation
+        var accountId = Guid.NewGuid();
+        var initial = await _service.IssueTokensAsync("user123", "alice", accountId);
+        var refreshed = await _service.RefreshAsync(initial.RefreshToken);
+
+        Assert.True(refreshed.IsSuccess);
+
+        // Decode the refreshed access token payload and verify claims are preserved
+        var parts = refreshed.Value!.AccessToken.Split('.');
+        var payloadJson = DecodeBase64Url(parts[1]);
+        Assert.Contains("alice", payloadJson, StringComparison.Ordinal);
+        Assert.Contains(accountId.ToString(), payloadJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RefreshAsync_WithConsumedToken_Fails()
     {
         var initial = await _service.IssueTokensAsync("user123", "alice", null);
@@ -333,6 +350,17 @@ public class JwtTokenServiceTests : IDisposable
 
         // The public key should be the same
         Assert.Equal(_service.GetPublicKeyBytes(), service2.GetPublicKeyBytes());
+    }
+
+    private static string DecodeBase64Url(string value)
+    {
+        value = value.Replace('-', '+').Replace('_', '/');
+        switch (value.Length % 4)
+        {
+            case 2: value += "=="; break;
+            case 3: value += "="; break;
+        }
+        return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(value));
     }
 }
 

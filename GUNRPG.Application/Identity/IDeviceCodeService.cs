@@ -26,7 +26,8 @@ public interface IDeviceCodeService
     /// <summary>
     /// Polls for the status of a device code authorization.
     /// Enforces the minimum poll interval to prevent abuse.
-    /// Returns "pending", "authorized" (with tokens), or "expired".
+    /// Returns an RFC 8628-aligned status via <see cref="DevicePollResponse.Status"/>:
+    /// <c>authorization_pending</c>, <c>slow_down</c>, <c>expired_token</c>, or <c>authorized</c> (with tokens).
     /// </summary>
     Task<ServiceResult<DevicePollResponse>> PollAsync(string deviceCode, CancellationToken ct = default);
 }

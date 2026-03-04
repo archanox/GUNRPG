@@ -14,6 +14,18 @@ public sealed class RefreshToken
     /// <summary>Cryptographically random token value (URL-safe base64).</summary>
     public string Token { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Username claim persisted alongside the refresh token so that refreshed access tokens
+    /// carry the same <c>preferred_username</c> claim as the originally issued token.
+    /// </summary>
+    public string? Username { get; set; }
+
+    /// <summary>
+    /// Account ID claim persisted alongside the refresh token so that refreshed access tokens
+    /// carry the same <c>account_id</c> claim as the originally issued token.
+    /// </summary>
+    public Guid? AccountId { get; set; }
+
     public DateTimeOffset IssuedAt { get; set; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset ExpiresAt { get; set; }

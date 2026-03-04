@@ -29,20 +29,65 @@ public sealed class LiteDbUserStore :
 
     public Task<IdentityResult> CreateAsync(ApplicationUser user, CancellationToken ct)
     {
-        _users.Insert(user);
-        return Task.FromResult(IdentityResult.Success);
+        try
+        {
+            _users.Insert(user);
+            return Task.FromResult(IdentityResult.Success);
+        }
+        catch (LiteException ex)
+        {
+            return Task.FromResult(IdentityResult.Failed(new IdentityError
+            {
+                Code = "LiteDbInsertError",
+                Description = $"Failed to create user: {ex.Message}",
+            }));
+        }
     }
 
     public Task<IdentityResult> UpdateAsync(ApplicationUser user, CancellationToken ct)
     {
-        _users.Update(user);
-        return Task.FromResult(IdentityResult.Success);
+        try
+        {
+            if (!_users.Update(user))
+                return Task.FromResult(IdentityResult.Failed(new IdentityError
+                {
+                    Code = "UserUpdateFailed",
+                    Description = "Failed to update user: user not found or not modified.",
+                }));
+
+            return Task.FromResult(IdentityResult.Success);
+        }
+        catch (LiteException ex)
+        {
+            return Task.FromResult(IdentityResult.Failed(new IdentityError
+            {
+                Code = "LiteDbUpdateError",
+                Description = $"Failed to update user: {ex.Message}",
+            }));
+        }
     }
 
     public Task<IdentityResult> DeleteAsync(ApplicationUser user, CancellationToken ct)
     {
-        _users.Delete(user.Id);
-        return Task.FromResult(IdentityResult.Success);
+        try
+        {
+            if (!_users.Delete(user.Id))
+                return Task.FromResult(IdentityResult.Failed(new IdentityError
+                {
+                    Code = "UserDeleteFailed",
+                    Description = "Failed to delete user: user not found.",
+                }));
+
+            return Task.FromResult(IdentityResult.Success);
+        }
+        catch (LiteException ex)
+        {
+            return Task.FromResult(IdentityResult.Failed(new IdentityError
+            {
+                Code = "LiteDbDeleteError",
+                Description = $"Failed to delete user: {ex.Message}",
+            }));
+        }
     }
 
     public Task<ApplicationUser?> FindByIdAsync(string userId, CancellationToken ct) =>
