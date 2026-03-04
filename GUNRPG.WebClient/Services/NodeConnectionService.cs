@@ -27,7 +27,7 @@ public sealed class NodeConnectionService
     {
         var uri = new Uri(url);
         if (uri.Scheme != "https")
-            throw new ArgumentException("Only HTTPS URLs are allowed.");
+            throw new ArgumentException("Only HTTPS URLs are allowed for node connections.");
 
         _baseUrl = uri.GetLeftPart(UriPartial.Authority);
         await _js.InvokeVoidAsync("localStorage.setItem", "gunrpg_node_url", _baseUrl);
