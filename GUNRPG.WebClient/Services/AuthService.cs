@@ -52,7 +52,10 @@ public sealed class AuthService
 
             var result = await response.Content.ReadFromJsonAsync<TokenResponse>();
             if (result is null)
+            {
+                await ClearTokensAsync();
                 return false;
+            }
 
             _accessToken = result.AccessToken;
             await _js.InvokeVoidAsync("tokenStorage.storeRefreshToken", result.RefreshToken);

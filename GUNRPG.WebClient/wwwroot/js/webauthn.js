@@ -17,6 +17,10 @@ window.webauthn = {
 
         const credential = await navigator.credentials.create({ publicKey: options });
 
+        if (!credential) {
+            throw new Error('Registration was cancelled or no credential was returned.');
+        }
+
         return JSON.stringify({
             id: credential.id,
             rawId: bufferToBase64Url(credential.rawId),
@@ -42,6 +46,10 @@ window.webauthn = {
         }
 
         const credential = await navigator.credentials.get({ publicKey: options });
+
+        if (!credential) {
+            throw new Error('Login was cancelled or no credential was returned.');
+        }
 
         return JSON.stringify({
             id: credential.id,

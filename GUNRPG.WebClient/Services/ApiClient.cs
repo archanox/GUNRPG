@@ -42,7 +42,7 @@ public sealed class ApiClient
         var baseUrl = await _nodeService.GetBaseUrlAsync()
             ?? throw new InvalidOperationException("No node URL configured.");
 
-        var request = new HttpRequestMessage(method, $"{baseUrl}{path}");
+        using var request = new HttpRequestMessage(method, $"{baseUrl}{path}");
 
         var token = _auth.GetAccessToken();
         if (!string.IsNullOrEmpty(token))
