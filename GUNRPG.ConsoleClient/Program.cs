@@ -7,6 +7,7 @@ using GUNRPG.Application.Combat;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Sessions;
+using GUNRPG.ConsoleClient.Identity;
 using GUNRPG.Core.Intents;
 using GUNRPG.Infrastructure;
 using GUNRPG.Infrastructure.Backend;
@@ -32,6 +33,28 @@ using var _ = offlineDb; // ensure disposal
 
 // Resolve game backend based on server reachability and local state
 var backend = await backendResolver.ResolveAsync();
+
+// Authentication: run device flow or refresh stored token before starting the game.
+// Only attempted when the server is reachable (online mode).
+var tokenStore = new TokenStore();
+var deviceAuth = new DeviceAuthClient(httpClient, baseAddress);
+var authClient = new AuthenticatedApiClient(httpClient, baseAddress, accessToken: null, tokenStore, deviceAuth);
+
+if (backendResolver.CurrentMode == GameMode.Online)
+{
+    try
+    {
+        await authClient.LoginAsync(cts.Token);
+    }
+    catch (OperationCanceledException)
+    {
+        throw;
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[AUTH] Login failed: {ex.Message}");
+    }
+}
 
 var gameState = new GameState(httpClient, jsonOptions, backend, backendResolver, offlineStore, offlineDb);
 
