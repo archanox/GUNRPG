@@ -152,7 +152,14 @@ var app = builder.Build();
 app.MapOpenApi();
 app.MapScalarApiReference();
 
-app.UseHttpsRedirection();
+// Skip HTTPS redirection for loopback (localhost) connections.
+// The console client runs on the same machine as the server and connects via HTTP.
+// The server's TLS certificate is scoped to the public/Tailscale hostname, not
+// "localhost", so redirecting local traffic to HTTPS causes an SSL handshake failure.
+app.UseWhen(
+    ctx => ctx.Connection.RemoteIpAddress is { } ip && !IPAddress.IsLoopback(ip),
+    appBuilder => appBuilder.UseHttpsRedirection()
+);
 app.UseCors("GunRpgPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
