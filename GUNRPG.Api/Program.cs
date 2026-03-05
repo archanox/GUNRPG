@@ -241,42 +241,86 @@ static Guid LoadOrCreateNodeId(string fileName)
     return id;
 }
 
-// Derives the device-code verification URI from the Kestrel HTTPS certificate (SAN/CN)
-// and port, so it doesn't have to be hardcoded in configuration.
-// Falls back to https://localhost/auth/device/verify when no cert is configured.
+// Derives the device-code verification URI by querying the Tailscale CLI for the
+// node's DNS name and combining it with the Kestrel HTTPS port.
+// Falls back to https://localhost/auth/device/verify when Tailscale is not available.
 static string ResolveVerificationUri(IConfiguration configuration)
 {
     const string fallback = "https://localhost/auth/device/verify";
     const string verifyPath = "/auth/device/verify";
 
-    var certPath = configuration["Kestrel:Endpoints:Https:Certificate:Path"];
     var httpsUrl = configuration["Kestrel:Endpoints:Https:Url"];
-
-    if (string.IsNullOrEmpty(certPath) || string.IsNullOrEmpty(httpsUrl) || !File.Exists(certPath))
-        return fallback;
-
-    try
+    var port = 443;
+    if (!string.IsNullOrEmpty(httpsUrl))
     {
-        using var cert = System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPemFile(certPath);
-        var host = cert.GetNameInfo(
-            System.Security.Cryptography.X509Certificates.X509NameType.DnsName, forIssuer: false);
-
-        if (string.IsNullOrEmpty(host))
-            return fallback;
-
-        // Parse port from the Kestrel URL (e.g. "https://*:7168"); replace the wildcard
+        // Parse port from the Kestrel URL (e.g. "https://*:7168"); replace wildcards
         // with a valid placeholder so Uri can parse it.
         var normalised = httpsUrl.Replace("*", "localhost", StringComparison.Ordinal)
                                  .Replace("+", "localhost", StringComparison.Ordinal);
-        var port = Uri.TryCreate(normalised, UriKind.Absolute, out var uri) ? uri.Port : 443;
+        if (Uri.TryCreate(normalised, UriKind.Absolute, out var kestrelUri) && kestrelUri.Port > 0)
+            port = kestrelUri.Port;
+    }
 
-        return port is 443 or <= 0
-            ? $"https://{host}{verifyPath}"
-            : $"https://{host}:{port}{verifyPath}";
+    var host = TryGetTailscaleDnsName();
+    if (string.IsNullOrEmpty(host))
+        return fallback;
+
+    return port == 443
+        ? $"https://{host}{verifyPath}"
+        : $"https://{host}:{port}{verifyPath}";
+}
+
+// Queries `tailscale status --json` and returns Self.DNSName (trailing dot stripped).
+// Returns null when the Tailscale CLI is not installed, not running, or the output cannot be parsed.
+static string? TryGetTailscaleDnsName()
+{
+    try
+    {
+        using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var process = new System.Diagnostics.Process
+        {
+            StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "tailscale",
+                Arguments = "status --json",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        if (!process.Start())
+        {
+            Console.WriteLine("[VerificationUri] tailscale process could not be started. Using fallback.");
+            return null;
+        }
+
+        // Read output asynchronously so the timeout also covers the read operation.
+        var readTask = process.StandardOutput.ReadToEndAsync(cts.Token);
+        if (!process.WaitForExit(5_000) || !readTask.IsCompletedSuccessfully)
+        {
+            if (!process.HasExited)
+                process.Kill();
+            Console.WriteLine("[VerificationUri] tailscale status --json timed out. Using fallback.");
+            return null;
+        }
+
+        var json = readTask.Result;
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("Self", out var self))
+            return null;
+        if (!self.TryGetProperty("DNSName", out var dnsNameEl))
+            return null;
+
+        var dnsName = dnsNameEl.GetString();
+        return string.IsNullOrEmpty(dnsName)
+            ? null
+            : dnsName.TrimEnd('.');  // Tailscale appends a trailing dot (FQDN)
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[VerificationUri] Could not read certificate '{certPath}': {ex.Message}. Using fallback.");
-        return fallback;
+        Console.WriteLine($"[VerificationUri] tailscale status --json failed: {ex.Message}. Using fallback.");
+        return null;
     }
 }
