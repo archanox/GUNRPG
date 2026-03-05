@@ -104,7 +104,7 @@ builder.Services.Configure<Fido2Configuration>(cfg =>
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 
 var verificationUri = builder.Configuration["WebAuthn:VerificationUri"]
-    ?? "https://localhost/auth/device/verify";
+    ?? ResolveVerificationUri(builder.Configuration);
 builder.Services.AddGunRpgIdentity(verificationUri);
 
 // ── CORS ─────────────────────────────────────────────────────────────────
@@ -239,4 +239,44 @@ static Guid LoadOrCreateNodeId(string fileName)
     }
 
     return id;
+}
+
+// Derives the device-code verification URI from the Kestrel HTTPS certificate (SAN/CN)
+// and port, so it doesn't have to be hardcoded in configuration.
+// Falls back to https://localhost/auth/device/verify when no cert is configured.
+static string ResolveVerificationUri(IConfiguration configuration)
+{
+    const string fallback = "https://localhost/auth/device/verify";
+    const string verifyPath = "/auth/device/verify";
+
+    var certPath = configuration["Kestrel:Endpoints:Https:Certificate:Path"];
+    var httpsUrl = configuration["Kestrel:Endpoints:Https:Url"];
+
+    if (string.IsNullOrEmpty(certPath) || string.IsNullOrEmpty(httpsUrl) || !File.Exists(certPath))
+        return fallback;
+
+    try
+    {
+        using var cert = System.Security.Cryptography.X509Certificates.X509Certificate2.CreateFromPemFile(certPath);
+        var host = cert.GetNameInfo(
+            System.Security.Cryptography.X509Certificates.X509NameType.DnsName, forIssuer: false);
+
+        if (string.IsNullOrEmpty(host))
+            return fallback;
+
+        // Parse port from the Kestrel URL (e.g. "https://*:7168"); replace the wildcard
+        // with a valid placeholder so Uri can parse it.
+        var normalised = httpsUrl.Replace("*", "localhost", StringComparison.Ordinal)
+                                 .Replace("+", "localhost", StringComparison.Ordinal);
+        var port = Uri.TryCreate(normalised, UriKind.Absolute, out var uri) ? uri.Port : 443;
+
+        return port is 443 or <= 0
+            ? $"https://{host}{verifyPath}"
+            : $"https://{host}:{port}{verifyPath}";
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[VerificationUri] Could not read certificate '{certPath}': {ex.Message}. Using fallback.");
+        return fallback;
+    }
 }
