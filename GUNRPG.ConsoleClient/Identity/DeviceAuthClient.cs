@@ -29,7 +29,7 @@ public sealed class DeviceAuthClient
     /// </summary>
     public async Task<DeviceCodeResponse> StartDeviceFlowAsync(CancellationToken ct = default)
     {
-        var response = await _http.PostAsync($"{_baseUrl}/auth/device/start", content: null, ct);
+        using var response = await _http.PostAsync($"{_baseUrl}/auth/device/start", content: null, ct);
         response.EnsureSuccessStatusCode();
 
         return await response.Content.ReadFromJsonAsync<DeviceCodeResponse>(s_jsonOptions, ct)
@@ -52,22 +52,24 @@ public sealed class DeviceAuthClient
             // Respect server-provided interval strictly; Task.Delay avoids CPU spin.
             await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), ct);
 
-            var pollResponse = await _http.PostAsJsonAsync(
+            DevicePollResponse result;
+            using (var pollResponse = await _http.PostAsJsonAsync(
                 $"{_baseUrl}/auth/device/poll",
                 new DevicePollRequest(deviceFlow.DeviceCode),
                 s_jsonOptions,
-                ct);
-
-            if (!pollResponse.IsSuccessStatusCode)
+                ct))
             {
-                var errorBody = await pollResponse.Content.ReadAsStringAsync(ct);
-                throw new InvalidOperationException(
-                    $"Device poll request failed with HTTP {(int)pollResponse.StatusCode}: {errorBody}");
-            }
+                if (!pollResponse.IsSuccessStatusCode)
+                {
+                    var errorBody = await pollResponse.Content.ReadAsStringAsync(ct);
+                    throw new InvalidOperationException(
+                        $"Device poll request failed with HTTP {(int)pollResponse.StatusCode}: {errorBody}");
+                }
 
-            var result = await pollResponse.Content
-                .ReadFromJsonAsync<DevicePollResponse>(s_jsonOptions, ct)
-                ?? throw new InvalidOperationException("Empty response from /auth/device/poll.");
+                result = await pollResponse.Content
+                    .ReadFromJsonAsync<DevicePollResponse>(s_jsonOptions, ct)
+                    ?? throw new InvalidOperationException("Empty response from /auth/device/poll.");
+            }
 
             switch (result.Status)
             {

@@ -16,11 +16,19 @@ using Hex1b;
 using Hex1b.Widgets;
 using JsonSerializer = System.Text.Json.JsonSerializer;
 
-var baseAddress = ResolveServerAddress(args, Environment.GetEnvironmentVariable("GUNRPG_API_BASE"));
+var baseAddress = ResolveServerAddress(args, Environment.GetEnvironmentVariable("GUNRPG_API_BASE"))
+    .TrimEnd('/'); // normalize to avoid double-slash URLs and ensure node URL comparisons work
 var jsonOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web);
 jsonOptions.Converters.Add(new JsonStringEnumConverter());
 
-using var httpClient = new HttpClient { BaseAddress = new Uri(baseAddress) };
+// Chain the auth handler into the HttpClient so all callers (including GameState)
+// benefit from Bearer token injection and transparent 401 refresh/device-flow retry.
+var tokenStore = new TokenStore();
+var authHandler = new AuthDelegatingHandler(tokenStore, baseAddress)
+{
+    InnerHandler = new HttpClientHandler()
+};
+using var httpClient = new HttpClient(authHandler) { BaseAddress = new Uri(baseAddress) };
 using var cts = new CancellationTokenSource();
 
 // Initialize offline services via centralized factory (no manual new() for infrastructure types)
@@ -36,15 +44,11 @@ var backend = await backendResolver.ResolveAsync();
 
 // Authentication: run device flow or refresh stored token before starting the game.
 // Only attempted when the server is reachable (online mode).
-var tokenStore = new TokenStore();
-var deviceAuth = new DeviceAuthClient(httpClient, baseAddress);
-var authClient = new AuthenticatedApiClient(httpClient, baseAddress, accessToken: null, tokenStore, deviceAuth);
-
 if (backendResolver.CurrentMode == GameMode.Online)
 {
     try
     {
-        await authClient.LoginAsync(cts.Token);
+        await authHandler.LoginAsync(cts.Token);
     }
     catch (OperationCanceledException)
     {
