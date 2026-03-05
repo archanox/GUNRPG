@@ -152,14 +152,12 @@ var app = builder.Build();
 app.MapOpenApi();
 app.MapScalarApiReference();
 
-// Skip HTTPS redirection for loopback (localhost) connections.
-// The console client runs on the same machine as the server and connects via HTTP.
-// The server's TLS certificate is scoped to the public/Tailscale hostname, not
-// "localhost", so redirecting local traffic to HTTPS causes an SSL handshake failure.
-app.UseWhen(
-    ctx => ctx.Connection.RemoteIpAddress is { } ip && !IPAddress.IsLoopback(ip),
-    appBuilder => appBuilder.UseHttpsRedirection()
-);
+// HTTPS redirection is intentionally omitted.
+// The console client connects over plain HTTP from the same LAN (e.g. pi5.local,
+// 192.168.x.x), and the server's TLS certificate is scoped to the Tailscale/public
+// hostname — not the LAN hostname — so a redirect would cause an SSL handshake failure.
+// Production TLS is provided by Tailscale (end-to-end) or a reverse proxy
+// (which terminates TLS before forwarding to this process).
 app.UseCors("GunRpgPolicy");
 app.UseAuthentication();
 app.UseAuthorization();
