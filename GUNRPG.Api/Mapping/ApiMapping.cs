@@ -37,15 +37,17 @@ public static class ApiMapping
 
     public static PetActionRequest ToApplicationRequest(ApiPetActionRequest apiRequest)
     {
-        return new PetActionRequest
+        var request = new PetActionRequest
         {
-            Action = apiRequest.Action ?? "rest",
             Nutrition = apiRequest.Nutrition,
             Hydration = apiRequest.Hydration,
             HitsTaken = apiRequest.HitsTaken,
             OpponentDifficulty = apiRequest.OpponentDifficulty,
             Hours = apiRequest.Hours
         };
+        if (apiRequest.Action is not null)
+            request.Action = apiRequest.Action;
+        return request;
     }
 
     public static IntentDto ToApplicationDto(ApiIntentDto apiDto)
