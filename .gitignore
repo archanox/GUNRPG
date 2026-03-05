@@ -424,3 +424,6 @@ FodyWeavers.xsd
 
 # Persistent server node identity
 server_node_id
+
+# TLS certificate and private key files (e.g. from tailscale cert)
+*.pem
