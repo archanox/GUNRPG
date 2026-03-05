@@ -103,6 +103,9 @@ builder.Services.Configure<Fido2Configuration>(cfg =>
 });
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 
+// Auto-provision Tailscale TLS certs if the cert/key files don't exist yet
+EnsureTailscaleCerts(builder.Configuration);
+
 var verificationUri = builder.Configuration["WebAuthn:VerificationUri"]
     ?? ResolveVerificationUri(builder.Configuration);
 builder.Services.AddGunRpgIdentity(verificationUri);
@@ -322,5 +325,79 @@ static string? TryGetTailscaleDnsName()
     {
         Console.WriteLine($"[VerificationUri] tailscale status --json failed: {ex.Message}. Using fallback.");
         return null;
+    }
+}
+
+// Provisions TLS cert/key files via `tailscale cert` when they are absent.
+// Reads the cert and key paths from the Kestrel config and the domain from tailscale status --json.
+// Logs the outcome; never throws — Kestrel will report a clear error on startup if certs are still missing.
+static void EnsureTailscaleCerts(IConfiguration configuration)
+{
+    var certPath = configuration["Kestrel:Endpoints:Https:Certificate:Path"];
+    var keyPath = configuration["Kestrel:Endpoints:Https:Certificate:KeyPath"];
+
+    if (string.IsNullOrEmpty(certPath) || string.IsNullOrEmpty(keyPath))
+        return; // No Kestrel TLS cert configured; nothing to provision
+
+    if (File.Exists(certPath) && File.Exists(keyPath))
+        return; // Certificates already present
+
+    var dnsName = TryGetTailscaleDnsName();
+    if (string.IsNullOrEmpty(dnsName))
+    {
+        Console.WriteLine("[Certs] Tailscale DNS name unavailable; cannot auto-provision certificates.");
+        return;
+    }
+
+    Console.WriteLine($"[Certs] Certificate files not found. Provisioning via 'tailscale cert' for '{dnsName}'...");
+
+    try
+    {
+        using var process = new System.Diagnostics.Process
+        {
+            StartInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "tailscale",
+                Arguments = $"cert --cert-file={certPath} --key-file={keyPath} {dnsName}",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            }
+        };
+
+        if (!process.Start())
+        {
+            Console.WriteLine("[Certs] tailscale cert process could not be started.");
+            return;
+        }
+
+        // Drain both streams concurrently to prevent buffer-full deadlocks.
+        // Waiting on Task.WhenAll guarantees both tasks are complete before we
+        // read their results, and ensures the exit code is retrievable.
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        if (!Task.WhenAll(stdoutTask, stderrTask).Wait(TimeSpan.FromSeconds(30)))
+        {
+            try { if (!process.HasExited) process.Kill(); } catch { /* may have exited concurrently */ }
+            Console.WriteLine("[Certs] tailscale cert timed out after 30 seconds.");
+            return;
+        }
+
+        process.WaitForExit(); // Ensure the exit code is fully populated
+
+        if (process.ExitCode == 0)
+        {
+            Console.WriteLine($"[Certs] Successfully provisioned {certPath} and {keyPath}.");
+        }
+        else
+        {
+            Console.WriteLine($"[Certs] tailscale cert failed (exit code {process.ExitCode}): {stderrTask.Result.Trim()}");
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"[Certs] tailscale cert failed: {ex.Message}");
     }
 }
