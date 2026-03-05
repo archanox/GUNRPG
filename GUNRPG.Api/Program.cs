@@ -246,11 +246,11 @@ static Guid LoadOrCreateNodeId(string fileName)
 
 // Derives the device-code verification URI by querying the Tailscale CLI for the
 // node's DNS name and combining it with the Kestrel HTTPS port.
-// Falls back to https://localhost/auth/device/verify when Tailscale is not available.
+// Falls back to https://localhost/device when Tailscale is not available.
 static string ResolveVerificationUri(IConfiguration configuration)
 {
-    const string fallback = "https://localhost/auth/device/verify";
-    const string verifyPath = "/auth/device/verify";
+    const string fallback = "https://localhost/device";
+    const string verifyPath = "/device";
 
     var httpsUrl = configuration["Kestrel:Endpoints:Https:Url"];
     var port = 443;
@@ -279,7 +279,6 @@ static string? TryGetTailscaleDnsName()
 {
     try
     {
-        using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(5));
         using var process = new System.Diagnostics.Process
         {
             StartInfo = new System.Diagnostics.ProcessStartInfo
@@ -299,17 +298,20 @@ static string? TryGetTailscaleDnsName()
             return null;
         }
 
-        // Read output asynchronously so the timeout also covers the read operation.
-        var readTask = process.StandardOutput.ReadToEndAsync(cts.Token);
-        if (!process.WaitForExit(5_000) || !readTask.IsCompletedSuccessfully)
+        // Drain both streams concurrently to prevent buffer-full deadlocks.
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        if (!Task.WhenAll(stdoutTask, stderrTask).Wait(TimeSpan.FromSeconds(5)))
         {
-            if (!process.HasExited)
-                process.Kill();
+            try { if (!process.HasExited) process.Kill(); } catch { /* may have exited concurrently */ }
             Console.WriteLine("[VerificationUri] tailscale status --json timed out. Using fallback.");
             return null;
         }
 
-        var json = readTask.Result;
+        process.WaitForExit(); // Ensure exit code is fully populated
+
+        var json = stdoutTask.Result;
         using var doc = System.Text.Json.JsonDocument.Parse(json);
         if (!doc.RootElement.TryGetProperty("Self", out var self))
             return null;
@@ -358,13 +360,16 @@ static void EnsureTailscaleCerts(IConfiguration configuration)
             StartInfo = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "tailscale",
-                Arguments = $"cert --cert-file={certPath} --key-file={keyPath} {dnsName}",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true
             }
         };
+        process.StartInfo.ArgumentList.Add("cert");
+        process.StartInfo.ArgumentList.Add($"--cert-file={certPath}");
+        process.StartInfo.ArgumentList.Add($"--key-file={keyPath}");
+        process.StartInfo.ArgumentList.Add(dnsName);
 
         if (!process.Start())
         {
