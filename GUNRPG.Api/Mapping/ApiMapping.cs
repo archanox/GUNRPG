@@ -39,7 +39,7 @@ public static class ApiMapping
     {
         return new PetActionRequest
         {
-            Action = apiRequest.Action,
+            Action = apiRequest.Action ?? "rest",
             Nutrition = apiRequest.Nutrition,
             Hydration = apiRequest.Hydration,
             HitsTaken = apiRequest.HitsTaken,

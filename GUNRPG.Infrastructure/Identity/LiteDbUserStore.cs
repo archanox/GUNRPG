@@ -91,10 +91,10 @@ public sealed class LiteDbUserStore :
     }
 
     public Task<ApplicationUser?> FindByIdAsync(string userId, CancellationToken ct) =>
-        Task.FromResult(_users.FindById(userId));
+        Task.FromResult<ApplicationUser?>(_users.FindById(userId));
 
     public Task<ApplicationUser?> FindByNameAsync(string normalizedUserName, CancellationToken ct) =>
-        Task.FromResult(_users.FindOne(u => u.NormalizedUserName == normalizedUserName));
+        Task.FromResult<ApplicationUser?>(_users.FindOne(u => u.NormalizedUserName == normalizedUserName));
 
     public Task<string> GetUserIdAsync(ApplicationUser user, CancellationToken ct) =>
         Task.FromResult(user.Id);
@@ -152,7 +152,7 @@ public sealed class LiteDbUserStore :
     }
 
     public Task<ApplicationUser?> FindByEmailAsync(string normalizedEmail, CancellationToken ct) =>
-        Task.FromResult(_users.FindOne(u => u.NormalizedEmail == normalizedEmail));
+        Task.FromResult<ApplicationUser?>(_users.FindOne(u => u.NormalizedEmail == normalizedEmail));
 
     public Task<string?> GetNormalizedEmailAsync(ApplicationUser user, CancellationToken ct) =>
         Task.FromResult(user.NormalizedEmail);
