@@ -114,9 +114,9 @@ public sealed class WebAuthnService : IWebAuthnService
             },
             AuthenticatorSelection.Default,
             AttestationConveyancePreference.None,
-            excludeCredentials: null!,
+            excludeCredentials: [],
             extensions: null,
-            pubKeyCredParams: null!);
+            pubKeyCredParams: PubKeyCredParam.Defaults);
 
         try
         {
@@ -208,7 +208,7 @@ public sealed class WebAuthnService : IWebAuthnService
         var assertionOptions = AssertionOptions.Create(
             _fido2Config,
             challenge,
-            allowedCredentials: null!,
+            allowedCredentials: [],
             userVerification: UserVerificationRequirement.Preferred,
             extensions: null);
 
