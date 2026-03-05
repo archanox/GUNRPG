@@ -103,6 +103,9 @@ builder.Services.Configure<Fido2Configuration>(cfg =>
 });
 builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
 
+// Expand ~ in Kestrel TLS cert paths (e.g. ~/.gunrpg/keys/cert.pem) before Kestrel reads them.
+ExpandKestrelCertPaths(builder.Configuration);
+
 // Auto-provision Tailscale TLS certs if the cert/key files don't exist yet
 EnsureTailscaleCerts(builder.Configuration);
 
@@ -215,6 +218,41 @@ app.Lifetime.ApplicationStopping.Register(() =>
 });
 
 app.Run();
+
+// Expands a leading ~ to the current user's home directory so that config paths
+// like ~/.gunrpg/keys/cert.pem work correctly on Linux/macOS.
+static string ExpandHomePath(string path)
+{
+    if (path.StartsWith("~/", StringComparison.Ordinal))
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return Path.Combine(home, path[2..]);
+    }
+    if (path == "~")
+        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+    return path;
+}
+
+// Reads the Kestrel HTTPS certificate paths from configuration, expands any leading ~,
+// and injects the expanded values back as an in-memory override so that both
+// EnsureTailscaleCerts and Kestrel itself see the fully-qualified paths.
+static void ExpandKestrelCertPaths(Microsoft.Extensions.Configuration.ConfigurationManager configuration)
+{
+    const string certKey = "Kestrel:Endpoints:Https:Certificate:Path";
+    const string keyKey  = "Kestrel:Endpoints:Https:Certificate:KeyPath";
+
+    var certPath = configuration[certKey];
+    var keyPath  = configuration[keyKey];
+
+    var overrides = new Dictionary<string, string?>();
+    if (!string.IsNullOrEmpty(certPath))
+        overrides[certKey] = ExpandHomePath(certPath);
+    if (!string.IsNullOrEmpty(keyPath))
+        overrides[keyKey] = ExpandHomePath(keyPath);
+
+    if (overrides.Count > 0)
+        configuration.AddInMemoryCollection(overrides);
+}
 
 static Guid LoadOrCreateNodeId(string fileName)
 {
@@ -349,6 +387,14 @@ static void EnsureTailscaleCerts(IConfiguration configuration)
     {
         Console.WriteLine("[Certs] Tailscale DNS name unavailable; cannot auto-provision certificates.");
         return;
+    }
+
+    // Ensure the target directory exists (e.g. ~/.gunrpg/keys/) before invoking tailscale cert.
+    var certDir = Path.GetDirectoryName(certPath);
+    if (!string.IsNullOrEmpty(certDir) && !Directory.Exists(certDir))
+    {
+        Directory.CreateDirectory(certDir);
+        Console.WriteLine($"[Certs] Created directory {certDir}.");
     }
 
     Console.WriteLine($"[Certs] Certificate files not found. Provisioning via 'tailscale cert' for '{dnsName}'...");
