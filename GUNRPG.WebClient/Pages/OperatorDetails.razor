@@ -77,7 +77,7 @@
         </FluentCard>
 
         <FluentStack Orientation="Orientation.Horizontal" Style="gap: 0.5rem; flex-wrap: wrap;">
-            @if (!_operator.IsDead && _operator.CurrentMode == "Idle")
+            @if (!_operator.IsDead && _operator.CurrentMode == "Base")
             {
                 <FluentButton Appearance="Appearance.Accent"
                               OnClick="StartInfilAsync"
@@ -90,13 +90,13 @@
             {
                 <FluentButton Appearance="Appearance.Accent"
                               OnClick="@(() => Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}"))">
-                    Resume Mission
+                    Resume Combat
                 </FluentButton>
             }
-            else if (_operator.IsOnMission && _operator.InfilSessionId.HasValue)
+            else if (_operator.IsOnMission)
             {
                 <FluentButton Appearance="Appearance.Accent"
-                              OnClick="@(() => Nav.NavigateTo($"missions/{_operator.InfilSessionId}"))">
+                              OnClick="@(() => Nav.NavigateTo($"missions/infil/{Id}"))">
                     Resume Mission
                 </FluentButton>
             }
@@ -113,7 +113,7 @@
 @code {
     [Parameter] public Guid Id { get; set; }
 
-    private GUNRPG.WebClient.Models.OperatorState? _operator;
+    private OperatorState? _operator;
     private bool _loading = true;
     private bool _busy;
     private string? _error;
