@@ -22,7 +22,15 @@ public sealed class AuthService
         if (_accessToken is not null)
             return true;
 
-        return await RefreshTokenAsync();
+        try
+        {
+            return await RefreshTokenAsync();
+        }
+        catch
+        {
+            // Swallow any exception during startup token restore and report failure.
+            return false;
+        }
     }
 
     public AuthService(IJSRuntime js, HttpClient http, NodeConnectionService nodeService)
