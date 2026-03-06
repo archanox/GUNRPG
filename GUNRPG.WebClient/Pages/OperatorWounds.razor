@@ -1,0 +1,145 @@
+@page "/operators/{Id:guid}/wounds"
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject OperatorService OperatorSvc
+
+<FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; max-width: 700px; margin: 0 auto;">
+    <FluentStack Orientation="Orientation.Horizontal" Style="align-items: center; gap: 0.5rem;">
+        <FluentButton Appearance="Appearance.Outline"
+                      OnClick="@(() => Nav.NavigateTo($"operators/{Id}"))">
+            ← Back
+        </FluentButton>
+        <h2 style="margin: 0;">Treat Wounds</h2>
+    </FluentStack>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <FluentMessageBar Title="Error" Intent="MessageIntent.Error">@_error</FluentMessageBar>
+    }
+
+    @if (!string.IsNullOrEmpty(_info))
+    {
+        <FluentMessageBar Title="Success" Intent="MessageIntent.Success">@_info</FluentMessageBar>
+    }
+
+    @if (_loading)
+    {
+        <FluentProgressRing />
+    }
+    else if (_operator is not null)
+    {
+        <FluentCard>
+            <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.5rem;">
+                <FluentLabel Typo="Typography.H5">@_operator.Name</FluentLabel>
+                <div>
+                    <FluentLabel>Health</FluentLabel>
+                    <div>@_operator.CurrentHealth.ToString("F0") / @_operator.MaxHealth.ToString("F0")</div>
+                </div>
+            </FluentStack>
+        </FluentCard>
+
+        @if (_operator.MaxHealth - _operator.CurrentHealth <= 0)
+        {
+            <FluentMessageBar Title="Full Health" Intent="MessageIntent.Info">
+                Operator is already at full health.
+            </FluentMessageBar>
+        }
+        else
+        {
+            var maxHeal = _operator.MaxHealth - _operator.CurrentHealth;
+            <FluentCard>
+                <FluentLabel Typo="Typography.H5">Healing Options</FluentLabel>
+                <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.5rem; margin-top: 0.5rem;">
+                    @if (maxHeal >= 25)
+                    {
+                        <FluentButton Appearance="Appearance.Outline"
+                                      OnClick="@(() => HealAsync(25))"
+                                      Disabled="_busy"
+                                      Style="width: 100%; justify-content: flex-start;">
+                            Heal 25 HP
+                        </FluentButton>
+                    }
+                    @if (maxHeal >= 50)
+                    {
+                        <FluentButton Appearance="Appearance.Outline"
+                                      OnClick="@(() => HealAsync(50))"
+                                      Disabled="_busy"
+                                      Style="width: 100%; justify-content: flex-start;">
+                            Heal 50 HP
+                        </FluentButton>
+                    }
+                    @if (maxHeal >= 100)
+                    {
+                        <FluentButton Appearance="Appearance.Outline"
+                                      OnClick="@(() => HealAsync(100))"
+                                      Disabled="_busy"
+                                      Style="width: 100%; justify-content: flex-start;">
+                            Heal 100 HP
+                        </FluentButton>
+                    }
+                    <FluentButton Appearance="Appearance.Accent"
+                                  OnClick="@(() => HealAsync(maxHeal))"
+                                  Disabled="_busy"
+                                  Style="width: 100%; justify-content: flex-start;">
+                        @(_busy ? "Healing..." : $"Heal All ({maxHeal:F0} HP)")
+                    </FluentButton>
+                </FluentStack>
+            </FluentCard>
+        }
+    }
+</FluentStack>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private OperatorState? _operator;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string? _info;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsAuthenticated)
+        {
+            Nav.NavigateTo("login");
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        var (data, error) = await OperatorSvc.GetAsync(Id);
+        _operator = data;
+        _error = error;
+        _loading = false;
+    }
+
+    private async Task HealAsync(float amount)
+    {
+        _error = null;
+        _info = null;
+        _busy = true;
+        StateHasChanged();
+
+        var (data, error) = await OperatorSvc.TreatWoundsAsync(Id, amount);
+        _busy = false;
+
+        if (error is not null)
+        {
+            _error = error;
+            StateHasChanged();
+            return;
+        }
+
+        _operator = data ?? _operator;
+        _info = $"Healed {amount:F0} HP. New health: {_operator?.CurrentHealth:F0}/{_operator?.MaxHealth:F0}.";
+        StateHasChanged();
+    }
+}

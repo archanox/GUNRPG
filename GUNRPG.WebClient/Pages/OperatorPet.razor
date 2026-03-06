@@ -1,0 +1,154 @@
+@page "/operators/{Id:guid}/pet"
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject OperatorService OperatorSvc
+
+<FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; max-width: 700px; margin: 0 auto;">
+    <FluentStack Orientation="Orientation.Horizontal" Style="align-items: center; gap: 0.5rem;">
+        <FluentButton Appearance="Appearance.Outline"
+                      OnClick="@(() => Nav.NavigateTo($"operators/{Id}"))">
+            ← Back
+        </FluentButton>
+        <h2 style="margin: 0;">Pet Actions</h2>
+    </FluentStack>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <FluentMessageBar Title="Error" Intent="MessageIntent.Error">@_error</FluentMessageBar>
+    }
+
+    @if (!string.IsNullOrEmpty(_info))
+    {
+        <FluentMessageBar Title="Success" Intent="MessageIntent.Success">@_info</FluentMessageBar>
+    }
+
+    @if (_loading)
+    {
+        <FluentProgressRing />
+    }
+    else if (_operator is not null)
+    {
+        @if (_operator.Pet is null)
+        {
+            <FluentMessageBar Title="No Pet" Intent="MessageIntent.Info">
+                No pet data available for this operator.
+            </FluentMessageBar>
+        }
+        else
+        {
+            <FluentCard>
+                <FluentLabel Typo="Typography.H5">Pet Status</FluentLabel>
+                <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.5rem; margin-top: 0.5rem;">
+                    <div>
+                        <FluentLabel>Health</FluentLabel>
+                        <div>@_operator.Pet.Health.ToString("F1")%</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Fatigue</FluentLabel>
+                        <div>@_operator.Pet.Fatigue.ToString("F1")%</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Injury</FluentLabel>
+                        <div>@_operator.Pet.Injury.ToString("F1")%</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Stress</FluentLabel>
+                        <div>@_operator.Pet.Stress.ToString("F1")%</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Morale</FluentLabel>
+                        <div>@_operator.Pet.Morale.ToString("F1")%</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Hunger</FluentLabel>
+                        <div>@_operator.Pet.Hunger.ToString("F1")%</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Hydration</FluentLabel>
+                        <div>@_operator.Pet.Hydration.ToString("F1")%</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Last Updated</FluentLabel>
+                        <div>@_operator.Pet.LastUpdated.ToLocalTime().ToString("g")</div>
+                    </div>
+                </FluentStack>
+            </FluentCard>
+
+            <FluentCard>
+                <FluentLabel Typo="Typography.H5">Actions</FluentLabel>
+                <FluentStack Orientation="Orientation.Horizontal" Style="gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
+                    <FluentButton Appearance="Appearance.Outline"
+                                  OnClick="@(() => ApplyPetActionAsync("rest", hours: 8))"
+                                  Disabled="_busy">
+                        🛌 Rest (Reduce Fatigue)
+                    </FluentButton>
+                    <FluentButton Appearance="Appearance.Outline"
+                                  OnClick="@(() => ApplyPetActionAsync("eat", nutrition: 50))"
+                                  Disabled="_busy">
+                        🍖 Eat (Reduce Hunger)
+                    </FluentButton>
+                    <FluentButton Appearance="Appearance.Outline"
+                                  OnClick="@(() => ApplyPetActionAsync("drink", hydration: 50))"
+                                  Disabled="_busy">
+                        💧 Drink (Increase Hydration)
+                    </FluentButton>
+                </FluentStack>
+            </FluentCard>
+        }
+    }
+</FluentStack>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private OperatorState? _operator;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string? _info;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsAuthenticated)
+        {
+            Nav.NavigateTo("login");
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        var (data, error) = await OperatorSvc.GetAsync(Id);
+        _operator = data;
+        _error = error;
+        _loading = false;
+    }
+
+    private async Task ApplyPetActionAsync(string action, float? hours = null, float? nutrition = null, float? hydration = null)
+    {
+        _error = null;
+        _info = null;
+        _busy = true;
+        StateHasChanged();
+
+        var (data, error) = await OperatorSvc.ApplyPetActionAsync(Id, action, hours, nutrition, hydration);
+        _busy = false;
+
+        if (error is not null)
+        {
+            _error = error;
+            StateHasChanged();
+            return;
+        }
+
+        _operator = data ?? _operator;
+        _info = $"Pet action '{action}' applied successfully.";
+        StateHasChanged();
+    }
+}

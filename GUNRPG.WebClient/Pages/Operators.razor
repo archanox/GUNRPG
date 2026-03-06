@@ -47,6 +47,14 @@
                                   OnClick="@(() => Nav.NavigateTo($"operators/{context.Id}"))">
                         Details
                     </FluentButton>
+                    @if (context.CurrentMode == "Infil" && !context.IsDead)
+                    {
+                        <FluentButton Appearance="Appearance.Accent"
+                                      Style="margin-left: 0.25rem;"
+                                      OnClick="@(() => Nav.NavigateTo($"missions/infil/{context.Id}"))">
+                            Mission Screen
+                        </FluentButton>
+                    }
                 </ChildContent>
             </TemplateColumn>
         </FluentDataGrid>
