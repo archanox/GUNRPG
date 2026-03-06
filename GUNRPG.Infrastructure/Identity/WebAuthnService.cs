@@ -290,6 +290,11 @@ public sealed class WebAuthnService : IWebAuthnService
         if (storedCredential is null)
             return Err(WebAuthnErrorCode.CredentialNotFound, "Credential not found.");
 
+        var user = await _userManager.FindByIdAsync(storedCredential.UserId);
+        if (user is null)
+            return Err(WebAuthnErrorCode.UserNotFound,
+                $"User account for credential no longer exists.");
+
         var assertionOptions = AssertionOptions.Create(
             _fido2Config,
             challenge,
