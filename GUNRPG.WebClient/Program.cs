@@ -13,5 +13,7 @@ builder.Services.AddScoped<NodeConnectionService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped(sp => new HttpClient());
 builder.Services.AddScoped<ApiClient>();
+builder.Services.AddScoped<OperatorService>();
+builder.Services.AddScoped<MissionService>();
 
 await builder.Build().RunAsync();
