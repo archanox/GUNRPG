@@ -5,6 +5,14 @@ global using BattleLogEntry = GUNRPG.ClientModels.BattleLogEntry;
 
 namespace GUNRPG.WebClient.Models;
 
+/// <summary>Request body for POST /sessions (create a new combat session).</summary>
+public sealed class SessionCreateRequest
+{
+    public Guid? Id { get; set; }
+    public Guid? OperatorId { get; set; }
+    public string? PlayerName { get; set; }
+}
+
 /// <summary>Request body for POST /sessions/{id}/intent.</summary>
 public sealed class IntentRequest
 {
