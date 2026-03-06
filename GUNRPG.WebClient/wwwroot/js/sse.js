@@ -11,6 +11,15 @@ window.sseHelper = {
         es.onmessage = function () {
             dotNetRef.invokeMethodAsync(callbackName);
         };
+        es.onerror = function () {
+            // If the EventSource has reached a closed state, clean up the connection.
+            if (es.readyState === EventSource.CLOSED) {
+                es.close();
+                if (window.sseHelper && window.sseHelper._connections[url] === es) {
+                    delete window.sseHelper._connections[url];
+                }
+            }
+        };
         this._connections[url] = es;
     },
 

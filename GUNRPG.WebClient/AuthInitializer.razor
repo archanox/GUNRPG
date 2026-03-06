@@ -18,7 +18,13 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        await Auth.TryRestoreAsync();
-        _initialized = true;
+        try
+        {
+            await Auth.TryRestoreAsync();
+        }
+        finally
+        {
+            _initialized = true;
+        }
     }
 }

@@ -236,8 +236,29 @@
     [JSInvokable]
     public async Task OnSessionUpdated()
     {
-        await LoadAsync();
+        await SilentRefreshAsync();
+
+        if (_session?.IsConcluded == true)
+            await StopSseAsync();
+
         await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// Re-fetches the session state without toggling _loading to avoid UI flicker during SSE updates.
+    /// </summary>
+    private async Task SilentRefreshAsync()
+    {
+        var (data, error) = await MissionSvc.GetStateAsync(MissionId);
+        if (data is not null)
+        {
+            _session = data;
+            _error = null;
+        }
+        else if (error is not null)
+        {
+            _error = error;
+        }
     }
 
     private async Task LoadAsync()
@@ -290,6 +311,29 @@
         StateHasChanged();
     }
 
+    private async Task StopSseAsync()
+    {
+        if (!string.IsNullOrEmpty(_sseUrl))
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("sseHelper.disconnect", _sseUrl);
+            }
+            catch
+            {
+                // Ignore JS interop errors during cleanup
+            }
+        }
+
+        _sseUrl = null;
+
+        if (_dotNetRef is not null)
+        {
+            _dotNetRef.Dispose();
+            _dotNetRef = null;
+        }
+    }
+
     private void GoBack()
     {
         if (_session is not null)
@@ -300,17 +344,6 @@
 
     public async ValueTask DisposeAsync()
     {
-        if (_sseUrl is not null)
-        {
-            try
-            {
-                await JS.InvokeVoidAsync("sseHelper.disconnect", _sseUrl);
-            }
-            catch
-            {
-                // Ignore JS interop errors during disposal
-            }
-        }
-        _dotNetRef?.Dispose();
+        await StopSseAsync();
     }
 }
