@@ -28,7 +28,8 @@
     }
     else
     {
-        <FluentDataGrid Items="_operators.AsQueryable()" TGridItem="OperatorSummary" Style="width: 100%;">
+        <div style="overflow-x: auto; width: 100%;">
+        <FluentDataGrid Items="_operators.AsQueryable()" TGridItem="OperatorSummary" Style="width: 100%; min-width: 500px;">
             <PropertyColumn Title="Name" Property="o => o.Name" />
             <TemplateColumn Title="Level">
                 <ChildContent>
@@ -58,10 +59,11 @@
                 </ChildContent>
             </TemplateColumn>
         </FluentDataGrid>
+        </div>
     }
 </FluentStack>
 
-<FluentDialog @ref="_createDialog" Modal="true" TrapFocus="true" PreventScroll="true">
+<FluentDialog Modal="true" TrapFocus="true" PreventScroll="true" Hidden="@(!_showCreateDialog)">
     <FluentDialogHeader>
         <FluentLabel Typo="Typography.PaneHeader">Create Operator</FluentLabel>
     </FluentDialogHeader>
@@ -94,7 +96,7 @@
     private string? _error;
     private string? _createError;
     private string _newName = string.Empty;
-    private FluentDialog? _createDialog;
+    private bool _showCreateDialog;
 
     protected override async Task OnInitializedAsync()
     {
@@ -123,12 +125,12 @@
     {
         _newName = string.Empty;
         _createError = null;
-        _createDialog?.Show();
+        _showCreateDialog = true;
     }
 
     private void CloseCreateDialog()
     {
-        _createDialog?.Hide();
+        _showCreateDialog = false;
     }
 
     private async Task CreateOperatorAsync()
@@ -148,7 +150,7 @@
             return;
         }
 
-        _createDialog?.Hide();
+        _showCreateDialog = false;
         await LoadOperatorsAsync();
     }
 }

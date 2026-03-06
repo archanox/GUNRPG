@@ -105,11 +105,13 @@
 
     private async Task StartNewCombatSessionAsync()
     {
+        if (_operator is null) return;
+
         _error = null;
         _busy = true;
         StateHasChanged();
 
-        var (sessionId, error) = await OperatorSvc.StartCombatSessionAsync(OperatorId);
+        var (sessionId, error) = await OperatorSvc.StartCombatSessionAsync(OperatorId, _operator.Name);
         _busy = false;
 
         if (error is not null)

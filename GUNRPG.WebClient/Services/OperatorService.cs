@@ -89,10 +89,11 @@ public sealed class OperatorService
         }
     }
 
-    public async Task<(Guid? SessionId, string? Error)> StartCombatSessionAsync(Guid operatorId)
+    public async Task<(Guid? SessionId, string? Error)> StartCombatSessionAsync(Guid operatorId, string playerName)
     {
         try
         {
+            // Step 1: Record the combat session start event on the operator aggregate.
             var response = await _api.PostAsync($"/operators/{operatorId}/infil/combat");
             if (!response.IsSuccessStatusCode)
             {
@@ -101,6 +102,22 @@ public sealed class OperatorService
             }
 
             var sessionId = await response.Content.ReadFromJsonAsync<Guid>();
+
+            // Step 2: Create the actual combat session in the session store so it can be retrieved.
+            var sessionRequest = new SessionCreateRequest
+            {
+                Id = sessionId,
+                OperatorId = operatorId,
+                PlayerName = playerName
+            };
+
+            var createResponse = await _api.PostAsync("/sessions", sessionRequest);
+            if (!createResponse.IsSuccessStatusCode)
+            {
+                var err = await ApiHelpers.TryReadErrorAsync(createResponse);
+                return (null, err ?? $"Failed to create combat session: {createResponse.StatusCode}");
+            }
+
             return (sessionId, null);
         }
         catch (Exception ex)
