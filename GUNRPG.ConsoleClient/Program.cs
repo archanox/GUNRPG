@@ -15,6 +15,14 @@ using GUNRPG.Infrastructure.Persistence;
 using Hex1b;
 using Hex1b.Widgets;
 using JsonSerializer = System.Text.Json.JsonSerializer;
+// Type aliases that map the local DTO names used throughout this file to the
+// shared GUNRPG.ClientModels types, eliminating duplicate class definitions.
+using CombatSessionDto = GUNRPG.ClientModels.CombatSession;
+using PlayerStateDto = GUNRPG.ClientModels.PlayerState;
+using PetState = GUNRPG.ClientModels.PetState;
+using BattleLogEntryDto = GUNRPG.ClientModels.BattleLogEntry;
+using OperatorState = GUNRPG.ClientModels.OperatorState;
+using OperatorSummary = GUNRPG.ClientModels.OperatorSummary;
 
 var baseAddress = ResolveServerAddress(args, Environment.GetEnvironmentVariable("GUNRPG_API_BASE"))
     .TrimEnd('/'); // normalize to avoid double-slash URLs and ensure node URL comparisons work
@@ -2921,103 +2929,6 @@ static class UI
     }
 }
 
-class CombatSessionDto
-{
-    public Guid Id { get; init; }
-    public Guid OperatorId { get; init; }
-    public string Phase { get; init; } = "";
-    public long CurrentTimeMs { get; init; }
-    public PlayerStateDto Player { get; init; } = default!;
-    public PlayerStateDto Enemy { get; init; } = default!;
-    public PetStateDto Pet { get; init; } = default!;
-    public int EnemyLevel { get; init; }
-    public int TurnNumber { get; init; }
-    public List<BattleLogEntryDto> BattleLog { get; init; } = new();
-}
-
-class PlayerStateDto
-{
-    public Guid Id { get; init; }
-    public string Name { get; init; } = "";
-    public float Health { get; init; }
-    public float MaxHealth { get; init; }
-    public float Stamina { get; init; }
-    public float Fatigue { get; init; }
-    public float SuppressionLevel { get; init; }
-    public bool IsSuppressed { get; init; }
-    public float DistanceToOpponent { get; init; }
-    public int CurrentAmmo { get; init; }
-    public int? MagazineSize { get; init; }
-    public string AimState { get; init; } = "";
-    public string MovementState { get; init; } = "";
-    public string CurrentMovement { get; init; } = "";
-    public string CurrentDirection { get; init; } = "";
-    public string CurrentCover { get; init; } = "";
-    public bool IsMoving { get; init; }
-    public bool IsAlive { get; init; }
-}
-
-class PetStateDto
-{
-    public float Health { get; init; }
-    public float Fatigue { get; init; }
-    public float Injury { get; init; }
-    public float Stress { get; init; }
-    public float Morale { get; init; }
-    public float Hunger { get; init; }
-    public float Hydration { get; init; }
-    public DateTimeOffset LastUpdated { get; init; }
-}
-
-class OperatorState
-{
-    public Guid Id { get; init; }
-    public string Name { get; init; } = "";
-    public long TotalXp { get; init; }
-    public float CurrentHealth { get; init; }
-    public float MaxHealth { get; init; }
-    public string EquippedWeaponName { get; init; } = "";
-    public List<string> UnlockedPerks { get; init; } = new();
-    public int ExfilStreak { get; init; }
-    public bool IsDead { get; init; }
-    public string CurrentMode { get; init; } = "Base";
-    public DateTimeOffset? InfilStartTime { get; init; }
-    public Guid? InfilSessionId { get; init; }
-    public Guid? ActiveCombatSessionId { get; init; }
-    public string LockedLoadout { get; init; } = "";
-    public PetState? Pet { get; init; }
-}
-
-class PetState
-{
-    public float Health { get; init; }
-    public float Fatigue { get; init; }
-    public float Injury { get; init; }
-    public float Stress { get; init; }
-    public float Morale { get; init; }
-    public float Hunger { get; init; }
-    public float Hydration { get; init; }
-    public DateTimeOffset LastUpdated { get; init; }
-}
-
-class BattleLogEntryDto
-{
-    public string EventType { get; init; } = "";
-    public long TimeMs { get; init; }
-    public string Message { get; init; } = "";
-    public string? ActorName { get; init; }
-}
-
-class OperatorSummary
-{
-    public Guid Id { get; init; }
-    public string Name { get; init; } = "";
-    public string CurrentMode { get; init; } = "Base";
-    public bool IsDead { get; init; }
-    public long TotalXp { get; init; }
-    public float CurrentHealth { get; init; }
-    public float MaxHealth { get; init; }
-}
 
 enum Screen
 {

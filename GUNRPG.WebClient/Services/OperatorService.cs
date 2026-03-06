@@ -17,7 +17,7 @@ public sealed class OperatorService
     {
         try
         {
-            var response = await _api.GetAsync("/api/operators");
+            var response = await _api.GetAsync("/operators");
             if (!response.IsSuccessStatusCode)
                 return (null, $"Failed to load operators: {response.StatusCode}");
 
@@ -34,7 +34,7 @@ public sealed class OperatorService
     {
         try
         {
-            var response = await _api.GetAsync($"/api/operators/{id}");
+            var response = await _api.GetAsync($"/operators/{id}");
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 return (null, "Operator not found.");
             if (!response.IsSuccessStatusCode)
@@ -53,7 +53,7 @@ public sealed class OperatorService
     {
         try
         {
-            var response = await _api.PostAsync("/api/operators", new OperatorCreateRequest { Name = name });
+            var response = await _api.PostAsync("/operators", new OperatorCreateRequest { Name = name });
             if (!response.IsSuccessStatusCode)
             {
                 var err = await ApiHelpers.TryReadErrorAsync(response);
@@ -73,7 +73,7 @@ public sealed class OperatorService
     {
         try
         {
-            var response = await _api.PostAsync($"/api/operators/{operatorId}/infil/start");
+            var response = await _api.PostAsync($"/operators/{operatorId}/infil/start");
             if (!response.IsSuccessStatusCode)
             {
                 var err = await ApiHelpers.TryReadErrorAsync(response);
@@ -93,7 +93,7 @@ public sealed class OperatorService
     {
         try
         {
-            var response = await _api.PostAsync($"/api/operators/{operatorId}/infil/combat");
+            var response = await _api.PostAsync($"/operators/{operatorId}/infil/combat");
             if (!response.IsSuccessStatusCode)
             {
                 var err = await ApiHelpers.TryReadErrorAsync(response);
@@ -113,7 +113,7 @@ public sealed class OperatorService
     {
         try
         {
-            var response = await _api.PostAsync($"/api/operators/{operatorId}/infil/complete");
+            var response = await _api.PostAsync($"/operators/{operatorId}/infil/complete");
             if (!response.IsSuccessStatusCode)
             {
                 var err = await ApiHelpers.TryReadErrorAsync(response);

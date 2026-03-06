@@ -129,7 +129,7 @@
 @code {
     [Parameter] public Guid MissionId { get; set; }
 
-    private GUNRPG.WebClient.Models.CombatSession? _session;
+    private CombatSession? _session;
     private bool _loading = true;
     private bool _busy;
     private string? _error;

@@ -13,4 +13,8 @@
     <PackageReference Include="Microsoft.FluentUI.AspNetCore.Components" Version="4.14.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\GUNRPG.ClientModels\GUNRPG.ClientModels.csproj" />
+  </ItemGroup>
+
 </Project>

@@ -17,7 +17,7 @@ public sealed class MissionService
     {
         try
         {
-            var response = await _api.GetAsync($"/api/sessions/{sessionId}/state");
+            var response = await _api.GetAsync($"/sessions/{sessionId}/state");
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 return (null, "Combat session not found.");
             if (!response.IsSuccessStatusCode)
@@ -43,7 +43,7 @@ public sealed class MissionService
                 Intents = new IntentDto { Primary = primary, Movement = movement }
             };
 
-            var response = await _api.PostAsync($"/api/sessions/{sessionId}/intent", request);
+            var response = await _api.PostAsync($"/sessions/{sessionId}/intent", request);
             if (!response.IsSuccessStatusCode)
             {
                 var err = await ApiHelpers.TryReadErrorAsync(response);
@@ -63,7 +63,7 @@ public sealed class MissionService
     {
         try
         {
-            var response = await _api.PostAsync($"/api/sessions/{sessionId}/advance",
+            var response = await _api.PostAsync($"/sessions/{sessionId}/advance",
                 new { operatorId });
 
             if (!response.IsSuccessStatusCode)

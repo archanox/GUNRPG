@@ -28,7 +28,7 @@
     }
     else
     {
-        <FluentDataGrid Items="_operators.AsQueryable()" TGridItem="GUNRPG.WebClient.Models.OperatorSummary" Style="width: 100%;">
+        <FluentDataGrid Items="_operators.AsQueryable()" TGridItem="OperatorSummary" Style="width: 100%;">
             <PropertyColumn Title="Name" Property="o => o.Name" />
             <TemplateColumn Title="Level">
                 <ChildContent>
@@ -80,7 +80,7 @@
 </FluentDialog>
 
 @code {
-    private List<GUNRPG.WebClient.Models.OperatorSummary> _operators = new();
+    private List<OperatorSummary> _operators = new();
     private bool _loading = true;
     private bool _busy;
     private string? _error;
