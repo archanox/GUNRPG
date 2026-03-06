@@ -2,7 +2,9 @@
 @inject AuthService Auth
 @inject NavigationManager Nav
 @inject MissionService MissionSvc
-@implements IDisposable
+@inject NodeConnectionService NodeService
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; max-width: 900px; margin: 0 auto;">
     <FluentStack Orientation="Orientation.Horizontal" Style="align-items: center; gap: 0.5rem;">
@@ -37,9 +39,11 @@
                 <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.25rem; margin-top: 0.5rem;">
                     <div><strong>@_session.Player.Name</strong></div>
                     <div>HP: @_session.Player.Health.ToString("F0") / @_session.Player.MaxHealth.ToString("F0")</div>
+                    <div>Stamina: @_session.Player.Stamina.ToString("F0")</div>
                     <div>Ammo: @_session.Player.CurrentAmmo @(_session.Player.MagazineSize.HasValue ? $"/ {_session.Player.MagazineSize}" : "")</div>
                     <div>Distance: @_session.Player.DistanceToOpponent.ToString("F0")m</div>
-                    <div>Cover: @(string.IsNullOrEmpty(_session.Player.CurrentCover) ? "None" : _session.Player.CurrentCover)</div>
+                    <div>Cover: @(string.IsNullOrEmpty(_session.Player.CurrentCover) || _session.Player.CurrentCover == "None" ? "None" : _session.Player.CurrentCover)</div>
+                    <div>Aim: @_session.Player.AimState | Move: @_session.Player.MovementState</div>
                     @if (_session.Player.IsSuppressed)
                     {
                         <FluentBadge Appearance="Appearance.Neutral">Suppressed</FluentBadge>
@@ -53,7 +57,7 @@
                     <div><strong>@_session.Enemy.Name</strong></div>
                     <div>HP: @_session.Enemy.Health.ToString("F0") / @_session.Enemy.MaxHealth.ToString("F0")</div>
                     <div>Distance: @_session.Enemy.DistanceToOpponent.ToString("F0")m</div>
-                    <div>Cover: @(string.IsNullOrEmpty(_session.Enemy.CurrentCover) ? "None" : _session.Enemy.CurrentCover)</div>
+                    <div>Cover: @(string.IsNullOrEmpty(_session.Enemy.CurrentCover) || _session.Enemy.CurrentCover == "None" ? "None" : _session.Enemy.CurrentCover)</div>
                     @if (!_session.Enemy.IsAlive)
                     {
                         <FluentBadge Appearance="Appearance.Neutral">Defeated</FluentBadge>
@@ -66,32 +70,83 @@
         {
             <FluentCard>
                 <FluentLabel Typo="Typography.H5">Actions</FluentLabel>
-                <FluentStack Orientation="Orientation.Horizontal" Style="gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
-                    <FluentButton Appearance="Appearance.Accent"
-                                  OnClick="@(() => TakeTurnAsync("Fire", null))"
-                                  Disabled="_busy">
-                        🔫 Fire
-                    </FluentButton>
-                    <FluentButton Appearance="Appearance.Outline"
-                                  OnClick="@(() => TakeTurnAsync("Reload", null))"
-                                  Disabled="_busy">
-                        🔄 Reload
-                    </FluentButton>
-                    <FluentButton Appearance="Appearance.Outline"
-                                  OnClick="@(() => TakeTurnAsync(null, "Advance"))"
-                                  Disabled="_busy">
-                        ➡ Move Forward
-                    </FluentButton>
-                    <FluentButton Appearance="Appearance.Outline"
-                                  OnClick="@(() => TakeTurnAsync(null, "Retreat"))"
-                                  Disabled="_busy">
-                        ⬅ Move Back
-                    </FluentButton>
-                    <FluentButton Appearance="Appearance.Outline"
-                                  OnClick="@(() => TakeTurnAsync(null, null))"
-                                  Disabled="_busy">
-                        ⏸ Wait
-                    </FluentButton>
+                <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.75rem; margin-top: 0.5rem;">
+                    <FluentStack Orientation="Orientation.Horizontal" Style="gap: 1rem; flex-wrap: wrap;">
+                        <div Style="flex: 1; min-width: 150px;">
+                            <FluentLabel>🎯 Primary</FluentLabel>
+                            <FluentSelect TOption="string" @bind-Value="_primary" Style="width: 100%;" Disabled="_busy">
+                                <FluentOption TOption="string" Value="None">None</FluentOption>
+                                <FluentOption TOption="string" Value="Fire" Disabled="@(_session.Player.CurrentAmmo <= 0)">
+                                    Fire @(_session.Player.CurrentAmmo <= 0 ? "(no ammo)" : "")
+                                </FluentOption>
+                                <FluentOption TOption="string" Value="Reload" Disabled="@(_session.Player.MagazineSize.HasValue && _session.Player.CurrentAmmo >= _session.Player.MagazineSize)">
+                                    Reload @((_session.Player.MagazineSize.HasValue && _session.Player.CurrentAmmo >= _session.Player.MagazineSize) ? "(full)" : "")
+                                </FluentOption>
+                            </FluentSelect>
+                        </div>
+
+                        <div Style="flex: 1; min-width: 150px;">
+                            <FluentLabel>🏃 Movement</FluentLabel>
+                            <FluentSelect TOption="string" @bind-Value="_movement" Style="width: 100%;" Disabled="_busy">
+                                <FluentOption TOption="string" Value="Stand">Stand</FluentOption>
+                                <FluentOption TOption="string" Value="WalkToward">Walk Toward</FluentOption>
+                                <FluentOption TOption="string" Value="WalkAway">Walk Away</FluentOption>
+                                <FluentOption TOption="string" Value="SprintToward" Disabled="@(_session.Player.Stamina <= 0)">
+                                    Sprint Toward @(_session.Player.Stamina <= 0 ? "(no stamina)" : "")
+                                </FluentOption>
+                                <FluentOption TOption="string" Value="SprintAway" Disabled="@(_session.Player.Stamina <= 0)">
+                                    Sprint Away @(_session.Player.Stamina <= 0 ? "(no stamina)" : "")
+                                </FluentOption>
+                                <FluentOption TOption="string" Value="SlideToward" Disabled="@(_session.Player.Stamina < 30)">
+                                    Slide Toward @(_session.Player.Stamina < 30 ? "(need 30 stamina)" : "")
+                                </FluentOption>
+                                <FluentOption TOption="string" Value="SlideAway" Disabled="@(_session.Player.Stamina < 30)">
+                                    Slide Away @(_session.Player.Stamina < 30 ? "(need 30 stamina)" : "")
+                                </FluentOption>
+                                <FluentOption TOption="string" Value="Crouch">Crouch</FluentOption>
+                            </FluentSelect>
+                        </div>
+
+                        <div Style="flex: 1; min-width: 150px;">
+                            <FluentLabel>🧍 Stance</FluentLabel>
+                            <FluentSelect TOption="string" @bind-Value="_stance" Style="width: 100%;" Disabled="_busy">
+                                <FluentOption TOption="string" Value="None">None</FluentOption>
+                                <FluentOption TOption="string" Value="EnterADS" Disabled="@(_session.Player.AimState == "ADS" || _session.Player.MovementState == "Sliding")">
+                                    Enter ADS @((_session.Player.AimState == "ADS" || _session.Player.MovementState == "Sliding") ? "(unavailable)" : "")
+                                </FluentOption>
+                                <FluentOption TOption="string" Value="ExitADS" Disabled="@(_session.Player.AimState == "Hip")">
+                                    Exit ADS @(_session.Player.AimState == "Hip" ? "(already hip)" : "")
+                                </FluentOption>
+                            </FluentSelect>
+                        </div>
+
+                        <div Style="flex: 1; min-width: 150px;">
+                            <FluentLabel>🏠 Cover</FluentLabel>
+                            <FluentSelect TOption="string" @bind-Value="_cover" Style="width: 100%;" Disabled="_busy">
+                                <FluentOption TOption="string" Value="None">None</FluentOption>
+                                <FluentOption TOption="string" Value="EnterPartial" Disabled="@EnterCoverDisabled">
+                                    Enter Partial @(EnterCoverDisabled ? "(unavailable)" : "")
+                                </FluentOption>
+                                <FluentOption TOption="string" Value="EnterFull" Disabled="@EnterCoverDisabled">
+                                    Enter Full @(EnterCoverDisabled ? "(unavailable)" : "")
+                                </FluentOption>
+                                <FluentOption TOption="string" Value="Exit" Disabled="@(_session.Player.CurrentCover == "None" || string.IsNullOrEmpty(_session.Player.CurrentCover))">
+                                    Exit Cover @((_session.Player.CurrentCover == "None" || string.IsNullOrEmpty(_session.Player.CurrentCover)) ? "(not in cover)" : "")
+                                </FluentOption>
+                            </FluentSelect>
+                        </div>
+                    </FluentStack>
+
+                    <FluentStack Orientation="Orientation.Horizontal" Style="gap: 0.5rem; align-items: center;">
+                        <FluentButton Appearance="Appearance.Accent"
+                                      OnClick="TakeTurnAsync"
+                                      Disabled="_busy">
+                            @(_busy ? "Submitting..." : "⚡ Submit & Advance Turn")
+                        </FluentButton>
+                        <span style="font-size: 0.8rem; color: var(--neutral-foreground-hint);">
+                            Primary: @_primary | Movement: @_movement | Stance: @_stance | Cover: @_cover
+                        </span>
+                    </FluentStack>
                 </FluentStack>
             </FluentCard>
         }
@@ -134,6 +189,22 @@
     private bool _busy;
     private string? _error;
 
+    // Intent selections (default to no-op values)
+    private string _primary = "None";
+    private string _movement = "Stand";
+    private string _stance = "None";
+    private string _cover = "None";
+
+    // SSE
+    private DotNetObjectReference<Mission>? _dotNetRef;
+    private string? _sseUrl;
+
+    private bool EnterCoverDisabled => _session is not null &&
+        (_session.Player.CurrentCover != "None" && !string.IsNullOrEmpty(_session.Player.CurrentCover)
+         || (_session.Player.MovementState != "Stationary"
+             && _session.Player.MovementState != "Idle"
+             && _session.Player.MovementState != "Crouching"));
+
     protected override async Task OnInitializedAsync()
     {
         if (!Auth.IsAuthenticated)
@@ -143,6 +214,30 @@
         }
 
         await LoadAsync();
+
+        // Start SSE stream for real-time sync
+        await StartSseAsync();
+    }
+
+    private async Task StartSseAsync()
+    {
+        if (_session is null || _session.IsConcluded)
+            return;
+
+        var baseUrl = await NodeService.GetBaseUrlAsync();
+        if (string.IsNullOrEmpty(baseUrl))
+            return;
+
+        _sseUrl = $"{baseUrl}/sessions/{MissionId}/stream";
+        _dotNetRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("sseHelper.connect", _sseUrl, _dotNetRef, nameof(OnSessionUpdated));
+    }
+
+    [JSInvokable]
+    public async Task OnSessionUpdated()
+    {
+        await LoadAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task LoadAsync()
@@ -157,7 +252,7 @@
         _loading = false;
     }
 
-    private async Task TakeTurnAsync(string? primary, string? movement)
+    private async Task TakeTurnAsync()
     {
         if (_session is null) return;
 
@@ -166,8 +261,12 @@
         StateHasChanged();
 
         var operatorId = _session.OperatorId;
+        var selectedPrimary = _primary == "None" ? null : _primary;
+        var selectedMovement = _movement;
+        var selectedStance = _stance == "None" ? null : _stance;
+        var selectedCover = _cover == "None" ? null : _cover;
 
-        var (intentResult, intentError) = await MissionSvc.SubmitIntentAsync(MissionId, operatorId, primary, movement);
+        var (intentResult, intentError) = await MissionSvc.SubmitIntentAsync(MissionId, operatorId, selectedPrimary, selectedMovement, selectedStance, selectedCover);
         if (intentError is not null)
         {
             _error = intentError;
@@ -199,5 +298,19 @@
             Nav.NavigateTo("operators");
     }
 
-    public void Dispose() { }
+    public async ValueTask DisposeAsync()
+    {
+        if (_sseUrl is not null)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("sseHelper.disconnect", _sseUrl);
+            }
+            catch
+            {
+                // Ignore JS interop errors during disposal
+            }
+        }
+        _dotNetRef?.Dispose();
+    }
 }

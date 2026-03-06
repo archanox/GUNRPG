@@ -33,14 +33,14 @@ public sealed class MissionService
     }
 
     public async Task<(CombatSession? Data, string? Error)> SubmitIntentAsync(
-        Guid sessionId, Guid operatorId, string? primary, string? movement)
+        Guid sessionId, Guid operatorId, string? primary, string? movement, string? stance = null, string? cover = null)
     {
         try
         {
             var request = new IntentRequest
             {
                 OperatorId = operatorId,
-                Intents = new IntentDto { Primary = primary, Movement = movement }
+                Intents = new IntentDto { Primary = primary, Movement = movement, Stance = stance, Cover = cover }
             };
 
             var response = await _api.PostAsync($"/sessions/{sessionId}/intent", request);

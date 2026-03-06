@@ -1,0 +1,24 @@
+@inject AuthService Auth
+
+@if (!_initialized)
+{
+    <div style="display:flex; justify-content:center; align-items:center; height:100vh;">
+        <FluentProgressRing />
+    </div>
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter] public RenderFragment ChildContent { get; set; } = null!;
+
+    private bool _initialized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.TryRestoreAsync();
+        _initialized = true;
+    }
+}
