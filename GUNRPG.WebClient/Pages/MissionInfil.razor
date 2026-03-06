@@ -83,6 +83,7 @@
 
     private PeriodicTimer? _countdownTimer;
     private CancellationTokenSource? _cts;
+    private Task? _countdownTask;
 
     protected override async Task OnInitializedAsync()
     {
@@ -95,7 +96,7 @@
         await LoadAsync();
 
         if (_operator?.InfilStartTime.HasValue == true)
-            _ = RunCountdownAsync();
+            _countdownTask = RunCountdownAsync();
     }
 
     private async Task LoadAsync()
@@ -111,26 +112,13 @@
     }
 
     private TimeSpan? GetRemaining() =>
-        _operator?.InfilStartTime is { } t
-            ? RaidDuration - (DateTimeOffset.UtcNow - t)
-            : null;
+        ExfilCountdownHelper.GetRemaining(_operator?.InfilStartTime, RaidDuration);
 
-    private string FormatRemaining()
-    {
-        var r = GetRemaining();
-        if (r is null) return "--:--";
-        if (r.Value <= TimeSpan.Zero) return "00:00";
-        return r.Value.ToString(@"mm\:ss");
-    }
+    private string FormatRemaining() =>
+        ExfilCountdownHelper.FormatRemaining(GetRemaining());
 
-    private string GetTimerStyle()
-    {
-        var r = GetRemaining();
-        if (r is null) return string.Empty;
-        if (r.Value <= TimeSpan.FromSeconds(10)) return "font-weight: bold; color: var(--error);";
-        if (r.Value <= TimeSpan.FromSeconds(30)) return "font-weight: bold; color: darkorange;";
-        return "color: green;";
-    }
+    private string GetTimerStyle() =>
+        ExfilCountdownHelper.GetTimerStyle(GetRemaining());
 
     private async Task RunCountdownAsync()
     {
@@ -149,7 +137,7 @@
                 }
             }
         }
-        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is OperationCanceledException || ex is ObjectDisposedException) { }
     }
 
     private async Task StartNewCombatSessionAsync()
@@ -193,11 +181,12 @@
         Nav.NavigateTo($"operators/{OperatorId}");
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         _cts?.Cancel();
+        if (_countdownTask is not null)
+            await _countdownTask;
         _countdownTimer?.Dispose();
         _cts?.Dispose();
-        return ValueTask.CompletedTask;
     }
 }
