@@ -1,0 +1,146 @@
+@page "/operators"
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject OperatorService OperatorSvc
+
+<FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; max-width: 900px; margin: 0 auto;">
+    <FluentStack Orientation="Orientation.Horizontal" Style="align-items: center; justify-content: space-between; width: 100%;">
+        <h2 style="margin: 0;">Operators</h2>
+        <FluentButton Appearance="Appearance.Accent" OnClick="OpenCreateDialog" Disabled="_busy">
+            + New Operator
+        </FluentButton>
+    </FluentStack>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <FluentMessageBar Title="Error" Intent="MessageIntent.Error">@_error</FluentMessageBar>
+    }
+
+    @if (_loading)
+    {
+        <FluentProgressRing />
+    }
+    else if (_operators.Count == 0)
+    {
+        <FluentMessageBar Title="No operators" Intent="MessageIntent.Info">
+            You have no operators yet. Create one to get started.
+        </FluentMessageBar>
+    }
+    else
+    {
+        <FluentDataGrid Items="_operators.AsQueryable()" TGridItem="GUNRPG.WebClient.Models.OperatorSummary" Style="width: 100%;">
+            <PropertyColumn Title="Name" Property="o => o.Name" />
+            <TemplateColumn Title="Level">
+                <ChildContent>
+                    @(context.TotalXp > 0 ? (int)(context.TotalXp / 100) + 1 : 1)
+                </ChildContent>
+            </TemplateColumn>
+            <PropertyColumn Title="Status" Property="o => o.CurrentMode" />
+            <TemplateColumn Title="Health">
+                <ChildContent>
+                    @context.CurrentHealth.ToString("F0") / @context.MaxHealth.ToString("F0")
+                </ChildContent>
+            </TemplateColumn>
+            <TemplateColumn Title="Actions">
+                <ChildContent>
+                    <FluentButton Appearance="Appearance.Outline"
+                                  OnClick="@(() => Nav.NavigateTo($"operators/{context.Id}"))">
+                        Details
+                    </FluentButton>
+                </ChildContent>
+            </TemplateColumn>
+        </FluentDataGrid>
+    }
+</FluentStack>
+
+<FluentDialog @ref="_createDialog" Modal="true" TrapFocus="true" PreventScroll="true">
+    <FluentDialogHeader>
+        <FluentLabel Typo="Typography.PaneHeader">Create Operator</FluentLabel>
+    </FluentDialogHeader>
+    <FluentDialogBody>
+        @if (!string.IsNullOrEmpty(_createError))
+        {
+            <FluentMessageBar Title="Error" Intent="MessageIntent.Error" Style="margin-bottom: 0.5rem;">
+                @_createError
+            </FluentMessageBar>
+        }
+        <FluentTextField @bind-Value="_newName"
+                         Label="Operator Name"
+                         Placeholder="Enter name"
+                         Style="width: 100%;" />
+    </FluentDialogBody>
+    <FluentDialogFooter>
+        <FluentButton Appearance="Appearance.Outline" OnClick="CloseCreateDialog" Disabled="_busy">
+            Cancel
+        </FluentButton>
+        <FluentButton Appearance="Appearance.Accent" OnClick="CreateOperatorAsync" Disabled="_busy || string.IsNullOrWhiteSpace(_newName)">
+            @(_busy ? "Creating..." : "Create")
+        </FluentButton>
+    </FluentDialogFooter>
+</FluentDialog>
+
+@code {
+    private List<GUNRPG.WebClient.Models.OperatorSummary> _operators = new();
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string? _createError;
+    private string _newName = string.Empty;
+    private FluentDialog? _createDialog;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsAuthenticated)
+        {
+            Nav.NavigateTo("login");
+            return;
+        }
+
+        await LoadOperatorsAsync();
+    }
+
+    private async Task LoadOperatorsAsync()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        var (data, error) = await OperatorSvc.ListAsync();
+        _operators = data ?? new();
+        _error = error;
+        _loading = false;
+    }
+
+    private void OpenCreateDialog()
+    {
+        _newName = string.Empty;
+        _createError = null;
+        _createDialog?.Show();
+    }
+
+    private void CloseCreateDialog()
+    {
+        _createDialog?.Hide();
+    }
+
+    private async Task CreateOperatorAsync()
+    {
+        _createError = null;
+        _busy = true;
+        StateHasChanged();
+
+        var (data, error) = await OperatorSvc.CreateAsync(_newName.Trim());
+
+        _busy = false;
+
+        if (error is not null)
+        {
+            _createError = error;
+            StateHasChanged();
+            return;
+        }
+
+        _createDialog?.Hide();
+        await LoadOperatorsAsync();
+    }
+}

@@ -1,0 +1,203 @@
+@page "/missions/{MissionId:guid}"
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject MissionService MissionSvc
+@implements IDisposable
+
+<FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; max-width: 900px; margin: 0 auto;">
+    <FluentStack Orientation="Orientation.Horizontal" Style="align-items: center; gap: 0.5rem;">
+        <FluentButton Appearance="Appearance.Outline" OnClick="GoBack">
+            ← Back
+        </FluentButton>
+        <h2 style="margin: 0;">Mission — Turn @(_session?.TurnNumber ?? 0)</h2>
+    </FluentStack>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <FluentMessageBar Title="Error" Intent="MessageIntent.Error">@_error</FluentMessageBar>
+    }
+
+    @if (_loading)
+    {
+        <FluentProgressRing />
+    }
+    else if (_session is not null)
+    {
+        @if (_session.IsConcluded)
+        {
+            <FluentMessageBar Title="@(_session.IsVictory ? "Victory!" : "Defeat")"
+                              Intent="@(_session.IsVictory ? MessageIntent.Success : MessageIntent.Error)">
+                @(_session.IsVictory ? "You defeated the enemy! Exfil to secure your XP." : "You were defeated. The mission has failed.")
+            </FluentMessageBar>
+        }
+
+        <FluentStack Orientation="Orientation.Horizontal" Style="gap: 1rem; flex-wrap: wrap; width: 100%;">
+            <FluentCard Style="flex: 1; min-width: 200px;">
+                <FluentLabel Typo="Typography.H5">Player</FluentLabel>
+                <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.25rem; margin-top: 0.5rem;">
+                    <div><strong>@_session.Player.Name</strong></div>
+                    <div>HP: @_session.Player.Health.ToString("F0") / @_session.Player.MaxHealth.ToString("F0")</div>
+                    <div>Ammo: @_session.Player.CurrentAmmo @(_session.Player.MagazineSize.HasValue ? $"/ {_session.Player.MagazineSize}" : "")</div>
+                    <div>Distance: @_session.Player.DistanceToOpponent.ToString("F0")m</div>
+                    <div>Cover: @(string.IsNullOrEmpty(_session.Player.CurrentCover) ? "None" : _session.Player.CurrentCover)</div>
+                    @if (_session.Player.IsSuppressed)
+                    {
+                        <FluentBadge Appearance="Appearance.Neutral">Suppressed</FluentBadge>
+                    }
+                </FluentStack>
+            </FluentCard>
+
+            <FluentCard Style="flex: 1; min-width: 200px;">
+                <FluentLabel Typo="Typography.H5">Enemy (Lv @_session.EnemyLevel)</FluentLabel>
+                <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.25rem; margin-top: 0.5rem;">
+                    <div><strong>@_session.Enemy.Name</strong></div>
+                    <div>HP: @_session.Enemy.Health.ToString("F0") / @_session.Enemy.MaxHealth.ToString("F0")</div>
+                    <div>Distance: @_session.Enemy.DistanceToOpponent.ToString("F0")m</div>
+                    <div>Cover: @(string.IsNullOrEmpty(_session.Enemy.CurrentCover) ? "None" : _session.Enemy.CurrentCover)</div>
+                    @if (!_session.Enemy.IsAlive)
+                    {
+                        <FluentBadge Appearance="Appearance.Neutral">Defeated</FluentBadge>
+                    }
+                </FluentStack>
+            </FluentCard>
+        </FluentStack>
+
+        @if (!_session.IsConcluded)
+        {
+            <FluentCard>
+                <FluentLabel Typo="Typography.H5">Actions</FluentLabel>
+                <FluentStack Orientation="Orientation.Horizontal" Style="gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem;">
+                    <FluentButton Appearance="Appearance.Accent"
+                                  OnClick="@(() => TakeTurnAsync("Fire", null))"
+                                  Disabled="_busy">
+                        🔫 Fire
+                    </FluentButton>
+                    <FluentButton Appearance="Appearance.Outline"
+                                  OnClick="@(() => TakeTurnAsync("Reload", null))"
+                                  Disabled="_busy">
+                        🔄 Reload
+                    </FluentButton>
+                    <FluentButton Appearance="Appearance.Outline"
+                                  OnClick="@(() => TakeTurnAsync(null, "Advance"))"
+                                  Disabled="_busy">
+                        ➡ Move Forward
+                    </FluentButton>
+                    <FluentButton Appearance="Appearance.Outline"
+                                  OnClick="@(() => TakeTurnAsync(null, "Retreat"))"
+                                  Disabled="_busy">
+                        ⬅ Move Back
+                    </FluentButton>
+                    <FluentButton Appearance="Appearance.Outline"
+                                  OnClick="@(() => TakeTurnAsync(null, null))"
+                                  Disabled="_busy">
+                        ⏸ Wait
+                    </FluentButton>
+                </FluentStack>
+            </FluentCard>
+        }
+        else
+        {
+            <FluentStack Orientation="Orientation.Horizontal" Style="gap: 0.5rem; flex-wrap: wrap;">
+                <FluentButton Appearance="Appearance.Outline" OnClick="GoBack">
+                    Back to Operator
+                </FluentButton>
+            </FluentStack>
+        }
+
+        @if (_session.BattleLog.Count > 0)
+        {
+            <FluentCard>
+                <FluentLabel Typo="Typography.H5">Battle Log</FluentLabel>
+                <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.125rem; margin-top: 0.5rem; max-height: 300px; overflow-y: auto;">
+                    @foreach (var entry in _session.BattleLog.OrderByDescending(e => e.TimeMs))
+                    {
+                        <div style="font-size: 0.85rem; padding: 0.1rem 0;">
+                            <span style="color: var(--neutral-foreground-hint);">[@entry.TimeMs ms]</span>
+                            @if (!string.IsNullOrEmpty(entry.ActorName))
+                            {
+                                <strong> @entry.ActorName:</strong>
+                            }
+                            @entry.Message
+                        </div>
+                    }
+                </FluentStack>
+            </FluentCard>
+        }
+    }
+</FluentStack>
+
+@code {
+    [Parameter] public Guid MissionId { get; set; }
+
+    private GUNRPG.WebClient.Models.CombatSession? _session;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsAuthenticated)
+        {
+            Nav.NavigateTo("login");
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        var (data, error) = await MissionSvc.GetStateAsync(MissionId);
+        _session = data;
+        _error = error;
+        _loading = false;
+    }
+
+    private async Task TakeTurnAsync(string? primary, string? movement)
+    {
+        if (_session is null) return;
+
+        _error = null;
+        _busy = true;
+        StateHasChanged();
+
+        var operatorId = _session.OperatorId;
+
+        var (intentResult, intentError) = await MissionSvc.SubmitIntentAsync(MissionId, operatorId, primary, movement);
+        if (intentError is not null)
+        {
+            _error = intentError;
+            _busy = false;
+            StateHasChanged();
+            return;
+        }
+
+        var (advanceResult, advanceError) = await MissionSvc.AdvanceAsync(MissionId, operatorId);
+        _busy = false;
+
+        if (advanceError is not null)
+        {
+            _error = advanceError;
+            _session = intentResult ?? _session;
+            StateHasChanged();
+            return;
+        }
+
+        _session = advanceResult ?? _session;
+        StateHasChanged();
+    }
+
+    private void GoBack()
+    {
+        if (_session is not null)
+            Nav.NavigateTo($"operators/{_session.OperatorId}");
+        else
+            Nav.NavigateTo("operators");
+    }
+
+    public void Dispose() { }
+}

@@ -1,0 +1,170 @@
+@page "/operators/{Id:guid}"
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject OperatorService OperatorSvc
+
+<FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; max-width: 700px; margin: 0 auto;">
+    <FluentStack Orientation="Orientation.Horizontal" Style="align-items: center; gap: 0.5rem;">
+        <FluentButton Appearance="Appearance.Outline" OnClick="@(() => Nav.NavigateTo("operators"))">
+            ← Back
+        </FluentButton>
+        <h2 style="margin: 0;">Operator Details</h2>
+    </FluentStack>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <FluentMessageBar Title="Error" Intent="MessageIntent.Error">@_error</FluentMessageBar>
+    }
+
+    @if (!string.IsNullOrEmpty(_info))
+    {
+        <FluentMessageBar Title="Info" Intent="MessageIntent.Info">@_info</FluentMessageBar>
+    }
+
+    @if (_loading)
+    {
+        <FluentProgressRing />
+    }
+    else if (_operator is not null)
+    {
+        <FluentCard>
+            <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.5rem;">
+                <FluentLabel Typo="Typography.H4">@_operator.Name</FluentLabel>
+
+                <FluentStack Orientation="Orientation.Horizontal" Style="gap: 2rem; flex-wrap: wrap;">
+                    <div>
+                        <FluentLabel>Level</FluentLabel>
+                        <div>@_operator.Level</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Health</FluentLabel>
+                        <div>@_operator.CurrentHealth.ToString("F0") / @_operator.MaxHealth.ToString("F0")</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Status</FluentLabel>
+                        <div>@(_operator.IsDead ? "Dead" : _operator.CurrentMode)</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Weapon</FluentLabel>
+                        <div>@_operator.EquippedWeaponName</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Total XP</FluentLabel>
+                        <div>@_operator.TotalXp</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Exfil Streak</FluentLabel>
+                        <div>@_operator.ExfilStreak</div>
+                    </div>
+                </FluentStack>
+
+                @if (_operator.UnlockedPerks.Count > 0)
+                {
+                    <div>
+                        <FluentLabel>Perks</FluentLabel>
+                        <div>@string.Join(", ", _operator.UnlockedPerks)</div>
+                    </div>
+                }
+
+                @if (_operator.InfilStartTime.HasValue)
+                {
+                    <div>
+                        <FluentLabel>Infil Started</FluentLabel>
+                        <div>@_operator.InfilStartTime.Value.ToLocalTime().ToString("g")</div>
+                    </div>
+                }
+            </FluentStack>
+        </FluentCard>
+
+        <FluentStack Orientation="Orientation.Horizontal" Style="gap: 0.5rem; flex-wrap: wrap;">
+            @if (!_operator.IsDead && _operator.CurrentMode == "Idle")
+            {
+                <FluentButton Appearance="Appearance.Accent"
+                              OnClick="StartInfilAsync"
+                              Disabled="_busy">
+                    @(_busy ? "Starting..." : "Infil")
+                </FluentButton>
+            }
+
+            @if (_operator.IsOnMission && _operator.ActiveCombatSessionId.HasValue)
+            {
+                <FluentButton Appearance="Appearance.Accent"
+                              OnClick="@(() => Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}"))">
+                    Resume Mission
+                </FluentButton>
+            }
+            else if (_operator.IsOnMission && _operator.InfilSessionId.HasValue)
+            {
+                <FluentButton Appearance="Appearance.Accent"
+                              OnClick="@(() => Nav.NavigateTo($"missions/{_operator.InfilSessionId}"))">
+                    Resume Mission
+                </FluentButton>
+            }
+
+            <FluentButton Appearance="Appearance.Outline"
+                          OnClick="DeleteOperatorAsync"
+                          Disabled="_busy">
+                Delete Operator
+            </FluentButton>
+        </FluentStack>
+    }
+</FluentStack>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private GUNRPG.WebClient.Models.OperatorState? _operator;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+    private string? _info;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsAuthenticated)
+        {
+            Nav.NavigateTo("login");
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        var (data, error) = await OperatorSvc.GetAsync(Id);
+        _operator = data;
+        _error = error;
+        _loading = false;
+    }
+
+    private async Task StartInfilAsync()
+    {
+        _error = null;
+        _info = null;
+        _busy = true;
+        StateHasChanged();
+
+        var (data, error) = await OperatorSvc.StartInfilAsync(Id);
+        _busy = false;
+
+        if (error is not null)
+        {
+            _error = error;
+            StateHasChanged();
+            return;
+        }
+
+        Nav.NavigateTo($"missions/infil/{Id}");
+    }
+
+    private Task DeleteOperatorAsync()
+    {
+        _info = "Operator deletion is not currently supported via the API.";
+        return Task.CompletedTask;
+    }
+}

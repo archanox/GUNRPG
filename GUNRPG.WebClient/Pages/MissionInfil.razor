@@ -1,0 +1,144 @@
+@page "/missions/infil/{OperatorId:guid}"
+@inject AuthService Auth
+@inject NavigationManager Nav
+@inject OperatorService OperatorSvc
+
+<FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; max-width: 700px; margin: 0 auto;">
+    <FluentStack Orientation="Orientation.Horizontal" Style="align-items: center; gap: 0.5rem;">
+        <FluentButton Appearance="Appearance.Outline"
+                      OnClick="@(() => Nav.NavigateTo($"operators/{OperatorId}"))">
+            ← Back
+        </FluentButton>
+        <h2 style="margin: 0;">Infiltration</h2>
+    </FluentStack>
+
+    @if (!string.IsNullOrEmpty(_error))
+    {
+        <FluentMessageBar Title="Error" Intent="MessageIntent.Error">@_error</FluentMessageBar>
+    }
+
+    @if (_loading)
+    {
+        <FluentProgressRing />
+    }
+    else if (_operator is not null)
+    {
+        <FluentCard>
+            <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.5rem;">
+                <FluentLabel Typo="Typography.H4">@_operator.Name</FluentLabel>
+                <FluentStack Orientation="Orientation.Horizontal" Style="gap: 2rem;">
+                    <div>
+                        <FluentLabel>Status</FluentLabel>
+                        <div>@_operator.CurrentMode</div>
+                    </div>
+                    <div>
+                        <FluentLabel>Health</FluentLabel>
+                        <div>@_operator.CurrentHealth.ToString("F0") / @_operator.MaxHealth.ToString("F0")</div>
+                    </div>
+                </FluentStack>
+                @if (_operator.InfilStartTime.HasValue)
+                {
+                    <div>
+                        <FluentLabel>Infil started</FluentLabel>
+                        <div>@_operator.InfilStartTime.Value.ToLocalTime().ToString("g")</div>
+                    </div>
+                }
+            </FluentStack>
+        </FluentCard>
+
+        <FluentStack Orientation="Orientation.Horizontal" Style="gap: 0.5rem; flex-wrap: wrap;">
+            @if (_operator.ActiveCombatSessionId.HasValue)
+            {
+                <FluentButton Appearance="Appearance.Accent"
+                              OnClick="@(() => Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}"))">
+                    Resume Combat
+                </FluentButton>
+            }
+            else
+            {
+                <FluentButton Appearance="Appearance.Accent"
+                              OnClick="StartNewCombatSessionAsync"
+                              Disabled="_busy">
+                    @(_busy ? "Starting..." : "Start Combat")
+                </FluentButton>
+            }
+
+            <FluentButton Appearance="Appearance.Outline"
+                          OnClick="ExfilAsync"
+                          Disabled="_busy">
+                @(_busy ? "Exfiling..." : "Exfil")
+            </FluentButton>
+        </FluentStack>
+    }
+</FluentStack>
+
+@code {
+    [Parameter] public Guid OperatorId { get; set; }
+
+    private GUNRPG.WebClient.Models.OperatorState? _operator;
+    private bool _loading = true;
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Auth.IsAuthenticated)
+        {
+            Nav.NavigateTo("login");
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+        StateHasChanged();
+
+        var (data, error) = await OperatorSvc.GetAsync(OperatorId);
+        _operator = data;
+        _error = error;
+        _loading = false;
+    }
+
+    private async Task StartNewCombatSessionAsync()
+    {
+        _error = null;
+        _busy = true;
+        StateHasChanged();
+
+        var (sessionId, error) = await OperatorSvc.StartCombatSessionAsync(OperatorId);
+        _busy = false;
+
+        if (error is not null)
+        {
+            _error = error;
+            StateHasChanged();
+            return;
+        }
+
+        if (sessionId.HasValue)
+            Nav.NavigateTo($"missions/{sessionId.Value}");
+    }
+
+    private async Task ExfilAsync()
+    {
+        _error = null;
+        _busy = true;
+        StateHasChanged();
+
+        var error = await OperatorSvc.CompleteInfilAsync(OperatorId);
+        _busy = false;
+
+        if (error is not null)
+        {
+            _error = error;
+            StateHasChanged();
+            return;
+        }
+
+        Nav.NavigateTo($"operators/{OperatorId}");
+    }
+}
