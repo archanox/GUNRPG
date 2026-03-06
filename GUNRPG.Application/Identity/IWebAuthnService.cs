@@ -26,7 +26,7 @@ public interface IWebAuthnService
         CancellationToken ct = default);
 
     /// <summary>
-    /// Begins a WebAuthn authentication assertion.
+    /// Begins a WebAuthn authentication assertion for a known username.
     /// Returns a JSON options object to send to the browser's navigator.credentials.get().
     /// </summary>
     Task<ServiceResult<string>> BeginLoginAsync(string username, CancellationToken ct = default);
@@ -38,6 +38,23 @@ public interface IWebAuthnService
     /// </summary>
     Task<ServiceResult<string>> CompleteLoginAsync(
         string username,
+        string assertionResponseJson,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Begins a usernameless (discoverable credential) WebAuthn authentication assertion.
+    /// Returns a session ID and a JSON options object with an empty allowCredentials list so the
+    /// browser can discover resident credentials without the user entering a username first.
+    /// </summary>
+    Task<ServiceResult<(string SessionId, string OptionsJson)>> BeginDiscoverableLoginAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Completes a usernameless WebAuthn authentication.  The user is identified from the
+    /// credential ID in the assertion rather than from a supplied username.
+    /// Returns the authenticated user ID on success.
+    /// </summary>
+    Task<ServiceResult<string>> CompleteDiscoverableLoginAsync(
+        string sessionId,
         string assertionResponseJson,
         CancellationToken ct = default);
 }

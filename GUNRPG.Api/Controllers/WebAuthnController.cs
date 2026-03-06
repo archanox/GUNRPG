@@ -86,6 +86,35 @@ public sealed class WebAuthnController : ControllerBase
         return await IssueTokensForUser(loginResult.Value!, ct);
     }
 
+    /// <summary>
+    /// Begins a usernameless (discoverable) WebAuthn authentication assertion.
+    /// Returns a session ID and assertion options for <c>navigator.credentials.get()</c>.
+    /// The session ID must be included in the matching <c>login/discoverable/complete</c> call.
+    /// </summary>
+    [HttpPost("login/discoverable/begin")]
+    public async Task<IActionResult> BeginDiscoverableLogin(CancellationToken ct)
+    {
+        var result = await _webAuthn.BeginDiscoverableLoginAsync(ct);
+        if (!result.IsSuccess) return MapWebAuthnError(result);
+
+        var (sessionId, optionsJson) = result.Value;
+        return Ok(new WebAuthnDiscoverableLoginBeginResponse(sessionId, optionsJson));
+    }
+
+    /// <summary>
+    /// Completes a usernameless (discoverable) WebAuthn authentication and issues JWT tokens.
+    /// </summary>
+    [HttpPost("login/discoverable/complete")]
+    public async Task<IActionResult> CompleteDiscoverableLogin(
+        [FromBody] WebAuthnDiscoverableLoginCompleteRequest request, CancellationToken ct)
+    {
+        var loginResult = await _webAuthn.CompleteDiscoverableLoginAsync(
+            request.SessionId, request.AssertionResponseJson, ct);
+        if (!loginResult.IsSuccess) return MapWebAuthnError(loginResult);
+
+        return await IssueTokensForUser(loginResult.Value!, ct);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private async Task<IActionResult> IssueTokensForUser(string userId, CancellationToken ct)

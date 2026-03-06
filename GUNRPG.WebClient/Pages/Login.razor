@@ -7,11 +7,7 @@
 
 <FluentCard Style="max-width: 480px; margin: 2rem auto; padding: 2rem;">
     <h2>Login</h2>
-
-    <FluentTextField @bind-Value="_username"
-                     Label="Username"
-                     Placeholder="Enter your username"
-                     Style="width: 100%;" />
+    <p>Use your registered passkey to sign in — no username required.</p>
 
     @if (!string.IsNullOrEmpty(_status))
     {
@@ -27,25 +23,56 @@
         </FluentMessageBar>
     }
 
-    <FluentStack Orientation="Orientation.Horizontal" Style="margin-top: 1rem; gap: 0.5rem;">
-        <FluentButton Appearance="Appearance.Accent"
-                      OnClick="LoginAsync"
-                      Disabled="_busy">
-            Login with Passkey
-        </FluentButton>
+    <FluentButton Appearance="Appearance.Accent"
+                  OnClick="LoginAsync"
+                  Disabled="_busy"
+                  Style="margin-top: 1rem;">
+        Login with Passkey
+    </FluentButton>
+</FluentCard>
 
-        <FluentButton Appearance="Appearance.Outline"
-                      OnClick="RegisterAsync"
-                      Disabled="_busy">
-            Register Passkey
-        </FluentButton>
-    </FluentStack>
+<FluentCard Style="max-width: 480px; margin: 1rem auto; padding: 2rem;">
+    <h2>Register</h2>
+    <p>New here? Enter a username and register a passkey.</p>
+
+    <FluentTextField @bind-Value="_username"
+                     Label="Username"
+                     Placeholder="Enter your username"
+                     Style="width: 100%;" />
+
+    @if (!string.IsNullOrEmpty(_registerStatus))
+    {
+        <FluentMessageBar Title="Info" Intent="MessageIntent.Info" Style="margin-top: 0.5rem;">
+            @_registerStatus
+        </FluentMessageBar>
+    }
+
+    @if (!string.IsNullOrEmpty(_registerError))
+    {
+        <FluentMessageBar Title="Error" Intent="MessageIntent.Error" Style="margin-top: 0.5rem;">
+            @_registerError
+        </FluentMessageBar>
+    }
+
+    <FluentButton Appearance="Appearance.Outline"
+                  OnClick="RegisterAsync"
+                  Disabled="_busy"
+                  Style="margin-top: 1rem;">
+        Register Passkey
+    </FluentButton>
 </FluentCard>
 
 @code {
     private string _username = string.Empty;
+
+    // Login state
     private string? _error;
     private string? _status;
+
+    // Register state
+    private string? _registerError;
+    private string? _registerStatus;
+
     private bool _busy;
 
     protected override async Task OnInitializedAsync()
@@ -64,8 +91,7 @@
 
         try
         {
-            var beginResponse = await Api.PostAsync("/auth/webauthn/login/begin",
-                new { username = _username });
+            var beginResponse = await Api.PostAsync("/auth/webauthn/login/discoverable/begin", new { });
 
             if (!beginResponse.IsSuccessStatusCode)
             {
@@ -73,14 +99,20 @@
                 return;
             }
 
-            var optionsJson = await beginResponse.Content.ReadAsStringAsync();
+            var beginData = await beginResponse.Content.ReadFromJsonAsync<DiscoverableBeginResponse>();
+            if (beginData is null)
+            {
+                _error = "Invalid begin response.";
+                return;
+            }
+
             _status = "Waiting for passkey...";
             StateHasChanged();
 
-            var assertionJson = await JS.InvokeAsync<string>("webauthn.startLogin", optionsJson);
+            var assertionJson = await JS.InvokeAsync<string>("webauthn.startLogin", beginData.OptionsJson);
 
-            var completeResponse = await Api.PostAsync("/auth/webauthn/login/complete",
-                new { username = _username, assertionResponseJson = assertionJson });
+            var completeResponse = await Api.PostAsync("/auth/webauthn/login/discoverable/complete",
+                new { sessionId = beginData.SessionId, assertionResponseJson = assertionJson });
 
             if (!completeResponse.IsSuccessStatusCode)
             {
@@ -111,8 +143,8 @@
 
     private async Task RegisterAsync()
     {
-        _error = null;
-        _status = "Starting registration...";
+        _registerError = null;
+        _registerStatus = "Starting registration...";
         _busy = true;
         StateHasChanged();
 
@@ -123,12 +155,12 @@
 
             if (!beginResponse.IsSuccessStatusCode)
             {
-                _error = $"Register begin failed: {beginResponse.StatusCode}";
+                _registerError = $"Register begin failed: {beginResponse.StatusCode}";
                 return;
             }
 
             var optionsJson = await beginResponse.Content.ReadAsStringAsync();
-            _status = "Waiting for passkey...";
+            _registerStatus = "Waiting for passkey...";
             StateHasChanged();
 
             var attestationJson = await JS.InvokeAsync<string>("webauthn.startRegistration", optionsJson);
@@ -138,14 +170,14 @@
 
             if (!completeResponse.IsSuccessStatusCode)
             {
-                _error = $"Register complete failed: {completeResponse.StatusCode}";
+                _registerError = $"Register complete failed: {completeResponse.StatusCode}";
                 return;
             }
 
             var tokens = await completeResponse.Content.ReadFromJsonAsync<TokenResponse>();
             if (tokens is null)
             {
-                _error = "Invalid token response.";
+                _registerError = "Invalid token response.";
                 return;
             }
 
@@ -154,12 +186,14 @@
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            _registerError = ex.Message;
         }
         finally
         {
             _busy = false;
-            _status = null;
+            _registerStatus = null;
         }
     }
+
+    private sealed record DiscoverableBeginResponse(string SessionId, string OptionsJson);
 }
