@@ -202,6 +202,7 @@
     private DateTimeOffset? _infilStartTime;
     private PeriodicTimer? _countdownTimer;
     private CancellationTokenSource? _cts;
+    private Task? _countdownTask;
 
     // Intent selections (default to no-op values)
     private string _primary = "None";
@@ -233,30 +234,17 @@
         await StartSseAsync();
 
         if (_infilStartTime.HasValue)
-            _ = RunCountdownAsync();
+            _countdownTask = RunCountdownAsync();
     }
 
     private TimeSpan? GetRemaining() =>
-        _infilStartTime is { } t
-            ? RaidDuration - (DateTimeOffset.UtcNow - t)
-            : null;
+        ExfilCountdownHelper.GetRemaining(_infilStartTime, RaidDuration);
 
-    private string FormatRemaining()
-    {
-        var r = GetRemaining();
-        if (r is null) return "--:--";
-        if (r.Value <= TimeSpan.Zero) return "00:00";
-        return r.Value.ToString(@"mm\:ss");
-    }
+    private string FormatRemaining() =>
+        ExfilCountdownHelper.FormatRemaining(GetRemaining());
 
-    private string GetTimerStyle()
-    {
-        var r = GetRemaining();
-        if (r is null) return string.Empty;
-        if (r.Value <= TimeSpan.FromSeconds(10)) return "font-weight: bold; color: var(--error);";
-        if (r.Value <= TimeSpan.FromSeconds(30)) return "font-weight: bold; color: darkorange;";
-        return "color: green;";
-    }
+    private string GetTimerStyle() =>
+        ExfilCountdownHelper.GetTimerStyle(GetRemaining());
 
     private async Task RunCountdownAsync()
     {
@@ -275,7 +263,7 @@
                 }
             }
         }
-        catch (OperationCanceledException) { }
+        catch (Exception ex) when (ex is OperationCanceledException || ex is ObjectDisposedException) { }
     }
 
     private async Task StartSseAsync()
@@ -413,6 +401,8 @@
     public async ValueTask DisposeAsync()
     {
         _cts?.Cancel();
+        if (_countdownTask is not null)
+            await _countdownTask;
         _countdownTimer?.Dispose();
         _cts?.Dispose();
         await StopSseAsync();
