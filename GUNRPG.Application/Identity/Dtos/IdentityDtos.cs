@@ -49,6 +49,20 @@ public sealed record WebAuthnLoginCompleteRequest(
 );
 
 /// <summary>
+/// Response body for beginning a usernameless (discoverable) WebAuthn login.
+/// The session ID must be echoed back in the complete request.
+/// </summary>
+public sealed record WebAuthnDiscoverableLoginBeginResponse(string SessionId, string OptionsJson);
+
+/// <summary>
+/// Request body for completing a usernameless (discoverable) WebAuthn login.
+/// </summary>
+public sealed record WebAuthnDiscoverableLoginCompleteRequest(
+    string SessionId,
+    string AssertionResponseJson
+);
+
+/// <summary>
 /// Request body for polling the device code flow.
 /// </summary>
 public sealed record DevicePollRequest(string DeviceCode);

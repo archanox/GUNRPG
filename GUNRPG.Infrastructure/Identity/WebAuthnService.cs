@@ -243,6 +243,89 @@ public sealed class WebAuthnService : IWebAuthnService
         }
     }
 
+    // ── Discoverable (usernameless) Authentication ────────────────────────────
+
+    public Task<ServiceResult<(string SessionId, string OptionsJson)>> BeginDiscoverableLoginAsync(
+        CancellationToken ct = default)
+    {
+        var sessionId = Guid.NewGuid().ToString("N");
+
+        var options = _fido2.GetAssertionOptions(new GetAssertionOptionsParams
+        {
+            AllowedCredentials = [],   // empty -> browser discovers resident credentials
+            UserVerification = UserVerificationRequirement.Preferred,
+        });
+
+        _store.StoreChallenge($"discoverable:{sessionId}", options.Challenge);
+        return Task.FromResult(
+            ServiceResult<(string, string)>.Success((sessionId, options.ToJson())));
+    }
+
+    public async Task<ServiceResult<string>> CompleteDiscoverableLoginAsync(
+        string sessionId,
+        string assertionResponseJson,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return Err(WebAuthnErrorCode.InvalidRequest, "Session ID is required.");
+
+        var challenge = _store.ConsumeChallenge($"discoverable:{sessionId}");
+        if (challenge is null)
+            return Err(WebAuthnErrorCode.ChallengeMissing,
+                "No pending authentication challenge. Restart login.");
+
+        AuthenticatorAssertionRawResponse rawResponse;
+        try
+        {
+            rawResponse = JsonSerializer.Deserialize<AuthenticatorAssertionRawResponse>(assertionResponseJson)
+                ?? throw new JsonException("Null response");
+        }
+        catch (JsonException ex)
+        {
+            return Err(WebAuthnErrorCode.InvalidRequest, $"Malformed assertion response: {ex.Message}");
+        }
+
+        var credentialId = Base64UrlEncode(rawResponse.RawId);
+        var storedCredential = _store.GetCredentialById(credentialId);
+        if (storedCredential is null)
+            return Err(WebAuthnErrorCode.CredentialNotFound, "Credential not found.");
+
+        var assertionOptions = AssertionOptions.Create(
+            _fido2Config,
+            challenge,
+            allowedCredentials: [],
+            userVerification: UserVerificationRequirement.Preferred,
+            extensions: null);
+
+        try
+        {
+            var result = await _fido2.MakeAssertionAsync(
+                new MakeAssertionParams
+                {
+                    AssertionResponse = rawResponse,
+                    OriginalOptions = assertionOptions,
+                    StoredPublicKey = storedCredential.PublicKey,
+                    StoredSignatureCounter = storedCredential.SignatureCounter,
+                    IsUserHandleOwnerOfCredentialIdCallback = IsUserHandleOwnerOfCredentialIdAsync,
+                }, ct);
+
+            if (storedCredential.SignatureCounter > 0 && result.SignCount <= storedCredential.SignatureCounter)
+                return Err(WebAuthnErrorCode.CounterRegression,
+                    $"Signature counter did not increase (stored={storedCredential.SignatureCounter}, received={result.SignCount}). " +
+                    "The authenticator may be cloned.");
+
+            storedCredential.SignatureCounter = result.SignCount;
+            storedCredential.LastUsedAt = DateTimeOffset.UtcNow;
+            _store.UpsertCredential(storedCredential);
+
+            return ServiceResult<string>.Success(storedCredential.UserId);
+        }
+        catch (Fido2VerificationException ex)
+        {
+            return Err(WebAuthnErrorCode.AssertionFailed, ex.Message);
+        }
+    }
+
     // ── Delegates ─────────────────────────────────────────────────────────────
 
     private Task<bool> IsCredentialIdUniqueToUserAsync(IsCredentialIdUniqueToUserParams args, CancellationToken ct)
