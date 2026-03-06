@@ -91,7 +91,7 @@
 
         try
         {
-            var beginResponse = await Api.PostAsync("/auth/webauthn/login/discoverable/begin", new { });
+            var beginResponse = await Api.PostAsync("/auth/webauthn/login/discoverable/begin");
 
             if (!beginResponse.IsSuccessStatusCode)
             {
