@@ -47,7 +47,7 @@
         </FluentCard>
 
         <FluentStack Orientation="Orientation.Horizontal" Style="gap: 0.5rem; flex-wrap: wrap;">
-            @if (_operator.ActiveCombatSessionId.HasValue)
+            @if (_operator.ActiveCombatSessionId.HasValue && _operator.ActiveCombatSession?.IsConcluded == false)
             {
                 <FluentButton Appearance="Appearance.Accent"
                               OnClick="@(() => Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}"))">

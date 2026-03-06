@@ -13,6 +13,18 @@ public sealed class AuthService
 
     public bool IsAuthenticated => _accessToken is not null;
 
+    /// <summary>
+    /// Attempts to restore the session from the stored refresh token.
+    /// Should be called once on app startup. Returns true if session was restored.
+    /// </summary>
+    public async Task<bool> TryRestoreAsync()
+    {
+        if (_accessToken is not null)
+            return true;
+
+        return await RefreshTokenAsync();
+    }
+
     public AuthService(IJSRuntime js, HttpClient http, NodeConnectionService nodeService)
     {
         _js = js;
