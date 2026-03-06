@@ -1,0 +1,35 @@
+@page "/missions/exfil-failed/{OperatorId:guid}"
+@inject AuthService Auth
+@inject NavigationManager Nav
+
+<FluentStack Orientation="Orientation.Vertical" Style="gap: 1.5rem; max-width: 600px; margin: 2rem auto; text-align: center;">
+    <h2 style="margin: 0; color: var(--error);">EXFIL FAILED</h2>
+
+    <FluentMessageBar Title="Exfil Window Expired" Intent="MessageIntent.Error">
+        You failed to extract within the 30-minute time limit.
+    </FluentMessageBar>
+
+    <FluentCard>
+        <FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; padding: 0.5rem;">
+            <FluentLabel Typo="Typography.H5">Your operator has been listed as KIA.</FluentLabel>
+            <p style="margin: 0; color: var(--neutral-foreground-hint);">
+                Failing to extract in time is fatal. Press the button below to return to base and review your operator's status.
+            </p>
+            <FluentButton Appearance="Appearance.Accent" OnClick="ReturnToBase">
+                Return to Base
+            </FluentButton>
+        </FluentStack>
+    </FluentCard>
+</FluentStack>
+
+@code {
+    [Parameter] public Guid OperatorId { get; set; }
+
+    protected override void OnInitialized()
+    {
+        if (!Auth.IsAuthenticated)
+            Nav.NavigateTo("login");
+    }
+
+    private void ReturnToBase() => Nav.NavigateTo($"operators/{OperatorId}");
+}

@@ -2,16 +2,23 @@
 @inject AuthService Auth
 @inject NavigationManager Nav
 @inject MissionService MissionSvc
+@inject OperatorService OperatorSvc
 @inject NodeConnectionService NodeService
 @inject IJSRuntime JS
 @implements IAsyncDisposable
 
 <FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; max-width: 900px; margin: 0 auto;">
-    <FluentStack Orientation="Orientation.Horizontal" Style="align-items: center; gap: 0.5rem;">
+    <FluentStack Orientation="Orientation.Horizontal" Style="align-items: center; gap: 0.5rem; flex-wrap: wrap;">
         <FluentButton Appearance="Appearance.Outline" OnClick="GoBack">
             ← Back
         </FluentButton>
-        <h2 style="margin: 0;">Mission — Turn @(_session?.TurnNumber ?? 0)</h2>
+        <h2 style="margin: 0; flex: 1;">Mission — Turn @(_session?.TurnNumber ?? 0)</h2>
+        @if (_infilStartTime.HasValue)
+        {
+            <div style="@GetTimerStyle(); font-family: monospace; font-size: 1.1rem;">
+                ⏱ @FormatRemaining()
+            </div>
+        }
     </FluentStack>
 
     @if (!string.IsNullOrEmpty(_error))
@@ -184,10 +191,17 @@
 @code {
     [Parameter] public Guid MissionId { get; set; }
 
+    private static readonly TimeSpan RaidDuration = TimeSpan.FromMinutes(30);
+
     private CombatSession? _session;
     private bool _loading = true;
     private bool _busy;
     private string? _error;
+
+    // Exfil timer
+    private DateTimeOffset? _infilStartTime;
+    private PeriodicTimer? _countdownTimer;
+    private CancellationTokenSource? _cts;
 
     // Intent selections (default to no-op values)
     private string _primary = "None";
@@ -217,6 +231,51 @@
 
         // Start SSE stream for real-time sync
         await StartSseAsync();
+
+        if (_infilStartTime.HasValue)
+            _ = RunCountdownAsync();
+    }
+
+    private TimeSpan? GetRemaining() =>
+        _infilStartTime is { } t
+            ? RaidDuration - (DateTimeOffset.UtcNow - t)
+            : null;
+
+    private string FormatRemaining()
+    {
+        var r = GetRemaining();
+        if (r is null) return "--:--";
+        if (r.Value <= TimeSpan.Zero) return "00:00";
+        return r.Value.ToString(@"mm\:ss");
+    }
+
+    private string GetTimerStyle()
+    {
+        var r = GetRemaining();
+        if (r is null) return string.Empty;
+        if (r.Value <= TimeSpan.FromSeconds(10)) return "font-weight: bold; color: var(--error);";
+        if (r.Value <= TimeSpan.FromSeconds(30)) return "font-weight: bold; color: darkorange;";
+        return "color: green;";
+    }
+
+    private async Task RunCountdownAsync()
+    {
+        _cts = new CancellationTokenSource();
+        _countdownTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        try
+        {
+            while (await _countdownTimer.WaitForNextTickAsync(_cts.Token))
+            {
+                var remaining = GetRemaining();
+                await InvokeAsync(StateHasChanged);
+                if (remaining.HasValue && remaining.Value <= TimeSpan.Zero && _session is not null)
+                {
+                    await InvokeAsync(() => Nav.NavigateTo($"missions/exfil-failed/{_session.OperatorId}"));
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
     }
 
     private async Task StartSseAsync()
@@ -270,6 +329,15 @@
         var (data, error) = await MissionSvc.GetStateAsync(MissionId);
         _session = data;
         _error = error;
+
+        // Load operator state to obtain the infil start time for the countdown timer.
+        // If this call fails the timer simply won't display; combat still works normally.
+        if (_session is not null)
+        {
+            var (opData, _) = await OperatorSvc.GetAsync(_session.OperatorId);
+            _infilStartTime = opData?.InfilStartTime;
+        }
+
         _loading = false;
     }
 
@@ -344,6 +412,9 @@
 
     public async ValueTask DisposeAsync()
     {
+        _cts?.Cancel();
+        _countdownTimer?.Dispose();
+        _cts?.Dispose();
         await StopSseAsync();
     }
 }
