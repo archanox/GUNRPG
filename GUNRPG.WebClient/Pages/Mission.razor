@@ -194,7 +194,7 @@
     private void GoBack()
     {
         if (_session is not null)
-            Nav.NavigateTo($"operators/{_session.OperatorId}");
+            Nav.NavigateTo($"missions/infil/{_session.OperatorId}");
         else
             Nav.NavigateTo("operators");
     }
