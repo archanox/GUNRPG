@@ -253,6 +253,32 @@ public class OperatorsController : ControllerBase
     }
 
     /// <summary>
+    /// Abandons the active combat session for the operator (retreat / walk away).
+    /// Clears the operator's <c>ActiveCombatSessionId</c> reference without deleting the
+    /// session record, preserving the full audit trail. The operator remains in Infil mode.
+    /// </summary>
+    /// <param name="id">The operator's unique identifier.</param>
+    /// <returns>Success on abandon.</returns>
+    /// <response code="200">Combat abandoned successfully.</response>
+    /// <response code="404">Operator not found.</response>
+    /// <response code="500">An unexpected error occurred.</response>
+    [HttpPost("{id:guid}/infil/abandon-combat")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult> AbandonCombat(Guid id)
+    {
+        var result = await _service.AbandonCombatAsync(id);
+
+        return result.Status switch
+        {
+            ResultStatus.Success => Ok(),
+            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
+            _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
+        };
+    }
+
+    /// <summary>
     /// Changes the operator's weapon loadout.
     /// </summary>
     /// <param name="id">The operator's unique identifier.</param>

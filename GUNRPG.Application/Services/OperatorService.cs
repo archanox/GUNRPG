@@ -374,8 +374,7 @@ public sealed class OperatorService
         var exfilResult = await _exfilService.StartCombatSessionAsync(new OperatorId(operatorId), sessionId);
         if (!exfilResult.IsSuccess)
         {
-            // Best-effort cleanup of the orphaned session so the store stays consistent.
-            await _sessionService.DeleteSessionAsync(sessionId);
+            // The session record remains in the database as an audit trail; do not delete it.
             return exfilResult;
         }
 
@@ -385,6 +384,17 @@ public sealed class OperatorService
     public async Task<ServiceResult> CompleteInfilAsync(Guid operatorId)
     {
         return await _exfilService.CompleteInfilSuccessfullyAsync(new OperatorId(operatorId));
+    }
+
+    /// <summary>
+    /// Abandons the active combat session for the operator (retreat / walk away).
+    /// Emits a <see cref="Core.Operators.CombatVictoryEvent"/> to clear <c>ActiveCombatSessionId</c>
+    /// so the operator can enter a new combat or exfil, while the session record is preserved in the
+    /// database for audit purposes.
+    /// </summary>
+    public async Task<ServiceResult> AbandonCombatAsync(Guid operatorId)
+    {
+        return await _exfilService.ClearDanglingCombatSessionAsync(new OperatorId(operatorId));
     }
 
     public async Task<ServiceResult<OperatorStateDto>> ChangeLoadoutAsync(Guid operatorId, ChangeLoadoutRequest request)

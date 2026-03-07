@@ -1229,15 +1229,9 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         try
         {
-            // Delete the completed combat session
-            using var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId.Value}").GetAwaiter().GetResult();
-            if (!deleteResponse.IsSuccessStatusCode)
-            {
-                return false;
-            }
-
             // The server creates both the operator event and the combat session atomically,
             // so a single POST is sufficient — no separate /sessions call is needed.
+            // The completed session record remains in the database for audit purposes.
             using var startCombatResponse = client.PostAsync($"operators/{CurrentOperatorId}/infil/combat", null).GetAwaiter().GetResult();
             if (!startCombatResponse.IsSuccessStatusCode)
             {
@@ -1489,33 +1483,25 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                                 else
                                     ProcessCombatOutcome();
                             }
-                            // Retreat: delete the combat session and return to Infil mode
+                            // Retreat: clear the operator's combat session reference
+                            // (session record is preserved in the database for audit purposes)
                             if (ActiveSessionId.HasValue)
                             {
-                                if (_usingLocalCombat)
+                                if (!_usingLocalCombat)
                                 {
                                     try
                                     {
-                                        _localCombatService!.DeleteSessionAsync(ActiveSessionId.Value).GetAwaiter().GetResult();
+                                        // Abandon combat server-side: emits CombatVictoryEvent to clear
+                                        // ActiveCombatSessionId on the operator, session stays in DB.
+                                        using var abandonResponse = client.PostAsync($"operators/{CurrentOperatorId}/infil/abandon-combat", null).GetAwaiter().GetResult();
                                     }
                                     catch
                                     {
-                                        // Non-fatal — session will be orphaned in offline.db but won't affect gameplay
+                                        // Best-effort; local state cleared below regardless
                                     }
                                 }
-                                else
-                                {
-                                    try
-                                    {
-                                        // Delete the session server-side so it won't auto-resume
-                                        var deleteResponse = client.DeleteAsync($"sessions/{ActiveSessionId}").GetAwaiter().GetResult();
-                                        deleteResponse.Dispose();
-                                    }
-                                    catch
-                                    {
-                                        // If delete fails, still clear locally - better than nothing
-                                    }
-                                }
+                                // Local (offline) sessions: session is stored in offline.db and stays there
+                                // as an audit record; only the in-memory reference is cleared below.
                             }
                             _usingLocalCombat = false;
                             ActiveSessionId = null;
@@ -1729,17 +1715,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 ProcessCombatOutcomeOffline();
                 _usingLocalCombat = false;
 
-                // Delete the completed local session to keep offline.db clean
-                try
-                {
-                    _localCombatService!.DeleteSessionAsync(ActiveSessionId!.Value).GetAwaiter().GetResult();
-                }
-                catch
-                {
-                    // Non-fatal — orphaned session won't affect gameplay
-                }
-
-                // Keep CurrentSession for display on MissionComplete screen
+                // Keep CurrentSession for display on MissionComplete screen.
+                // The completed local session record is preserved in offline.db for audit purposes.
                 ActiveSessionId = null;
 
                 Message = CurrentSession.Player.Health <= 0
@@ -2490,21 +2467,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             return;
         }
 
-        // Delete the active combat session server-side if one exists, so it doesn't linger.
-        var activeCombatSessionId = ActiveSessionId ?? CurrentOperator?.ActiveCombatSessionId;
-        if (activeCombatSessionId.HasValue)
-        {
-            try
-            {
-                using var deleteResponse = client.DeleteAsync($"sessions/{activeCombatSessionId.Value}").GetAwaiter().GetResult();
-                // Dispose is handled by the using declaration above
-            }
-            catch
-            {
-                // Best-effort; the infil/complete call below will clear the reference on the aggregate.
-            }
-        }
-
+        // Calling infil/complete emits InfilEndedEvent which clears ActiveCombatSessionId on the
+        // operator aggregate. Any in-progress session remains in the database as an audit record.
         using var completeResponse = client.SendAsync(
             new HttpRequestMessage(HttpMethod.Post, $"operators/{CurrentOperatorId}/infil/complete"))
             .GetAwaiter().GetResult();

@@ -80,23 +80,4 @@ public sealed class MissionService
             return (null, ex.Message);
         }
     }
-
-    public async Task<string?> DeleteAsync(Guid sessionId)
-    {
-        try
-        {
-            var response = await _api.DeleteAsync($"/sessions/{sessionId}");
-            if (!response.IsSuccessStatusCode)
-            {
-                var err = await ApiHelpers.TryReadErrorAsync(response);
-                return err ?? $"Failed to delete session: {response.StatusCode}";
-            }
-
-            return null;
-        }
-        catch (Exception ex)
-        {
-            return ex.Message;
-        }
-    }
 }
