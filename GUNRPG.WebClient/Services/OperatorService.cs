@@ -93,7 +93,8 @@ public sealed class OperatorService
     {
         try
         {
-            // Step 1: Record the combat session start event on the operator aggregate.
+            // The server creates both the operator event and the combat session atomically,
+            // so a single POST is sufficient — no separate /sessions call is needed.
             var response = await _api.PostAsync($"/operators/{operatorId}/infil/combat");
             if (!response.IsSuccessStatusCode)
             {
@@ -102,22 +103,6 @@ public sealed class OperatorService
             }
 
             var sessionId = await response.Content.ReadFromJsonAsync<Guid>();
-
-            // Step 2: Create the actual combat session in the session store so it can be retrieved.
-            var sessionRequest = new SessionCreateRequest
-            {
-                Id = sessionId,
-                OperatorId = operatorId,
-                PlayerName = playerName
-            };
-
-            var createResponse = await _api.PostAsync("/sessions", sessionRequest);
-            if (!createResponse.IsSuccessStatusCode)
-            {
-                var err = await ApiHelpers.TryReadErrorAsync(createResponse);
-                return (null, err ?? $"Failed to create combat session: {createResponse.StatusCode}");
-            }
-
             return (sessionId, null);
         }
         catch (Exception ex)

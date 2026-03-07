@@ -44,30 +44,16 @@ public sealed class OperatorServiceTests : IDisposable
     }
 
     /// <summary>
-    /// Helper method to start a combat session and create the actual session object.
-    /// This is the standard two-step process: emit event, then create session.
+    /// Helper method to start a combat session using the atomic server-side creation.
+    /// The server now creates both the operator event and the session record in one call.
     /// </summary>
     private async Task<Guid> StartAndCreateCombatSessionAsync(Guid operatorId, string playerName)
     {
-        // Start a combat session (emits event)
         var startCombatResult = await _operatorService.StartCombatSessionAsync(operatorId);
         if (!startCombatResult.IsSuccess)
             throw new InvalidOperationException($"Failed to start combat session: {startCombatResult.ErrorMessage}");
         
-        var sessionId = startCombatResult.Value!;
-        
-        // Create the actual combat session
-        var sessionRequest = new SessionCreateRequest
-        {
-            Id = sessionId,
-            OperatorId = operatorId,
-            PlayerName = playerName
-        };
-        var sessionCreateResult = await _sessionService.CreateSessionAsync(sessionRequest);
-        if (!sessionCreateResult.IsSuccess)
-            throw new InvalidOperationException($"Failed to create session: {sessionCreateResult.ErrorMessage}");
-        
-        return sessionId;
+        return startCombatResult.Value!;
     }
 
     [Fact]
