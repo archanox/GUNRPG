@@ -233,7 +233,7 @@
         _busy = true;
         StateHasChanged();
 
-        var (sessionId, error) = await OperatorSvc.StartCombatSessionAsync(OperatorId, _operator.Name);
+        var (sessionId, error) = await OperatorSvc.StartCombatSessionAsync(OperatorId);
         _busy = false;
 
         if (error is not null)

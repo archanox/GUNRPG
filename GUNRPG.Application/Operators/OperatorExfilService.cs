@@ -438,6 +438,9 @@ public sealed class OperatorExfilService
         if (aggregate.ActiveCombatSessionId != null)
             return ServiceResult<Guid>.InvalidState("Cannot start new combat session while one is already active");
 
+        if (sessionId.HasValue && sessionId.Value == Guid.Empty)
+            return ServiceResult<Guid>.InvalidState("Combat session ID cannot be empty");
+
         var combatSessionId = sessionId ?? Guid.NewGuid();
 
         var previousHash = aggregate.GetLastEventHash();

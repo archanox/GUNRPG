@@ -47,7 +47,7 @@ public sealed class OperatorServiceTests : IDisposable
     /// Helper method to start a combat session using the atomic server-side creation.
     /// The server now creates both the operator event and the session record in one call.
     /// </summary>
-    private async Task<Guid> StartAndCreateCombatSessionAsync(Guid operatorId, string playerName)
+    private async Task<Guid> StartAndCreateCombatSessionAsync(Guid operatorId)
     {
         var startCombatResult = await _operatorService.StartCombatSessionAsync(operatorId);
         if (!startCombatResult.IsSuccess)
@@ -68,7 +68,7 @@ public sealed class OperatorServiceTests : IDisposable
         Assert.True(infilResult.IsSuccess);
         
         // Start and create combat session
-        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId);
 
         // Complete the combat session (simulate victory)
         for (int i = 0; i < 20; i++)
@@ -129,7 +129,7 @@ public sealed class OperatorServiceTests : IDisposable
         Assert.True(infilResult.IsSuccess);
         
         // Start and create combat session
-        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId);
 
         // Complete the combat session
         for (int i = 0; i < 20; i++)
@@ -177,7 +177,7 @@ public sealed class OperatorServiceTests : IDisposable
         Assert.True(infilResult.IsSuccess);
         
         // Start and create combat session
-        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId);
 
         // Act: Load operator with active (non-completed) session
         var operatorResult = await _operatorService.GetOperatorAsync(operatorId);
@@ -207,7 +207,7 @@ public sealed class OperatorServiceTests : IDisposable
         var infilResult = await _operatorService.StartInfilAsync(operatorId);
         
         // Start and create combat session
-        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId);
 
         // Complete combat
         for (int i = 0; i < 20; i++)
@@ -335,7 +335,7 @@ public sealed class OperatorServiceTests : IDisposable
         var infilResult = await _operatorService.StartInfilAsync(operatorId);
         
         // Start and create combat session
-        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId);
 
         // Delete the session from the store to simulate missing session
         await _sessionStore.DeleteAsync(sessionId);
@@ -360,7 +360,7 @@ public sealed class OperatorServiceTests : IDisposable
         var infilResult = await _operatorService.StartInfilAsync(operatorId);
         
         // Start and create combat session
-        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId);
 
         // Act: Cleanup when session is still active (Planning phase)
         var cleanupResult = await _operatorService.CleanupCompletedSessionAsync(operatorId);
@@ -388,7 +388,7 @@ public sealed class OperatorServiceTests : IDisposable
         var infilResult = await _operatorService.StartInfilAsync(operatorId);
         
         // Start and create combat session
-        var sessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId);
 
         // Complete combat
         for (int i = 0; i < 20; i++)
@@ -451,7 +451,7 @@ public sealed class OperatorServiceTests : IDisposable
         await _operatorService.StartInfilAsync(operatorId);
 
         // Simulate the two-step StartNewCombatSession flow: emit event + create session
-        var staleSessionId = await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
+        var staleSessionId = await StartAndCreateCombatSessionAsync(operatorId);
 
         // Simulate session deletion without CombatVictoryEvent (the dangling reference scenario)
         await _sessionStore.DeleteAsync(staleSessionId);
@@ -513,7 +513,7 @@ public sealed class OperatorServiceTests : IDisposable
         var infilResult = await _operatorService.StartInfilAsync(operatorId);
         Assert.True(infilResult.IsSuccess);
 
-        await StartAndCreateCombatSessionAsync(operatorId, "TestOp");
+        await StartAndCreateCombatSessionAsync(operatorId);
 
         var result = await _operatorService.ProcessCombatOutcomeAsync(operatorId, new ProcessOutcomeRequest
         {
@@ -650,5 +650,67 @@ public sealed class OperatorServiceTests : IDisposable
         Assert.True(dto.IsSuccess);
         Assert.Equal(OperatorMode.Base, dto.Value!.CurrentMode);
         Assert.Equal(0, dto.Value!.ExfilStreak);
+    }
+
+    [Fact]
+    public async Task RetreatFromCombatAsync_WithActiveSession_ClearsSessionAndRemainsInInfil()
+    {
+        // Arrange: create operator, start infil, start combat
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "RetreatOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        var infilResult = await _operatorService.StartInfilAsync(operatorId);
+        Assert.True(infilResult.IsSuccess);
+
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId);
+
+        // Pre-condition: operator is in Infil mode with an active session
+        var before = await _operatorService.GetOperatorAsync(operatorId);
+        Assert.True(before.IsSuccess);
+        Assert.Equal(OperatorMode.Infil, before.Value!.CurrentMode);
+        Assert.Equal(sessionId, before.Value.ActiveCombatSessionId);
+
+        // Act: retreat from combat
+        var retreatResult = await _operatorService.RetreatFromCombatAsync(operatorId);
+        Assert.True(retreatResult.IsSuccess);
+
+        // Assert: operator is still in Infil mode (not kicked back to Base)
+        var after = await _operatorService.GetOperatorAsync(operatorId);
+        Assert.True(after.IsSuccess);
+        Assert.Equal(OperatorMode.Infil, after.Value!.CurrentMode);
+
+        // ActiveCombatSessionId cleared
+        Assert.Null(after.Value.ActiveCombatSessionId);
+        Assert.Null(after.Value.ActiveCombatSession);
+
+        // ExfilStreak unchanged (retreat is not an exfil failure)
+        Assert.Equal(0, after.Value.ExfilStreak);
+
+        // The session record itself is preserved in the store
+        var sessionState = await _sessionService.GetStateAsync(sessionId);
+        Assert.True(sessionState.IsSuccess);
+    }
+
+    [Fact]
+    public async Task RetreatFromCombatAsync_WithNoActiveSession_ReturnsSuccess()
+    {
+        // Arrange: operator in Infil mode but no active combat session
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "NoSessionOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        await _operatorService.StartInfilAsync(operatorId);
+
+        // Act: retreat when there is no active combat session (no-op)
+        var retreatResult = await _operatorService.RetreatFromCombatAsync(operatorId);
+
+        // Assert: idempotent success — nothing to clear
+        Assert.True(retreatResult.IsSuccess);
+
+        var after = await _operatorService.GetOperatorAsync(operatorId);
+        Assert.True(after.IsSuccess);
+        Assert.Equal(OperatorMode.Infil, after.Value!.CurrentMode);
+        Assert.Null(after.Value.ActiveCombatSessionId);
     }
 }

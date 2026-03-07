@@ -89,12 +89,12 @@ public sealed class OperatorService
         }
     }
 
-    public async Task<(Guid? SessionId, string? Error)> StartCombatSessionAsync(Guid operatorId, string playerName)
+    public async Task<(Guid? SessionId, string? Error)> StartCombatSessionAsync(Guid operatorId)
     {
         try
         {
-            // The server creates both the operator event and the combat session atomically,
-            // so a single POST is sufficient — no separate /sessions call is needed.
+            // This endpoint triggers both the operator event creation and the combat session start,
+            // so a single POST is sufficient from the client side — no separate /sessions call is needed.
             var response = await _api.PostAsync($"/operators/{operatorId}/infil/combat");
             if (!response.IsSuccessStatusCode)
             {
