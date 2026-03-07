@@ -130,6 +130,25 @@ public sealed class OperatorService
         }
     }
 
+    public async Task<string?> AbandonCombatAsync(Guid operatorId)
+    {
+        try
+        {
+            var response = await _api.PostAsync($"/operators/{operatorId}/infil/abandon-combat");
+            if (!response.IsSuccessStatusCode)
+            {
+                var err = await ApiHelpers.TryReadErrorAsync(response);
+                return err ?? $"Failed to abandon combat: {response.StatusCode}";
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
+        }
+    }
+
     public async Task<(OperatorState? Data, string? Error)> ChangeLoadoutAsync(Guid operatorId, string weaponName)
     {
         try
