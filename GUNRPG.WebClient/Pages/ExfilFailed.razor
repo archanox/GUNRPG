@@ -1,6 +1,7 @@
 @page "/missions/exfil-failed/{OperatorId:guid}"
 @inject AuthService Auth
 @inject NavigationManager Nav
+@inject OperatorService OperatorSvc
 
 <FluentStack Orientation="Orientation.Vertical" Style="gap: 1.5rem; max-width: 600px; margin: 2rem auto; text-align: center;">
     <h2 style="margin: 0; color: var(--error);">EXFIL FAILED</h2>
@@ -25,10 +26,30 @@
 @code {
     [Parameter] public Guid OperatorId { get; set; }
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         if (!Auth.IsAuthenticated)
+        {
             Nav.NavigateTo("login");
+            return;
+        }
+
+        // Redirect guard: if the operator is still alive and in a known screen, navigate there instead
+        var (opData, _) = await OperatorSvc.GetAsync(OperatorId);
+        if (opData is not null && !opData.IsDead)
+        {
+            if (opData.CurrentMode == "Infil")
+            {
+                if (opData.ActiveCombatSessionId.HasValue && opData.ActiveCombatSession?.IsConcluded == false)
+                    Nav.NavigateTo($"missions/{opData.ActiveCombatSessionId}");
+                else
+                    Nav.NavigateTo($"missions/infil/{OperatorId}");
+            }
+            else
+            {
+                Nav.NavigateTo($"operators/{OperatorId}");
+            }
+        }
     }
 
     private void ReturnToBase() => Nav.NavigateTo($"operators/{OperatorId}");
