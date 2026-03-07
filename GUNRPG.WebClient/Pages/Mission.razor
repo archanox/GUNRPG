@@ -46,7 +46,9 @@
                 <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.25rem; margin-top: 0.5rem;">
                     <div><strong>@_session.Player.Name</strong></div>
                     <div>HP: @_session.Player.Health.ToString("F0") / @_session.Player.MaxHealth.ToString("F0")</div>
-                    <div>Stamina: @_session.Player.Stamina.ToString("F0")</div>
+                    <FluentProgress Value="@((int)_session.Player.Health)" Max="@((int)_session.Player.MaxHealth)" />
+                    <div>Stamina: @_session.Player.Stamina.ToString("F0") / 100</div>
+                    <FluentProgress Value="@((int)_session.Player.Stamina)" Max="100" />
                     <div>Ammo: @_session.Player.CurrentAmmo @(_session.Player.MagazineSize.HasValue ? $"/ {_session.Player.MagazineSize}" : "")</div>
                     <div>Distance: @_session.Player.DistanceToOpponent.ToString("F0")m</div>
                     <div>Cover: @(string.IsNullOrEmpty(_session.Player.CurrentCover) || _session.Player.CurrentCover == "None" ? "None" : _session.Player.CurrentCover)</div>
@@ -63,6 +65,7 @@
                 <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.25rem; margin-top: 0.5rem;">
                     <div><strong>@_session.Enemy.Name</strong></div>
                     <div>HP: @_session.Enemy.Health.ToString("F0") / @_session.Enemy.MaxHealth.ToString("F0")</div>
+                    <FluentProgress Value="@((int)_session.Enemy.Health)" Max="@((int)_session.Enemy.MaxHealth)" />
                     <div>Distance: @_session.Enemy.DistanceToOpponent.ToString("F0")m</div>
                     <div>Cover: @(string.IsNullOrEmpty(_session.Enemy.CurrentCover) || _session.Enemy.CurrentCover == "None" ? "None" : _session.Enemy.CurrentCover)</div>
                     @if (!_session.Enemy.IsAlive)
@@ -78,8 +81,8 @@
             <FluentCard Style="overflow: visible; contain: none; content-visibility: visible;">
                 <FluentLabel Typo="Typography.H5">Actions</FluentLabel>
                 <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.75rem; margin-top: 0.5rem;">
-                    <FluentStack Orientation="Orientation.Horizontal" Style="gap: 1rem; flex-wrap: wrap;">
-                        <div Style="flex: 1; min-width: 150px;">
+                    <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.75rem;">
+                        <div>
                             <FluentLabel>🎯 Primary</FluentLabel>
                             <FluentSelect TOption="string" @bind-Value="_primary" Style="width: 100%;" Disabled="_busy">
                                 <FluentOption TOption="string" Value="None">None</FluentOption>
@@ -92,7 +95,7 @@
                             </FluentSelect>
                         </div>
 
-                        <div Style="flex: 1; min-width: 150px;">
+                        <div>
                             <FluentLabel>🏃 Movement</FluentLabel>
                             <FluentSelect TOption="string" @bind-Value="_movement" Style="width: 100%;" Disabled="_busy">
                                 <FluentOption TOption="string" Value="Stand">Stand</FluentOption>
@@ -114,7 +117,7 @@
                             </FluentSelect>
                         </div>
 
-                        <div Style="flex: 1; min-width: 150px;">
+                        <div>
                             <FluentLabel>🧍 Stance</FluentLabel>
                             <FluentSelect TOption="string" @bind-Value="_stance" Style="width: 100%;" Disabled="_busy">
                                 <FluentOption TOption="string" Value="None">None</FluentOption>
@@ -127,7 +130,7 @@
                             </FluentSelect>
                         </div>
 
-                        <div Style="flex: 1; min-width: 150px;">
+                        <div>
                             <FluentLabel>🏠 Cover</FluentLabel>
                             <FluentSelect TOption="string" @bind-Value="_cover" Style="width: 100%;" Disabled="_busy">
                                 <FluentOption TOption="string" Value="None">None</FluentOption>
@@ -144,15 +147,15 @@
                         </div>
                     </FluentStack>
 
+                    <div style="font-size: 0.8rem; color: var(--neutral-foreground-hint);">
+                        Primary: @_primary | Movement: @_movement | Stance: @_stance | Cover: @_cover
+                    </div>
                     <FluentStack Orientation="Orientation.Horizontal" Style="gap: 0.5rem; align-items: center;">
                         <FluentButton Appearance="Appearance.Accent"
                                       OnClick="TakeTurnAsync"
                                       Disabled="_busy">
                             @(_busy ? "Submitting..." : "⚡ Submit & Advance Turn")
                         </FluentButton>
-                        <span style="font-size: 0.8rem; color: var(--neutral-foreground-hint);">
-                            Primary: @_primary | Movement: @_movement | Stance: @_stance | Cover: @_cover
-                        </span>
                     </FluentStack>
                 </FluentStack>
             </FluentCard>
@@ -214,6 +217,9 @@
     private DotNetObjectReference<Mission>? _dotNetRef;
     private string? _sseUrl;
 
+    // Operator mode (fetched alongside session load for redirect guard)
+    private string? _operatorMode;
+
     private bool EnterCoverDisabled => _session is not null &&
         (_session.Player.CurrentCover != "None" && !string.IsNullOrEmpty(_session.Player.CurrentCover)
          || (_session.Player.MovementState != "Stationary"
@@ -229,6 +235,13 @@
         }
 
         await LoadAsync();
+
+        // Redirect guard: if the operator is no longer in Infil mode, navigate away
+        if (_session is not null && _operatorMode == "Base")
+        {
+            Nav.NavigateTo($"operators/{_session.OperatorId}");
+            return;
+        }
 
         // Start SSE stream for real-time sync
         await StartSseAsync();
@@ -318,12 +331,13 @@
         _session = data;
         _error = error;
 
-        // Load operator state to obtain the infil start time for the countdown timer.
-        // If this call fails the timer simply won't display; combat still works normally.
+        // Load operator state to obtain the infil start time for the countdown timer
+        // and to check the operator mode for the redirect guard.
         if (_session is not null)
         {
             var (opData, _) = await OperatorSvc.GetAsync(_session.OperatorId);
             _infilStartTime = opData?.InfilStartTime;
+            _operatorMode = opData?.CurrentMode;
         }
 
         _loading = false;

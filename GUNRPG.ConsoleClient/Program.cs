@@ -329,6 +329,41 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                         if (updatedOp != null)
                         {
                             CurrentOperator = updatedOp;
+                            SyncRaidStateFromOperator();
+                            ApplyPendingRaidStateTransitions();
+
+                            // Cross-client screen synchronization: update screen to match operator state.
+                            if (updatedOp.CurrentMode == "Infil")
+                            {
+                                if (doc.RootElement.TryGetProperty("activeCombatSession", out var sJson) &&
+                                    sJson.ValueKind != JsonValueKind.Null)
+                                {
+                                    // Another client started a combat session — transition to combat screen.
+                                    var session = ParseSession(sJson, options);
+                                    if (session != null)
+                                    {
+                                        CurrentSession = session;
+                                        ActiveSessionId = session.Id;
+                                    }
+                                    if (CurrentScreen != Screen.CombatSession)
+                                        CurrentScreen = Screen.CombatSession;
+                                }
+                                else if (CurrentScreen != Screen.BaseCamp &&
+                                         CurrentScreen != Screen.StartMission &&
+                                         CurrentScreen != Screen.CombatSession)
+                                {
+                                    // Operator entered Infil mode from another client — show field ops.
+                                    CurrentScreen = Screen.BaseCamp;
+                                }
+                            }
+                            else if (updatedOp.CurrentMode == "Base" &&
+                                     CurrentScreen is Screen.CombatSession or Screen.StartMission)
+                            {
+                                // Operator returned to Base (e.g., exfil from another client).
+                                ActiveSessionId = null;
+                                CurrentSession = null;
+                                CurrentScreen = Screen.BaseCamp;
+                            }
                         }
                     }
                     catch (Exception)

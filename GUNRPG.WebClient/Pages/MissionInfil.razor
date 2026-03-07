@@ -2,6 +2,8 @@
 @inject AuthService Auth
 @inject NavigationManager Nav
 @inject OperatorService OperatorSvc
+@inject NodeConnectionService NodeService
+@inject IJSRuntime JS
 @implements IAsyncDisposable
 
 <FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; max-width: 700px; margin: 0 auto;">
@@ -85,6 +87,10 @@
     private CancellationTokenSource? _cts;
     private Task? _countdownTask;
 
+    // SSE for real-time operator state sync
+    private DotNetObjectReference<MissionInfil>? _dotNetRef;
+    private string? _sseUrl;
+
     protected override async Task OnInitializedAsync()
     {
         if (!Auth.IsAuthenticated)
@@ -95,8 +101,27 @@
 
         await LoadAsync();
 
+        // Redirect guard: if operator is not in Infil mode, navigate to the correct screen
+        if (_operator is not null)
+        {
+            if (_operator.CurrentMode == "Base")
+            {
+                Nav.NavigateTo($"operators/{OperatorId}");
+                return;
+            }
+
+            if (_operator.ActiveCombatSessionId.HasValue &&
+                _operator.ActiveCombatSession?.IsConcluded == false)
+            {
+                Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}");
+                return;
+            }
+        }
+
         if (_operator?.InfilStartTime.HasValue == true)
             _countdownTask = RunCountdownAsync();
+
+        await StartSseAsync();
     }
 
     private async Task LoadAsync()
@@ -109,6 +134,66 @@
         _operator = data;
         _error = error;
         _loading = false;
+    }
+
+    private async Task StartSseAsync()
+    {
+        var baseUrl = await NodeService.GetBaseUrlAsync();
+        if (string.IsNullOrEmpty(baseUrl))
+            return;
+
+        _sseUrl = $"{baseUrl}/operators/{OperatorId}/stream";
+        _dotNetRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("sseHelper.connect", _sseUrl, _dotNetRef, nameof(OnOperatorUpdated));
+    }
+
+    [JSInvokable]
+    public async Task OnOperatorUpdated()
+    {
+        var (data, _) = await OperatorSvc.GetAsync(OperatorId);
+        if (data is null) return;
+
+        _operator = data;
+
+        // Redirect guard: if operator is no longer in Infil mode
+        if (_operator.CurrentMode == "Base")
+        {
+            await InvokeAsync(() => Nav.NavigateTo($"operators/{OperatorId}"));
+            return;
+        }
+
+        // Navigate to combat when another client starts a session
+        if (_operator.ActiveCombatSessionId.HasValue &&
+            _operator.ActiveCombatSession?.IsConcluded == false)
+        {
+            await InvokeAsync(() => Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}"));
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StopSseAsync()
+    {
+        if (!string.IsNullOrEmpty(_sseUrl))
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("sseHelper.disconnect", _sseUrl);
+            }
+            catch
+            {
+                // Ignore JS interop errors during cleanup
+            }
+        }
+
+        _sseUrl = null;
+
+        if (_dotNetRef is not null)
+        {
+            _dotNetRef.Dispose();
+            _dotNetRef = null;
+        }
     }
 
     private TimeSpan? GetRemaining() =>
@@ -188,5 +273,6 @@
             await _countdownTask;
         _countdownTimer?.Dispose();
         _cts?.Dispose();
+        await StopSseAsync();
     }
 }
