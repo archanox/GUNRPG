@@ -1493,7 +1493,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                                     {
                                         // Abandon combat server-side: emits CombatVictoryEvent to clear
                                         // ActiveCombatSessionId on the operator, session stays in DB.
-                                        using var abandonResponse = client.PostAsync($"operators/{CurrentOperatorId}/infil/abandon-combat", null).GetAwaiter().GetResult();
+                                        using var retreatResponse = client.PostAsync($"operators/{CurrentOperatorId}/infil/retreat", null).GetAwaiter().GetResult();
                                     }
                                     catch
                                     {

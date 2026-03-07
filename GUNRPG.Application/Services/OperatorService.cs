@@ -387,12 +387,12 @@ public sealed class OperatorService
     }
 
     /// <summary>
-    /// Abandons the active combat session for the operator (retreat / walk away).
+    /// Retreats from the active combat session.
     /// Emits a <see cref="Core.Operators.CombatVictoryEvent"/> to clear <c>ActiveCombatSessionId</c>
     /// so the operator can enter a new combat or exfil, while the session record is preserved in the
     /// database for audit purposes.
     /// </summary>
-    public async Task<ServiceResult> AbandonCombatAsync(Guid operatorId)
+    public async Task<ServiceResult> RetreatFromCombatAsync(Guid operatorId)
     {
         return await _exfilService.ClearDanglingCombatSessionAsync(new OperatorId(operatorId));
     }
