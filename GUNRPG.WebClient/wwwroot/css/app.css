@@ -25,3 +25,38 @@
 fluent-message-bar {
     color: var(--neutral-foreground-rest);
 }
+
+/* Improve intent-specific contrast for message bars */
+fluent-message-bar::part(control) {
+    border: 1px solid var(--neutral-stroke-strong-rest, #5a5a5a);
+}
+
+fluent-message-bar[intent="success"]::part(control) {
+    background-color: #0f3d24;
+    color: #dfffea;
+    border-color: #1f7a45;
+}
+
+fluent-message-bar[intent="info"]::part(control) {
+    background-color: #0c2d3d;
+    color: #d4efff;
+    border-color: #2a6c8d;
+}
+
+fluent-message-bar[intent="warning"]::part(control) {
+    background-color: #3f3000;
+    color: #fff2cc;
+    border-color: #8c6d1a;
+}
+
+fluent-message-bar[intent="error"]::part(control) {
+    background-color: #4a0f1d;
+    color: #ffe1e7;
+    border-color: #a5283e;
+}
+
+fluent-message-bar::part(title),
+fluent-message-bar::part(body),
+fluent-message-bar::part(icon) {
+    color: inherit;
+}
