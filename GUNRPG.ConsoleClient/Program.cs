@@ -344,9 +344,9 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                                     {
                                         CurrentSession = session;
                                         ActiveSessionId = session.Id;
+                                        if (CurrentScreen != Screen.CombatSession)
+                                            CurrentScreen = Screen.CombatSession;
                                     }
-                                    if (CurrentScreen != Screen.CombatSession)
-                                        CurrentScreen = Screen.CombatSession;
                                 }
                                 else if (CurrentScreen != Screen.BaseCamp &&
                                          CurrentScreen != Screen.StartMission &&
