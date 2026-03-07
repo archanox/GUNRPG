@@ -345,7 +345,41 @@ public sealed class OperatorService
         // CleanupCompletedSessionAsync emits a CombatVictoryEvent to clear the stale reference.
         await CleanupCompletedSessionAsync(operatorId);
 
-        return await _exfilService.StartCombatSessionAsync(new OperatorId(operatorId));
+        // Load the operator aggregate to obtain the player name for session initialisation.
+        var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+        if (!loadResult.IsSuccess)
+            return ServiceResult<Guid>.FromResult(loadResult);
+
+        var aggregate = loadResult.Value!;
+
+        // Pre-generate the session ID so we can create the session record BEFORE emitting the
+        // CombatSessionStartedEvent. This removes the race condition where operator SSE subscribers
+        // receive a notification while the session store entry doesn't yet exist.
+        var sessionId = Guid.NewGuid();
+
+        // Step 1: Create the combat session in the store so it exists when SSE subscribers react.
+        var sessionRequest = new SessionCreateRequest
+        {
+            Id = sessionId,
+            OperatorId = operatorId,
+            PlayerName = aggregate.Name
+        };
+        var sessionResult = await _sessionService.CreateSessionAsync(sessionRequest);
+        if (!sessionResult.IsSuccess)
+            return ServiceResult<Guid>.FromResult(sessionResult);
+
+        // Step 2: Emit CombatSessionStartedEvent on the operator aggregate (fires operator SSE).
+        // The session record already exists, so any subscriber that immediately fetches operator
+        // state will find a populated ActiveCombatSession.
+        var exfilResult = await _exfilService.StartCombatSessionAsync(new OperatorId(operatorId), sessionId);
+        if (!exfilResult.IsSuccess)
+        {
+            // Best-effort cleanup of the orphaned session so the store stays consistent.
+            await _sessionService.DeleteSessionAsync(sessionId);
+            return exfilResult;
+        }
+
+        return ServiceResult<Guid>.Success(sessionId);
     }
 
     public async Task<ServiceResult> CompleteInfilAsync(Guid operatorId)

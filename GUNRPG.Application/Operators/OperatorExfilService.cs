@@ -418,7 +418,7 @@ public sealed class OperatorExfilService
     /// Creates a CombatSessionStartedEvent to update the ActiveCombatSessionId.
     /// Must be called when operator is in Infil mode without an active combat session.
     /// </summary>
-    public async Task<ServiceResult<Guid>> StartCombatSessionAsync(OperatorId operatorId)
+    public async Task<ServiceResult<Guid>> StartCombatSessionAsync(OperatorId operatorId, Guid? sessionId = null)
     {
         var loadResult = await LoadOperatorAsync(operatorId);
         if (!loadResult.IsSuccess)
@@ -438,7 +438,7 @@ public sealed class OperatorExfilService
         if (aggregate.ActiveCombatSessionId != null)
             return ServiceResult<Guid>.InvalidState("Cannot start new combat session while one is already active");
 
-        var combatSessionId = Guid.NewGuid();
+        var combatSessionId = sessionId ?? Guid.NewGuid();
 
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;

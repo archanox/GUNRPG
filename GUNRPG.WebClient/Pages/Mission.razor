@@ -156,6 +156,11 @@
                                       Disabled="_busy">
                             @(_busy ? "Submitting..." : "⚡ Submit & Advance Turn")
                         </FluentButton>
+                        <FluentButton Appearance="Appearance.Neutral"
+                                      OnClick="RetreatAsync"
+                                      Disabled="_busy">
+                            @(_busy ? "Retreating..." : "🚪 Retreat")
+                        </FluentButton>
                     </FluentStack>
                 </FluentStack>
             </FluentCard>
@@ -217,6 +222,10 @@
     private DotNetObjectReference<Mission>? _dotNetRef;
     private string? _sseUrl;
 
+    // Operator SSE (for cross-client state sync, e.g. console exfils while web is on combat screen)
+    private DotNetObjectReference<Mission>? _operatorDotNetRef;
+    private string? _operatorSseUrl;
+
     // Operator mode (fetched alongside session load for redirect guard)
     private string? _operatorMode;
 
@@ -243,7 +252,7 @@
             return;
         }
 
-        // Start SSE stream for real-time sync
+        // Start SSE streams for real-time sync (session and operator)
         await StartSseAsync();
 
         if (_infilStartTime.HasValue)
@@ -281,16 +290,26 @@
 
     private async Task StartSseAsync()
     {
-        if (_session is null || _session.IsConcluded)
+        if (_session is null)
             return;
 
         var baseUrl = await NodeService.GetBaseUrlAsync();
         if (string.IsNullOrEmpty(baseUrl))
             return;
 
-        _sseUrl = $"{baseUrl}/sessions/{MissionId}/stream";
-        _dotNetRef = DotNetObjectReference.Create(this);
-        await JS.InvokeVoidAsync("sseHelper.connect", _sseUrl, _dotNetRef, nameof(OnSessionUpdated));
+        // Subscribe to session SSE for real-time combat updates (only while session is active)
+        if (!_session.IsConcluded)
+        {
+            _sseUrl = $"{baseUrl}/sessions/{MissionId}/stream";
+            _dotNetRef = DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("sseHelper.connect", _sseUrl, _dotNetRef, nameof(OnSessionUpdated));
+        }
+
+        // Subscribe to operator SSE so we detect cross-client state changes (e.g. console exfils
+        // while the web client is on the combat screen, or another client changes infil mode).
+        _operatorSseUrl = $"{baseUrl}/operators/{_session.OperatorId}/stream";
+        _operatorDotNetRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("sseHelper.connect", _operatorSseUrl, _operatorDotNetRef, nameof(OnOperatorUpdated));
     }
 
     [JSInvokable]
@@ -299,7 +318,26 @@
         await SilentRefreshAsync();
 
         if (_session?.IsConcluded == true)
-            await StopSseAsync();
+            await StopSessionSseAsync();
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnOperatorUpdated()
+    {
+        if (_session is null) return;
+
+        var (opData, _) = await OperatorSvc.GetAsync(_session.OperatorId);
+        if (opData is null) return;
+
+        // If the operator is no longer in Infil mode (e.g. another client exfilled),
+        // navigate to the operator details page.
+        if (opData.CurrentMode == "Base")
+        {
+            await InvokeAsync(() => Nav.NavigateTo($"operators/{_session.OperatorId}"));
+            return;
+        }
 
         await InvokeAsync(StateHasChanged);
     }
@@ -381,7 +419,29 @@
         StateHasChanged();
     }
 
-    private async Task StopSseAsync()
+    private async Task RetreatAsync()
+    {
+        if (_session is null) return;
+
+        _error = null;
+        _busy = true;
+        StateHasChanged();
+
+        var error = await MissionSvc.DeleteAsync(MissionId);
+        _busy = false;
+
+        if (error is not null)
+        {
+            _error = error;
+            StateHasChanged();
+            return;
+        }
+
+        await StopSessionSseAsync();
+        Nav.NavigateTo($"missions/infil/{_session.OperatorId}");
+    }
+
+    private async Task StopSessionSseAsync()
     {
         if (!string.IsNullOrEmpty(_sseUrl))
         {
@@ -401,6 +461,31 @@
         {
             _dotNetRef.Dispose();
             _dotNetRef = null;
+        }
+    }
+
+    private async Task StopSseAsync()
+    {
+        await StopSessionSseAsync();
+
+        if (!string.IsNullOrEmpty(_operatorSseUrl))
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("sseHelper.disconnect", _operatorSseUrl);
+            }
+            catch
+            {
+                // Ignore JS interop errors during cleanup
+            }
+        }
+
+        _operatorSseUrl = null;
+
+        if (_operatorDotNetRef is not null)
+        {
+            _operatorDotNetRef.Dispose();
+            _operatorDotNetRef = null;
         }
     }
 

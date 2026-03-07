@@ -1236,8 +1236,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 return false;
             }
 
-            // Call the /infil/combat endpoint to start a new combat session
-            // This emits CombatSessionStartedEvent and returns the new session ID
+            // The server creates both the operator event and the combat session atomically,
+            // so a single POST is sufficient — no separate /sessions call is needed.
             using var startCombatResponse = client.PostAsync($"operators/{CurrentOperatorId}/infil/combat", null).GetAwaiter().GetResult();
             if (!startCombatResponse.IsSuccessStatusCode)
             {
@@ -1248,32 +1248,15 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
             var newSessionId = startCombatResponse.Content.ReadFromJsonAsync<Guid>(options).GetAwaiter().GetResult();
 
-            // Create the combat session with the new ID
-            var sessionRequest = new
+            // Fetch the session state that the server just created
+            var sessionState = client.GetFromJsonAsync<CombatSessionDto>($"sessions/{newSessionId}/state", options).GetAwaiter().GetResult();
+            if (sessionState == null)
             {
-                id = newSessionId,
-                operatorId = CurrentOperatorId,
-                playerName = CurrentOperator.Name,
-                weaponName = CurrentOperator.EquippedWeaponName,
-                playerLevel = 1,
-                playerMaxHealth = CurrentOperator.MaxHealth,
-                playerCurrentHealth = CurrentOperator.CurrentHealth
-            };
-
-            using var sessionResponse = client.PostAsJsonAsync("sessions", sessionRequest, options).GetAwaiter().GetResult();
-            if (!sessionResponse.IsSuccessStatusCode)
-            {
-                ErrorMessage = $"Failed to create combat session: {sessionResponse.StatusCode}";
+                ErrorMessage = "Failed to retrieve newly created combat session";
                 return false;
             }
 
-            CurrentSession = sessionResponse.Content.ReadFromJsonAsync<CombatSessionDto>(options).GetAwaiter().GetResult();
-            if (CurrentSession == null)
-            {
-                ErrorMessage = $"Failed to deserialize replacement combat session";
-                return false;
-            }
-
+            CurrentSession = sessionState;
             // Update ActiveSessionId to point to the new session
             ActiveSessionId = newSessionId;
 
@@ -1356,8 +1339,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         try
         {
-            // Start a new combat session using the /infil/combat endpoint
-            // This emits a CombatSessionStartedEvent and returns the new session ID
+            // The server creates both the operator event and the combat session atomically,
+            // so a single POST is sufficient — no separate /sessions call is needed.
             using var response = client.PostAsync($"operators/{CurrentOperatorId}/infil/combat", null).GetAwaiter().GetResult();
             if (!response.IsSuccessStatusCode)
             {
@@ -1367,33 +1350,16 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             }
 
             var newSessionId = response.Content.ReadFromJsonAsync<Guid>(options).GetAwaiter().GetResult();
-            
-            // Now create the combat session with the new ID
-            var sessionRequest = new
-            {
-                id = newSessionId,
-                operatorId = CurrentOperatorId,
-                playerName = CurrentOperator.Name,
-                weaponName = CurrentOperator.EquippedWeaponName,
-                playerLevel = 1,
-                playerMaxHealth = CurrentOperator.MaxHealth,
-                playerCurrentHealth = CurrentOperator.CurrentHealth
-            };
 
-            using var sessionResponse = client.PostAsJsonAsync("sessions", sessionRequest, options).GetAwaiter().GetResult();
-            if (!sessionResponse.IsSuccessStatusCode)
+            // Fetch the session state that the server just created
+            var sessionState = client.GetFromJsonAsync<CombatSessionDto>($"sessions/{newSessionId}/state", options).GetAwaiter().GetResult();
+            if (sessionState == null)
             {
-                ErrorMessage = $"Failed to create combat session: {sessionResponse.StatusCode}";
+                ErrorMessage = "Failed to retrieve newly created combat session";
                 return false;
             }
 
-            CurrentSession = sessionResponse.Content.ReadFromJsonAsync<CombatSessionDto>(options).GetAwaiter().GetResult();
-            if (CurrentSession == null)
-            {
-                ErrorMessage = $"Failed to deserialize combat session";
-                return false;
-            }
-
+            CurrentSession = sessionState;
             // Update ActiveSessionId to point to the new session
             ActiveSessionId = newSessionId;
 
@@ -2434,69 +2400,34 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             // Get combat session ID (may be null after victory or if no combat started)
             var activeCombatSessionId = ActiveSessionId ?? CurrentOperator?.ActiveCombatSessionId;
             
-            // Get infil session ID (should always exist when in Infil mode)
-            var infilSessionId = CurrentOperator?.InfilSessionId;
-            
-            // If no active combat session, use the new complete infil endpoint
-            // This happens after victory (ActiveCombatSessionId cleared) or when exfiling without combat
+            // If no active combat session, or the active session is not yet completed,
+            // exfil using the /infil/complete endpoint (abandons any in-progress combat).
+            // This matches the web client behaviour where Exfil is always available.
             if (!activeCombatSessionId.HasValue)
             {
-                // Validate we have an infil session - this should always be true when in Infil mode
-                if (!infilSessionId.HasValue)
-                {
-                    // This is an error state - operator claims to be in Infil mode but has no infil session
-                    Message = "Error: Invalid infil state.\nNo infil session found.\n\nPress OK to continue.";
-                    CurrentScreen = Screen.Message;
-                    ReturnScreen = Screen.BaseCamp;
-                    return;
-                }
-                
-                // Complete infil successfully using the new endpoint
-                using var completeResponse = client.SendAsync(
-                    new HttpRequestMessage(HttpMethod.Post, $"operators/{CurrentOperatorId}/infil/complete"))
-                    .GetAwaiter().GetResult();
-                
-                if (completeResponse.IsSuccessStatusCode)
-                {
-                    // Clear session state and refresh
-                    ActiveSessionId = null;
-                    CurrentSession = null;
-                    RefreshOperator();
-                    Message = "Exfil successful!\nReturning to base.\n\nPress OK to continue.";
-                    CurrentScreen = Screen.Message;
-                    ReturnScreen = Screen.BaseCamp;
-                    return;
-                }
-                
-                // If complete failed, show error
-                var errorContent = completeResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                ErrorMessage = $"Failed to complete exfil: {completeResponse.StatusCode} - {errorContent}";
-                Message = $"Exfil failed.\n{ErrorMessage}\n\nPress OK to continue.";
-                CurrentScreen = Screen.Message;
-                ReturnScreen = Screen.BaseCamp;
+                CompleteInfilDirectly();
                 return;
             }
-            
-            // Legacy path: Process EXFIL for the completed combat session
-            var request = new { SessionId = activeCombatSessionId.Value };
-            using (var sessionStateResponse = client.GetAsync($"sessions/{activeCombatSessionId.Value}/state").GetAwaiter().GetResult())
-            {
-                if (!sessionStateResponse.IsSuccessStatusCode)
-                {
-                    RefreshOperator();
-                    CurrentScreen = Screen.BaseCamp;
-                    return;
-                }
 
-                var sessionState = sessionStateResponse.Content.ReadFromJsonAsync<CombatSessionDto>(options).GetAwaiter().GetResult();
-                if (sessionState?.Phase != "Completed")
-                {
-                    RefreshOperator();
-                    CurrentScreen = Screen.BaseCamp;
-                    return;
-                }
+            // Check if the active combat session is completed so we can process the outcome.
+            using var sessionStateResponse = client.GetAsync($"sessions/{activeCombatSessionId.Value}/state").GetAwaiter().GetResult();
+            if (!sessionStateResponse.IsSuccessStatusCode)
+            {
+                // Can't reach the session — fall back to infil/complete to clean up gracefully.
+                CompleteInfilDirectly();
+                return;
             }
 
+            var sessionState = sessionStateResponse.Content.ReadFromJsonAsync<CombatSessionDto>(options).GetAwaiter().GetResult();
+            if (sessionState?.Phase != "Completed")
+            {
+                // Session is still in progress — use infil/complete to abandon combat and exfil.
+                CompleteInfilDirectly();
+                return;
+            }
+
+            // Session is completed: process the outcome via infil/outcome.
+            var request = new { SessionId = activeCombatSessionId.Value };
             using var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/infil/outcome", request, options)
                 .GetAwaiter().GetResult();
 
@@ -2541,6 +2472,70 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             CurrentScreen = Screen.Message;
             ReturnScreen = Screen.BaseCamp;
         }
+    }
+
+    /// <summary>
+    /// Completes the infil directly via <c>/infil/complete</c>, abandoning any in-progress
+    /// combat session.  Used when the player exfils without a completed combat, or when
+    /// the active session cannot be fetched.
+    /// </summary>
+    void CompleteInfilDirectly()
+    {
+        var infilSessionId = CurrentOperator?.InfilSessionId;
+        if (!infilSessionId.HasValue)
+        {
+            Message = "Error: Invalid infil state.\nNo infil session found.\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+            return;
+        }
+
+        // Delete the active combat session server-side if one exists, so it doesn't linger.
+        var activeCombatSessionId = ActiveSessionId ?? CurrentOperator?.ActiveCombatSessionId;
+        if (activeCombatSessionId.HasValue)
+        {
+            try
+            {
+                using var deleteResponse = client.DeleteAsync($"sessions/{activeCombatSessionId.Value}").GetAwaiter().GetResult();
+                // Dispose is handled by the using declaration above
+            }
+            catch
+            {
+                // Best-effort; the infil/complete call below will clear the reference on the aggregate.
+            }
+        }
+
+        using var completeResponse = client.SendAsync(
+            new HttpRequestMessage(HttpMethod.Post, $"operators/{CurrentOperatorId}/infil/complete"))
+            .GetAwaiter().GetResult();
+
+        if (completeResponse.IsSuccessStatusCode)
+        {
+            ActiveSessionId = null;
+            CurrentSession = null;
+            RefreshOperator();
+            Message = "Exfil successful!\nReturning to base.\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+            return;
+        }
+
+        var errorContent = completeResponse.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        if (errorContent.Contains("InvalidState") || errorContent.Contains("not in Infil mode"))
+        {
+            ActiveSessionId = null;
+            CurrentSession = null;
+            RefreshOperator();
+            Message = "Infil already ended.\nReturning to base.\n\nPress OK to continue.";
+            CurrentScreen = Screen.Message;
+            ReturnScreen = Screen.BaseCamp;
+            return;
+        }
+
+        ErrorMessage = $"Failed to complete exfil: {completeResponse.StatusCode} - {errorContent}";
+        Message = $"Exfil failed.\n{ErrorMessage}\n\nPress OK to continue.";
+        CurrentScreen = Screen.Message;
+        ReturnScreen = Screen.BaseCamp;
     }
 
     Hex1bWidget BuildExfilTimerWidget()

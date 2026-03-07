@@ -26,6 +26,9 @@ public sealed class ApiClient
     public Task<HttpResponseMessage> GetAsync(string path) =>
         SendWithRetryAsync(HttpMethod.Get, path);
 
+    public Task<HttpResponseMessage> DeleteAsync(string path) =>
+        SendWithRetryAsync(HttpMethod.Delete, path);
+
     private async Task<HttpResponseMessage> SendWithRetryAsync(
         HttpMethod method, string path, HttpContent? content = null)
     {
