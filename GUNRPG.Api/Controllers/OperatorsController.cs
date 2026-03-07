@@ -260,10 +260,12 @@ public class OperatorsController : ControllerBase
     /// <param name="id">The operator's unique identifier.</param>
     /// <returns>Success on retreat.</returns>
     /// <response code="200">Retreated from combat successfully.</response>
+    /// <response code="400">Operator is not in a valid state to retreat (e.g., no active combat session).</response>
     /// <response code="404">Operator not found.</response>
     /// <response code="500">An unexpected error occurred.</response>
     [HttpPost("{id:guid}/infil/retreat")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult> Retreat(Guid id)
@@ -274,6 +276,8 @@ public class OperatorsController : ControllerBase
         {
             ResultStatus.Success => Ok(),
             ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
+            ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
+            ResultStatus.ValidationError => BadRequest(new { error = result.ErrorMessage }),
             _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
         };
     }

@@ -1489,15 +1489,25 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             {
                                 if (!_usingLocalCombat)
                                 {
+                                    bool retreatOk = false;
                                     try
                                     {
-                                        // Abandon combat server-side: emits CombatVictoryEvent to clear
+                                        // Retreat server-side: emits CombatVictoryEvent to clear
                                         // ActiveCombatSessionId on the operator, session stays in DB.
                                         using var retreatResponse = client.PostAsync($"operators/{CurrentOperatorId}/infil/retreat", null).GetAwaiter().GetResult();
+                                        retreatOk = retreatResponse.IsSuccessStatusCode;
                                     }
                                     catch
                                     {
-                                        // Best-effort; local state cleared below regardless
+                                        retreatOk = false;
+                                    }
+
+                                    if (!retreatOk)
+                                    {
+                                        Message = "Failed to retreat: server request failed.\nPlease try again.";
+                                        CurrentScreen = Screen.Message;
+                                        ReturnScreen = Screen.CombatSession;
+                                        break;
                                     }
                                 }
                                 // Local (offline) sessions: session is stored in offline.db and stays there
