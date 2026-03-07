@@ -427,7 +427,7 @@
         _busy = true;
         StateHasChanged();
 
-        var error = await OperatorSvc.AbandonCombatAsync(_session.OperatorId);
+        var error = await OperatorSvc.RetreatFromCombatAsync(_session.OperatorId);
         _busy = false;
 
         if (error is not null)

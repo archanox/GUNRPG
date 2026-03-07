@@ -130,15 +130,15 @@ public sealed class OperatorService
         }
     }
 
-    public async Task<string?> AbandonCombatAsync(Guid operatorId)
+    public async Task<string?> RetreatFromCombatAsync(Guid operatorId)
     {
         try
         {
-            var response = await _api.PostAsync($"/operators/{operatorId}/infil/abandon-combat");
+            var response = await _api.PostAsync($"/operators/{operatorId}/infil/retreat");
             if (!response.IsSuccessStatusCode)
             {
                 var err = await ApiHelpers.TryReadErrorAsync(response);
-                return err ?? $"Failed to abandon combat: {response.StatusCode}";
+                return err ?? $"Failed to retreat from combat: {response.StatusCode}";
             }
 
             return null;
