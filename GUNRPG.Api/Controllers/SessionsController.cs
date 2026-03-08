@@ -158,21 +158,24 @@ public class SessionsController : ControllerBase
     }
 
     /// <summary>
-    /// Deletes a combat session.
+    /// Combat sessions are retained as audit records and cannot be deleted.
     /// </summary>
     /// <param name="id">The combat session's unique identifier.</param>
-    /// <returns>No content on success.</returns>
-    /// <response code="204">Session deleted successfully.</response>
+    /// <returns>An error response indicating that deletion is not supported.</returns>
+    /// <response code="404">Session not found.</response>
+    /// <response code="409">Combat sessions cannot be deleted.</response>
     /// <response code="500">An unexpected error occurred.</response>
     [HttpDelete("{id:guid}")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult> Delete(Guid id)
     {
         var result = await _service.DeleteSessionAsync(id);
         return result.Status switch
         {
-            ResultStatus.Success => NoContent(),
+            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
+            ResultStatus.InvalidState => Conflict(new { error = result.ErrorMessage }),
             _ => StatusCode(500, new { error = "Unexpected error" })
         };
     }

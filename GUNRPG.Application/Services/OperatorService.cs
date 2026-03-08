@@ -345,15 +345,39 @@ public sealed class OperatorService
 
     public async Task<ServiceResult<Guid>> StartCombatSessionAsync(Guid operatorId)
     {
-        // Resolve any dangling session reference before attempting to start a new one.
-        // If the operator's ActiveCombatSessionId points to a session that no longer exists,
-        // CleanupCompletedSessionAsync emits a CombatVictoryEvent to clear the stale reference.
+        var operatorKey = new OperatorId(operatorId);
+
+        // If there is already an active combat session for this infil, reuse it instead of
+        // attempting to create a second one. This keeps combat entry idempotent for web clients
+        // that may retry or race against real-time updates.
+        var preLoadResult = await _exfilService.LoadOperatorAsync(operatorKey);
+        if (!preLoadResult.IsSuccess)
+            return ServiceResult<Guid>.FromResult(preLoadResult);
+
+        var preAggregate = preLoadResult.Value!;
+        if (preAggregate.ActiveCombatSessionId.HasValue)
+        {
+            var existingSessionResult = await _sessionService.GetStateAsync(preAggregate.ActiveCombatSessionId.Value);
+            if (existingSessionResult.Status == ResultStatus.Success)
+            {
+                if (existingSessionResult.Value!.Phase != SessionPhase.Completed)
+                    return ServiceResult<Guid>.Success(preAggregate.ActiveCombatSessionId.Value);
+            }
+            else
+            {
+                var clearResult = await _exfilService.ClearDanglingCombatSessionAsync(operatorKey);
+                if (!clearResult.IsSuccess)
+                    return ServiceResult<Guid>.FromResult(clearResult);
+            }
+        }
+
+        // Resolve any completed-session reference before attempting to start a new combat.
         var cleanupResult = await CleanupCompletedSessionAsync(operatorId);
         if (!cleanupResult.IsSuccess)
             return ServiceResult<Guid>.FromResult(cleanupResult);
 
         // Load the operator aggregate to obtain the player name for session initialisation.
-        var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+        var loadResult = await _exfilService.LoadOperatorAsync(operatorKey);
         if (!loadResult.IsSuccess)
             return ServiceResult<Guid>.FromResult(loadResult);
 
