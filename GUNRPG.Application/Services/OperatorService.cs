@@ -354,34 +354,29 @@ public sealed class OperatorService
         if (!preLoadResult.IsSuccess)
             return ServiceResult<Guid>.FromResult(preLoadResult);
 
-        var preAggregate = preLoadResult.Value!;
-        if (preAggregate.ActiveCombatSessionId.HasValue)
+        var aggregate = preLoadResult.Value!;
+
+        if (aggregate.ActiveCombatSessionId.HasValue)
         {
-            var existingSessionResult = await _sessionService.GetStateAsync(preAggregate.ActiveCombatSessionId.Value);
+            var existingSessionResult = await _sessionService.GetStateAsync(aggregate.ActiveCombatSessionId.Value);
             if (existingSessionResult.Status == ResultStatus.Success)
             {
                 if (existingSessionResult.Value!.Phase != SessionPhase.Completed)
-                    return ServiceResult<Guid>.Success(preAggregate.ActiveCombatSessionId.Value);
+                    return ServiceResult<Guid>.Success(aggregate.ActiveCombatSessionId.Value);
             }
-            else
-            {
-                var clearResult = await _exfilService.ClearDanglingCombatSessionAsync(operatorKey);
-                if (!clearResult.IsSuccess)
-                    return ServiceResult<Guid>.FromResult(clearResult);
-            }
+
+            // Resolve any completed or dangling session reference before attempting to start a new combat.
+            var cleanupResult = await CleanupCompletedSessionAsync(operatorId);
+            if (!cleanupResult.IsSuccess)
+                return ServiceResult<Guid>.FromResult(cleanupResult);
+
+            // Reload because cleanup may have processed the combat outcome or cleared a stale reference.
+            var loadResult = await _exfilService.LoadOperatorAsync(operatorKey);
+            if (!loadResult.IsSuccess)
+                return ServiceResult<Guid>.FromResult(loadResult);
+
+            aggregate = loadResult.Value!;
         }
-
-        // Resolve any completed-session reference before attempting to start a new combat.
-        var cleanupResult = await CleanupCompletedSessionAsync(operatorId);
-        if (!cleanupResult.IsSuccess)
-            return ServiceResult<Guid>.FromResult(cleanupResult);
-
-        // Load the operator aggregate to obtain the player name for session initialisation.
-        var loadResult = await _exfilService.LoadOperatorAsync(operatorKey);
-        if (!loadResult.IsSuccess)
-            return ServiceResult<Guid>.FromResult(loadResult);
-
-        var aggregate = loadResult.Value!;
 
         // Pre-generate the session ID so we can create the session record BEFORE emitting the
         // CombatSessionStartedEvent. This removes the race condition where operator SSE subscribers
