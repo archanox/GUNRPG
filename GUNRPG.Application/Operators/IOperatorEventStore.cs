@@ -52,4 +52,21 @@ public interface IOperatorEventStore
     /// For production use, consider adding pagination.
     /// </summary>
     Task<IReadOnlyList<OperatorId>> ListOperatorIdsAsync();
+
+    /// <summary>
+    /// Lists operator IDs that belong to a specific account.
+    /// Only returns operators whose genesis event is associated with the given account.
+    /// </summary>
+    Task<IReadOnlyList<OperatorId>> ListOperatorIdsByAccountAsync(Guid accountId);
+
+    /// <summary>
+    /// Returns the account ID associated with an operator, or null if no account is set.
+    /// </summary>
+    Task<Guid?> GetOperatorAccountIdAsync(OperatorId operatorId);
+
+    /// <summary>
+    /// Associates an operator with an account by setting the AccountId on the genesis event document.
+    /// This must be called once after the operator is created.
+    /// </summary>
+    Task AssociateOperatorWithAccountAsync(OperatorId operatorId, Guid accountId);
 }

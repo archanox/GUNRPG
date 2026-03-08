@@ -5,6 +5,7 @@ using GUNRPG.Application.Distributed;
 using GUNRPG.Application.Results;
 using GUNRPG.Application.Services;
 using GUNRPG.Core.Operators;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Http;
 
@@ -16,6 +17,7 @@ namespace GUNRPG.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("operators")]
+[Authorize]
 public class OperatorsController : ControllerBase
 {
     private readonly OperatorService _service;
@@ -29,17 +31,54 @@ public class OperatorsController : ControllerBase
     }
 
     /// <summary>
-    /// Gets all operators.
+    /// Extracts the account ID from the authenticated user's JWT claims.
+    /// Returns Guid.Empty if the claim is absent or cannot be parsed.
+    /// </summary>
+    private Guid GetAccountId()
+    {
+        var claim = User.FindFirst("account_id")?.Value;
+        return Guid.TryParse(claim, out var id) ? id : Guid.Empty;
+    }
+
+    /// <summary>
+    /// Verifies that the authenticated account owns the specified operator.
+    /// Returns a ForbidResult when the operator belongs to a different account,
+    /// or null when ownership is confirmed.
+    /// </summary>
+    private async Task<ActionResult?> VerifyOwnershipAsync(Guid operatorId)
+    {
+        var accountId = GetAccountId();
+        if (accountId == Guid.Empty)
+            return Unauthorized(new { error = "Token is missing the required account_id claim." });
+
+        var ownerAccountId = await _service.GetOperatorAccountIdAsync(operatorId);
+
+        // If the operator has an associated account and it doesn't match the caller, deny access.
+        if (ownerAccountId.HasValue && ownerAccountId.Value != accountId)
+            return StatusCode(StatusCodes.Status403Forbidden,
+                new { error = "You do not have permission to access this operator." });
+
+        return null;
+    }
+
+    /// <summary>
+    /// Gets all operators belonging to the authenticated account.
     /// </summary>
     /// <returns>A list of operator summaries.</returns>
     /// <response code="200">Returns the list of operators.</response>
+    /// <response code="401">Authentication required.</response>
     /// <response code="500">An unexpected error occurred.</response>
     [HttpGet]
     [ProducesResponseType(typeof(List<ApiOperatorSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<List<ApiOperatorSummaryDto>>> List()
     {
-        var result = await _service.ListOperatorsAsync();
+        var accountId = GetAccountId();
+        if (accountId == Guid.Empty)
+            return Unauthorized(new { error = "Token is missing the required account_id claim." });
+
+        var result = await _service.ListOperatorsAsync(accountId);
         
         return result.Status switch
         {
@@ -49,20 +88,26 @@ public class OperatorsController : ControllerBase
     }
 
     /// <summary>
-    /// Creates a new operator.
+    /// Creates a new operator for the authenticated account.
     /// </summary>
     /// <param name="request">The operator creation request containing the operator's name.</param>
     /// <returns>The newly created operator state.</returns>
     /// <response code="201">Operator created successfully.</response>
     /// <response code="400">Invalid request data.</response>
+    /// <response code="401">Authentication required.</response>
     /// <response code="500">An unexpected error occurred.</response>
     [HttpPost]
     [ProducesResponseType(typeof(ApiOperatorStateDto), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> Create([FromBody] ApiOperatorCreateRequest? request)
     {
-        var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiOperatorCreateRequest());
+        var accountId = GetAccountId();
+        if (accountId == Guid.Empty)
+            return Unauthorized(new { error = "Token is missing the required account_id claim." });
+
+        var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiOperatorCreateRequest(), accountId);
         var result = await _service.CreateOperatorAsync(appRequest);
         
         return result.Status switch
@@ -79,14 +124,21 @@ public class OperatorsController : ControllerBase
     /// <param name="id">The operator's unique identifier.</param>
     /// <returns>The operator state.</returns>
     /// <response code="200">Returns the operator state.</response>
+    /// <response code="401">Authentication required.</response>
+    /// <response code="403">Operator belongs to a different account.</response>
     /// <response code="404">Operator not found.</response>
     /// <response code="500">An unexpected error occurred.</response>
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(ApiOperatorStateDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> Get(Guid id)
     {
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null) return ownershipError;
+
         var result = await _service.GetOperatorAsync(id);
         return result.Status switch
         {
@@ -110,6 +162,9 @@ public class OperatorsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult> CleanupCompletedSession(Guid id)
     {
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null) return ownershipError;
+
         var result = await _service.CleanupCompletedSessionAsync(id);
         return result.Status switch
         {
@@ -135,6 +190,9 @@ public class OperatorsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiStartInfilResponse>> StartInfil(Guid id)
     {
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null) return ownershipError;
+
         var result = await _service.StartInfilAsync(id);
         
         return result.Status switch
@@ -167,6 +225,9 @@ public class OperatorsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> ProcessOutcome(Guid id, [FromBody] ApiProcessOutcomeRequest? request)
     {
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null) return ownershipError;
+
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiProcessOutcomeRequest());
         var result = await _service.ProcessCombatOutcomeAsync(id, appRequest);
         
@@ -183,10 +244,18 @@ public class OperatorsController : ControllerBase
     [HttpPost("offline/sync")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult> SyncOfflineMission([FromBody] ApiOfflineMissionEnvelopeDto envelope)
     {
+        if (!Guid.TryParse(envelope.OperatorId, out var envelopeOperatorId))
+            return BadRequest(new { error = "Invalid OperatorId in the offline mission envelope." });
+
+        var ownershipError = await VerifyOwnershipAsync(envelopeOperatorId);
+        if (ownershipError != null) return ownershipError;
+
         var result = await _service.SyncOfflineMission(ApiMapping.ToApplicationDto(envelope));
         return result.Status switch
         {
@@ -214,6 +283,9 @@ public class OperatorsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<Guid>> StartCombatSession(Guid id)
     {
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null) return ownershipError;
+
         var result = await _service.StartCombatSessionAsync(id);
         
         return result.Status switch
@@ -241,6 +313,9 @@ public class OperatorsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult> CompleteInfil(Guid id)
     {
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null) return ownershipError;
+
         var result = await _service.CompleteInfilAsync(id);
         
         return result.Status switch
@@ -270,6 +345,9 @@ public class OperatorsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult> Retreat(Guid id)
     {
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null) return ownershipError;
+
         var result = await _service.RetreatFromCombatAsync(id);
 
         return result.Status switch
@@ -299,6 +377,9 @@ public class OperatorsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> ChangeLoadout(Guid id, [FromBody] ApiChangeLoadoutRequest? request)
     {
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null) return ownershipError;
+
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiChangeLoadoutRequest());
         var result = await _service.ChangeLoadoutAsync(id, appRequest);
         
@@ -329,6 +410,9 @@ public class OperatorsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> TreatWounds(Guid id, [FromBody] ApiTreatWoundsRequest? request)
     {
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null) return ownershipError;
+
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiTreatWoundsRequest());
         var result = await _service.TreatWoundsAsync(id, appRequest);
         
@@ -359,6 +443,9 @@ public class OperatorsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> ApplyXp(Guid id, [FromBody] ApiApplyXpRequest? request)
     {
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null) return ownershipError;
+
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiApplyXpRequest());
         var result = await _service.ApplyXpAsync(id, appRequest);
         
@@ -389,6 +476,9 @@ public class OperatorsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> UnlockPerk(Guid id, [FromBody] ApiUnlockPerkRequest? request)
     {
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null) return ownershipError;
+
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiUnlockPerkRequest());
         var result = await _service.UnlockPerkAsync(id, appRequest);
         
@@ -419,6 +509,9 @@ public class OperatorsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> ApplyPetAction(Guid id, [FromBody] ApiPetActionRequest? request)
     {
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null) return ownershipError;
+
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiPetActionRequest());
         var result = await _service.ApplyPetActionAsync(id, appRequest);
         
@@ -447,6 +540,16 @@ public class OperatorsController : ControllerBase
     [HttpGet("{id:guid}/stream")]
     public async Task StreamOperatorEvents(Guid id, CancellationToken ct)
     {
+        // Verify ownership before opening the stream
+        var ownershipError = await VerifyOwnershipAsync(id);
+        if (ownershipError != null)
+        {
+            var result = ownershipError as ObjectResult;
+            Response.StatusCode = result?.StatusCode ?? StatusCodes.Status403Forbidden;
+            await Response.WriteAsJsonAsync(result?.Value ?? new { error = "Forbidden" }, ct);
+            return;
+        }
+
         // Validate the operator exists before opening the stream
         var check = await _service.GetOperatorAsync(id);
         if (check.Status != ResultStatus.Success)

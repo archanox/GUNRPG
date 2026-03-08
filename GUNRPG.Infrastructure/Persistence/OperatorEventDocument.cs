@@ -47,4 +47,11 @@ public sealed class OperatorEventDocument
     /// When this event was created.
     /// </summary>
     public DateTimeOffset Timestamp { get; set; }
+
+    /// <summary>
+    /// The account that owns this operator.
+    /// Populated on the genesis event (SequenceNumber == 0) when the operator is created.
+    /// Not part of the event hash chain — stored as ownership metadata only.
+    /// </summary>
+    public Guid? AccountId { get; set; }
 }

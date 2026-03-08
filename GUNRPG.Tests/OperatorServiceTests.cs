@@ -846,5 +846,14 @@ public sealed class OperatorServiceTests : IDisposable
 
         public Task<IReadOnlyList<OperatorId>> ListOperatorIdsAsync()
             => _inner.ListOperatorIdsAsync();
+
+        public Task<IReadOnlyList<OperatorId>> ListOperatorIdsByAccountAsync(Guid accountId)
+            => _inner.ListOperatorIdsByAccountAsync(accountId);
+
+        public Task<Guid?> GetOperatorAccountIdAsync(OperatorId operatorId)
+            => _inner.GetOperatorAccountIdAsync(operatorId);
+
+        public Task AssociateOperatorWithAccountAsync(OperatorId operatorId, Guid accountId)
+            => _inner.AssociateOperatorWithAccountAsync(operatorId, accountId);
     }
 }
