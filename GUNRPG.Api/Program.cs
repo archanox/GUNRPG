@@ -34,7 +34,7 @@ builder.Services.AddSingleton<CombatSessionUpdateHub>();
 // Distributed game authority: deterministic lockstep replication via libp2p transport
 // Persist server node ID so restarts reuse the same identity
 const string nodeIdFileName = "server_node_id";
-var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+var homeDir = PathHelpers.GetUserHomeDirectory();
 var nodeIdFilePath = string.IsNullOrWhiteSpace(homeDir)
     ? Path.Combine(".gunrpg", nodeIdFileName)
     : Path.Combine(homeDir, ".gunrpg", nodeIdFileName);
@@ -225,21 +225,6 @@ app.Lifetime.ApplicationStopping.Register(() =>
 
 app.Run();
 
-// Expands a leading ~ to the current user's home directory so that config paths
-// like ~/.gunrpg/keys/cert.pem work correctly on Linux/macOS.
-static string ExpandHomePath(string path)
-{
-    if (path.StartsWith("~/", StringComparison.Ordinal) ||
-        path.StartsWith("~\\", StringComparison.Ordinal))
-    {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return Path.Combine(home, path[2..]);
-    }
-    if (path == "~")
-        return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-    return path;
-}
-
 // Reads the Kestrel HTTPS certificate paths from configuration, expands any leading ~,
 // and injects the expanded values back as an in-memory override so that both
 // EnsureTailscaleCerts and Kestrel itself see the fully-qualified paths.
@@ -253,9 +238,9 @@ static void ExpandKestrelCertPaths(Microsoft.Extensions.Configuration.Configurat
 
     var overrides = new Dictionary<string, string?>();
     if (!string.IsNullOrEmpty(certPath))
-        overrides[certKey] = ExpandHomePath(certPath);
+        overrides[certKey] = PathHelpers.ExpandHomePath(certPath);
     if (!string.IsNullOrEmpty(keyPath))
-        overrides[keyKey] = ExpandHomePath(keyPath);
+        overrides[keyKey] = PathHelpers.ExpandHomePath(keyPath);
 
     if (overrides.Count > 0)
         configuration.AddInMemoryCollection(overrides);

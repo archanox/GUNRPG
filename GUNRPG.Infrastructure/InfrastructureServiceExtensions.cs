@@ -201,22 +201,6 @@ public static class InfrastructureServiceExtensions
     }
 
     /// <summary>
-    /// Expands a leading ~ to the current user's home directory.
-    /// </summary>
-    private static string ExpandHomePath(string path)
-    {
-        if (path.StartsWith("~/", StringComparison.Ordinal) ||
-            path.StartsWith("~\\", StringComparison.Ordinal))
-        {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            return Path.Combine(home, path[2..]);
-        }
-        if (path == "~")
-            return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return path;
-    }
-
-    /// <summary>
     /// Normalizes LiteDB connection strings by expanding home directories and extracting the database path.
     /// </summary>
     private static (string connectionString, string databasePath) NormalizeLiteDbConnectionString(string connectionString)
@@ -233,14 +217,14 @@ public static class InfrastructureServiceExtensions
                 var parts = segment.Split('=', 2);
                 if (parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1]))
                 {
-                    var expandedPath = ExpandHomePath(parts[1].Trim());
+                    var expandedPath = PathHelpers.ExpandHomePath(parts[1].Trim());
                     segments[i] = $"{parts[0]}={expandedPath}";
                     return (string.Join(';', segments), expandedPath);
                 }
             }
         }
 
-        var expanded = ExpandHomePath(connectionString);
+        var expanded = PathHelpers.ExpandHomePath(connectionString);
         return (expanded, expanded);
     }
 
