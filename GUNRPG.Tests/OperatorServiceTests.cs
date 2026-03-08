@@ -474,6 +474,51 @@ public sealed class OperatorServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task StartCombatSessionAsync_WithExistingActiveSession_ReturnsExistingSession()
+    {
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "ResumeOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        var infilResult = await _operatorService.StartInfilAsync(operatorId);
+        Assert.True(infilResult.IsSuccess);
+
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId);
+
+        var secondStartResult = await _operatorService.StartCombatSessionAsync(operatorId);
+
+        Assert.True(secondStartResult.IsSuccess);
+        Assert.Equal(sessionId, secondStartResult.Value);
+
+        var operatorAfterSecondStart = await _operatorService.GetOperatorAsync(operatorId);
+        Assert.True(operatorAfterSecondStart.IsSuccess);
+        Assert.Equal(sessionId, operatorAfterSecondStart.Value!.ActiveCombatSessionId);
+        Assert.NotNull(operatorAfterSecondStart.Value.ActiveCombatSession);
+        Assert.Equal(SessionPhase.Planning, operatorAfterSecondStart.Value.ActiveCombatSession!.Phase);
+    }
+
+    [Fact]
+    public async Task DeleteSessionAsync_PreservesCombatSessionAuditRecord()
+    {
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "AuditOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        var infilResult = await _operatorService.StartInfilAsync(operatorId);
+        Assert.True(infilResult.IsSuccess);
+
+        var sessionId = await StartAndCreateCombatSessionAsync(operatorId);
+
+        var deleteResult = await _sessionService.DeleteSessionAsync(sessionId);
+
+        Assert.Equal(ResultStatus.InvalidState, deleteResult.Status);
+
+        var sessionState = await _sessionService.GetStateAsync(sessionId);
+        Assert.True(sessionState.IsSuccess);
+        Assert.Equal(sessionId, sessionState.Value!.Id);
+    }
+
+    [Fact]
     public async Task ProcessCombatOutcomeAsync_WithEmptySessionId_ReturnsValidationError()
     {
         var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });

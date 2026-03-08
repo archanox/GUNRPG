@@ -401,11 +401,14 @@ public sealed class CombatSessionService
     }
 
     /// <summary>
-    /// Deletes a combat session. This is used when retreating from combat.
+    /// Combat sessions are retained as audit records and cannot be deleted.
     /// </summary>
     public async Task<ServiceResult> DeleteSessionAsync(Guid sessionId)
     {
-        await _store.DeleteAsync(sessionId);
-        return ServiceResult.Success();
+        var existing = await LoadAsync(sessionId);
+        if (existing == null)
+            return ServiceResult.NotFound("Session not found");
+
+        return ServiceResult.InvalidState("Combat sessions are audit records and cannot be deleted.");
     }
 }
