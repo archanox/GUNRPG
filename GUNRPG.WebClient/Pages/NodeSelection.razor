@@ -5,11 +5,11 @@
 
 <FluentCard Style="max-width: 480px; margin: 2rem auto; padding: 2rem;">
     <h2>Connect to Node</h2>
-    <p>Enter the HTTPS URL of a GunRPG backend node.</p>
+    <p>Enter the GunRPG API URL (HTTP or HTTPS). Path prefixes are supported.</p>
 
     <FluentTextField @bind-Value="_nodeUrl"
                      Label="Node URL"
-                     Placeholder="https://node.example.com"
+                     Placeholder="https://node.example.com or http://lan-host:5209"
                      Style="width: 100%;" />
 
     @if (!string.IsNullOrEmpty(_error))
@@ -58,9 +58,9 @@
             }
 
             if (!Uri.TryCreate(_nodeUrl.Trim(), UriKind.Absolute, out var uri)
-                || uri.Scheme != "https")
+                || (uri.Scheme != "https" && uri.Scheme != "http"))
             {
-                _error = "Only HTTPS URLs are allowed.";
+                _error = "Enter a valid HTTP or HTTPS URL.";
                 return;
             }
 

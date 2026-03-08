@@ -17,7 +17,8 @@ public sealed class NodeConnectionService
     {
         if (!_initialized)
         {
-            _baseUrl = await _js.InvokeAsync<string?>("localStorage.getItem", "gunrpg_node_url");
+            var stored = await _js.InvokeAsync<string?>("localStorage.getItem", "gunrpg_node_url");
+            _baseUrl = NormalizeBaseUrl(stored);
             _initialized = true;
         }
         return _baseUrl;
@@ -25,11 +26,10 @@ public sealed class NodeConnectionService
 
     public async Task SetBaseUrlAsync(string url)
     {
-        var uri = new Uri(url);
-        if (uri.Scheme != "https")
-            throw new ArgumentException("Only HTTPS URLs are allowed for node connections.");
+        var normalized = NormalizeBaseUrl(url)
+            ?? throw new ArgumentException("Please enter a valid HTTP or HTTPS URL.");
 
-        _baseUrl = uri.GetLeftPart(UriPartial.Authority);
+        _baseUrl = normalized;
         await _js.InvokeVoidAsync("localStorage.setItem", "gunrpg_node_url", _baseUrl);
     }
 
@@ -37,5 +37,28 @@ public sealed class NodeConnectionService
     {
         _baseUrl = null;
         await _js.InvokeVoidAsync("localStorage.removeItem", "gunrpg_node_url");
+    }
+
+    private static string? NormalizeBaseUrl(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        if (!Uri.TryCreate(raw.Trim(), UriKind.Absolute, out var uri))
+            return null;
+
+        if (uri.Scheme is not ("http" or "https"))
+            return null;
+
+        // Preserve any path base (e.g., https://example.com/api) but drop query/fragment and
+        // trailing slash to avoid double-slashes when appending API paths.
+        var builder = new UriBuilder(uri)
+        {
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+
+        var normalized = builder.Uri.GetLeftPart(UriPartial.Path).TrimEnd('/');
+        return normalized;
     }
 }

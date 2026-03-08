@@ -240,6 +240,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     public string? Message { get; set; }
     public string? ErrorMessage { get; set; }
     
+    private IGameBackend _backend = backend;
+
     // Intent selection state
     public string SelectedPrimary { get; set; } = "None";
     public string SelectedMovement { get; set; } = "Stand";
@@ -284,7 +286,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     /// </summary>
     public void StartOperatorStream(Guid operatorId, CancellationToken appCt)
     {
-        if (backend is not OnlineGameBackend) return;
+        if (_backend is not OnlineGameBackend) return;
 
         // Cancel any previous stream subscription
         _streamCts?.Cancel();
@@ -388,7 +390,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     /// </summary>
     public void StartCombatSessionStream(Guid sessionId, CancellationToken appCt)
     {
-        if (backend is not OnlineGameBackend) return;
+        if (_backend is not OnlineGameBackend) return;
 
         // Cancel any previous combat session stream
         _sessionStreamCts?.Cancel();
@@ -534,6 +536,23 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         }
     }
 
+    private bool TryEnsureOnline()
+    {
+        if (backendResolver.CurrentMode == GameMode.Online)
+            return true;
+
+        try
+        {
+            _backend = backendResolver.ResolveAsync().GetAwaiter().GetResult();
+            return backendResolver.CurrentMode == GameMode.Online;
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = $"Connection failed: {ex.Message}";
+            return false;
+        }
+    }
+
     Hex1bWidget BuildMainMenu(CancellationTokenSource cts)
     {
         var mode = backendResolver.CurrentMode;
@@ -545,16 +564,12 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             _ => "[UNKNOWN]"
         };
 
-        var menuItems = new List<string>();
-
-        if (mode != GameMode.Offline && mode != GameMode.Blocked)
+        var menuItems = new List<string>
         {
-            menuItems.Add("CREATE NEW OPERATOR");
-        }
-
-        menuItems.Add("SELECT OPERATOR");
-
-        menuItems.Add("EXIT");
+            "CREATE NEW OPERATOR",
+            "SELECT OPERATOR",
+            "EXIT"
+        };
 
         return new VStackWidget([
             UI.CreateBorder($"GUNRPG - OPERATOR TERMINAL {modeLabel}"),
@@ -570,7 +585,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                     switch (selected)
                     {
                         case "CREATE NEW OPERATOR":
-                            if (mode == GameMode.Offline || mode == GameMode.Blocked)
+                            if (!TryEnsureOnline())
                             {
                                 ErrorMessage = "Cannot create operators while offline.";
                                 Message = "Operator creation requires a server connection.\n\nPress OK to continue.";
@@ -584,7 +599,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             }
                             break;
                         case "SELECT OPERATOR":
-                            if (mode == GameMode.Blocked)
+                            if (mode == GameMode.Blocked && !TryEnsureOnline())
                             {
                                 ErrorMessage = "Cannot select operators while server is unreachable.";
                                 Message = "Server connection required to load operator list.\n\nPress OK to continue.";
@@ -769,14 +784,14 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 {
                     CurrentOperatorId = operatorId;
                     // Use IGameBackend — works for both online (HTTP) and offline (LiteDB snapshot)
-                    var dto = backend.GetOperatorAsync(operatorId.ToString()).GetAwaiter().GetResult();
+                    var dto = _backend.GetOperatorAsync(operatorId.ToString()).GetAwaiter().GetResult();
                     if (dto != null)
                     {
                         CurrentOperator = OperatorStateFromDto(dto);
                         // If operator is in Infil mode with an active combat session, resume it —
                         // but only when online, as LoadSession() requires HTTP access.
                         if (dto.ActiveCombatSessionId.HasValue && dto.CurrentMode == "Infil"
-                            && backend is OnlineGameBackend)
+                            && _backend is OnlineGameBackend)
                         {
                             ActiveSessionId = dto.ActiveCombatSessionId;
                             LoadSession();
@@ -861,8 +876,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     void CreateOperator()
     {
-        // Guard: operator creation is not allowed offline
-        if (backendResolver.CurrentMode == GameMode.Offline || backendResolver.CurrentMode == GameMode.Blocked)
+        if (!TryEnsureOnline())
         {
             ErrorMessage = "Cannot create operators while offline. Server connection required.";
             return;
@@ -981,7 +995,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             ActiveSessionId ??= op.ActiveCombatSessionId;
                             LoadSession();
                         }
-                        else if (backend is not OnlineGameBackend)
+                        else if (_backend is not OnlineGameBackend)
                         {
                             // Offline: run combat using a local in-memory session (no server required)
                             if (StartOfflineCombatSession())
@@ -1124,7 +1138,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             // Save offline snapshot so the operator is available if the server becomes unreachable.
             // This is the single infil path: one server call + one local persist.
             // NOTE: GetAwaiter().GetResult() is required here — hex1b event handlers are synchronous.
-            if (backend is OnlineGameBackend onlineBackend)
+            if (_backend is OnlineGameBackend onlineBackend)
             {
                 try
                 {
@@ -1871,14 +1885,14 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     void RefreshOperator()
     {
-        if (backend is not OnlineGameBackend)
+        if (_backend is not OnlineGameBackend)
         {
             // Offline: re-read from local snapshot without any HTTP calls
             try
             {
                 if (CurrentOperatorId.HasValue)
                 {
-                    var dto = backend.GetOperatorAsync(CurrentOperatorId.Value.ToString()).GetAwaiter().GetResult();
+                    var dto = _backend.GetOperatorAsync(CurrentOperatorId.Value.ToString()).GetAwaiter().GetResult();
                     if (dto != null)
                         CurrentOperator = OperatorStateFromDto(dto);
                 }
