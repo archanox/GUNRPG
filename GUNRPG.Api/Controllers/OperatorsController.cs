@@ -42,7 +42,7 @@ public class OperatorsController : ControllerBase
 
     /// <summary>
     /// Verifies that the authenticated account owns the specified operator.
-    /// Returns a ForbidResult when the operator belongs to a different account,
+    /// Returns a 403 Forbidden response when the operator belongs to a different account,
     /// or null when ownership is confirmed.
     /// </summary>
     private async Task<ActionResult?> VerifyOwnershipAsync(Guid operatorId)
@@ -53,8 +53,9 @@ public class OperatorsController : ControllerBase
 
         var ownerAccountId = await _service.GetOperatorAccountIdAsync(operatorId);
 
-        // If the operator has an associated account and it doesn't match the caller, deny access.
-        if (ownerAccountId.HasValue && ownerAccountId.Value != accountId)
+        // Deny access if the operator has no account association (created before isolation was
+        // enforced) or belongs to a different account.
+        if (!ownerAccountId.HasValue || ownerAccountId.Value != accountId)
             return StatusCode(StatusCodes.Status403Forbidden,
                 new { error = "You do not have permission to access this operator." });
 
@@ -158,6 +159,8 @@ public class OperatorsController : ControllerBase
     /// <response code="500">An unexpected error occurred.</response>
     [HttpPost("{id:guid}/cleanup")]
     [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult> CleanupCompletedSession(Guid id)
@@ -186,6 +189,8 @@ public class OperatorsController : ControllerBase
     [HttpPost("{id:guid}/infil/start")]
     [ProducesResponseType(typeof(ApiStartInfilResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiStartInfilResponse>> StartInfil(Guid id)
@@ -221,6 +226,8 @@ public class OperatorsController : ControllerBase
     [HttpPost("{id:guid}/infil/outcome")]
     [ProducesResponseType(typeof(ApiOperatorStateDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> ProcessOutcome(Guid id, [FromBody] ApiProcessOutcomeRequest? request)
@@ -279,6 +286,8 @@ public class OperatorsController : ControllerBase
     [HttpPost("{id:guid}/infil/combat")]
     [ProducesResponseType(typeof(Guid), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<Guid>> StartCombatSession(Guid id)
@@ -309,6 +318,8 @@ public class OperatorsController : ControllerBase
     [HttpPost("{id:guid}/infil/complete")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult> CompleteInfil(Guid id)
@@ -341,6 +352,8 @@ public class OperatorsController : ControllerBase
     [HttpPost("{id:guid}/infil/retreat")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult> Retreat(Guid id)
@@ -373,6 +386,8 @@ public class OperatorsController : ControllerBase
     [HttpPost("{id:guid}/loadout")]
     [ProducesResponseType(typeof(ApiOperatorStateDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> ChangeLoadout(Guid id, [FromBody] ApiChangeLoadoutRequest? request)
@@ -406,6 +421,8 @@ public class OperatorsController : ControllerBase
     [HttpPost("{id:guid}/wounds/treat")]
     [ProducesResponseType(typeof(ApiOperatorStateDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> TreatWounds(Guid id, [FromBody] ApiTreatWoundsRequest? request)
@@ -439,6 +456,8 @@ public class OperatorsController : ControllerBase
     [HttpPost("{id:guid}/xp")]
     [ProducesResponseType(typeof(ApiOperatorStateDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> ApplyXp(Guid id, [FromBody] ApiApplyXpRequest? request)
@@ -472,6 +491,8 @@ public class OperatorsController : ControllerBase
     [HttpPost("{id:guid}/perks")]
     [ProducesResponseType(typeof(ApiOperatorStateDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> UnlockPerk(Guid id, [FromBody] ApiUnlockPerkRequest? request)
@@ -505,6 +526,8 @@ public class OperatorsController : ControllerBase
     [HttpPost("{id:guid}/pet")]
     [ProducesResponseType(typeof(ApiOperatorStateDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiOperatorStateDto>> ApplyPetAction(Guid id, [FromBody] ApiPetActionRequest? request)
@@ -544,9 +567,25 @@ public class OperatorsController : ControllerBase
         var ownershipError = await VerifyOwnershipAsync(id);
         if (ownershipError != null)
         {
-            var result = ownershipError as ObjectResult;
-            Response.StatusCode = result?.StatusCode ?? StatusCodes.Status403Forbidden;
-            await Response.WriteAsJsonAsync(result?.Value ?? new { error = "Forbidden" }, ct);
+            int statusCode;
+            object? responseBody = null;
+
+            switch (ownershipError)
+            {
+                case ObjectResult objectResult:
+                    statusCode = objectResult.StatusCode ?? StatusCodes.Status403Forbidden;
+                    responseBody = objectResult.Value;
+                    break;
+                case StatusCodeResult statusCodeResult:
+                    statusCode = statusCodeResult.StatusCode;
+                    break;
+                default:
+                    statusCode = StatusCodes.Status403Forbidden;
+                    break;
+            }
+
+            Response.StatusCode = statusCode;
+            await Response.WriteAsJsonAsync(responseBody ?? new { error = "Forbidden" }, ct);
             return;
         }
 
