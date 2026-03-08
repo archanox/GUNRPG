@@ -61,9 +61,11 @@ public static class InfrastructureServiceExtensions
                 var mapper = new BsonMapper();
                 ConfigureLiteDbMapper(mapper);
 
-                EnsureLiteDbDirectory(options.LiteDbConnectionString);
+                var (connectionString, databasePath) = NormalizeLiteDbConnectionString(options.LiteDbConnectionString);
+
+                EnsureLiteDbDirectory(databasePath);
                 
-                var database = new LiteDatabase(options.LiteDbConnectionString, mapper);
+                var database = new LiteDatabase(connectionString, mapper);
                 
                 // Check current schema version before applying migrations
                 var currentVersion = LiteDbMigrations.GetDatabaseSchemaVersion(database);
@@ -184,34 +186,61 @@ public static class InfrastructureServiceExtensions
     }
 
     /// <summary>
-    /// Ensures the directory for the LiteDB file exists, whether the connection string
-    /// is a plain file path or a LiteDB connection string with a Filename key.
+    /// Ensures the directory for the LiteDB file exists.
     /// </summary>
-    private static void EnsureLiteDbDirectory(string connectionString)
+    private static void EnsureLiteDbDirectory(string databasePath)
     {
-        if (string.IsNullOrWhiteSpace(connectionString))
+        if (string.IsNullOrWhiteSpace(databasePath))
             return;
-
-        var databasePath = connectionString;
-
-        // LiteDB connection strings can include keys like "Filename=/path/to/file.db".
-        var segments = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries);
-        var filenameSegment = segments.FirstOrDefault(s =>
-            s.TrimStart().StartsWith("filename", StringComparison.OrdinalIgnoreCase));
-        if (!string.IsNullOrWhiteSpace(filenameSegment))
-        {
-            var parts = filenameSegment.Split('=', 2);
-            if (parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1]))
-            {
-                databasePath = parts[1].Trim();
-            }
-        }
 
         var directory = Path.GetDirectoryName(databasePath);
         if (!string.IsNullOrEmpty(directory))
         {
             Directory.CreateDirectory(directory);
         }
+    }
+
+    /// <summary>
+    /// Expands a leading ~ to the current user's home directory.
+    /// </summary>
+    private static string ExpandHomePath(string path)
+    {
+        if (path.StartsWith("~/", StringComparison.Ordinal))
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            return Path.Combine(home, path[2..]);
+        }
+        if (path == "~")
+            return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return path;
+    }
+
+    /// <summary>
+    /// Normalizes LiteDB connection strings by expanding home directories and extracting the database path.
+    /// </summary>
+    private static (string connectionString, string databasePath) NormalizeLiteDbConnectionString(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return (connectionString, connectionString);
+
+        var segments = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        for (var i = 0; i < segments.Length; i++)
+        {
+            var segment = segments[i];
+            if (segment.TrimStart().StartsWith("filename", StringComparison.OrdinalIgnoreCase))
+            {
+                var parts = segment.Split('=', 2);
+                if (parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1]))
+                {
+                    var expandedPath = ExpandHomePath(parts[1].Trim());
+                    segments[i] = $"{parts[0]}={expandedPath}";
+                    return (string.Join(';', segments), expandedPath);
+                }
+            }
+        }
+
+        var expanded = ExpandHomePath(connectionString);
+        return (expanded, expanded);
     }
 
     /// <summary>
