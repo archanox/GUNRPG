@@ -713,4 +713,93 @@ public sealed class OperatorServiceTests : IDisposable
         Assert.Equal(OperatorMode.Infil, after.Value!.CurrentMode);
         Assert.Null(after.Value.ActiveCombatSessionId);
     }
+
+    [Fact]
+    public async Task StartCombatSessionAsync_WhenCleanupWriteFails_PropagatesError()
+    {
+        // Regression test for the fix that surfaces ClearDanglingCombatSessionAsync failures.
+        // Scenario: operator has a dangling ActiveCombatSessionId (session deleted without
+        // emitting CombatVictoryEvent). When the event-store write that clears the reference
+        // throws, StartCombatSessionAsync must propagate that error instead of continuing.
+
+        // Arrange: set up an operator with a dangling session reference using a store that
+        // we can make fail on demand.
+        var failingStore = new FailingAppendOnTriggerStore();
+        var exfilService = new OperatorExfilService(failingStore);
+        var sessionStore = new LiteDbCombatSessionStore(_database);
+        var sessionService = new CombatSessionService(sessionStore, failingStore);
+        var svc = new OperatorService(exfilService, sessionService, failingStore);
+
+        // Create operator and start infil using the normal (non-failing) store path
+        var createResult = await exfilService.CreateOperatorAsync("CleanupFailOp");
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!;
+
+        var infilResult = await exfilService.StartInfilAsync(operatorId);
+        Assert.True(infilResult.IsSuccess);
+
+        // Emit a CombatSessionStartedEvent so the operator has an ActiveCombatSessionId
+        var staleSessionId = Guid.NewGuid();
+        var staleResult = await exfilService.StartCombatSessionAsync(operatorId, staleSessionId);
+        Assert.True(staleResult.IsSuccess);
+
+        // Do NOT create the session in the store — this creates the dangling reference.
+        // Verify the dangling state.
+        var beforeRepair = await exfilService.LoadOperatorAsync(operatorId);
+        Assert.Equal(staleSessionId, beforeRepair.Value!.ActiveCombatSessionId);
+
+        // Enable the write failure on the store so the ClearDanglingCombatSessionAsync
+        // event-store append throws.
+        failingStore.EnableWriteFailure("Simulated event store write failure");
+
+        // Act
+        var startResult = await svc.StartCombatSessionAsync(operatorId.Value);
+
+        // Assert: the error from the cleanup write must be surfaced to the caller
+        Assert.False(startResult.IsSuccess);
+        Assert.Contains("Simulated event store write failure", startResult.ErrorMessage);
+
+        // The operator's dangling reference must still be set (not silently cleared)
+        var afterFailure = await exfilService.LoadOperatorAsync(operatorId);
+        Assert.Equal(staleSessionId, afterFailure.Value!.ActiveCombatSessionId);
+    }
+
+    /// <summary>
+    /// An event store that wraps InMemoryOperatorEventStore and can be told to fail all
+    /// subsequent writes. Used to test that write errors are correctly propagated.
+    /// </summary>
+    private sealed class FailingAppendOnTriggerStore : IOperatorEventStore
+    {
+        private readonly InMemoryOperatorEventStore _inner = new();
+        private string? _failureMessage;
+
+        /// <summary>After calling this, every AppendEventAsync/AppendEventsAsync call throws.</summary>
+        public void EnableWriteFailure(string message) => _failureMessage = message;
+
+        public Task<IReadOnlyList<OperatorEvent>> LoadEventsAsync(OperatorId operatorId)
+            => _inner.LoadEventsAsync(operatorId);
+
+        public Task AppendEventAsync(OperatorEvent evt)
+        {
+            if (_failureMessage is not null)
+                throw new InvalidOperationException(_failureMessage);
+            return _inner.AppendEventAsync(evt);
+        }
+
+        public Task AppendEventsAsync(IReadOnlyList<OperatorEvent> events)
+        {
+            if (_failureMessage is not null)
+                throw new InvalidOperationException(_failureMessage);
+            return _inner.AppendEventsAsync(events);
+        }
+
+        public Task<bool> OperatorExistsAsync(OperatorId operatorId)
+            => _inner.OperatorExistsAsync(operatorId);
+
+        public Task<long> GetCurrentSequenceAsync(OperatorId operatorId)
+            => _inner.GetCurrentSequenceAsync(operatorId);
+
+        public Task<IReadOnlyList<OperatorId>> ListOperatorIdsAsync()
+            => _inner.ListOperatorIdsAsync();
+    }
 }
