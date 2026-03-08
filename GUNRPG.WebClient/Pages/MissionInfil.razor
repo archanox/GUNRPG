@@ -113,7 +113,7 @@
             if (_operator.ActiveCombatSessionId.HasValue &&
                 _operator.ActiveCombatSession?.IsConcluded == false)
             {
-                Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}");
+                Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}?operatorId={OperatorId}");
                 return;
             }
         }
@@ -166,7 +166,7 @@
         if (_operator.ActiveCombatSessionId.HasValue &&
             _operator.ActiveCombatSession?.IsConcluded == false)
         {
-            await InvokeAsync(() => Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}"));
+            await InvokeAsync(() => Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}?operatorId={OperatorId}"));
             return;
         }
 
@@ -243,8 +243,8 @@
             return;
         }
 
-        if (sessionId.HasValue)
-            Nav.NavigateTo($"missions/{sessionId.Value}");
+        if (sessionId.HasValue && sessionId.Value != Guid.Empty)
+            Nav.NavigateTo($"missions/{sessionId.Value}?operatorId={OperatorId}");
     }
 
     private async Task ExfilAsync()

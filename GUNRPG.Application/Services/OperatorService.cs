@@ -192,7 +192,12 @@ public sealed class OperatorService
         // This can happen when a session is deleted without the corresponding CombatVictoryEvent being emitted.
         if (sessionResult.Status != ResultStatus.Success)
         {
-            await _exfilService.ClearDanglingCombatSessionAsync(new OperatorId(operatorId));
+            var clearResult = await _exfilService.ClearDanglingCombatSessionAsync(new OperatorId(operatorId));
+            if (!clearResult.IsSuccess)
+            {
+                // Propagate the error so StartCombatSessionAsync knows the state is still inconsistent
+                return clearResult;
+            }
             return ServiceResult.Success();
         }
 
@@ -343,7 +348,9 @@ public sealed class OperatorService
         // Resolve any dangling session reference before attempting to start a new one.
         // If the operator's ActiveCombatSessionId points to a session that no longer exists,
         // CleanupCompletedSessionAsync emits a CombatVictoryEvent to clear the stale reference.
-        await CleanupCompletedSessionAsync(operatorId);
+        var cleanupResult = await CleanupCompletedSessionAsync(operatorId);
+        if (!cleanupResult.IsSuccess)
+            return ServiceResult<Guid>.FromResult(cleanupResult);
 
         // Load the operator aggregate to obtain the player name for session initialisation.
         var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
