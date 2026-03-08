@@ -37,8 +37,9 @@ public sealed class OperatorExfilService
 
     /// <summary>
     /// Creates a new operator and persists the creation event.
+    /// If a non-empty accountId is provided, the operator is associated with that account.
     /// </summary>
-    public async Task<ServiceResult<OperatorId>> CreateOperatorAsync(string name)
+    public async Task<ServiceResult<OperatorId>> CreateOperatorAsync(string name, Guid accountId = default)
     {
         if (string.IsNullOrWhiteSpace(name))
             return ServiceResult<OperatorId>.ValidationError("Operator name cannot be empty");
@@ -49,6 +50,10 @@ public sealed class OperatorExfilService
         try
         {
             await AppendAsync(createdEvent);
+
+            if (accountId != Guid.Empty)
+                await _eventStore.AssociateOperatorWithAccountAsync(operatorId, accountId);
+
             return ServiceResult<OperatorId>.Success(operatorId);
         }
         catch (Exception ex)

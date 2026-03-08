@@ -191,11 +191,12 @@ public static class ApiMapping
     }
 
     // Operator request mappings
-    public static Application.Requests.OperatorCreateRequest ToApplicationRequest(ApiOperatorCreateRequest apiRequest)
+    public static Application.Requests.OperatorCreateRequest ToApplicationRequest(ApiOperatorCreateRequest apiRequest, Guid accountId = default)
     {
         return new Application.Requests.OperatorCreateRequest
         {
-            Name = apiRequest.Name
+            Name = apiRequest.Name,
+            AccountId = accountId
         };
     }
 

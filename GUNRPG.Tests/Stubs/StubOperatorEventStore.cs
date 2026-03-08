@@ -10,6 +10,7 @@ namespace GUNRPG.Tests.Stubs;
 public class StubOperatorEventStore : IOperatorEventStore
 {
     private readonly Dictionary<OperatorId, List<OperatorEvent>> _eventsByOperator = new();
+    private readonly Dictionary<OperatorId, Guid> _accountByOperator = new();
 
     public Task<IReadOnlyList<OperatorEvent>> LoadEventsAsync(OperatorId operatorId)
     {
@@ -48,6 +49,27 @@ public class StubOperatorEventStore : IOperatorEventStore
     {
         var operatorIds = _eventsByOperator.Keys.ToList();
         return Task.FromResult<IReadOnlyList<OperatorId>>(operatorIds);
+    }
+
+    public Task<IReadOnlyList<OperatorId>> ListOperatorIdsByAccountAsync(Guid accountId)
+    {
+        var operatorIds = _accountByOperator
+            .Where(kvp => kvp.Value == accountId)
+            .Select(kvp => kvp.Key)
+            .ToList();
+        return Task.FromResult<IReadOnlyList<OperatorId>>(operatorIds);
+    }
+
+    public Task<Guid?> GetOperatorAccountIdAsync(OperatorId operatorId)
+    {
+        Guid? accountId = _accountByOperator.TryGetValue(operatorId, out var id) ? id : null;
+        return Task.FromResult(accountId);
+    }
+
+    public Task AssociateOperatorWithAccountAsync(OperatorId operatorId, Guid accountId)
+    {
+        _accountByOperator[operatorId] = accountId;
+        return Task.CompletedTask;
     }
 
     /// <summary>

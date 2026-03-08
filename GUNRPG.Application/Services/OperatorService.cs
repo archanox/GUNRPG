@@ -44,7 +44,7 @@ public sealed class OperatorService
             return ServiceResult<OperatorStateDto>.ValidationError("Operator name cannot be empty");
         }
 
-        var result = await _exfilService.CreateOperatorAsync(request.Name);
+        var result = await _exfilService.CreateOperatorAsync(request.Name, request.AccountId);
         if (result.Status != ResultStatus.Success)
         {
             return ServiceResult<OperatorStateDto>.FromResult(result);
@@ -230,9 +230,11 @@ public sealed class OperatorService
         return ServiceResult.Success();
     }
 
-    public async Task<ServiceResult<List<OperatorSummaryDto>>> ListOperatorsAsync()
+    public async Task<ServiceResult<List<OperatorSummaryDto>>> ListOperatorsAsync(Guid accountId)
     {
-        var operatorIds = await _eventStore.ListOperatorIdsAsync();
+        var operatorIds = accountId != Guid.Empty
+            ? await _eventStore.ListOperatorIdsByAccountAsync(accountId)
+            : await _eventStore.ListOperatorIdsAsync();
         var summaries = new List<OperatorSummaryDto>();
 
         foreach (var operatorId in operatorIds)
@@ -255,6 +257,14 @@ public sealed class OperatorService
         }
 
         return ServiceResult<List<OperatorSummaryDto>>.Success(summaries);
+    }
+
+    /// <summary>
+    /// Returns the account ID associated with an operator, or null if the operator has no account.
+    /// </summary>
+    public async Task<Guid?> GetOperatorAccountIdAsync(Guid operatorId)
+    {
+        return await _eventStore.GetOperatorAccountIdAsync(new OperatorId(operatorId));
     }
 
     public async Task<ServiceResult<StartInfilResponse>> StartInfilAsync(Guid operatorId)

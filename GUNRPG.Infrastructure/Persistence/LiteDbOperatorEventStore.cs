@@ -22,6 +22,7 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
         // Create indexes for efficient queries
         _events.EnsureIndex(x => x.OperatorId);
         _events.EnsureIndex(x => x.SequenceNumber);
+        _events.EnsureIndex(x => x.AccountId);
         // Create unique compound index with explicit name to enforce ordering
         _events.EnsureIndex("idx_op_seq", x => new { x.OperatorId, x.SequenceNumber }, true);
     }
@@ -265,6 +266,40 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
 
         IReadOnlyList<OperatorId> result = operatorIds;
         return Task.FromResult(result);
+    }
+
+    public Task<IReadOnlyList<OperatorId>> ListOperatorIdsByAccountAsync(Guid accountId)
+    {
+        var operatorIds = _events
+            .Find(doc => doc.SequenceNumber == 0 && doc.AccountId == accountId)
+            .Select(doc => OperatorId.FromGuid(doc.OperatorId))
+            .ToList();
+
+        IReadOnlyList<OperatorId> result = operatorIds;
+        return Task.FromResult(result);
+    }
+
+    public Task<Guid?> GetOperatorAccountIdAsync(OperatorId operatorId)
+    {
+        var genesis = _events.FindOne(doc =>
+            doc.OperatorId == operatorId.Value && doc.SequenceNumber == 0);
+
+        Guid? accountId = genesis?.AccountId;
+        return Task.FromResult(accountId);
+    }
+
+    public Task AssociateOperatorWithAccountAsync(OperatorId operatorId, Guid accountId)
+    {
+        var genesis = _events.FindOne(doc =>
+            doc.OperatorId == operatorId.Value && doc.SequenceNumber == 0);
+
+        if (genesis == null)
+            throw new InvalidOperationException(
+                $"Cannot associate account: genesis event not found for operator {operatorId}");
+
+        genesis.AccountId = accountId;
+        _events.Update(genesis);
+        return Task.CompletedTask;
     }
 
     /// <summary>
