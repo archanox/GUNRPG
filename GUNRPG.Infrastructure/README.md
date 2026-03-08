@@ -64,11 +64,12 @@ Update `CurrentSchemaVersion` constant after adding migrations.
 ```json
 {
   "Storage": {
-    "Provider": "LiteDB",
-    "LiteDbConnectionString": "~/.gunrpg/combat_sessions.db"
+    "Provider": "LiteDB"
   }
 }
 ```
+
+If `LiteDbConnectionString` is omitted, the default `~/.gunrpg/combat_sessions.db` under the current user's home directory is used. You can set it explicitly to override the location.
 
 **Usage:**
 
