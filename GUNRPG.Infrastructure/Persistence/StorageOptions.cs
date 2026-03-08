@@ -14,7 +14,7 @@ public sealed class StorageOptions
 
     /// <summary>
     /// Connection string for LiteDB (file path or connection string).
-    /// Defaults to "~/.gunrpg/combat_sessions.db" in the current user's home directory.
+    /// Defaults to "<UserProfile>/.gunrpg/combat_sessions.db" in the current user's home directory.
     /// 
     /// For production deployments, consider using an absolute path or a path
     /// relative to a well-defined location (e.g., /var/lib/gunrpg/combat_sessions.db).
@@ -24,5 +24,14 @@ public sealed class StorageOptions
     /// - "/var/lib/gunrpg/combat_sessions.db" (absolute path on Linux)
     /// - "C:\\ProgramData\\GUNRPG\\combat_sessions.db" (absolute path on Windows)
     /// </summary>
-    public string LiteDbConnectionString { get; set; } = "~/.gunrpg/combat_sessions.db";
+    public string LiteDbConnectionString { get; set; } = GetDefaultLiteDbPath();
+
+    private static string GetDefaultLiteDbPath()
+    {
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (string.IsNullOrWhiteSpace(home))
+            return "~/.gunrpg/combat_sessions.db";
+
+        return Path.Combine(home, ".gunrpg", "combat_sessions.db");
+    }
 }

@@ -63,7 +63,8 @@ public class InfrastructureServiceExtensionsTests : IDisposable
 
     private static string ExpandHomePath(string path)
     {
-        if (path.StartsWith("~/", StringComparison.Ordinal))
+        if (path.StartsWith("~/", StringComparison.Ordinal) ||
+            path.StartsWith("~\\", StringComparison.Ordinal))
         {
             var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
             return Path.Combine(home, path[2..]);

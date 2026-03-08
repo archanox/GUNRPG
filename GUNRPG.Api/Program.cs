@@ -34,8 +34,11 @@ builder.Services.AddSingleton<CombatSessionUpdateHub>();
 // Distributed game authority: deterministic lockstep replication via libp2p transport
 // Persist server node ID so restarts reuse the same identity
 const string nodeIdFileName = "server_node_id";
-var nodeIdFilePath = Path.Combine("~/.gunrpg", nodeIdFileName);
-var serverNodeId = LoadOrCreateNodeId(ExpandHomePath(nodeIdFilePath));
+var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+var nodeIdFilePath = string.IsNullOrWhiteSpace(homeDir)
+    ? Path.Combine(".gunrpg", nodeIdFileName)
+    : Path.Combine(homeDir, ".gunrpg", nodeIdFileName);
+var serverNodeId = LoadOrCreateNodeId(nodeIdFilePath);
 builder.Services.AddSingleton<IDeterministicGameEngine, DefaultGameEngine>();
 var lockstepTransport = new Libp2pLockstepTransport(serverNodeId);
 builder.Services.AddSingleton(lockstepTransport);
@@ -226,7 +229,8 @@ app.Run();
 // like ~/.gunrpg/keys/cert.pem work correctly on Linux/macOS.
 static string ExpandHomePath(string path)
 {
-    if (path.StartsWith("~/", StringComparison.Ordinal))
+    if (path.StartsWith("~/", StringComparison.Ordinal) ||
+        path.StartsWith("~\\", StringComparison.Ordinal))
     {
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         return Path.Combine(home, path[2..]);

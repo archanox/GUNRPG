@@ -422,8 +422,6 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-# Local runtime data (databases, node IDs, etc.)
-.gunrpg/
 
 # TLS certificate and private key files (e.g. from tailscale cert)
 *.pem
