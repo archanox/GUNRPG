@@ -422,8 +422,8 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-# Persistent server node identity
-server_node_id
+# Local runtime data (databases, node IDs, etc.)
+.gunrpg/
 
 # TLS certificate and private key files (e.g. from tailscale cert)
 *.pem
