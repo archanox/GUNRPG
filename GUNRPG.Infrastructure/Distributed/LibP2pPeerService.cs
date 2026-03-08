@@ -80,6 +80,7 @@ public sealed class LibP2pPeerService : IHostedService
         _ = _mdns.StartDiscoveryAsync(_localPeer.ListenAddresses.ToArray(), ct);
 
         _logger.LogInformation("[P2P] mDNS peer discovery started");
+        _logger.LogInformation("[P2P] Note: 'Upgrade task failed' and 'ChannelClosedException' errors from Nethermind.Libp2p during simultaneous peer connections are expected and can be safely ignored. These occur when multiple servers discover each other simultaneously and are resolved automatically via connection tie-breaking.");
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -139,7 +140,26 @@ public sealed class LibP2pPeerService : IHostedService
             {
                 _dialedPeers.Remove(peerId);
             }
-            _logger.LogWarning(ex, "[P2P] Failed to connect to discovered peer; will retry on next discovery");
+
+            // ChannelClosedException is expected during simultaneous peer discovery when both
+            // servers dial each other at the same time. The tie-breaking logic in
+            // Libp2pLockstepTransport.HandleChannelAsync ensures one connection wins; the losing
+            // connection is rejected and triggers this exception. This is normal P2P behavior.
+            // Nethermind.Libp2p's internal logger may still emit "fail:" messages, but these
+            // can be safely ignored as long as the peer eventually connects successfully.
+            var isChannelClosed = ex.GetType().Name == "ChannelClosedException"
+                               || ex.InnerException?.GetType().Name == "ChannelClosedException"
+                               || (ex is AggregateException agg &&
+                                   agg.InnerExceptions.Any(e => e.GetType().Name == "ChannelClosedException"));
+
+            if (isChannelClosed)
+            {
+                _logger.LogDebug("[P2P] Connection attempt to {PeerId} was closed (likely simultaneous dial tie-break); will retry on next mDNS announcement", peerId);
+            }
+            else
+            {
+                _logger.LogWarning(ex, "[P2P] Failed to connect to discovered peer {PeerId}; will retry on next discovery", peerId);
+            }
         }
     }
 }
