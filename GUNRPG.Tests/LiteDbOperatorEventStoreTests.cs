@@ -430,4 +430,133 @@ public class LiteDbOperatorEventStoreTests : IDisposable
         var events = await _store.LoadEventsAsync(operatorId);
         Assert.Single(events); // Only original evt1 should exist
     }
+
+    // ── Account association tests ──────────────────────────────────────────────
+
+    [Fact]
+    public async Task AssociateOperatorWithAccountAsync_ShouldSetAccountIdOnGenesisEvent()
+    {
+        // Arrange
+        var operatorId = OperatorId.NewId();
+        var accountId = Guid.NewGuid();
+        var evt = new OperatorCreatedEvent(operatorId, "TestOperator");
+        await _store.AppendEventAsync(evt);
+
+        // Act
+        await _store.AssociateOperatorWithAccountAsync(operatorId, accountId);
+
+        // Assert
+        var storedAccountId = await _store.GetOperatorAccountIdAsync(operatorId);
+        Assert.Equal(accountId, storedAccountId);
+    }
+
+    [Fact]
+    public async Task AssociateOperatorWithAccountAsync_ShouldThrow_WhenOperatorNotFound()
+    {
+        // Arrange
+        var nonExistentOperatorId = OperatorId.NewId();
+        var accountId = Guid.NewGuid();
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => _store.AssociateOperatorWithAccountAsync(nonExistentOperatorId, accountId));
+        Assert.Contains("genesis event not found", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetOperatorAccountIdAsync_ShouldReturnNull_WhenNotAssociated()
+    {
+        // Arrange
+        var operatorId = OperatorId.NewId();
+        var evt = new OperatorCreatedEvent(operatorId, "TestOperator");
+        await _store.AppendEventAsync(evt);
+
+        // Act
+        var accountId = await _store.GetOperatorAccountIdAsync(operatorId);
+
+        // Assert
+        Assert.Null(accountId);
+    }
+
+    [Fact]
+    public async Task GetOperatorAccountIdAsync_ShouldReturnNull_WhenOperatorNotFound()
+    {
+        // Arrange
+        var nonExistentOperatorId = OperatorId.NewId();
+
+        // Act
+        var accountId = await _store.GetOperatorAccountIdAsync(nonExistentOperatorId);
+
+        // Assert
+        Assert.Null(accountId);
+    }
+
+    [Fact]
+    public async Task ListOperatorIdsByAccountAsync_ShouldReturnOnlyOperatorsForThatAccount()
+    {
+        // Arrange
+        var accountA = Guid.NewGuid();
+        var accountB = Guid.NewGuid();
+
+        var opA1 = OperatorId.NewId();
+        var opA2 = OperatorId.NewId();
+        var opB1 = OperatorId.NewId();
+
+        await _store.AppendEventAsync(new OperatorCreatedEvent(opA1, "OperatorA1"));
+        await _store.AppendEventAsync(new OperatorCreatedEvent(opA2, "OperatorA2"));
+        await _store.AppendEventAsync(new OperatorCreatedEvent(opB1, "OperatorB1"));
+
+        await _store.AssociateOperatorWithAccountAsync(opA1, accountA);
+        await _store.AssociateOperatorWithAccountAsync(opA2, accountA);
+        await _store.AssociateOperatorWithAccountAsync(opB1, accountB);
+
+        // Act
+        var accountAOperators = await _store.ListOperatorIdsByAccountAsync(accountA);
+        var accountBOperators = await _store.ListOperatorIdsByAccountAsync(accountB);
+
+        // Assert
+        Assert.Equal(2, accountAOperators.Count);
+        Assert.Contains(opA1, accountAOperators);
+        Assert.Contains(opA2, accountAOperators);
+
+        Assert.Single(accountBOperators);
+        Assert.Contains(opB1, accountBOperators);
+    }
+
+    [Fact]
+    public async Task ListOperatorIdsByAccountAsync_ShouldReturnEmpty_ForUnknownAccount()
+    {
+        // Arrange
+        var operatorId = OperatorId.NewId();
+        await _store.AppendEventAsync(new OperatorCreatedEvent(operatorId, "TestOperator"));
+        await _store.AssociateOperatorWithAccountAsync(operatorId, Guid.NewGuid());
+
+        // Act
+        var result = await _store.ListOperatorIdsByAccountAsync(Guid.NewGuid());
+
+        // Assert
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public async Task ListOperatorIdsByAccountAsync_ShouldExcludeUnassociatedOperators()
+    {
+        // Arrange
+        var accountId = Guid.NewGuid();
+        var associatedOp = OperatorId.NewId();
+        var unassociatedOp = OperatorId.NewId();
+
+        await _store.AppendEventAsync(new OperatorCreatedEvent(associatedOp, "Associated"));
+        await _store.AppendEventAsync(new OperatorCreatedEvent(unassociatedOp, "Unassociated"));
+        await _store.AssociateOperatorWithAccountAsync(associatedOp, accountId);
+        // unassociatedOp intentionally has no AccountId
+
+        // Act
+        var result = await _store.ListOperatorIdsByAccountAsync(accountId);
+
+        // Assert
+        Assert.Single(result);
+        Assert.Contains(associatedOp, result);
+        Assert.DoesNotContain(unassociatedOp, result);
+    }
 }

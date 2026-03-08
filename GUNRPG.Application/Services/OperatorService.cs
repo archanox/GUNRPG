@@ -232,9 +232,10 @@ public sealed class OperatorService
 
     public async Task<ServiceResult<List<OperatorSummaryDto>>> ListOperatorsAsync(Guid accountId)
     {
-        var operatorIds = accountId != Guid.Empty
-            ? await _eventStore.ListOperatorIdsByAccountAsync(accountId)
-            : await _eventStore.ListOperatorIdsAsync();
+        if (accountId == Guid.Empty)
+            throw new ArgumentException("Account ID must be non-empty.", nameof(accountId));
+
+        var operatorIds = await _eventStore.ListOperatorIdsByAccountAsync(accountId);
         var summaries = new List<OperatorSummaryDto>();
 
         foreach (var operatorId in operatorIds)
