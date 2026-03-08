@@ -9,13 +9,17 @@ namespace GUNRPG.Tests;
 public class InfrastructureServiceExtensionsTests : IDisposable
 {
     private readonly string _tempDbPath;
+    private readonly string _rootDir;
     private readonly ServiceProvider _provider;
 
     public InfrastructureServiceExtensionsTests()
     {
-        _tempDbPath = Path.Combine(
+        _rootDir = Path.Combine(
             "~/.gunrpg-tests",
-            Guid.NewGuid().ToString("N"),
+            Guid.NewGuid().ToString("N"));
+
+        _tempDbPath = Path.Combine(
+            _rootDir,
             "data",
             "combat_sessions.db");
 
@@ -40,7 +44,7 @@ public class InfrastructureServiceExtensionsTests : IDisposable
         var database = _provider.GetRequiredService<LiteDatabase>();
         Assert.NotNull(database);
 
-        var directory = Path.GetDirectoryName(ExpandHomePath(_tempDbPath));
+        var directory = Path.GetDirectoryName(PathHelpers.ExpandHomePath(_tempDbPath));
         Assert.False(string.IsNullOrEmpty(directory));
         Assert.True(Directory.Exists(directory));
     }
@@ -49,28 +53,15 @@ public class InfrastructureServiceExtensionsTests : IDisposable
     {
         _provider.Dispose();
 
-        var expandedPath = ExpandHomePath(_tempDbPath);
+        var expandedRoot = PathHelpers.ExpandHomePath(_rootDir);
+        var expandedPath = PathHelpers.ExpandHomePath(_tempDbPath);
 
         if (File.Exists(expandedPath))
             File.Delete(expandedPath);
 
-        var directory = Path.GetDirectoryName(expandedPath);
-        if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
+        if (!string.IsNullOrEmpty(expandedRoot) && Directory.Exists(expandedRoot))
         {
-            Directory.Delete(directory, recursive: true);
+            Directory.Delete(expandedRoot, recursive: true);
         }
-    }
-
-    private static string ExpandHomePath(string path)
-    {
-        if (path.StartsWith("~/", StringComparison.Ordinal) ||
-            path.StartsWith("~\\", StringComparison.Ordinal))
-        {
-            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            return Path.Combine(home, path[2..]);
-        }
-        if (path == "~")
-            return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        return path;
     }
 }

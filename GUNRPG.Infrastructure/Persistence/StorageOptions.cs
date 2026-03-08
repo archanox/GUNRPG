@@ -28,7 +28,7 @@ public sealed class StorageOptions
 
     private static string GetDefaultLiteDbPath()
     {
-        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var home = PathHelpers.GetUserHomeDirectory();
         if (string.IsNullOrWhiteSpace(home))
             return "~/.gunrpg/combat_sessions.db";
 
