@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Hex1b" Version="0.108.0" />
+    <PackageReference Include="Hex1b" Version="0.109.0" />
     <PackageReference Include="Makaretu.Dns.Multicast" Version="0.27.0" />
   </ItemGroup>
 
