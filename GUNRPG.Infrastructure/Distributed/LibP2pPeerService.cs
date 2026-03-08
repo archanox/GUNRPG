@@ -154,7 +154,7 @@ public sealed class LibP2pPeerService : IHostedService
 
             if (isChannelClosed)
             {
-                _logger.LogDebug("[P2P] Connection attempt to {PeerId} was closed (likely simultaneous dial tie-break); will retry on next mDNS announcement", peerId);
+                _logger.LogDebug(ex, "[P2P] Connection attempt to {PeerId} was closed (likely simultaneous dial tie-break); will retry on next mDNS announcement", peerId);
             }
             else
             {
