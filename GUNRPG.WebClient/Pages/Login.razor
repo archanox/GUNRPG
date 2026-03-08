@@ -80,6 +80,8 @@
         var baseUrl = await NodeService.GetBaseUrlAsync();
         if (string.IsNullOrEmpty(baseUrl))
             Nav.NavigateTo(Nav.BaseUri);
+        else if (Auth.IsAuthenticated)
+            Nav.NavigateTo("dashboard");
     }
 
     private async Task LoginAsync()

@@ -1,5 +1,6 @@
 @page "/"
 @inject NodeConnectionService NodeService
+@inject AuthService Auth
 @inject NavigationManager Nav
 
 <FluentCard Style="max-width: 480px; margin: 2rem auto; padding: 2rem;">
@@ -35,7 +36,12 @@
     {
         var existing = await NodeService.GetBaseUrlAsync();
         if (!string.IsNullOrEmpty(existing))
-            _nodeUrl = existing;
+        {
+            if (Auth.IsAuthenticated)
+                Nav.NavigateTo("dashboard");
+            else
+                _nodeUrl = existing;
+        }
     }
 
     private async Task ConnectAsync()
