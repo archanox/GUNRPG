@@ -199,6 +199,13 @@
 @code {
     [Parameter] public Guid MissionId { get; set; }
 
+    /// <summary>
+    /// Optional operator ID passed as a query parameter so that if the session is not found
+    /// the page can redirect back to the correct infiltration screen.
+    /// </summary>
+    [SupplyParameterFromQuery]
+    [Parameter] public Guid? OperatorId { get; set; }
+
     private static readonly TimeSpan RaidDuration = TimeSpan.FromMinutes(30);
 
     private CombatSession? _session;
@@ -244,6 +251,17 @@
         }
 
         await LoadAsync();
+
+        // If the session was not found, redirect to the infil page (or operators list as fallback)
+        // so the user is not stuck on an error screen with no clear path forward.
+        if (_session is null)
+        {
+            var fallback = OperatorId.HasValue
+                ? $"missions/infil/{OperatorId}"
+                : "operators";
+            Nav.NavigateTo(fallback);
+            return;
+        }
 
         // Redirect guard: if the operator is no longer in Infil mode, navigate away
         if (_session is not null && _operatorMode == "Base")
@@ -493,6 +511,8 @@
     {
         if (_session is not null)
             Nav.NavigateTo($"missions/infil/{_session.OperatorId}");
+        else if (OperatorId.HasValue)
+            Nav.NavigateTo($"missions/infil/{OperatorId}");
         else
             Nav.NavigateTo("operators");
     }
