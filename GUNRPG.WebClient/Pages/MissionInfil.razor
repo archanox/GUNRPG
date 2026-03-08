@@ -51,7 +51,7 @@
             @if (_operator.ActiveCombatSessionId.HasValue && _operator.ActiveCombatSession?.IsConcluded == false)
             {
                 <FluentButton Appearance="Appearance.Accent"
-                              OnClick="@(() => Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}"))">
+                              OnClick="@(() => Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}?operatorId={OperatorId}"))">
                     Resume Combat
                 </FluentButton>
             }

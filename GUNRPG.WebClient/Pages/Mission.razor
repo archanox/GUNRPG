@@ -212,6 +212,7 @@
     private bool _loading = true;
     private bool _busy;
     private string? _error;
+    private bool _sessionNotFound;
 
     // Exfil timer
     private DateTimeOffset? _infilStartTime;
@@ -252,9 +253,10 @@
 
         await LoadAsync();
 
-        // If the session was not found, redirect to the infil page (or operators list as fallback)
-        // so the user is not stuck on an error screen with no clear path forward.
-        if (_session is null)
+        // If the session was specifically not found (404), redirect to the infil page
+        // (or operators list as fallback) so the user is not stuck on a dead-end error screen.
+        // Other load failures (network errors, 500s, etc.) show the error in-place.
+        if (_sessionNotFound)
         {
             var fallback = OperatorId.HasValue
                 ? $"missions/infil/{OperatorId}"
@@ -386,6 +388,7 @@
         var (data, error) = await MissionSvc.GetStateAsync(MissionId);
         _session = data;
         _error = error;
+        _sessionNotFound = data is null && error == "Combat session not found.";
 
         // Load operator state to obtain the infil start time for the countdown timer
         // and to check the operator mode for the redirect guard.
