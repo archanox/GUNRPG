@@ -60,6 +60,8 @@ public static class InfrastructureServiceExtensions
                 // Create custom BsonMapper to avoid global state issues
                 var mapper = new BsonMapper();
                 ConfigureLiteDbMapper(mapper);
+
+                EnsureLiteDbDirectory(options.LiteDbConnectionString);
                 
                 var database = new LiteDatabase(options.LiteDbConnectionString, mapper);
                 
@@ -179,6 +181,37 @@ public static class InfrastructureServiceExtensions
         // Use Id property as the document key
         mapper.Entity<CombatSessionSnapshot>()
             .Id(x => x.Id);
+    }
+
+    /// <summary>
+    /// Ensures the directory for the LiteDB file exists, whether the connection string
+    /// is a plain file path or a LiteDB connection string with a Filename key.
+    /// </summary>
+    private static void EnsureLiteDbDirectory(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return;
+
+        var databasePath = connectionString;
+
+        // LiteDB connection strings can include keys like "Filename=/path/to/file.db".
+        var segments = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries);
+        var filenameSegment = segments.FirstOrDefault(s =>
+            s.TrimStart().StartsWith("filename", StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(filenameSegment))
+        {
+            var parts = filenameSegment.Split('=', 2);
+            if (parts.Length == 2 && !string.IsNullOrWhiteSpace(parts[1]))
+            {
+                databasePath = parts[1].Trim();
+            }
+        }
+
+        var directory = Path.GetDirectoryName(databasePath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
     }
 
     /// <summary>
