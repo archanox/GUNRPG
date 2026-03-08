@@ -33,8 +33,10 @@ builder.Services.AddSingleton<CombatSessionUpdateHub>();
 
 // Distributed game authority: deterministic lockstep replication via libp2p transport
 // Persist server node ID so restarts reuse the same identity
-const string nodeIdFileName = "server_node_id";
-var serverNodeId = LoadOrCreateNodeId(nodeIdFileName);
+var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gunrpg");
+Directory.CreateDirectory(dataDir);
+var nodeIdFilePath = Path.Combine(dataDir, "server_node_id");
+var serverNodeId = LoadOrCreateNodeId(nodeIdFilePath);
 builder.Services.AddSingleton<IDeterministicGameEngine, DefaultGameEngine>();
 var lockstepTransport = new Libp2pLockstepTransport(serverNodeId);
 builder.Services.AddSingleton(lockstepTransport);

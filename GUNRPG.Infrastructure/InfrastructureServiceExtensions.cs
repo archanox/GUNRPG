@@ -56,12 +56,27 @@ public static class InfrastructureServiceExtensions
             services.AddSingleton<LiteDatabase>(sp =>
             {
                 var options = sp.GetRequiredService<IOptions<StorageOptions>>().Value;
-                
+
+                // Expand ~ to user home directory and ensure parent directory exists
+                var connectionString = options.LiteDbConnectionString;
+                if (connectionString.StartsWith("~/") || connectionString.StartsWith("~\\"))
+                {
+                    var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                    connectionString = Path.Combine(home, connectionString.Substring(2));
+                }
+
+                // Ensure the directory exists before opening the database
+                var dbDir = Path.GetDirectoryName(connectionString);
+                if (!string.IsNullOrEmpty(dbDir))
+                {
+                    Directory.CreateDirectory(dbDir);
+                }
+
                 // Create custom BsonMapper to avoid global state issues
                 var mapper = new BsonMapper();
                 ConfigureLiteDbMapper(mapper);
-                
-                var database = new LiteDatabase(options.LiteDbConnectionString, mapper);
+
+                var database = new LiteDatabase(connectionString, mapper);
                 
                 // Check current schema version before applying migrations
                 var currentVersion = LiteDbMigrations.GetDatabaseSchemaVersion(database);
