@@ -66,9 +66,12 @@ public sealed class AuthService
 
             if (!response.IsSuccessStatusCode)
             {
-                // The server explicitly rejected the token (e.g. expired, revoked, or replayed).
-                // Clear the stored token so we don't keep sending an invalid credential.
-                await ClearTokensAsync();
+                // Only clear the stored token for explicit client/auth rejections (4xx):
+                // the server has definitively told us the token is invalid, expired, or revoked.
+                // Leave tokens intact for transient server-side errors (5xx) so a later retry
+                // can succeed once the server recovers.
+                if ((int)response.StatusCode is >= 400 and < 500)
+                    await ClearTokensAsync();
                 return false;
             }
 
@@ -85,10 +88,11 @@ public sealed class AuthService
         }
         catch
         {
-            // A network-level failure (timeout, connection refused, etc.) — the stored
-            // refresh token is still valid, so leave it intact and report failure.
-            // The user will be asked to authenticate again, but will succeed once the
-            // server is reachable and the token is still within its expiry window.
+            // A network-level failure (timeout, connection refused, etc.). The stored
+            // refresh token is still considered valid, so we leave it intact, but clear
+            // the in-memory access token so IsAuthenticated accurately reflects the
+            // fact that we do not currently have a usable access token.
+            _accessToken = null;
             return false;
         }
     }
