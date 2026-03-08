@@ -14,8 +14,7 @@ public class InfrastructureServiceExtensionsTests : IDisposable
     public InfrastructureServiceExtensionsTests()
     {
         _tempDbPath = Path.Combine(
-            Path.GetTempPath(),
-            "gunrpg_test",
+            "~/.gunrpg-tests",
             Guid.NewGuid().ToString("N"),
             "data",
             "combat_sessions.db");
@@ -41,7 +40,7 @@ public class InfrastructureServiceExtensionsTests : IDisposable
         var database = _provider.GetRequiredService<LiteDatabase>();
         Assert.NotNull(database);
 
-        var directory = Path.GetDirectoryName(_tempDbPath);
+        var directory = Path.GetDirectoryName(ExpandHomePath(_tempDbPath));
         Assert.False(string.IsNullOrEmpty(directory));
         Assert.True(Directory.Exists(directory));
     }
@@ -50,13 +49,27 @@ public class InfrastructureServiceExtensionsTests : IDisposable
     {
         _provider.Dispose();
 
-        if (File.Exists(_tempDbPath))
-            File.Delete(_tempDbPath);
+        var expandedPath = ExpandHomePath(_tempDbPath);
 
-        var directory = Path.GetDirectoryName(_tempDbPath);
+        if (File.Exists(expandedPath))
+            File.Delete(expandedPath);
+
+        var directory = Path.GetDirectoryName(expandedPath);
         if (!string.IsNullOrEmpty(directory) && Directory.Exists(directory))
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    private static string ExpandHomePath(string path)
+    {
+        if (path.StartsWith("~/", StringComparison.Ordinal))
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            return Path.Combine(home, path[2..]);
+        }
+        if (path == "~")
+            return Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return path;
     }
 }

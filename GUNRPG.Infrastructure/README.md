@@ -65,7 +65,7 @@ Update `CurrentSchemaVersion` constant after adding migrations.
 {
   "Storage": {
     "Provider": "LiteDB",
-    "LiteDbConnectionString": ".gunrpg/combat_sessions.db"
+    "LiteDbConnectionString": "~/.gunrpg/combat_sessions.db"
   }
 }
 ```
