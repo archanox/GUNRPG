@@ -371,7 +371,7 @@ public sealed class OfflineModeTests : IDisposable
     {
         using var client = new HttpClient(new ReachableRootHandler())
         {
-            BaseAddress = new Uri("http://localhost:5209")
+            BaseAddress = new Uri("https://gunrpg-test.invalid")
         };
         var resolver = new GameBackendResolver(client, _offlineStore);
 
