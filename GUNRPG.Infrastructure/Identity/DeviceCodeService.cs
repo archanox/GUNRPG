@@ -120,6 +120,11 @@ public sealed class DeviceCodeService : IDeviceCodeService
         if (user is null)
             return ServiceResult<DevicePollResponse>.InvalidState("Authorized user no longer exists.");
 
+        var accountProvisioning = await AccountIdProvisioning.EnsureAssignedAsync(_userManager, user, ct);
+        if (!accountProvisioning.Succeeded)
+            return ServiceResult<DevicePollResponse>.InvalidState(
+                string.Join("; ", accountProvisioning.Errors.Select(e => e.Description)));
+
         _codes.Delete(code.Id);
 
         var tokens = await _tokenService.IssueTokensAsync(user.Id, user.UserName, user.AccountId, ct);

@@ -18,7 +18,7 @@ public sealed class ApiClient
     }
 
     public Task<HttpResponseMessage> PostAsync<T>(string path, T body) =>
-        SendWithRetryAsync(HttpMethod.Post, path, JsonContent.Create(body));
+        SendWithRetryAsync(HttpMethod.Post, path, () => JsonContent.Create(body));
 
     public Task<HttpResponseMessage> PostAsync(string path) =>
         SendWithRetryAsync(HttpMethod.Post, path);
@@ -27,17 +27,17 @@ public sealed class ApiClient
         SendWithRetryAsync(HttpMethod.Get, path);
 
     private async Task<HttpResponseMessage> SendWithRetryAsync(
-        HttpMethod method, string path, HttpContent? content = null)
+        HttpMethod method, string path, Func<HttpContent>? contentFactory = null)
     {
-        var response = await SendAsync(method, path, content);
+        var response = await SendAsync(method, path, contentFactory);
 
         if (response.StatusCode == HttpStatusCode.Unauthorized && await _auth.RefreshTokenAsync())
-            response = await SendAsync(method, path, content);
+            response = await SendAsync(method, path, contentFactory);
 
         return response;
     }
 
-    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, HttpContent? content = null)
+    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, Func<HttpContent>? contentFactory = null)
     {
         var baseUrl = await _nodeService.GetBaseUrlAsync()
             ?? throw new InvalidOperationException("No node URL configured.");
@@ -52,8 +52,8 @@ public sealed class ApiClient
         if (!string.IsNullOrEmpty(token))
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-        if (content is not null)
-            request.Content = content;
+        if (contentFactory is not null)
+            request.Content = contentFactory();
 
         return await _http.SendAsync(request);
     }
