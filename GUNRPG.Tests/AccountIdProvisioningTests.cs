@@ -1,6 +1,6 @@
 using System.Net;
 using System.Text;
-using System.Text.Json;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 using GUNRPG.Infrastructure.Identity;
 using GUNRPG.WebClient.Services;
 using LiteDB;
@@ -100,7 +100,7 @@ public sealed class ApiClientTests
         };
 
         handler.Enqueue(HttpStatusCode.Unauthorized);
-        handler.Enqueue(HttpStatusCode.OK, System.Text.Json.JsonSerializer.Serialize(refreshed));
+        handler.Enqueue(HttpStatusCode.OK, JsonSerializer.Serialize(refreshed));
         handler.Enqueue(HttpStatusCode.Created, "{}");
 
         using var http = new HttpClient(handler);
