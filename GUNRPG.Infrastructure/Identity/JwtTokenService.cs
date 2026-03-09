@@ -33,6 +33,7 @@ public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
     private readonly JwtOptions _options;
     private readonly ILiteCollection<BsonDocument> _meta;
     private readonly ILiteCollection<RefreshToken> _refreshTokens;
+    private readonly ILiteCollection<ApplicationUser> _users;
 
     private readonly Ed25519PrivateKeyParameters _privateKey;
     private readonly Ed25519PublicKeyParameters _publicKey;
@@ -44,6 +45,7 @@ public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
         _options = options.Value;
         _meta = db.GetCollection<BsonDocument>(MetaCollection);
         _refreshTokens = db.GetCollection<RefreshToken>("identity_refresh_tokens");
+        _users = db.GetCollection<ApplicationUser>(LiteDbUserStore.CollectionName);
         _refreshTokens.EnsureIndex(t => t.UserId);
         _refreshTokens.EnsureIndex(t => t.Token, unique: true);
 
@@ -74,13 +76,27 @@ public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
         if (existing is null || !existing.IsActive)
             return ServiceResult<TokenResponse>.InvalidState("Refresh token is invalid, expired, or already consumed.");
 
+        var accountId = existing.AccountId;
+        if (!accountId.HasValue || accountId.Value == Guid.Empty)
+        {
+            var accountProvisioning = await AccountIdProvisioning.EnsureAssignedAsync(_users, existing.UserId, ct);
+            if (!accountProvisioning.Result.Succeeded)
+            {
+                return ServiceResult<TokenResponse>.InvalidState(
+                    string.Join("; ", accountProvisioning.Result.Errors.Select(e => e.Description)));
+            }
+
+            accountId = accountProvisioning.AccountId;
+        }
+
         // Rotate: consume old, issue new (preserving original username/accountId claims)
         existing.IsConsumed = true;
-        var newRefresh = await CreateRefreshTokenAsync(existing.UserId, existing.Username, existing.AccountId, ct);
+        existing.AccountId = accountId;
+        var newRefresh = await CreateRefreshTokenAsync(existing.UserId, existing.Username, accountId, ct);
         existing.ReplacedByToken = newRefresh.Token;
         _refreshTokens.Update(existing);
 
-        var accessToken = BuildAccessToken(existing.UserId, existing.Username, existing.AccountId);
+        var accessToken = BuildAccessToken(existing.UserId, existing.Username, accountId);
 
         return ServiceResult<TokenResponse>.Success(new TokenResponse(
             accessToken,

@@ -14,7 +14,7 @@ public sealed class LiteDbUserStore :
     IUserPasswordStore<ApplicationUser>,
     IUserEmailStore<ApplicationUser>
 {
-    private const string CollectionName = "identity_users";
+    internal const string CollectionName = "identity_users";
 
     private readonly ILiteCollection<ApplicationUser> _users;
 

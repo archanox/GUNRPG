@@ -31,8 +31,14 @@ public sealed class ApiClient
     {
         var response = await SendAsync(method, path, contentFactory);
 
-        if (response.StatusCode == HttpStatusCode.Unauthorized && await _auth.RefreshTokenAsync())
-            response = await SendAsync(method, path, contentFactory);
+        if (response.StatusCode != HttpStatusCode.Unauthorized)
+            return response;
+
+        if (!await _auth.RefreshTokenAsync())
+            return response;
+
+        response.Dispose();
+        response = await SendAsync(method, path, contentFactory);
 
         return response;
     }
