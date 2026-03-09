@@ -48,7 +48,11 @@ public sealed class WebAuthnService : IWebAuthnService
         if (user is null)
         {
             // Create the user on first WebAuthn registration
-            user = new ApplicationUser { UserName = username };
+            user = new ApplicationUser
+            {
+                UserName = username,
+                AccountId = Guid.NewGuid(),
+            };
             var result = await _userManager.CreateAsync(user);
             if (!result.Succeeded)
                 return Err(WebAuthnErrorCode.InternalError,

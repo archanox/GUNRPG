@@ -123,6 +123,14 @@ public sealed class WebAuthnController : ControllerBase
         if (user is null)
             return Problem("User not found after authentication.", statusCode: 500);
 
+        var accountProvisioning = await AccountIdProvisioning.EnsureAssignedAsync(_userManager, user, ct);
+        if (!accountProvisioning.Succeeded)
+        {
+            return Problem(
+                string.Join("; ", accountProvisioning.Errors.Select(e => e.Description)),
+                statusCode: 500);
+        }
+
         var tokens = await _tokens.IssueTokensAsync(user.Id, user.UserName, user.AccountId, ct);
         return Ok(tokens);
     }
