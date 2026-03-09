@@ -12,7 +12,7 @@ public static class AccountIdProvisioning
         ApplicationUser user,
         CancellationToken ct = default)
     {
-        if (user.AccountId.HasValue && user.AccountId.Value != Guid.Empty)
+        if (user.AccountId is { } accountId && accountId != Guid.Empty)
             return IdentityResult.Success;
 
         user.AccountId = Guid.NewGuid();
