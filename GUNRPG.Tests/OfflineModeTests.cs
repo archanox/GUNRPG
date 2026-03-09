@@ -367,9 +367,9 @@ public sealed class OfflineModeTests : IDisposable
     }
 
     [Fact]
-    public async Task Resolver_ServerReachabilityCheck_UsesBaseAddressInsteadOfAuthorizedOperatorsEndpoint()
+    public async Task Resolver_ServerReachabilityCheck_UsesHealthEndpointInsteadOfAuthorizedOperatorsEndpoint()
     {
-        using var client = new HttpClient(new ReachableRootHandler())
+        using var client = new HttpClient(new ReachableHealthHandler())
         {
             BaseAddress = new Uri("https://gunrpg-test.invalid")
         };
@@ -511,14 +511,17 @@ public sealed class OfflineModeTests : IDisposable
         };
     }
 
-    private sealed class ReachableRootHandler : HttpMessageHandler
+    private sealed class ReachableHealthHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            if (request.RequestUri?.AbsolutePath != "/health")
+                throw new InvalidOperationException("Connectivity check must target the public health endpoint.");
+
             if (request.RequestUri?.AbsolutePath == "/operators")
                 throw new InvalidOperationException("Connectivity check must not require the authorized operators endpoint.");
 
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 RequestMessage = request
             });
