@@ -195,6 +195,13 @@ public class JwtTokenServiceTests : IDisposable
     public JwtTokenServiceTests()
     {
         _db = new LiteDatabase(":memory:");
+        var users = _db.GetCollection<ApplicationUser>("identity_users");
+        users.Insert(new ApplicationUser
+        {
+            Id = "user123",
+            UserName = "alice",
+            NormalizedUserName = "ALICE",
+        });
         var options = Options.Create(new JwtOptions
         {
             Issuer = "test-issuer",
@@ -256,6 +263,37 @@ public class JwtTokenServiceTests : IDisposable
         var payloadJson = DecodeBase64Url(parts[1]);
         Assert.Contains("alice", payloadJson, StringComparison.Ordinal);
         Assert.Contains(accountId.ToString(), payloadJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RefreshAsync_BackfillsMissingAccountId_ForLegacyRefreshTokens()
+    {
+        var users = _db.GetCollection<ApplicationUser>("identity_users");
+        var legacyUser = new ApplicationUser
+        {
+            Id = "legacy-user",
+            UserName = "legacy-alice",
+            NormalizedUserName = "LEGACY-ALICE",
+        };
+        users.Insert(legacyUser);
+
+        var initial = await _service.IssueTokensAsync(legacyUser.Id, legacyUser.UserName, null);
+
+        var refreshed = await _service.RefreshAsync(initial.RefreshToken);
+
+        Assert.True(refreshed.IsSuccess);
+
+        var persistedUser = users.FindById(legacyUser.Id);
+        Assert.NotNull(persistedUser);
+        Assert.True(persistedUser!.AccountId.HasValue);
+        Assert.NotEqual(Guid.Empty, persistedUser.AccountId.Value);
+
+        var payloadJson = DecodeBase64Url(refreshed.Value!.AccessToken.Split('.')[1]);
+        Assert.Contains(persistedUser.AccountId.Value.ToString(), payloadJson, StringComparison.Ordinal);
+
+        var refreshTokens = _db.GetCollection<RefreshToken>("identity_refresh_tokens");
+        var rotatedToken = refreshTokens.FindOne(t => t.Token == refreshed.Value.RefreshToken);
+        Assert.Equal(persistedUser.AccountId, rotatedToken?.AccountId);
     }
 
     [Fact]

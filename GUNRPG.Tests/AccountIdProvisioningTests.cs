@@ -65,6 +65,44 @@ public sealed class AccountIdProvisioningTests : IDisposable
         Assert.Equal(existingAccountId, user.AccountId);
     }
 
+    [Fact]
+    public async Task EnsureAssignedAsync_UsesPersistedAccountId_ForStaleCallerInstance()
+    {
+        using var userManager = CreateUserManager();
+        var user = new ApplicationUser
+        {
+            Id = "user-3",
+            UserName = "charlie",
+            NormalizedUserName = "CHARLIE",
+        };
+
+        var createResult = await userManager.CreateAsync(user);
+        Assert.True(createResult.Succeeded);
+
+        var persistedUser = await userManager.FindByIdAsync(user.Id);
+        Assert.NotNull(persistedUser);
+
+        var assignedAccountId = Guid.NewGuid();
+        persistedUser!.AccountId = assignedAccountId;
+        var updateResult = await userManager.UpdateAsync(persistedUser);
+        Assert.True(updateResult.Succeeded);
+
+        var staleCallerUser = new ApplicationUser
+        {
+            Id = user.Id,
+            UserName = user.UserName,
+            NormalizedUserName = user.NormalizedUserName,
+        };
+
+        var result = await AccountIdProvisioning.EnsureAssignedAsync(userManager, staleCallerUser);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal(assignedAccountId, staleCallerUser.AccountId);
+
+        var reloadedUser = await userManager.FindByIdAsync(user.Id);
+        Assert.Equal(assignedAccountId, reloadedUser?.AccountId);
+    }
+
     private UserManager<ApplicationUser> CreateUserManager()
     {
         var store = new LiteDbUserStore(_db);
@@ -99,7 +137,11 @@ public sealed class ApiClientTests
             RefreshTokenExpiresAt = DateTimeOffset.UtcNow.AddDays(7).ToString("O"),
         };
 
-        handler.Enqueue(HttpStatusCode.Unauthorized);
+        var unauthorizedResponse = new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = new TrackingStringContent("{}"),
+        };
+        handler.Enqueue(unauthorizedResponse);
         handler.Enqueue(HttpStatusCode.OK, JsonSerializer.Serialize(refreshed));
         handler.Enqueue(HttpStatusCode.Created, "{}");
 
@@ -119,16 +161,25 @@ public sealed class ApiClientTests
         Assert.Equal("Bearer new-access", handler.Calls[2].Authorization);
         Assert.Equal(handler.Calls[0].Body, handler.Calls[2].Body);
         Assert.Contains("\"name\":\"Viper\"", handler.Calls[0].Body, StringComparison.Ordinal);
+        Assert.True(((TrackingStringContent)unauthorizedResponse.Content).Disposed);
     }
 
     private sealed class QueueHandler : HttpMessageHandler
     {
-        private readonly Queue<(HttpStatusCode StatusCode, string? Body)> _responses = new();
+        private readonly Queue<HttpResponseMessage> _responses = new();
 
         public List<(string? Uri, string? Authorization, string? Body)> Calls { get; } = [];
 
         public void Enqueue(HttpStatusCode statusCode, string? body = null)
-            => _responses.Enqueue((statusCode, body));
+        {
+            var response = new HttpResponseMessage(statusCode);
+            if (body is not null)
+                response.Content = new StringContent(body, Encoding.UTF8, "application/json");
+            _responses.Enqueue(response);
+        }
+
+        public void Enqueue(HttpResponseMessage response)
+            => _responses.Enqueue(response);
 
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -137,12 +188,18 @@ public sealed class ApiClientTests
                 request.Headers.Authorization?.ToString(),
                 request.Content is null ? null : await request.Content.ReadAsStringAsync(cancellationToken)));
 
-            var response = _responses.Dequeue();
-            var message = new HttpResponseMessage(response.StatusCode);
-            if (response.Body is not null)
-                message.Content = new StringContent(response.Body, Encoding.UTF8, "application/json");
+            return _responses.Dequeue();
+        }
+    }
 
-            return message;
+    private sealed class TrackingStringContent(string content) : StringContent(content, Encoding.UTF8, "application/json")
+    {
+        public bool Disposed { get; private set; }
+
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
         }
     }
 
