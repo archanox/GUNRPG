@@ -1,3 +1,4 @@
+using System.Net;
 using GUNRPG.Application.Backend;
 using GUNRPG.Infrastructure;
 using GUNRPG.Infrastructure.Backend;
@@ -365,6 +366,21 @@ public sealed class OfflineModeTests : IDisposable
         Assert.IsType<OfflineGameBackend>(backend);
     }
 
+    [Fact]
+    public async Task Resolver_ServerReachabilityCheck_UsesBaseAddressInsteadOfAuthorizedOperatorsEndpoint()
+    {
+        using var client = new HttpClient(new ReachableRootHandler())
+        {
+            BaseAddress = new Uri("http://localhost:5209")
+        };
+        var resolver = new GameBackendResolver(client, _offlineStore);
+
+        var backend = await resolver.ResolveAsync();
+
+        Assert.Equal(GameMode.Online, resolver.CurrentMode);
+        Assert.IsType<OnlineGameBackend>(backend);
+    }
+
     // ─── Guardrail Tests ───
 
     [Fact]
@@ -493,5 +509,19 @@ public sealed class OfflineModeTests : IDisposable
             IsDead = false,
             CurrentMode = "Base"
         };
+    }
+
+    private sealed class ReachableRootHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.RequestUri?.AbsolutePath == "/operators")
+                throw new InvalidOperationException("Connectivity check must not require the authorized operators endpoint.");
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)
+            {
+                RequestMessage = request
+            });
+        }
     }
 }
