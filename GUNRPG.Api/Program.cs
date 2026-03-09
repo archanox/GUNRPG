@@ -25,6 +25,7 @@ builder.Services.AddControllers()
     });
 
 builder.Services.AddOpenApi();
+builder.Services.AddHealthChecks();
 
 builder.Services.AddCombatSessionStore(builder.Configuration);
 builder.Services.AddSingleton<IDeterministicCombatEngine, DeterministicCombatEngine>();
@@ -167,6 +168,7 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHealthChecks("/health").AllowAnonymous();
 
 ServiceDiscovery? mdnsDiscovery = null;
 app.Lifetime.ApplicationStarted.Register(() =>

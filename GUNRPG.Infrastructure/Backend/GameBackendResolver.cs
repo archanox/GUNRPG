@@ -111,7 +111,7 @@ public sealed class GameBackendResolver
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
             using var response = await _httpClient.GetAsync(
-                "",
+                "health",
                 HttpCompletionOption.ResponseHeadersRead,
                 cts.Token);
             // Any completed HTTP response (regardless of status code) means the server is reachable.
