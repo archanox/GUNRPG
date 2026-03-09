@@ -117,7 +117,7 @@ public static class AccountIdProvisioning
     private sealed class UserLock
     {
         public SemaphoreSlim Gate { get; } = new(1, 1);
-        public int RefCount;
+        public volatile int RefCount;
     }
 
     private readonly struct Releaser(string userId, UserLock userLock) : IDisposable
