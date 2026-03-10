@@ -1,9 +1,13 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using GUNRPG.Application.Backend;
 using GUNRPG.Application.Identity.Dtos;
 using GUNRPG.ConsoleClient.Auth;
 using GUNRPG.ConsoleClient.Identity;
+using GUNRPG.Infrastructure;
+using GUNRPG.Infrastructure.Persistence;
+using LiteDB;
 
 namespace GUNRPG.Tests;
 
@@ -311,6 +315,68 @@ public sealed class SessionManagerTests : IDisposable
         Assert.NotNull(manager.LoginError);
     }
 
+    [Fact]
+    public async Task BuildUI_TransitionsToMainMenu_WhenLoginCompletes()
+    {
+        var tokens = MakeTokenResponse("access-from-device", "refresh-from-device");
+        var fake = new FakeHandler();
+        fake.Enqueue(HttpStatusCode.OK, Json(MakeDeviceFlow()));
+        fake.Enqueue(HttpStatusCode.OK, Json(new DevicePollResponse("authorized", tokens)));
+
+        var (manager, _) = MakeManager(fake);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        manager.StartLogin(cts.Token);
+        await WaitForStateAsync(manager, AuthState.Authenticated, cts.Token);
+
+        using var offlineDb = new LiteDatabase(Path.Combine(_tempDir, "offline-ui-test.db"));
+        var offlineStore = new OfflineStore(offlineDb);
+        using var httpClient = new HttpClient { BaseAddress = new Uri(BaseUrl) };
+        var resolver = new GameBackendResolver(httpClient, offlineStore);
+        var gameState = new GameState(
+            httpClient,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            new StubGameBackend(),
+            resolver,
+            offlineStore,
+            offlineDb,
+            manager,
+            Screen.Authenticating);
+
+        await gameState.BuildUI(null!, new CancellationTokenSource());
+
+        Assert.Equal(Screen.MainMenu, gameState.CurrentScreen);
+    }
+
+    [Fact]
+    public async Task BuildUI_ReturnsToLoginMenu_WhenLoginFails()
+    {
+        var fake = new FakeHandler();
+        fake.Enqueue(HttpStatusCode.InternalServerError, null);
+
+        var (manager, _) = MakeManager(fake);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        manager.StartLogin(cts.Token);
+        await WaitForStateAsync(manager, AuthState.NotAuthenticated, cts.Token);
+
+        using var offlineDb = new LiteDatabase(Path.Combine(_tempDir, "offline-ui-failure-test.db"));
+        var offlineStore = new OfflineStore(offlineDb);
+        using var httpClient = new HttpClient { BaseAddress = new Uri(BaseUrl) };
+        var resolver = new GameBackendResolver(httpClient, offlineStore);
+        var gameState = new GameState(
+            httpClient,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            new StubGameBackend(),
+            resolver,
+            offlineStore,
+            offlineDb,
+            manager,
+            Screen.Authenticating);
+
+        await gameState.BuildUI(null!, new CancellationTokenSource());
+
+        Assert.Equal(Screen.LoginMenu, gameState.CurrentScreen);
+    }
+
     // ─── Logout ──────────────────────────────────────────────────────────────
 
     [Fact]
@@ -386,6 +452,15 @@ public sealed class SessionManagerTests : IDisposable
     {
         while (!ct.IsCancellationRequested && manager.State != expected)
             await Task.Delay(50, ct);
+    }
+
+    private sealed class StubGameBackend : IGameBackend
+    {
+        public Task<OperatorDto?> GetOperatorAsync(string id) => Task.FromResult<OperatorDto?>(null);
+
+        public Task<OperatorDto> InfilOperatorAsync(string id) => throw new NotSupportedException();
+
+        public Task<bool> OperatorExistsAsync(string id) => Task.FromResult(false);
     }
 
     private sealed class FakeHandler : HttpMessageHandler

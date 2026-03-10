@@ -532,7 +532,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 // Always show the Authenticating screen while the device flow is in progress.
                 CurrentScreen = Screen.Authenticating;
             }
-            else if (authState == AuthState.Authenticated && CurrentScreen == Screen.LoginMenu)
+            else if (authState == AuthState.Authenticated && CurrentScreen == Screen.Authenticating)
             {
                 // Login succeeded — move to the main menu and load the last used operator.
                 CurrentScreen = Screen.MainMenu;
