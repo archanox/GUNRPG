@@ -442,6 +442,21 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                         if (sessionData != null)
                         {
                             CurrentSession = sessionData;
+
+                            // If the session was concluded by another client (e.g. web client advanced
+                            // combat to victory/defeat), navigate away from the combat screen so the
+                            // console user is not left stuck on a stale combat view.
+                            if (sessionData.Phase == "Completed" && CurrentScreen == Screen.CombatSession)
+                            {
+                                // Match AdvanceCombat logic: player alive = success, player dead = failure.
+                                var victory = sessionData.Player.Health > 0;
+                                Message = victory
+                                    ? "MISSION SUCCESS\n\nTarget eliminated. Exfil to secure your XP.\n\nPress OK to continue."
+                                    : "MISSION FAILED\n\nYou were eliminated.\n\nPress OK to continue.";
+                                ActiveSessionId = null;
+                                CurrentSession = null;
+                                CurrentScreen = Screen.MissionComplete;
+                            }
                         }
                     }
                     catch (Exception)
