@@ -134,6 +134,7 @@ public sealed class SessionStoreTests : IDisposable
 public sealed class SessionManagerTests : IDisposable
 {
     private static readonly JsonSerializerOptions s_json = new(JsonSerializerDefaults.Web);
+    private static readonly object s_userProfileEnvironmentLock = new();
     private const string BaseUrl = "https://node.example.com";
 
     private readonly string _tempDir;
@@ -331,8 +332,9 @@ public sealed class SessionManagerTests : IDisposable
 
         using var gameStateScope = CreateAuthenticatingGameState(manager, "auth-success-test.db");
         var gameState = gameStateScope.GameState;
+        using var uiCts = new CancellationTokenSource();
 
-        await gameState.BuildUI(new RootContext(), new CancellationTokenSource());
+        await gameState.BuildUI(new RootContext(), uiCts);
 
         Assert.Equal(Screen.MainMenu, gameState.CurrentScreen);
     }
@@ -350,8 +352,9 @@ public sealed class SessionManagerTests : IDisposable
 
         using var gameStateScope = CreateAuthenticatingGameState(manager, "auth-failure-test.db");
         var gameState = gameStateScope.GameState;
+        using var uiCts = new CancellationTokenSource();
 
-        await gameState.BuildUI(new RootContext(), new CancellationTokenSource());
+        await gameState.BuildUI(new RootContext(), uiCts);
 
         Assert.Equal(Screen.LoginMenu, gameState.CurrentScreen);
     }
@@ -435,6 +438,7 @@ public sealed class SessionManagerTests : IDisposable
 
     private TestGameStateScope CreateAuthenticatingGameState(SessionManager manager, string databaseFileName)
     {
+        var profileScope = new UserProfileScope(_tempDir);
         var databasePath = Path.Combine(_tempDir, databaseFileName);
         var offlineDb = new LiteDatabase(databasePath);
         var offlineStore = new OfflineStore(offlineDb);
@@ -450,10 +454,10 @@ public sealed class SessionManagerTests : IDisposable
             manager,
             Screen.Authenticating);
 
-        return new TestGameStateScope(gameState, httpClient, offlineDb, databasePath);
+        return new TestGameStateScope(gameState, httpClient, offlineDb, databasePath, profileScope);
     }
 
-    private sealed class TestGameStateScope(GameState gameState, HttpClient httpClient, LiteDatabase offlineDb, string databasePath) : IDisposable
+    private sealed class TestGameStateScope(GameState gameState, HttpClient httpClient, LiteDatabase offlineDb, string databasePath, UserProfileScope profileScope) : IDisposable
     {
         public GameState GameState { get; } = gameState;
 
@@ -463,6 +467,37 @@ public sealed class SessionManagerTests : IDisposable
             offlineDb.Dispose();
             if (File.Exists(databasePath))
                 File.Delete(databasePath);
+            profileScope.Dispose();
+        }
+    }
+
+    private sealed class UserProfileScope : IDisposable
+    {
+        private readonly string? _originalHome;
+        private readonly string? _originalUserProfile;
+        private readonly string _profileDirectory;
+        private bool _disposed;
+
+        public UserProfileScope(string tempDir)
+        {
+            Monitor.Enter(s_userProfileEnvironmentLock);
+            _originalHome = Environment.GetEnvironmentVariable("HOME");
+            _originalUserProfile = Environment.GetEnvironmentVariable("USERPROFILE");
+            _profileDirectory = Path.Combine(tempDir, "test-home");
+            Directory.CreateDirectory(Path.Combine(_profileDirectory, ".gunrpg"));
+            Environment.SetEnvironmentVariable("HOME", _profileDirectory);
+            Environment.SetEnvironmentVariable("USERPROFILE", _profileDirectory);
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            Environment.SetEnvironmentVariable("HOME", _originalHome);
+            Environment.SetEnvironmentVariable("USERPROFILE", _originalUserProfile);
+            Monitor.Exit(s_userProfileEnvironmentLock);
+            _disposed = true;
         }
     }
 
