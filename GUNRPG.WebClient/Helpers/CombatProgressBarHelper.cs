@@ -11,18 +11,19 @@ public static class CombatProgressBarHelper
         return (int)Math.Round(Math.Clamp(percent, 0d, 100d), MidpointRounding.AwayFromZero);
     }
 
-    public static int GetAriaValue(double current)
+    public static int? GetAriaValue(double current, double maximum)
     {
-        if (double.IsNaN(current))
-            return 0;
+        if (double.IsNaN(current) || double.IsNaN(maximum) || maximum <= 0d)
+            return null;
 
-        return (int)Math.Round(Math.Max(current, 0d), MidpointRounding.AwayFromZero);
+        var clamped = Math.Clamp(current, 0d, maximum);
+        return (int)Math.Round(clamped, MidpointRounding.AwayFromZero);
     }
 
-    public static int GetAriaMax(double maximum)
+    public static int? GetAriaMax(double maximum)
     {
         if (maximum <= 0 || double.IsNaN(maximum))
-            return 0;
+            return null;
 
         return (int)Math.Round(maximum, MidpointRounding.AwayFromZero);
     }
