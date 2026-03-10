@@ -44,13 +44,16 @@
             <FluentCard Style="flex: 1; min-width: 200px;">
                 <FluentLabel Typo="Typography.H5">Player</FluentLabel>
                 <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.25rem; margin-top: 0.5rem;">
+                    @{
+                        var ammoProgressMax = GetAmmoProgressMax(_session.Player);
+                    }
                     <div><strong>@_session.Player.Name</strong></div>
                     <div>HP: @_session.Player.Health.ToString("F0") / @_session.Player.MaxHealth.ToString("F0")</div>
                     <FluentProgress Value="@((int)_session.Player.Health)" Max="@((int)_session.Player.MaxHealth)" />
                     <div>Stamina: @_session.Player.Stamina.ToString("F0") / 100</div>
                     <FluentProgress Value="@((int)_session.Player.Stamina)" Max="100" />
                     <div>Ammo: @_session.Player.CurrentAmmo @(_session.Player.MagazineSize.HasValue ? $"/ {_session.Player.MagazineSize}" : "")</div>
-                    <FluentProgress Value="@GetAmmoProgressValue(_session.Player)" Max="@GetAmmoProgressMax(_session.Player)" />
+                    <FluentProgress Value="@GetAmmoProgressValue(_session.Player, ammoProgressMax)" Max="@ammoProgressMax" />
                     <div>Distance: @_session.Player.DistanceToOpponent.ToString("F0")m</div>
                     <div>Cover: @(string.IsNullOrEmpty(_session.Player.CurrentCover) || _session.Player.CurrentCover == "None" ? "None" : _session.Player.CurrentCover)</div>
                     <div>Aim: @_session.Player.AimState | Move: @_session.Player.MovementState</div>
@@ -543,8 +546,8 @@
     private bool IsCurrentMissionRoute(string route, Guid operatorId) =>
         string.Equals(route.TrimStart('/'), $"missions/{MissionId}?operatorId={operatorId}", StringComparison.OrdinalIgnoreCase);
 
-    private static int GetAmmoProgressValue(PlayerState player) =>
-        Math.Clamp(player.CurrentAmmo, 0, GetAmmoProgressMax(player));
+    private static int GetAmmoProgressValue(PlayerState player, int ammoProgressMax) =>
+        Math.Clamp(player.CurrentAmmo, 0, ammoProgressMax);
 
     private static int GetAmmoProgressMax(PlayerState player)
     {
