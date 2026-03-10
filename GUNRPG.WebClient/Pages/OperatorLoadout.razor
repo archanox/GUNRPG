@@ -2,6 +2,9 @@
 @inject AuthService Auth
 @inject NavigationManager Nav
 @inject OperatorService OperatorSvc
+@inject NodeConnectionService NodeService
+@inject IJSRuntime JS
+@implements IAsyncDisposable
 
 <FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; max-width: 700px; margin: 0 auto;">
     <FluentStack Orientation="Orientation.Horizontal" Style="align-items: center; gap: 0.5rem;">
@@ -65,6 +68,8 @@
     private bool _busy;
     private string? _error;
     private string? _info;
+    private DotNetObjectReference<OperatorLoadout>? _dotNetRef;
+    private string? _sseUrl;
 
     protected override async Task OnInitializedAsync()
     {
@@ -75,6 +80,11 @@
         }
 
         await LoadAsync();
+
+        if (await TryNavigateToRealtimeRouteAsync())
+            return;
+
+        await StartSseAsync();
     }
 
     private async Task LoadAsync()
@@ -87,6 +97,52 @@
         _operator = data;
         _error = error;
         _loading = false;
+    }
+
+    private async Task StartSseAsync()
+    {
+        var baseUrl = await NodeService.GetBaseUrlAsync();
+        if (string.IsNullOrEmpty(baseUrl))
+            return;
+
+        var accessToken = Auth.GetAccessToken();
+        if (string.IsNullOrEmpty(accessToken))
+            return;
+
+        _sseUrl = $"{baseUrl}/operators/{Id}/stream";
+        _dotNetRef = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("sseHelper.connect", _sseUrl, accessToken, _dotNetRef, nameof(OnOperatorUpdated));
+    }
+
+    [JSInvokable]
+    public async Task OnOperatorUpdated()
+    {
+        var (data, _) = await OperatorSvc.GetAsync(Id);
+        if (data is null)
+            return;
+
+        _operator = data;
+        _info = null;
+
+        if (await TryNavigateToRealtimeRouteAsync())
+            return;
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task<bool> TryNavigateToRealtimeRouteAsync()
+    {
+        var route = OperatorNavigationHelper.GetRealtimeRoute(_operator, Id);
+        if (string.IsNullOrEmpty(route))
+            return Task.FromResult(false);
+
+        return NavigateToRealtimeRouteAsync(route);
+    }
+
+    private async Task<bool> NavigateToRealtimeRouteAsync(string route)
+    {
+        await InvokeAsync(() => Nav.NavigateTo(route));
+        return true;
     }
 
     private async Task ChangeLoadoutAsync(string weaponName)
@@ -109,5 +165,33 @@
         _operator = data ?? _operator;
         _info = $"Loadout changed to {weaponName}.";
         StateHasChanged();
+    }
+
+    private async Task StopSseAsync()
+    {
+        if (!string.IsNullOrEmpty(_sseUrl))
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("sseHelper.disconnect", _sseUrl);
+            }
+            catch
+            {
+                // Ignore JS interop errors during cleanup
+            }
+        }
+
+        _sseUrl = null;
+
+        if (_dotNetRef is not null)
+        {
+            _dotNetRef.Dispose();
+            _dotNetRef = null;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopSseAsync();
     }
 }

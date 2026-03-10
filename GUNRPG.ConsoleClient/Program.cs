@@ -350,12 +350,20 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                                             CurrentScreen = Screen.CombatSession;
                                     }
                                 }
-                                else if (CurrentScreen != Screen.BaseCamp &&
-                                         CurrentScreen != Screen.StartMission &&
-                                         CurrentScreen != Screen.CombatSession)
+                                else
                                 {
-                                    // Operator entered Infil mode from another client — show field ops.
-                                    CurrentScreen = Screen.BaseCamp;
+                                    // Another client resolved or abandoned the active combat and returned the
+                                    // operator to the field. Clear the local combat view so the console does not
+                                    // stay stuck on a dead or completed encounter.
+                                    ActiveSessionId = null;
+                                    CurrentSession = null;
+
+                                    if (CurrentScreen != Screen.BaseCamp &&
+                                        CurrentScreen != Screen.StartMission)
+                                    {
+                                        // Operator entered or returned to Infil mode from another client — show field ops.
+                                        CurrentScreen = Screen.BaseCamp;
+                                    }
                                 }
                             }
                             else if (updatedOp.CurrentMode == "Base" &&
