@@ -1,5 +1,7 @@
 window.sseHelper = {
     _connections: {},
+    _retryDelayMs: 3000,
+    _reconnectDelayMs: 1000,
 
     connect: function (url, accessToken, dotNetRef, callbackName) {
         if (this._connections[url]) {
@@ -54,7 +56,7 @@ window.sseHelper = {
                     }
 
                     if (!response.ok || !response.body) {
-                        await delay(3000);
+                        await delay(this._retryDelayMs);
                         continue;
                     }
 
@@ -77,7 +79,7 @@ window.sseHelper = {
                 }
 
                 if (!controller.signal.aborted) {
-                    await delay(1000);
+                    await delay(this._reconnectDelayMs);
                 }
             }
 
