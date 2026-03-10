@@ -50,6 +50,7 @@
                     <div>Stamina: @_session.Player.Stamina.ToString("F0") / 100</div>
                     <FluentProgress Value="@((int)_session.Player.Stamina)" Max="100" />
                     <div>Ammo: @_session.Player.CurrentAmmo @(_session.Player.MagazineSize.HasValue ? $"/ {_session.Player.MagazineSize}" : "")</div>
+                    <FluentProgress Value="@GetAmmoProgressValue(_session.Player)" Max="@GetAmmoProgressMax(_session.Player)" />
                     <div>Distance: @_session.Player.DistanceToOpponent.ToString("F0")m</div>
                     <div>Cover: @(string.IsNullOrEmpty(_session.Player.CurrentCover) || _session.Player.CurrentCover == "None" ? "None" : _session.Player.CurrentCover)</div>
                     <div>Aim: @_session.Player.AimState | Move: @_session.Player.MovementState</div>
@@ -209,6 +210,7 @@
     private static readonly TimeSpan RaidDuration = TimeSpan.FromMinutes(30);
 
     private CombatSession? _session;
+    private OperatorState? _operatorState;
     private bool _loading = true;
     private bool _busy;
     private string? _error;
@@ -233,9 +235,6 @@
     // Operator SSE (for cross-client state sync, e.g. console exfils while web is on combat screen)
     private DotNetObjectReference<Mission>? _operatorDotNetRef;
     private string? _operatorSseUrl;
-
-    // Operator mode (fetched alongside session load for redirect guard)
-    private string? _operatorMode;
 
     private bool EnterCoverDisabled => _session is not null &&
         (_session.Player.CurrentCover != "None" && !string.IsNullOrEmpty(_session.Player.CurrentCover)
@@ -265,11 +264,21 @@
             return;
         }
 
-        // Redirect guard: if the operator is no longer in Infil mode, navigate away
-        if (_session is not null && _operatorMode == "Base")
+        // Redirect guard: if the operator is no longer on this combat route, navigate away.
+        if (_session is not null && _operatorState?.CurrentMode == "Base")
         {
             Nav.NavigateTo($"operators/{_session.OperatorId}");
             return;
+        }
+
+        if (_session is not null)
+        {
+            var realtimeRoute = OperatorNavigationHelper.GetRealtimeRoute(_operatorState, _session.OperatorId);
+            if (!string.IsNullOrEmpty(realtimeRoute) && !IsCurrentMissionRoute(realtimeRoute, _session.OperatorId))
+            {
+                Nav.NavigateTo(realtimeRoute);
+                return;
+            }
         }
 
         // Start SSE streams for real-time sync (session and operator)
@@ -350,12 +359,20 @@
 
         var (opData, _) = await OperatorSvc.GetAsync(_session.OperatorId);
         if (opData is null) return;
+        _operatorState = opData;
 
         // If the operator is no longer in Infil mode (e.g. another client exfilled),
         // navigate to the operator details page.
         if (opData.CurrentMode == "Base")
         {
             await InvokeAsync(() => Nav.NavigateTo($"operators/{_session.OperatorId}"));
+            return;
+        }
+
+        var realtimeRoute = OperatorNavigationHelper.GetRealtimeRoute(opData, _session.OperatorId);
+        if (!string.IsNullOrEmpty(realtimeRoute) && !IsCurrentMissionRoute(realtimeRoute, _session.OperatorId))
+        {
+            await InvokeAsync(() => Nav.NavigateTo(realtimeRoute));
             return;
         }
 
@@ -398,8 +415,8 @@
         if (_session is not null)
         {
             var (opData, _) = await OperatorSvc.GetAsync(_session.OperatorId);
+            _operatorState = opData;
             _infilStartTime = opData?.InfilStartTime;
-            _operatorMode = opData?.CurrentMode;
         }
 
         _loading = false;
@@ -521,6 +538,21 @@
             Nav.NavigateTo($"missions/infil/{OperatorId}");
         else
             Nav.NavigateTo("operators");
+    }
+
+    private bool IsCurrentMissionRoute(string route, Guid operatorId) =>
+        string.Equals(route.TrimStart('/'), $"missions/{MissionId}?operatorId={operatorId}", StringComparison.OrdinalIgnoreCase);
+
+    private static int GetAmmoProgressValue(PlayerState player) =>
+        Math.Clamp(player.CurrentAmmo, 0, GetAmmoProgressMax(player));
+
+    private static int GetAmmoProgressMax(PlayerState player)
+    {
+        var maxAmmo = player.MagazineSize.GetValueOrDefault();
+        if (maxAmmo <= 0)
+            maxAmmo = player.CurrentAmmo;
+
+        return Math.Max(maxAmmo, 1);
     }
 
     public async ValueTask DisposeAsync()
