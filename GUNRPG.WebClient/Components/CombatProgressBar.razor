@@ -1,0 +1,38 @@
+<div class="combat-progress"
+     role="progressbar"
+     aria-label="@Label"
+     @attributes="AriaAttributes">
+    <div class="@FillCssClass"
+         style="width: @CombatProgressBarHelper.GetPercent(Current, Maximum)%;">
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter] public double Current { get; set; }
+    [Parameter] public double Maximum { get; set; }
+    [Parameter] public string FillModifierClass { get; set; } = string.Empty;
+
+    private string FillCssClass =>
+        string.IsNullOrWhiteSpace(FillModifierClass)
+            ? "combat-progress__fill"
+            : $"combat-progress__fill {FillModifierClass}";
+
+    private IReadOnlyDictionary<string, object>? AriaAttributes
+    {
+        get
+        {
+            var max = CombatProgressBarHelper.GetAriaMax(Maximum);
+            var now = CombatProgressBarHelper.GetAriaValue(Current, Maximum);
+            if (max is null || now is null)
+                return null;
+
+            return new Dictionary<string, object>
+            {
+                ["aria-valuemin"] = 0,
+                ["aria-valuemax"] = max.Value,
+                ["aria-valuenow"] = now.Value
+            };
+        }
+    }
+}

@@ -49,38 +49,20 @@
                     }
                     <div><strong>@_session.Player.Name</strong></div>
                     <div>HP: @_session.Player.Health.ToString("F0") / @_session.Player.MaxHealth.ToString("F0")</div>
-                    <div class="combat-progress"
-                         role="progressbar"
-                         aria-label="Player health"
-                         aria-valuemin="0"
-                         aria-valuemax="@CombatProgressBarHelper.GetAriaMax(_session.Player.MaxHealth)"
-                         aria-valuenow="@CombatProgressBarHelper.GetAriaValue(_session.Player.Health)">
-                        <div class="combat-progress__fill combat-progress__fill--health"
-                             style="width: @CombatProgressBarHelper.GetPercent(_session.Player.Health, _session.Player.MaxHealth)%;">
-                        </div>
-                    </div>
+                    <CombatProgressBar Label="Player health"
+                                       Current="@_session.Player.Health"
+                                       Maximum="@_session.Player.MaxHealth"
+                                       FillModifierClass="combat-progress__fill--health" />
                     <div>Stamina: @_session.Player.Stamina.ToString("F0") / 100</div>
-                    <div class="combat-progress"
-                         role="progressbar"
-                         aria-label="Player stamina"
-                         aria-valuemin="0"
-                         aria-valuemax="100"
-                         aria-valuenow="@CombatProgressBarHelper.GetAriaValue(_session.Player.Stamina)">
-                        <div class="combat-progress__fill combat-progress__fill--stamina"
-                             style="width: @CombatProgressBarHelper.GetPercent(_session.Player.Stamina, 100)%;">
-                        </div>
-                    </div>
+                    <CombatProgressBar Label="Player stamina"
+                                       Current="@_session.Player.Stamina"
+                                       Maximum="100"
+                                       FillModifierClass="combat-progress__fill--stamina" />
                     <div>Ammo: @_session.Player.CurrentAmmo @(_session.Player.MagazineSize.HasValue ? $"/ {_session.Player.MagazineSize}" : "")</div>
-                    <div class="combat-progress"
-                         role="progressbar"
-                         aria-label="Player ammo"
-                         aria-valuemin="0"
-                         aria-valuemax="@ammoProgressMax"
-                         aria-valuenow="@CombatProgressBarHelper.GetAriaValue(GetAmmoProgressValue(_session.Player, ammoProgressMax))">
-                        <div class="combat-progress__fill combat-progress__fill--ammo"
-                             style="width: @CombatProgressBarHelper.GetPercent(GetAmmoProgressValue(_session.Player, ammoProgressMax), ammoProgressMax)%;">
-                        </div>
-                    </div>
+                    <CombatProgressBar Label="Player ammo"
+                                       Current="@GetAmmoProgressValue(_session.Player, ammoProgressMax)"
+                                       Maximum="@ammoProgressMax"
+                                       FillModifierClass="combat-progress__fill--ammo" />
                     <div>Distance: @_session.Player.DistanceToOpponent.ToString("F0")m</div>
                     <div>Cover: @(string.IsNullOrEmpty(_session.Player.CurrentCover) || _session.Player.CurrentCover == "None" ? "None" : _session.Player.CurrentCover)</div>
                     <div>Aim: @_session.Player.AimState | Move: @_session.Player.MovementState</div>
@@ -96,16 +78,10 @@
                 <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.25rem; margin-top: 0.5rem;">
                     <div><strong>@_session.Enemy.Name</strong></div>
                     <div>HP: @_session.Enemy.Health.ToString("F0") / @_session.Enemy.MaxHealth.ToString("F0")</div>
-                    <div class="combat-progress"
-                         role="progressbar"
-                         aria-label="Enemy health"
-                         aria-valuemin="0"
-                         aria-valuemax="@CombatProgressBarHelper.GetAriaMax(_session.Enemy.MaxHealth)"
-                         aria-valuenow="@CombatProgressBarHelper.GetAriaValue(_session.Enemy.Health)">
-                        <div class="combat-progress__fill combat-progress__fill--enemy"
-                             style="width: @CombatProgressBarHelper.GetPercent(_session.Enemy.Health, _session.Enemy.MaxHealth)%;">
-                        </div>
-                    </div>
+                    <CombatProgressBar Label="Enemy health"
+                                       Current="@_session.Enemy.Health"
+                                       Maximum="@_session.Enemy.MaxHealth"
+                                       FillModifierClass="combat-progress__fill--enemy" />
                     <div>Distance: @_session.Enemy.DistanceToOpponent.ToString("F0")m</div>
                     <div>Cover: @(string.IsNullOrEmpty(_session.Enemy.CurrentCover) || _session.Enemy.CurrentCover == "None" ? "None" : _session.Enemy.CurrentCover)</div>
                     @if (!_session.Enemy.IsAlive)
