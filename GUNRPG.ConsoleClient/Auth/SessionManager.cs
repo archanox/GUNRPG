@@ -51,6 +51,13 @@ public sealed class SessionManager
     // written by the background polling task.
     private volatile AuthState _state = AuthState.NotAuthenticated;
 
+    // Backing fields for properties read by the UI thread and written by the background
+    // polling task. Declared volatile to ensure cross-thread visibility without locks.
+    // Reference-type reads and writes are atomic on all supported CLR platforms.
+    private volatile string? _verificationUrl;
+    private volatile string? _userCode;
+    private volatile string? _loginError;
+
     /// <summary>Current authentication state. Thread-safe for read access from the UI thread.</summary>
     public AuthState State => _state;
 
@@ -58,18 +65,18 @@ public sealed class SessionManager
     /// The verification URI to display to the user during the device-code flow.
     /// <see langword="null"/> when not in the <see cref="AuthState.Authenticating"/> state.
     /// </summary>
-    public string? VerificationUrl { get; private set; }
+    public string? VerificationUrl => _verificationUrl;
 
     /// <summary>
     /// The short user code to display during the device-code flow.
     /// <see langword="null"/> when not in the <see cref="AuthState.Authenticating"/> state.
     /// </summary>
-    public string? UserCode { get; private set; }
+    public string? UserCode => _userCode;
 
     /// <summary>
     /// Error message from the last failed login attempt, or <see langword="null"/> if none.
     /// </summary>
-    public string? LoginError { get; private set; }
+    public string? LoginError => _loginError;
 
     public SessionManager(SessionStore store, AuthDelegatingHandler authHandler, string baseUrl)
     {
@@ -105,16 +112,16 @@ public sealed class SessionManager
     public void StartLogin(CancellationToken ct)
     {
         _state = AuthState.Authenticating;
-        LoginError = null;
-        VerificationUrl = null;
-        UserCode = null;
+        _loginError = null;
+        _verificationUrl = null;
+        _userCode = null;
 
         // Fire-and-forget: the background task owns all state transitions.
-        // The task is not awaited because StartLogin returns immediately so the TUI can
-        // render the Authenticating screen while polling runs in the background.
-        // CancellationToken propagation ensures the task is cancelled if the app exits.
-        var loginTask = Task.Run(() => RunDeviceFlowAsync(ct), ct);
-        GC.KeepAlive(loginTask); // suppress CS4014 "not awaited" analysis
+        // StartLogin returns immediately so the TUI can render the Authenticating screen
+        // while device-code polling runs in the background.
+        // CancellationToken propagation ensures the task stops if the app exits.
+        // Task.Run does not trigger CS4014 (which only applies to direct async calls).
+        Task.Run(() => RunDeviceFlowAsync(ct), ct);
     }
 
     /// <summary>
@@ -125,9 +132,9 @@ public sealed class SessionManager
     {
         _store.Delete();
         _authHandler.SetAccessToken(null);
-        VerificationUrl = null;
-        UserCode = null;
-        LoginError = null;
+        _verificationUrl = null;
+        _userCode = null;
+        _loginError = null;
         _state = AuthState.NotAuthenticated;
     }
 
@@ -183,8 +190,8 @@ public sealed class SessionManager
             var deviceClient = new DeviceAuthClient(BypassClient, _baseUrl);
 
             var deviceFlow = await deviceClient.StartDeviceFlowAsync(ct);
-            VerificationUrl = deviceFlow.VerificationUri;
-            UserCode = deviceFlow.UserCode;
+            _verificationUrl = deviceFlow.VerificationUri;
+            _userCode = deviceFlow.UserCode;
 
             // Poll respects the server-provided interval (DeviceAuthClient handles slow_down back-off).
             var tokens = await deviceClient.PollForTokenAsync(deviceFlow, ct);
@@ -200,7 +207,7 @@ public sealed class SessionManager
         }
         catch (Exception ex)
         {
-            LoginError = ex.Message;
+            _loginError = ex.Message;
             _state = AuthState.NotAuthenticated;
         }
     }

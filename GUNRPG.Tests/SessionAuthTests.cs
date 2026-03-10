@@ -380,7 +380,7 @@ public sealed class SessionManagerTests : IDisposable
             DateTimeOffset.UtcNow.AddDays(30));
 
     private static DeviceCodeResponse MakeDeviceFlow() =>
-        new("device-code-xyz", "ABCD-1234", "https://node.example.com/device", 300, 1);
+        new("device-code-xyz", "ABCD-1234", "https://node.example.com/device", 300, 0);
 
     private static async Task WaitForStateAsync(SessionManager manager, AuthState expected, CancellationToken ct)
     {

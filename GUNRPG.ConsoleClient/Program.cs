@@ -538,6 +538,12 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 CurrentScreen = Screen.MainMenu;
                 LoadSavedOperatorId();
             }
+            else if (authState == AuthState.NotAuthenticated && CurrentScreen == Screen.Authenticating)
+            {
+                // Device-code flow failed or was cancelled — return to LoginMenu so the
+                // user can see the error message and retry.
+                CurrentScreen = Screen.LoginMenu;
+            }
         }
 
         SyncRaidStateFromOperator();
@@ -825,9 +831,18 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     /// <summary>
     /// Clears all in-memory operator and combat session state.
     /// Called on logout so stale data is not visible when a different user logs in.
+    /// Also cancels any active SSE streams so they don't continue sending authenticated
+    /// requests for the logged-out user's operator.
     /// </summary>
     void ClearOperatorState()
     {
+        // Cancel active SSE streams before clearing the state they refer to.
+        StopCombatSessionStream();
+        _streamCts?.Cancel();
+        _streamCts?.Dispose();
+        _streamCts = null;
+        _sseTask = null;
+
         CurrentOperatorId = null;
         CurrentOperator = null;
         ActiveSessionId = null;
