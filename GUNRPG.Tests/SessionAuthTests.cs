@@ -7,6 +7,7 @@ using GUNRPG.ConsoleClient.Auth;
 using GUNRPG.ConsoleClient.Identity;
 using GUNRPG.Infrastructure;
 using GUNRPG.Infrastructure.Persistence;
+using Hex1b;
 using LiteDB;
 
 namespace GUNRPG.Tests;
@@ -328,21 +329,10 @@ public sealed class SessionManagerTests : IDisposable
         manager.StartLogin(cts.Token);
         await WaitForStateAsync(manager, AuthState.Authenticated, cts.Token);
 
-        using var offlineDb = new LiteDatabase(Path.Combine(_tempDir, "offline-ui-test.db"));
-        var offlineStore = new OfflineStore(offlineDb);
-        using var httpClient = new HttpClient { BaseAddress = new Uri(BaseUrl) };
-        var resolver = new GameBackendResolver(httpClient, offlineStore);
-        var gameState = new GameState(
-            httpClient,
-            new JsonSerializerOptions(JsonSerializerDefaults.Web),
-            new StubGameBackend(),
-            resolver,
-            offlineStore,
-            offlineDb,
-            manager,
-            Screen.Authenticating);
+        using var gameStateScope = CreateAuthenticatingGameState(manager, "auth-success-test.db");
+        var gameState = gameStateScope.GameState;
 
-        await gameState.BuildUI(null!, new CancellationTokenSource());
+        await gameState.BuildUI(new RootContext(), new CancellationTokenSource());
 
         Assert.Equal(Screen.MainMenu, gameState.CurrentScreen);
     }
@@ -358,21 +348,10 @@ public sealed class SessionManagerTests : IDisposable
         manager.StartLogin(cts.Token);
         await WaitForStateAsync(manager, AuthState.NotAuthenticated, cts.Token);
 
-        using var offlineDb = new LiteDatabase(Path.Combine(_tempDir, "offline-ui-failure-test.db"));
-        var offlineStore = new OfflineStore(offlineDb);
-        using var httpClient = new HttpClient { BaseAddress = new Uri(BaseUrl) };
-        var resolver = new GameBackendResolver(httpClient, offlineStore);
-        var gameState = new GameState(
-            httpClient,
-            new JsonSerializerOptions(JsonSerializerDefaults.Web),
-            new StubGameBackend(),
-            resolver,
-            offlineStore,
-            offlineDb,
-            manager,
-            Screen.Authenticating);
+        using var gameStateScope = CreateAuthenticatingGameState(manager, "auth-failure-test.db");
+        var gameState = gameStateScope.GameState;
 
-        await gameState.BuildUI(null!, new CancellationTokenSource());
+        await gameState.BuildUI(new RootContext(), new CancellationTokenSource());
 
         Assert.Equal(Screen.LoginMenu, gameState.CurrentScreen);
     }
@@ -452,6 +431,39 @@ public sealed class SessionManagerTests : IDisposable
     {
         while (!ct.IsCancellationRequested && manager.State != expected)
             await Task.Delay(50, ct);
+    }
+
+    private TestGameStateScope CreateAuthenticatingGameState(SessionManager manager, string databaseFileName)
+    {
+        var databasePath = Path.Combine(_tempDir, databaseFileName);
+        var offlineDb = new LiteDatabase(databasePath);
+        var offlineStore = new OfflineStore(offlineDb);
+        var httpClient = new HttpClient { BaseAddress = new Uri(BaseUrl) };
+        var resolver = new GameBackendResolver(httpClient, offlineStore);
+        var gameState = new GameState(
+            httpClient,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web),
+            new StubGameBackend(),
+            resolver,
+            offlineStore,
+            offlineDb,
+            manager,
+            Screen.Authenticating);
+
+        return new TestGameStateScope(gameState, httpClient, offlineDb, databasePath);
+    }
+
+    private sealed class TestGameStateScope(GameState gameState, HttpClient httpClient, LiteDatabase offlineDb, string databasePath) : IDisposable
+    {
+        public GameState GameState { get; } = gameState;
+
+        public void Dispose()
+        {
+            httpClient.Dispose();
+            offlineDb.Dispose();
+            if (File.Exists(databasePath))
+                File.Delete(databasePath);
+        }
     }
 
     private sealed class StubGameBackend : IGameBackend
