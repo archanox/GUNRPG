@@ -446,13 +446,22 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             // If the session was concluded by another client (e.g. web client advanced
                             // combat to victory/defeat), navigate away from the combat screen so the
                             // console user is not left stuck on a stale combat view.
-                            if (sessionData.Phase == "Completed" && CurrentScreen == Screen.CombatSession)
+                            // Guard is intentionally absent so a completion event received while
+                            // momentarily on a sub-screen (e.g. Screen.Message) is not missed.
+                            if (sessionData.IsConcluded)
                             {
-                                // Match AdvanceCombat logic: player alive = success, player dead = failure.
-                                var victory = sessionData.Player.Health > 0;
-                                Message = victory
-                                    ? "MISSION SUCCESS\n\nTarget eliminated. Exfil to secure your XP.\n\nPress OK to continue."
-                                    : "MISSION FAILED\n\nYou were eliminated.\n\nPress OK to continue.";
+                                if (sessionData.IsVictory)
+                                {
+                                    Message = "MISSION SUCCESS\n\nTarget eliminated. Exfil to secure your XP.\n\nPress OK to continue.";
+                                }
+                                else if (sessionData.Player.IsAlive)
+                                {
+                                    Message = "MISSION COMPLETE\n\nYou survived, but the target was not eliminated.\n\nPress OK to continue.";
+                                }
+                                else
+                                {
+                                    Message = "MISSION FAILED\n\nYou were eliminated.\n\nPress OK to continue.";
+                                }
                                 ActiveSessionId = null;
                                 CurrentSession = null;
                                 CurrentScreen = Screen.MissionComplete;
