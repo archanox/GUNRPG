@@ -48,6 +48,10 @@ window.sseHelper = {
 
         const pump = async () => {
             let retryDelayMs = this._retryDelayMs;
+            const waitForRetry = async () => {
+                await delay(retryDelayMs);
+                retryDelayMs = nextRetryDelay(retryDelayMs);
+            };
 
             while (!controller.signal.aborted) {
                 try {
@@ -76,8 +80,7 @@ window.sseHelper = {
                     }
 
                     if (!response.ok || !response.body) {
-                        await delay(retryDelayMs);
-                        retryDelayMs = nextRetryDelay(retryDelayMs);
+                        await waitForRetry();
                         continue;
                     }
 
@@ -100,8 +103,7 @@ window.sseHelper = {
                         break;
                     }
 
-                    await delay(retryDelayMs);
-                    retryDelayMs = nextRetryDelay(retryDelayMs);
+                    await waitForRetry();
                     continue;
                 }
 
