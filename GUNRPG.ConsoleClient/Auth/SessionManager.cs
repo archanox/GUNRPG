@@ -110,7 +110,11 @@ public sealed class SessionManager
         UserCode = null;
 
         // Fire-and-forget: the background task owns all state transitions.
+        // The task is not awaited because StartLogin returns immediately so the TUI can
+        // render the Authenticating screen while polling runs in the background.
+        // CancellationToken propagation ensures the task is cancelled if the app exits.
         var loginTask = Task.Run(() => RunDeviceFlowAsync(ct), ct);
+        GC.KeepAlive(loginTask); // suppress CS4014 "not awaited" analysis
     }
 
     /// <summary>
@@ -237,6 +241,16 @@ public sealed class SessionManager
     /// going straight to <see cref="DelegatingHandler.InnerHandler"/>. Used for auth-endpoint
     /// calls (token refresh, device flow) to avoid recursive 401 handling.
     /// </summary>
+    /// <remarks>
+    /// <see cref="DelegatingHandler.InnerHandler"/> is guaranteed non-null because
+    /// <see cref="AuthDelegatingHandler.InnerHandler"/> is always set to a
+    /// <see cref="HttpClientHandler"/> before <see cref="SessionManager"/> is constructed
+    /// (see Program.cs startup).
+    /// </remarks>
     private HttpClient BypassClient =>
-        _bypassClient ??= new HttpClient(_authHandler.InnerHandler!, disposeHandler: false);
+        _bypassClient ??= new HttpClient(
+            _authHandler.InnerHandler
+                ?? throw new InvalidOperationException(
+                    "AuthDelegatingHandler.InnerHandler must be set before SessionManager is used."),
+            disposeHandler: false);
 }

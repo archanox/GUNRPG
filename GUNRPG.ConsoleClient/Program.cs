@@ -704,11 +704,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                         case "LOGOUT":
                             sessionManager?.Logout();
                             // Clear local operator state so it isn't shown for the next user.
-                            CurrentOperatorId = null;
-                            CurrentOperator = null;
-                            ActiveSessionId = null;
-                            CurrentSession = null;
-                            AvailableOperators = null;
+                            ClearOperatorState();
                             CurrentScreen = Screen.LoginMenu;
                             break;
                         case "EXIT":
@@ -824,6 +820,19 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             ErrorMessage = $"Exception: {ex.Message}";
             AvailableOperators = new List<OperatorSummary>();
         }
+    }
+
+    /// <summary>
+    /// Clears all in-memory operator and combat session state.
+    /// Called on logout so stale data is not visible when a different user logs in.
+    /// </summary>
+    void ClearOperatorState()
+    {
+        CurrentOperatorId = null;
+        CurrentOperator = null;
+        ActiveSessionId = null;
+        CurrentSession = null;
+        AvailableOperators = null;
     }
 
     Hex1bWidget BuildSelectOperator()
