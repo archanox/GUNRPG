@@ -1,0 +1,32 @@
+.combat-progress {
+    width: 100%;
+    height: 0.75rem;
+    overflow: hidden;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.combat-progress__fill {
+    height: 100%;
+    min-width: 0;
+    border-radius: inherit;
+    transition: width 0.2s ease-out;
+}
+
+.combat-progress__fill--health {
+    background: linear-gradient(90deg, #df4c4c 0%, #f87171 100%);
+}
+
+.combat-progress__fill--stamina {
+    background: linear-gradient(90deg, #2eb872 0%, #6ee7b7 100%);
+}
+
+.combat-progress__fill--ammo {
+    background: linear-gradient(90deg, #d9911b 0%, #fbbf24 100%);
+}
+
+.combat-progress__fill--enemy {
+    background: linear-gradient(90deg, #8b5cf6 0%, #c084fc 100%);
+}
