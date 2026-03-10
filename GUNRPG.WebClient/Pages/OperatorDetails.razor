@@ -176,16 +176,12 @@
     private async Task StartSseAsync()
     {
         var baseUrl = await NodeService.GetBaseUrlAsync();
-        if (string.IsNullOrEmpty(baseUrl))
+        if (!AuthenticatedSseHelper.TryGetHttpsBaseUrl(baseUrl, out var httpsBaseUrl))
             return;
 
-        var accessToken = Auth.GetAccessToken();
-        if (string.IsNullOrEmpty(accessToken))
-            return;
-
-        _sseUrl = $"{baseUrl}/operators/{Id}/stream";
+        _sseUrl = $"{httpsBaseUrl}/operators/{Id}/stream";
         _dotNetRef = DotNetObjectReference.Create(this);
-        await JS.InvokeVoidAsync("sseHelper.connect", _sseUrl, accessToken, _dotNetRef, nameof(OnOperatorUpdated));
+        await JS.InvokeVoidAsync("sseHelper.connect", _sseUrl, _dotNetRef, nameof(OnOperatorUpdated), nameof(GetSseAccessTokenAsync));
     }
 
     [JSInvokable]
@@ -217,6 +213,19 @@
     {
         await InvokeAsync(() => Nav.NavigateTo(route));
         return true;
+    }
+
+    [JSInvokable]
+    public async Task<string?> GetSseAccessTokenAsync(bool forceRefresh)
+    {
+        var accessToken = Auth.GetAccessToken();
+        if (!forceRefresh && !string.IsNullOrEmpty(accessToken))
+            return accessToken;
+
+        if (await Auth.RefreshTokenAsync())
+            return Auth.GetAccessToken();
+
+        return forceRefresh ? null : accessToken;
     }
 
     private async Task StartInfilAsync()

@@ -2,8 +2,9 @@ window.sseHelper = {
     _connections: {},
     _retryDelayMs: 3000,
     _reconnectDelayMs: 1000,
+    _maxRetryDelayMs: 30000,
 
-    connect: function (url, accessToken, dotNetRef, callbackName) {
+    connect: function (url, dotNetRef, callbackName, tokenCallbackName) {
         if (this._connections[url]) {
             this.disconnect(url);
         }
@@ -13,6 +14,14 @@ window.sseHelper = {
         this._connections[url] = connection;
 
         const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+        const nextRetryDelay = (ms) => Math.min(ms * 2, this._maxRetryDelayMs);
+        const getAccessToken = async (forceRefresh) => {
+            try {
+                return await dotNetRef.invokeMethodAsync(tokenCallbackName, forceRefresh);
+            } catch {
+                return null;
+            }
+        };
 
         const processChunk = async function (chunk, state) {
             state.buffer += chunk;
@@ -38,12 +47,17 @@ window.sseHelper = {
         };
 
         const pump = async () => {
+            let retryDelayMs = this._retryDelayMs;
+
             while (!controller.signal.aborted) {
                 try {
-                    const headers = { "Accept": "text/event-stream" };
-                    if (accessToken) {
-                        headers["Authorization"] = `Bearer ${accessToken}`;
+                    const accessToken = await getAccessToken(false);
+                    if (!accessToken) {
+                        break;
                     }
+
+                    const headers = { "Accept": "text/event-stream" };
+                    headers["Authorization"] = `Bearer ${accessToken}`;
 
                     const response = await fetch(url, {
                         headers,
@@ -52,13 +66,22 @@ window.sseHelper = {
                     });
 
                     if (response.status === 401 || response.status === 403) {
-                        break;
+                        const refreshedToken = await getAccessToken(true);
+                        if (!refreshedToken) {
+                            break;
+                        }
+
+                        await delay(this._reconnectDelayMs);
+                        continue;
                     }
 
                     if (!response.ok || !response.body) {
-                        await delay(this._retryDelayMs);
+                        await delay(retryDelayMs);
+                        retryDelayMs = nextRetryDelay(retryDelayMs);
                         continue;
                     }
+
+                    retryDelayMs = this._retryDelayMs;
 
                     const reader = response.body.getReader();
                     const decoder = new TextDecoder();
@@ -76,6 +99,10 @@ window.sseHelper = {
                     if (controller.signal.aborted) {
                         break;
                     }
+
+                    await delay(retryDelayMs);
+                    retryDelayMs = nextRetryDelay(retryDelayMs);
+                    continue;
                 }
 
                 if (!controller.signal.aborted) {
