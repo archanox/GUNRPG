@@ -142,9 +142,13 @@
         if (string.IsNullOrEmpty(baseUrl))
             return;
 
+        var accessToken = Auth.GetAccessToken();
+        if (string.IsNullOrEmpty(accessToken))
+            return;
+
         _sseUrl = $"{baseUrl}/operators/{OperatorId}/stream";
         _dotNetRef = DotNetObjectReference.Create(this);
-        await JS.InvokeVoidAsync("sseHelper.connect", _sseUrl, _dotNetRef, nameof(OnOperatorUpdated));
+        await JS.InvokeVoidAsync("sseHelper.connect", _sseUrl, accessToken, _dotNetRef, nameof(OnOperatorUpdated));
     }
 
     [JSInvokable]
