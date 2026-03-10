@@ -7,6 +7,7 @@ using GUNRPG.Application.Combat;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Sessions;
+using GUNRPG.ConsoleClient.Auth;
 using GUNRPG.ConsoleClient.Identity;
 using GUNRPG.Core.Intents;
 using GUNRPG.Infrastructure;
@@ -50,29 +51,42 @@ using var _ = offlineDb; // ensure disposal
 // Resolve game backend based on server reachability and local state
 var backend = await backendResolver.ResolveAsync();
 
-// Authentication: run device flow or refresh stored token before starting the game.
-// Only attempted when the server is reachable (online mode).
+// Set up the TUI-integrated session manager.
+// In online mode: attempt silent auto-login from session.json.
+// On failure (no stored session or expired token): show LoginMenu so the user can log in via the TUI.
+// In offline mode: skip auth entirely and go straight to the main menu.
+var sessionStore = new SessionStore();
+var sessionManager = new SessionManager(sessionStore, authHandler, baseAddress);
+Screen initialScreen;
+
 if (backendResolver.CurrentMode == GameMode.Online)
 {
     try
     {
-        await authHandler.LoginAsync(cts.Token);
+        initialScreen = await sessionManager.TryAutoLoginAsync(cts.Token)
+            ? Screen.MainMenu
+            : Screen.LoginMenu;
     }
     catch (OperationCanceledException)
     {
         throw;
     }
-    catch (Exception ex)
+    catch
     {
-        Console.WriteLine($"[AUTH] Login failed: {ex.Message}");
+        initialScreen = Screen.LoginMenu;
     }
 }
+else
+{
+    // Offline mode — authentication is not required.
+    initialScreen = Screen.MainMenu;
+}
 
-var gameState = new GameState(httpClient, jsonOptions, backend, backendResolver, offlineStore, offlineDb);
+var gameState = new GameState(httpClient, jsonOptions, backend, backendResolver, offlineStore, offlineDb, sessionManager, initialScreen);
 
-// Try to auto-load last used operator
-gameState.LoadSavedOperatorId();
-// LoadSavedOperatorId will set the appropriate screen (CombatSession or BaseCamp)
+// Auto-load the last used operator only when the user is already authenticated (or in offline mode).
+if (initialScreen != Screen.LoginMenu)
+    gameState.LoadSavedOperatorId();
 
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 
@@ -225,9 +239,9 @@ static bool IsLocalServer(string hostname, string machineName)
         || hostname.Equals(machineName + ".local", StringComparison.OrdinalIgnoreCase);
 }
 
-class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver, OfflineStore? offlineStore = null, LiteDB.LiteDatabase? offlineDb = null)
+class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver, OfflineStore? offlineStore = null, LiteDB.LiteDatabase? offlineDb = null, SessionManager? sessionManager = null, Screen initialScreen = Screen.MainMenu)
 {
-    public Screen CurrentScreen { get; set; } = Screen.MainMenu;
+    public Screen CurrentScreen { get; set; } = initialScreen;
     public Screen ReturnScreen { get; set; } = Screen.MainMenu;
     
     public Guid? CurrentOperatorId { get; set; }
@@ -508,6 +522,24 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     public Task<Hex1bWidget> BuildUI(RootContext ctx, CancellationTokenSource cts)
     {
         _appCt = cts.Token;
+
+        // Auth state machine: auto-transition screens based on SessionManager state.
+        if (sessionManager is not null)
+        {
+            var authState = sessionManager.State;
+            if (authState == AuthState.Authenticating)
+            {
+                // Always show the Authenticating screen while the device flow is in progress.
+                CurrentScreen = Screen.Authenticating;
+            }
+            else if (authState == AuthState.Authenticated && CurrentScreen == Screen.LoginMenu)
+            {
+                // Login succeeded — move to the main menu and load the last used operator.
+                CurrentScreen = Screen.MainMenu;
+                LoadSavedOperatorId();
+            }
+        }
+
         SyncRaidStateFromOperator();
         ApplyPendingRaidStateTransitions();
 
@@ -533,6 +565,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         var widget = CurrentScreen switch
         {
+            Screen.LoginMenu => BuildLoginMenu(cts),
+            Screen.Authenticating => BuildAuthenticating(),
             Screen.MainMenu => BuildMainMenu(cts),
             Screen.SelectOperator => BuildSelectOperator(),
             Screen.CreateOperator => BuildCreateOperator(),
@@ -596,12 +630,13 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             _ => "[UNKNOWN]"
         };
 
-        var menuItems = new List<string>
-        {
-            "CREATE NEW OPERATOR",
-            "SELECT OPERATOR",
-            "EXIT"
-        };
+        // Build the menu items depending on whether a session manager is present.
+        // With session manager (online): Operators, Missions, Logout, Quit.
+        // Without (offline/legacy): original Create + Select + Exit layout.
+        var hasAuth = sessionManager is not null;
+        var menuItems = hasAuth
+            ? new List<string> { "OPERATORS", "MISSIONS", "LOGOUT", "QUIT" }
+            : new List<string> { "CREATE NEW OPERATOR", "SELECT OPERATOR", "EXIT" };
 
         return new VStackWidget([
             UI.CreateBorder($"GUNRPG - OPERATOR TERMINAL {modeLabel}"),
@@ -616,20 +651,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                     var selected = menuItems[e.ActivatedIndex];
                     switch (selected)
                     {
-                        case "CREATE NEW OPERATOR":
-                            if (!TryEnsureOnline())
-                            {
-                                ErrorMessage = "Cannot create operators while offline.";
-                                Message = "Operator creation requires a server connection.\n\nPress OK to continue.";
-                                CurrentScreen = Screen.Message;
-                                ReturnScreen = Screen.MainMenu;
-                            }
-                            else
-                            {
-                                CurrentScreen = Screen.CreateOperator;
-                                OperatorName = "";
-                            }
-                            break;
+                        case "OPERATORS":
                         case "SELECT OPERATOR":
                             if (mode == GameMode.Blocked && !TryEnsureOnline())
                             {
@@ -645,7 +667,52 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                                 CurrentScreen = Screen.SelectOperator;
                             }
                             break;
+                        case "MISSIONS":
+                            if (CurrentOperator is not null)
+                            {
+                                CurrentScreen = Screen.BaseCamp;
+                            }
+                            else if (mode == GameMode.Blocked && !TryEnsureOnline())
+                            {
+                                ErrorMessage = "Cannot access missions while server is unreachable.";
+                                Message = "Server connection required to access missions.\n\nPress OK to continue.";
+                                CurrentScreen = Screen.Message;
+                                ReturnScreen = Screen.MainMenu;
+                            }
+                            else
+                            {
+                                // No operator selected — redirect to operator selection first.
+                                ErrorMessage = null;
+                                LoadOperatorList();
+                                CurrentScreen = Screen.SelectOperator;
+                            }
+                            break;
+                        case "CREATE NEW OPERATOR":
+                            if (!TryEnsureOnline())
+                            {
+                                ErrorMessage = "Cannot create operators while offline.";
+                                Message = "Operator creation requires a server connection.\n\nPress OK to continue.";
+                                CurrentScreen = Screen.Message;
+                                ReturnScreen = Screen.MainMenu;
+                            }
+                            else
+                            {
+                                CurrentScreen = Screen.CreateOperator;
+                                OperatorName = "";
+                            }
+                            break;
+                        case "LOGOUT":
+                            sessionManager?.Logout();
+                            // Clear local operator state so it isn't shown for the next user.
+                            CurrentOperatorId = null;
+                            CurrentOperator = null;
+                            ActiveSessionId = null;
+                            CurrentSession = null;
+                            AvailableOperators = null;
+                            CurrentScreen = Screen.LoginMenu;
+                            break;
                         case "EXIT":
+                        case "QUIT":
                             cts.Cancel();
                             break;
                     }
@@ -653,6 +720,85 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             ])),
             new TextBlockWidget(""),
             UI.CreateStatusBar($"API: {client.BaseAddress} | Mode: {modeLabel}"),
+        ]);
+    }
+
+    /// <summary>
+    /// Login menu shown when the user is not authenticated.
+    /// Offers Login (starts the device-code flow) and Quit.
+    /// </summary>
+    Hex1bWidget BuildLoginMenu(CancellationTokenSource cts)
+    {
+        var mode = backendResolver.CurrentMode;
+        var modeLabel = mode switch
+        {
+            GameMode.Online => "[ONLINE]",
+            GameMode.Offline => "[OFFLINE]",
+            GameMode.Blocked => "[OFFLINE - NO OPERATOR]",
+            _ => "[UNKNOWN]"
+        };
+
+        var menuItems = new[] { "LOGIN", "QUIT" };
+
+        var contentWidgets = new List<Hex1bWidget>
+        {
+            new TextBlockWidget("  Authentication required to access GUNRPG."),
+            new TextBlockWidget("  Use a passkey or YubiKey in your browser to log in."),
+            new TextBlockWidget(""),
+        };
+
+        if (sessionManager?.LoginError is { } loginError)
+        {
+            contentWidgets.Add(new TextBlockWidget($"  ⚠ Login failed: {loginError}"));
+            contentWidgets.Add(new TextBlockWidget(""));
+        }
+
+        contentWidgets.Add(new ListWidget(menuItems).OnItemActivated(e =>
+        {
+            switch (e.ActivatedIndex)
+            {
+                case 0: // LOGIN
+                    sessionManager?.StartLogin(cts.Token);
+                    break;
+                case 1: // QUIT
+                    cts.Cancel();
+                    break;
+            }
+        }));
+
+        return new VStackWidget([
+            UI.CreateBorder($"GUNRPG - OPERATOR TERMINAL {modeLabel}"),
+            new TextBlockWidget(""),
+            UI.CreateBorder("AUTHENTICATION", new VStackWidget(contentWidgets)),
+            new TextBlockWidget(""),
+            UI.CreateStatusBar($"API: {client.BaseAddress} | Mode: {modeLabel}"),
+        ]);
+    }
+
+    /// <summary>
+    /// Shown while the device-code flow is in progress.
+    /// Displays the verification URL and user code for the user to enter in their browser.
+    /// Automatically transitions to the main menu once the server reports success.
+    /// </summary>
+    Hex1bWidget BuildAuthenticating()
+    {
+        var url = sessionManager?.VerificationUrl ?? "Waiting for server…";
+        var code = sessionManager?.UserCode ?? "…";
+
+        return new VStackWidget([
+            UI.CreateBorder("GUNRPG - AUTHENTICATING"),
+            new TextBlockWidget(""),
+            UI.CreateBorder("DEVICE CODE LOGIN", new VStackWidget([
+                new TextBlockWidget("  Open the following URL in your browser to authenticate:"),
+                new TextBlockWidget(""),
+                new TextBlockWidget($"  {url}"),
+                new TextBlockWidget(""),
+                new TextBlockWidget($"  Enter code: {code}"),
+                new TextBlockWidget(""),
+                new TextBlockWidget("  Waiting for browser authorization…"),
+            ])),
+            new TextBlockWidget(""),
+            UI.CreateStatusBar("Complete authentication in your browser to continue"),
         ]);
     }
 
@@ -2982,6 +3128,10 @@ static class UI
 
 enum Screen
 {
+    /// <summary>The user is not authenticated. Offers Login and Quit.</summary>
+    LoginMenu,
+    /// <summary>The device-code flow is in progress. Shows verification URL and user code.</summary>
+    Authenticating,
     MainMenu,
     SelectOperator,
     CreateOperator,
