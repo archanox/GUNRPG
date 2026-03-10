@@ -135,6 +135,7 @@ public sealed class SessionManagerTests : IDisposable
 {
     private static readonly JsonSerializerOptions s_json = new(JsonSerializerDefaults.Web);
     private static readonly object s_userProfileEnvironmentLock = new();
+    private const string GunrpgConfigDirectoryName = ".gunrpg";
     private const string BaseUrl = "https://node.example.com";
 
     private readonly string _tempDir;
@@ -477,16 +478,39 @@ public sealed class SessionManagerTests : IDisposable
         private readonly string? _originalUserProfile;
         private readonly string _profileDirectory;
         private bool _disposed;
+        private bool _lockHeld;
 
         public UserProfileScope(string tempDir)
         {
-            Monitor.Enter(s_userProfileEnvironmentLock);
-            _originalHome = Environment.GetEnvironmentVariable("HOME");
-            _originalUserProfile = Environment.GetEnvironmentVariable("USERPROFILE");
-            _profileDirectory = Path.Combine(tempDir, "test-home");
-            Directory.CreateDirectory(Path.Combine(_profileDirectory, ".gunrpg"));
-            Environment.SetEnvironmentVariable("HOME", _profileDirectory);
-            Environment.SetEnvironmentVariable("USERPROFILE", _profileDirectory);
+            if (!Monitor.TryEnter(s_userProfileEnvironmentLock, TimeSpan.FromSeconds(30)))
+                throw new TimeoutException("Timed out while waiting to isolate the user profile environment for auth UI tests.");
+
+            _lockHeld = true;
+
+            try
+            {
+                _originalHome = Environment.GetEnvironmentVariable("HOME");
+                _originalUserProfile = Environment.GetEnvironmentVariable("USERPROFILE");
+                _profileDirectory = Path.Combine(tempDir, "test-home");
+                var configDirectoryPath = Path.Combine(_profileDirectory, GunrpgConfigDirectoryName);
+                try
+                {
+                    Directory.CreateDirectory(configDirectoryPath);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Failed to create isolated auth test profile directory '{configDirectoryPath}'.",
+                        ex);
+                }
+                Environment.SetEnvironmentVariable("HOME", _profileDirectory);
+                Environment.SetEnvironmentVariable("USERPROFILE", _profileDirectory);
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
         }
 
         public void Dispose()
@@ -494,10 +518,21 @@ public sealed class SessionManagerTests : IDisposable
             if (_disposed)
                 return;
 
-            Environment.SetEnvironmentVariable("HOME", _originalHome);
-            Environment.SetEnvironmentVariable("USERPROFILE", _originalUserProfile);
-            Monitor.Exit(s_userProfileEnvironmentLock);
             _disposed = true;
+
+            try
+            {
+                Environment.SetEnvironmentVariable("HOME", _originalHome);
+                Environment.SetEnvironmentVariable("USERPROFILE", _originalUserProfile);
+            }
+            finally
+            {
+                if (_lockHeld)
+                {
+                    Monitor.Exit(s_userProfileEnvironmentLock);
+                    _lockHeld = false;
+                }
+            }
         }
     }
 
