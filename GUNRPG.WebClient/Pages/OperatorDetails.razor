@@ -216,17 +216,7 @@
     }
 
     [JSInvokable]
-    public async Task<string?> GetSseAccessTokenAsync(bool forceRefresh)
-    {
-        var accessToken = Auth.GetAccessToken();
-        if (!forceRefresh && !string.IsNullOrEmpty(accessToken))
-            return accessToken;
-
-        if (await Auth.RefreshTokenAsync())
-            return Auth.GetAccessToken();
-
-        return forceRefresh ? null : accessToken;
-    }
+    public Task<string?> GetSseAccessTokenAsync(bool forceRefresh) => Auth.GetSseAccessTokenAsync(forceRefresh);
 
     private async Task StartInfilAsync()
     {

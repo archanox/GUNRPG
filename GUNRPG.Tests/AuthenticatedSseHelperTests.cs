@@ -21,4 +21,18 @@ public sealed class AuthenticatedSseHelperTests
         Assert.False(result);
         Assert.Null(baseUrl);
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    [InlineData("/relative/path")]
+    [InlineData("not-a-url")]
+    public void TryGetHttpsBaseUrl_ReturnsFalse_ForInvalidInput(string? input)
+    {
+        var result = AuthenticatedSseHelper.TryGetHttpsBaseUrl(input, out var baseUrl);
+
+        Assert.False(result);
+        Assert.Null(baseUrl);
+    }
 }

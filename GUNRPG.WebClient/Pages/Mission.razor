@@ -363,17 +363,7 @@
     }
 
     [JSInvokable]
-    public async Task<string?> GetSseAccessTokenAsync(bool forceRefresh)
-    {
-        var accessToken = Auth.GetAccessToken();
-        if (!forceRefresh && !string.IsNullOrEmpty(accessToken))
-            return accessToken;
-
-        if (await Auth.RefreshTokenAsync())
-            return Auth.GetAccessToken();
-
-        return forceRefresh ? null : accessToken;
-    }
+    public Task<string?> GetSseAccessTokenAsync(bool forceRefresh) => Auth.GetSseAccessTokenAsync(forceRefresh);
 
     /// <summary>
     /// Re-fetches the session state without toggling _loading to avoid UI flicker during SSE updates.

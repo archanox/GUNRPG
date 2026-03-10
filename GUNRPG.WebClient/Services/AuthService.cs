@@ -42,6 +42,17 @@ public sealed class AuthService
 
     public string? GetAccessToken() => _accessToken;
 
+    public async Task<string?> GetSseAccessTokenAsync(bool forceRefresh)
+    {
+        if (!forceRefresh && !string.IsNullOrEmpty(_accessToken))
+            return _accessToken;
+
+        if (await RefreshTokenAsync())
+            return _accessToken;
+
+        return forceRefresh ? null : _accessToken;
+    }
+
     public async Task SetTokensAsync(string accessToken, string refreshToken)
     {
         _accessToken = accessToken;
