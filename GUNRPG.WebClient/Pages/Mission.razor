@@ -314,26 +314,22 @@
             return;
 
         var baseUrl = await NodeService.GetBaseUrlAsync();
-        if (string.IsNullOrEmpty(baseUrl))
-            return;
-
-        var accessToken = Auth.GetAccessToken();
-        if (string.IsNullOrEmpty(accessToken))
+        if (!AuthenticatedSseHelper.TryGetHttpsBaseUrl(baseUrl, out var httpsBaseUrl))
             return;
 
         // Subscribe to session SSE for real-time combat updates (only while session is active)
         if (!_session.IsConcluded)
         {
-            _sseUrl = $"{baseUrl}/sessions/{MissionId}/stream";
+            _sseUrl = $"{httpsBaseUrl}/sessions/{MissionId}/stream";
             _dotNetRef = DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("sseHelper.connect", _sseUrl, accessToken, _dotNetRef, nameof(OnSessionUpdated));
+            await JS.InvokeVoidAsync("sseHelper.connect", _sseUrl, _dotNetRef, nameof(OnSessionUpdated), nameof(GetSseAccessTokenAsync));
         }
 
         // Subscribe to operator SSE so we detect cross-client state changes (e.g. console exfils
         // while the web client is on the combat screen, or another client changes infil mode).
-        _operatorSseUrl = $"{baseUrl}/operators/{_session.OperatorId}/stream";
+        _operatorSseUrl = $"{httpsBaseUrl}/operators/{_session.OperatorId}/stream";
         _operatorDotNetRef = DotNetObjectReference.Create(this);
-        await JS.InvokeVoidAsync("sseHelper.connect", _operatorSseUrl, accessToken, _operatorDotNetRef, nameof(OnOperatorUpdated));
+        await JS.InvokeVoidAsync("sseHelper.connect", _operatorSseUrl, _operatorDotNetRef, nameof(OnOperatorUpdated), nameof(GetSseAccessTokenAsync));
     }
 
     [JSInvokable]
@@ -364,6 +360,19 @@
         }
 
         await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task<string?> GetSseAccessTokenAsync(bool forceRefresh)
+    {
+        var accessToken = Auth.GetAccessToken();
+        if (!forceRefresh && !string.IsNullOrEmpty(accessToken))
+            return accessToken;
+
+        if (await Auth.RefreshTokenAsync())
+            return Auth.GetAccessToken();
+
+        return forceRefresh ? null : accessToken;
     }
 
     /// <summary>
