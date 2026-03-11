@@ -9,6 +9,7 @@ const STORAGE_JS_URL = new URL('js/storage.js', self.location.href).pathname;
 const CONNECTION_JS_URL = new URL('js/connection.js', self.location.href).pathname;
 const WEBAUTHN_JS_URL = new URL('js/webauthn.js', self.location.href).pathname;
 const SSE_JS_URL = new URL('js/sse.js', self.location.href).pathname;
+const FLUENT_REBOOT_CSS_URL = new URL('_content/Microsoft.FluentUI.AspNetCore.Components/css/reboot.css', self.location.href).pathname;
 const CORE_ASSETS = [
     APP_ROOT,
     INDEX_URL,
@@ -20,7 +21,7 @@ const CORE_ASSETS = [
     CONNECTION_JS_URL,
     WEBAUTHN_JS_URL,
     SSE_JS_URL,
-    '/_content/Microsoft.FluentUI.AspNetCore.Components/css/reboot.css'
+    FLUENT_REBOOT_CSS_URL
 ];
 
 self.addEventListener('install', event => {

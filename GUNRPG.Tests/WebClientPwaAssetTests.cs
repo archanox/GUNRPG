@@ -22,6 +22,14 @@ public sealed class WebClientPwaAssetTests
         Assert.DoesNotContain("navigator.serviceWorker.register('/service-worker.js')", indexHtml, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ServiceWorker_DoesNotCacheRootRelativeContentAssets()
+    {
+        var serviceWorker = File.ReadAllText(GetWebClientAssetPath("service-worker.js"));
+
+        Assert.DoesNotContain("/_content/", serviceWorker, StringComparison.Ordinal);
+    }
+
     private static string GetWebClientAssetPath(string fileName)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
