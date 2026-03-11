@@ -320,6 +320,68 @@ public sealed class WebOfflineSupportTests
     }
 
     [Fact]
+    public async Task OperatorService_GetAsync_WhenOnlineServerReturnsError_FallsBackToLocalSnapshot()
+    {
+        var operatorId = Guid.Parse("cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd");
+        var js = new FakeBrowserJsRuntime();
+        var handler = new ErrorOperatorHandler(HttpStatusCode.ServiceUnavailable);
+        using var http = new HttpClient(handler);
+        var nodeService = new NodeConnectionService(js);
+        await nodeService.SetBaseUrlAsync("https://node.example.com");
+        var auth = new AuthService(js, http, nodeService);
+        var api = new ApiClient(http, nodeService, auth);
+        var offlineStore = new BrowserOfflineStore(js);
+        var combatStore = new BrowserCombatSessionStore(js);
+        var offlineGameplay = new OfflineGameplayService(combatStore, offlineStore);
+        var offlineSync = new OfflineSyncService(api, offlineStore);
+        var connection = new ConnectionStateService(js); // IsOnline defaults to true
+        var service = new OperatorService(api, offlineStore, offlineGameplay, offlineSync, connection);
+
+        await offlineStore.SaveInfiledOperatorAsync(CreateOperator(operatorId, "Fallback Error",
+            infilStartTime: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        var (data, error) = await service.GetAsync(operatorId);
+
+        Assert.Null(error);
+        Assert.NotNull(data);
+        Assert.Equal("Infil", data.CurrentMode);
+        Assert.Equal(operatorId, data.Id);
+        Assert.Equal(1, handler.GetOperatorCount);
+    }
+
+    [Fact]
+    public async Task OperatorService_GetAsync_WhenServerReturnsInfil_RefreshesLocalSnapshot()
+    {
+        var operatorId = Guid.Parse("dededede-dede-dede-dede-dededededede");
+        var js = new FakeBrowserJsRuntime();
+        var handler = new GetInfilOperatorHandler(operatorId, "Server Echo");
+        using var http = new HttpClient(handler);
+        var nodeService = new NodeConnectionService(js);
+        await nodeService.SetBaseUrlAsync("https://node.example.com");
+        var auth = new AuthService(js, http, nodeService);
+        var api = new ApiClient(http, nodeService, auth);
+        var offlineStore = new BrowserOfflineStore(js);
+        var combatStore = new BrowserCombatSessionStore(js);
+        var offlineGameplay = new OfflineGameplayService(combatStore, offlineStore);
+        var offlineSync = new OfflineSyncService(api, offlineStore);
+        var connection = new ConnectionStateService(js); // IsOnline defaults to true
+        var service = new OperatorService(api, offlineStore, offlineGameplay, offlineSync, connection);
+
+        await offlineStore.SaveInfiledOperatorAsync(CreateOperator(operatorId, "Local Echo",
+            infilStartTime: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        var (data, error) = await service.GetAsync(operatorId);
+        var refreshed = await offlineStore.GetInfiledOperatorAsync(operatorId);
+
+        Assert.Null(error);
+        Assert.NotNull(data);
+        Assert.Equal("Server Echo", data.Name);
+        Assert.NotNull(refreshed);
+        Assert.Equal("Server Echo", refreshed.Name);
+        Assert.Equal(1, handler.GetOperatorCount);
+    }
+
+    [Fact]
     public async Task OperatorService_GetAsync_WhenInfilTimerExpiredAndOffline_ReturnsStaleLocalSnapshot()
     {
         var operatorId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
@@ -462,6 +524,64 @@ public sealed class WebOfflineSupportTests
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = JsonContent.Create(op)
+                });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class GetInfilOperatorHandler : HttpMessageHandler
+    {
+        private readonly Guid _operatorId;
+        private readonly string _name;
+        public int GetOperatorCount { get; private set; }
+
+        public GetInfilOperatorHandler(Guid operatorId, string name)
+        {
+            _operatorId = operatorId;
+            _name = name;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Get &&
+                request.RequestUri?.AbsolutePath == $"/operators/{_operatorId}")
+            {
+                GetOperatorCount++;
+                var op = CreateOperator(_operatorId, _name, DateTimeOffset.UtcNow.AddMinutes(-4));
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(op)
+                });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class ErrorOperatorHandler : HttpMessageHandler
+    {
+        private readonly HttpStatusCode _statusCode;
+        public int GetOperatorCount { get; private set; }
+
+        public ErrorOperatorHandler(HttpStatusCode statusCode) => _statusCode = statusCode;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Get &&
+                request.RequestUri?.AbsolutePath.StartsWith("/operators/", StringComparison.Ordinal) == true)
+            {
+                GetOperatorCount++;
+                return Task.FromResult(new HttpResponseMessage(_statusCode)
+                {
+                    Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
                 });
             }
 

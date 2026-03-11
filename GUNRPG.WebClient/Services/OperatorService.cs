@@ -77,11 +77,17 @@ public sealed class OperatorService
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 return (null, "Operator not found.");
             if (!response.IsSuccessStatusCode)
+            {
+                if (local is not null)
+                    return (local, null);
+
                 return (null, $"Failed to load operator: {response.StatusCode}");
+            }
 
             var data = await response.Content.ReadFromJsonAsync<OperatorState>();
 
-            // The server auto-failed the timed-out infil — purge the now-stale offline snapshot.
+            // Reconcile the offline snapshot with the server state: if the operator is still
+            // in Infil mode, refresh the local snapshot; otherwise, remove the stale snapshot.
             // Wrapped in its own try/catch so a storage failure (e.g., browser storage blocked)
             // does not prevent the successful server response from being returned.
             if (local is not null && data is not null)
@@ -95,7 +101,7 @@ public sealed class OperatorService
                 }
                 catch
                 {
-                    // Ignore failures in offline cleanup so that a successful server response
+                    // Ignore failures in offline reconciliation so that a successful server response
                     // is still returned even if browser storage APIs are unavailable.
                 }
             }
@@ -110,6 +116,7 @@ public sealed class OperatorService
             return (null, ex.Message);
         }
     }
+
     public async Task<(OperatorState? Data, string? Error)> CreateAsync(string name)
     {
         try
