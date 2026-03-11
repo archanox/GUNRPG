@@ -12,6 +12,8 @@ public sealed class BrowserOfflineStore
     private const string PendingExfilPrefix = "pendingExfil:";
     private const string ProcessedOutcomePrefix = "processedOutcome:";
     private const string CorruptedPrefix = "corrupted:";
+    private static readonly string ActiveCombatSessionIdPropertyName =
+        JsonNamingPolicy.CamelCase.ConvertName(nameof(OperatorState.ActiveCombatSessionId));
 
     private readonly IJSRuntime _js;
     private readonly JsonSerializerOptions _jsonOptions;
@@ -67,13 +69,21 @@ public sealed class BrowserOfflineStore
     {
         var existing = await _js.InvokeAsync<BrowserInfiledOperatorRecord?>("gunRpgStorage.getInfiledOperator", operatorId.ToString());
         if (existing is null || string.IsNullOrWhiteSpace(existing.SnapshotJson))
+        {
+            // Combat session sync is best-effort for online play; if no local offline snapshot
+            // exists, the server-backed mission should still continue successfully.
             return;
+        }
 
-        var snapshot = JsonNode.Parse(existing.SnapshotJson) as JsonObject;
-        if (snapshot is null)
-            return;
+        var parsedSnapshot = JsonNode.Parse(existing.SnapshotJson);
+        var snapshot = parsedSnapshot as JsonObject
+            ?? throw new InvalidOperationException($"Stored offline operator snapshot for {operatorId} must be a JSON object.");
 
-        snapshot["activeCombatSessionId"] = activeCombatSessionId;
+        if (activeCombatSessionId.HasValue)
+            snapshot[ActiveCombatSessionIdPropertyName] = activeCombatSessionId.Value;
+        else
+            snapshot.Remove(ActiveCombatSessionIdPropertyName);
+
         existing.SnapshotJson = snapshot.ToJsonString(_jsonOptions);
         await _js.InvokeVoidAsync("gunRpgStorage.updateInfiledOperator", existing);
     }
