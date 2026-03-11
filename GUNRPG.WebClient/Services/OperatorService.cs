@@ -7,31 +7,69 @@ namespace GUNRPG.WebClient.Services;
 public sealed class OperatorService
 {
     private readonly ApiClient _api;
+    private readonly BrowserOfflineStore _offlineStore;
+    private readonly OfflineGameplayService _offlineGameplay;
+    private readonly OfflineSyncService _offlineSync;
+    private readonly ConnectionStateService _connection;
 
-    public OperatorService(ApiClient api)
+    public OperatorService(
+        ApiClient api,
+        BrowserOfflineStore offlineStore,
+        OfflineGameplayService offlineGameplay,
+        OfflineSyncService offlineSync,
+        ConnectionStateService connection)
     {
         _api = api;
+        _offlineStore = offlineStore;
+        _offlineGameplay = offlineGameplay;
+        _offlineSync = offlineSync;
+        _connection = connection;
     }
 
     public async Task<(List<OperatorSummary>? Data, string? Error)> ListAsync()
     {
+        await TrySyncIfOnlineAsync();
+
+        var local = await _offlineStore.GetActiveInfiledOperatorAsync();
         try
         {
             var response = await _api.GetAsync("/operators");
             if (!response.IsSuccessStatusCode)
+            {
+                if (local is not null)
+                    return (new List<OperatorSummary> { OfflineModelMapper.ToSummary(local) }, null);
                 return (null, $"Failed to load operators: {response.StatusCode}");
+            }
 
-            var data = await response.Content.ReadFromJsonAsync<List<OperatorSummary>>();
-            return (data ?? new(), null);
+            var data = await response.Content.ReadFromJsonAsync<List<OperatorSummary>>() ?? new();
+            if (local is not null)
+            {
+                var summary = OfflineModelMapper.ToSummary(local);
+                var index = data.FindIndex(x => x.Id == summary.Id);
+                if (index >= 0)
+                    data[index] = summary;
+                else
+                    data.Insert(0, summary);
+            }
+
+            return (data, null);
         }
         catch (Exception ex)
         {
+            if (local is not null)
+                return (new List<OperatorSummary> { OfflineModelMapper.ToSummary(local) }, null);
             return (null, ex.Message);
         }
     }
 
     public async Task<(OperatorState? Data, string? Error)> GetAsync(Guid id)
     {
+        await TrySyncIfOnlineAsync(id);
+
+        var local = await _offlineStore.GetInfiledOperatorAsync(id);
+        if (local is not null)
+            return (local, null);
+
         try
         {
             var response = await _api.GetAsync($"/operators/{id}");
@@ -81,6 +119,8 @@ public sealed class OperatorService
             }
 
             var data = await response.Content.ReadFromJsonAsync<StartInfilResponse>();
+            if (data?.Operator is not null)
+                await _offlineStore.SaveInfiledOperatorAsync(data.Operator);
             return (data, null);
         }
         catch (Exception ex)
@@ -91,28 +131,27 @@ public sealed class OperatorService
 
     public async Task<(Guid? SessionId, string? Error)> StartCombatSessionAsync(Guid operatorId)
     {
-        try
-        {
-            // This endpoint triggers both the operator event creation and the combat session start,
-            // so a single POST is sufficient from the client side — no separate /sessions call is needed.
-            var response = await _api.PostAsync($"/operators/{operatorId}/infil/combat");
-            if (!response.IsSuccessStatusCode)
-            {
-                var err = await ApiHelpers.TryReadErrorAsync(response);
-                return (null, err ?? $"Failed to start combat: {response.StatusCode}");
-            }
+        var local = await _offlineStore.GetInfiledOperatorAsync(operatorId);
+        if (local?.ActiveCombatSessionId is Guid existingSessionId)
+            return (existingSessionId, null);
 
-            var sessionId = await response.Content.ReadFromJsonAsync<Guid>();
-            return (sessionId, null);
-        }
-        catch (Exception ex)
-        {
-            return (null, ex.Message);
-        }
+        return await _offlineGameplay.StartCombatSessionAsync(operatorId);
     }
 
     public async Task<string?> CompleteInfilAsync(Guid operatorId)
     {
+        var local = await _offlineStore.GetInfiledOperatorAsync(operatorId);
+        if (local is not null)
+        {
+            if (!_connection.IsOnline)
+            {
+                await _offlineGameplay.QueueExfilAsync(operatorId);
+                return null;
+            }
+
+            return await _offlineSync.SyncAndFinalizeAsync(operatorId);
+        }
+
         try
         {
             var response = await _api.PostAsync($"/operators/{operatorId}/infil/complete");
@@ -132,6 +171,10 @@ public sealed class OperatorService
 
     public async Task<string?> RetreatFromCombatAsync(Guid operatorId)
     {
+        var local = await _offlineStore.GetInfiledOperatorAsync(operatorId);
+        if (local?.ActiveCombatSessionId is not null)
+            return await _offlineGameplay.RetreatFromCombatAsync(operatorId);
+
         try
         {
             var response = await _api.PostAsync($"/operators/{operatorId}/infil/retreat");
@@ -148,6 +191,8 @@ public sealed class OperatorService
             return ex.Message;
         }
     }
+
+    public async Task<bool> HasQueuedExfilAsync(Guid operatorId) => await _offlineStore.HasPendingExfilAsync(operatorId);
 
     public async Task<(OperatorState? Data, string? Error)> ChangeLoadoutAsync(Guid operatorId, string weaponName)
     {
@@ -233,6 +278,24 @@ public sealed class OperatorService
         catch (Exception ex)
         {
             return (null, ex.Message);
+        }
+    }
+
+    private async Task TrySyncIfOnlineAsync(Guid? operatorId = null)
+    {
+        if (!_connection.IsOnline)
+            return;
+
+        try
+        {
+            if (operatorId.HasValue)
+                await _offlineSync.SyncAndFinalizeAsync(operatorId.Value);
+            else
+                await _offlineSync.TrySyncAllAsync();
+        }
+        catch
+        {
+            // Sync failures are surfaced when the player explicitly finalizes exfil.
         }
     }
 }

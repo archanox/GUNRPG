@@ -1,11 +1,31 @@
-﻿@inherits LayoutComponentBase
+@inherits LayoutComponentBase
+@inject ConnectionStateService Connection
+@inject OfflineSyncService OfflineSync
+@implements IAsyncDisposable
 
 <FluentLayout>
     <FluentHeader>
-        GunRPG
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 1rem; width: 100%;">
+            <span>GunRPG</span>
+            <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                <FluentBadge Appearance="@(Connection.IsOnline ? Appearance.Accent : Appearance.Neutral)">
+                    @(Connection.IsOnline ? "CONNECTED" : "OFFLINE MODE")
+                </FluentBadge>
+                @if (_pendingSyncCount > 0)
+                {
+                    <FluentBadge Appearance="Appearance.Hypertext">@_pendingSyncCount pending sync</FluentBadge>
+                }
+            </div>
+        </div>
     </FluentHeader>
     <FluentBodyContent>
-        <FluentStack Orientation="Orientation.Vertical" Style="padding: 1rem;">
+        <FluentStack Orientation="Orientation.Vertical" Style="padding: 1rem; gap: 1rem;">
+            @if (!Connection.IsOnline)
+            {
+                <FluentMessageBar Title="OFFLINE MODE" Intent="MessageIntent.Warning">
+                    Mission progress will sync when connection returns.
+                </FluentMessageBar>
+            }
             @Body
         </FluentStack>
     </FluentBodyContent>
@@ -16,3 +36,42 @@
 <FluentTooltipProvider />
 <FluentMessageBarProvider />
 <FluentMenuProvider />
+
+@code {
+    private int _pendingSyncCount;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Connection.InitializeAsync();
+        Connection.Changed += HandleConnectionChanged;
+
+        if (Connection.IsOnline)
+        {
+            await OfflineSync.TrySyncAllAsync();
+        }
+
+        await RefreshStatusAsync();
+    }
+
+    private async void HandleConnectionChanged()
+    {
+        if (Connection.IsOnline)
+        {
+            await OfflineSync.TrySyncAllAsync();
+        }
+
+        await RefreshStatusAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RefreshStatusAsync()
+    {
+        _pendingSyncCount = await OfflineSync.GetPendingEnvelopeCountAsync();
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Connection.Changed -= HandleConnectionChanged;
+        return ValueTask.CompletedTask;
+    }
+}

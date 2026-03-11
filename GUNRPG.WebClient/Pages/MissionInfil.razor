@@ -4,6 +4,7 @@
 @inject OperatorService OperatorSvc
 @inject NodeConnectionService NodeService
 @inject IJSRuntime JS
+@inject ConnectionStateService Connection
 @implements IAsyncDisposable
 
 <FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; max-width: 700px; margin: 0 auto;">
@@ -12,6 +13,16 @@
     @if (!string.IsNullOrEmpty(_error))
     {
         <FluentMessageBar Title="Error" Intent="MessageIntent.Error">@_error</FluentMessageBar>
+    }
+
+    @if (!Connection.IsOnline)
+    {
+        <FluentMessageBar Title="OFFLINE MODE" Intent="MessageIntent.Warning">Mission progress will sync when connection returns.</FluentMessageBar>
+    }
+
+    @if (!string.IsNullOrEmpty(_statusMessage))
+    {
+        <FluentMessageBar Title="Mission Status" Intent="@_statusIntent">@_statusMessage</FluentMessageBar>
     }
 
     @if (_loading)
@@ -82,6 +93,8 @@
     private bool _loading = true;
     private bool _busy;
     private string? _error;
+    private string? _statusMessage;
+    private MessageIntent _statusIntent = MessageIntent.Info;
 
     private PeriodicTimer? _countdownTimer;
     private CancellationTokenSource? _cts;
@@ -106,7 +119,15 @@
         {
             if (_operator.CurrentMode == "Base")
             {
-                Nav.NavigateTo($"operators/{OperatorId}");
+                if (!Connection.IsOnline)
+        {
+            _statusIntent = MessageIntent.Info;
+            _statusMessage = "Exfil queued. Your mission will sync and validate when the connection returns.";
+            StateHasChanged();
+            return;
+        }
+
+        Nav.NavigateTo($"operators/{OperatorId}");
                 return;
             }
 
@@ -121,7 +142,6 @@
         if (_operator?.InfilStartTime.HasValue == true)
             _countdownTask = RunCountdownAsync();
 
-        await StartSseAsync();
     }
 
     private async Task LoadAsync()
@@ -253,6 +273,7 @@
     private async Task ExfilAsync()
     {
         _error = null;
+        _statusMessage = null;
         _busy = true;
         StateHasChanged();
 
@@ -262,6 +283,14 @@
         if (error is not null)
         {
             _error = error;
+            StateHasChanged();
+            return;
+        }
+
+        if (!Connection.IsOnline)
+        {
+            _statusIntent = MessageIntent.Info;
+            _statusMessage = "Exfil queued. Your mission will sync and validate when the connection returns.";
             StateHasChanged();
             return;
         }

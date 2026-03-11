@@ -7,14 +7,21 @@ namespace GUNRPG.WebClient.Services;
 public sealed class MissionService
 {
     private readonly ApiClient _api;
+    private readonly OfflineGameplayService _offlineGameplay;
 
-    public MissionService(ApiClient api)
+    public MissionService(ApiClient api, OfflineGameplayService offlineGameplay)
     {
         _api = api;
+        _offlineGameplay = offlineGameplay;
     }
+
+    public Task<bool> IsLocalSessionAsync(Guid sessionId) => _offlineGameplay.HasLocalCombatSessionAsync(sessionId);
 
     public async Task<(CombatSession? Data, string? Error)> GetStateAsync(Guid sessionId)
     {
+        if (await _offlineGameplay.HasLocalCombatSessionAsync(sessionId))
+            return await _offlineGameplay.GetStateAsync(sessionId);
+
         try
         {
             var response = await _api.GetAsync($"/sessions/{sessionId}/state");
@@ -35,6 +42,9 @@ public sealed class MissionService
     public async Task<(CombatSession? Data, string? Error)> SubmitIntentAsync(
         Guid sessionId, Guid operatorId, string? primary, string? movement, string? stance = null, string? cover = null)
     {
+        if (await _offlineGameplay.HasLocalCombatSessionAsync(sessionId))
+            return await _offlineGameplay.SubmitIntentAsync(sessionId, operatorId, primary, movement, stance, cover);
+
         try
         {
             var request = new IntentRequest
@@ -61,6 +71,9 @@ public sealed class MissionService
 
     public async Task<(CombatSession? Data, string? Error)> AdvanceAsync(Guid sessionId, Guid operatorId)
     {
+        if (await _offlineGameplay.HasLocalCombatSessionAsync(sessionId))
+            return await _offlineGameplay.AdvanceAsync(sessionId, operatorId);
+
         try
         {
             var response = await _api.PostAsync($"/sessions/{sessionId}/advance",

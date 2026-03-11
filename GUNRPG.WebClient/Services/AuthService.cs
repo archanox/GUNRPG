@@ -13,10 +13,13 @@ public sealed class AuthService
 
     public bool IsAuthenticated => _accessToken is not null;
 
-    /// <summary>
-    /// Attempts to restore the session from the stored refresh token.
-    /// Should be called once on app startup. Returns true if session was restored.
-    /// </summary>
+    public AuthService(IJSRuntime js, HttpClient http, NodeConnectionService nodeService)
+    {
+        _js = js;
+        _http = http;
+        _nodeService = nodeService;
+    }
+
     public async Task<bool> TryRestoreAsync()
     {
         if (_accessToken is not null)
@@ -24,20 +27,16 @@ public sealed class AuthService
 
         try
         {
+            _accessToken = await _js.InvokeAsync<string?>("tokenStorage.getAccessToken");
+            if (!string.IsNullOrEmpty(_accessToken))
+                return true;
+
             return await RefreshTokenAsync();
         }
         catch
         {
-            // Swallow any exception during startup token restore and report failure.
             return false;
         }
-    }
-
-    public AuthService(IJSRuntime js, HttpClient http, NodeConnectionService nodeService)
-    {
-        _js = js;
-        _http = http;
-        _nodeService = nodeService;
     }
 
     public string? GetAccessToken() => _accessToken;
@@ -56,6 +55,7 @@ public sealed class AuthService
     public async Task SetTokensAsync(string accessToken, string refreshToken)
     {
         _accessToken = accessToken;
+        await _js.InvokeVoidAsync("tokenStorage.storeAccessToken", accessToken);
         await _js.InvokeVoidAsync("tokenStorage.storeRefreshToken", refreshToken);
     }
 
@@ -63,11 +63,11 @@ public sealed class AuthService
     {
         var refreshToken = await _js.InvokeAsync<string?>("tokenStorage.getRefreshToken");
         if (string.IsNullOrEmpty(refreshToken))
-            return false;
+            return !string.IsNullOrEmpty(_accessToken);
 
         var baseUrl = await _nodeService.GetBaseUrlAsync();
         if (string.IsNullOrEmpty(baseUrl))
-            return false;
+            return !string.IsNullOrEmpty(_accessToken);
 
         try
         {
@@ -77,13 +77,9 @@ public sealed class AuthService
 
             if (!response.IsSuccessStatusCode)
             {
-                // Only clear the stored token for explicit client/auth rejections (4xx):
-                // the server has definitively told us the token is invalid, expired, or revoked.
-                // Leave tokens intact for transient server-side errors (5xx) so a later retry
-                // can succeed once the server recovers.
                 if ((int)response.StatusCode is >= 400 and < 500)
                     await ClearTokensAsync();
-                return false;
+                return !string.IsNullOrEmpty(_accessToken);
             }
 
             var result = await response.Content.ReadFromJsonAsync<TokenResponse>();
@@ -94,24 +90,20 @@ public sealed class AuthService
             }
 
             _accessToken = result.AccessToken;
+            await _js.InvokeVoidAsync("tokenStorage.storeAccessToken", result.AccessToken);
             await _js.InvokeVoidAsync("tokenStorage.storeRefreshToken", result.RefreshToken);
             return true;
         }
         catch
         {
-            // A network-level failure (timeout, connection refused, etc.). The stored
-            // refresh token is still considered valid, so we leave it intact, but clear
-            // the in-memory access token so IsAuthenticated accurately reflects the
-            // fact that we do not currently have a usable access token.
-            _accessToken = null;
-            return false;
+            return !string.IsNullOrEmpty(_accessToken);
         }
     }
 
     public async Task ClearTokensAsync()
     {
         _accessToken = null;
-        await _js.InvokeVoidAsync("tokenStorage.removeRefreshToken");
+        await _js.InvokeVoidAsync("tokenStorage.clearTokens");
     }
 }
 
