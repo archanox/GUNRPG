@@ -201,6 +201,32 @@ public sealed class WebOfflineSupportTests
         Assert.Equal(handler.SessionId, updatedOperator.ActiveCombatSessionId);
     }
 
+    [Fact]
+    public async Task OperatorService_StartCombatSessionAsync_UsesApiWhenOnlineAndStorageThrows()
+    {
+        var js = new FakeBrowserJsRuntime(throwOnGunRpgStorage: true);
+        var handler = new StartCombatHandler();
+        using var http = new HttpClient(handler);
+        var nodeService = new NodeConnectionService(js);
+        await nodeService.SetBaseUrlAsync("https://node.example.com");
+        var auth = new AuthService(js, http, nodeService);
+        var api = new ApiClient(http, nodeService, auth);
+        var offlineStore = new BrowserOfflineStore(js);
+        var combatStore = new BrowserCombatSessionStore(js);
+        var offlineGameplay = new OfflineGameplayService(combatStore, offlineStore);
+        var offlineSync = new OfflineSyncService(api, offlineStore);
+        var connection = new ConnectionStateService(js);
+        var service = new OperatorService(api, offlineStore, offlineGameplay, offlineSync, connection);
+        var operatorId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+
+        var (sessionId, error) = await service.StartCombatSessionAsync(operatorId);
+
+        Assert.Null(error);
+        Assert.Equal(handler.SessionId, sessionId);
+        Assert.Equal(1, handler.StartCombatCount);
+        Assert.Equal($"/operators/{operatorId}/infil/combat", handler.LastRequestPath);
+    }
+
     private static OperatorState CreateOperator(Guid id, string name) => new()
     {
         Id = id,
@@ -288,16 +314,25 @@ public sealed class WebOfflineSupportTests
 
     private sealed class FakeBrowserJsRuntime : IJSRuntime
     {
+        private readonly bool _throwOnGunRpgStorage;
         private readonly Dictionary<string, object?> _localStorage = new(StringComparer.Ordinal);
         private readonly Dictionary<string, object?> _tokens = new(StringComparer.Ordinal);
         private readonly Dictionary<string, BrowserOfflineStore.BrowserMetadataRecord> _metadata = new(StringComparer.Ordinal);
         private readonly Dictionary<string, BrowserOfflineStore.BrowserInfiledOperatorRecord> _infiledOperators = new(StringComparer.Ordinal);
         private readonly Dictionary<string, OfflineMissionEnvelope> _missionResults = new(StringComparer.Ordinal);
 
+        public FakeBrowserJsRuntime(bool throwOnGunRpgStorage = false)
+        {
+            _throwOnGunRpgStorage = throwOnGunRpgStorage;
+        }
+
         public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) => InvokeAsync<TValue>(identifier, CancellationToken.None, args);
 
         public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args)
         {
+            if (_throwOnGunRpgStorage && identifier.StartsWith("gunRpgStorage.", StringComparison.Ordinal))
+                throw new JSException("Storage unavailable.");
+
             object? value = identifier switch
             {
                 "localStorage.getItem" => GetDictionaryValue(_localStorage, Convert.ToString(args?[0])),

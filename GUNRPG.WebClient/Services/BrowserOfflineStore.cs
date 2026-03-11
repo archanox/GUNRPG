@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using GUNRPG.Application.Backend;
 using GUNRPG.WebClient.Helpers;
 using Microsoft.JSInterop;
@@ -59,6 +60,21 @@ public sealed class BrowserOfflineStore
         }
 
         existing.SnapshotJson = JsonSerializer.Serialize(updatedState, _jsonOptions);
+        await _js.InvokeVoidAsync("gunRpgStorage.updateInfiledOperator", existing);
+    }
+
+    public async Task UpdateActiveCombatSessionIdAsync(Guid operatorId, Guid? activeCombatSessionId)
+    {
+        var existing = await _js.InvokeAsync<BrowserInfiledOperatorRecord?>("gunRpgStorage.getInfiledOperator", operatorId.ToString());
+        if (existing is null || string.IsNullOrWhiteSpace(existing.SnapshotJson))
+            return;
+
+        var snapshot = JsonNode.Parse(existing.SnapshotJson) as JsonObject;
+        if (snapshot is null)
+            return;
+
+        snapshot["activeCombatSessionId"] = activeCombatSessionId;
+        existing.SnapshotJson = snapshot.ToJsonString(_jsonOptions);
         await _js.InvokeVoidAsync("gunRpgStorage.updateInfiledOperator", existing);
     }
 
