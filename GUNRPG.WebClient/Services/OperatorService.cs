@@ -145,7 +145,7 @@ public sealed class OperatorService
 
                 var sessionId = await response.Content.ReadFromJsonAsync<Guid>();
                 if (sessionId == Guid.Empty)
-                    return (null, "Failed to start combat.");
+                    return (null, "Server returned an invalid combat session ID.");
 
                 if (local is not null)
                     await _offlineStore.UpdateOperatorSnapshotAsync(operatorId, CloneOperator(local, sessionId));
