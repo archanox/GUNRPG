@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Collections.Concurrent;
 using GUNRPG.Application.Backend;
 using GUNRPG.WebClient.Helpers;
 
@@ -8,6 +9,8 @@ public sealed class OfflineSyncService
 {
     private readonly ApiClient _api;
     private readonly BrowserOfflineStore _offlineStore;
+    private readonly SemaphoreSlim _syncAllGate = new(1, 1);
+    private readonly ConcurrentDictionary<Guid, SemaphoreSlim> _operatorGates = new();
 
     public OfflineSyncService(ApiClient api, BrowserOfflineStore offlineStore)
     {
@@ -21,41 +24,72 @@ public sealed class OfflineSyncService
 
     public async Task TrySyncAllAsync()
     {
-        var operators = new HashSet<Guid>((await _offlineStore.GetAllUnsyncedResultsAsync())
-            .Select(x => Guid.TryParse(x.OperatorId, out var id) ? id : Guid.Empty)
-            .Where(x => x != Guid.Empty));
+        await _syncAllGate.WaitAsync();
+        try
+        {
+            var operators = new HashSet<Guid>((await _offlineStore.GetAllUnsyncedResultsAsync())
+                .Select(x => Guid.TryParse(x.OperatorId, out var id) ? id : Guid.Empty)
+                .Where(x => x != Guid.Empty));
 
-        foreach (var operatorId in await _offlineStore.GetPendingExfilOperatorIdsAsync())
-            operators.Add(operatorId);
+            foreach (var operatorId in await _offlineStore.GetPendingExfilOperatorIdsAsync())
+                operators.Add(operatorId);
 
-        foreach (var operatorId in operators)
-            await SyncAndFinalizeAsync(operatorId);
+            foreach (var operatorId in operators)
+                await SyncAndFinalizeAsync(operatorId);
+        }
+        finally
+        {
+            _syncAllGate.Release();
+        }
     }
 
     public async Task<string?> SyncAndFinalizeAsync(Guid operatorId)
     {
-        var syncResult = await SyncAsync(operatorId);
-        if (!syncResult.Success)
-            return syncResult.FailureReason;
-
-        if (!await _offlineStore.HasPendingExfilAsync(operatorId))
+        var gate = _operatorGates.GetOrAdd(operatorId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync();
+        try
         {
-            var snapshot = await _offlineStore.GetInfiledOperatorAsync(operatorId);
-            if (snapshot is not null && string.Equals(snapshot.CurrentMode, "Base", StringComparison.OrdinalIgnoreCase))
-                await _offlineStore.RemoveInfiledOperatorAsync(operatorId);
+            var syncResult = await SyncCoreAsync(operatorId);
+            if (!syncResult.Success)
+                return syncResult.FailureReason;
+
+            if (!await _offlineStore.HasPendingExfilAsync(operatorId))
+            {
+                var snapshot = await _offlineStore.GetInfiledOperatorAsync(operatorId);
+                if (snapshot is not null && string.Equals(snapshot.CurrentMode, "Base", StringComparison.OrdinalIgnoreCase))
+                    await _offlineStore.RemoveInfiledOperatorAsync(operatorId);
+                return null;
+            }
+
+            using var response = await _api.PostAsync($"/operators/{operatorId}/infil/complete");
+            if (!response.IsSuccessStatusCode)
+                return $"Queued exfil could not be finalized: {response.StatusCode}";
+
+            await _offlineStore.RemovePendingExfilAsync(operatorId);
+            await _offlineStore.RemoveInfiledOperatorAsync(operatorId);
             return null;
         }
-
-        using var response = await _api.PostAsync($"/operators/{operatorId}/infil/complete");
-        if (!response.IsSuccessStatusCode)
-            return $"Queued exfil could not be finalized: {response.StatusCode}";
-
-        await _offlineStore.RemovePendingExfilAsync(operatorId);
-        await _offlineStore.RemoveInfiledOperatorAsync(operatorId);
-        return null;
+        finally
+        {
+            gate.Release();
+        }
     }
 
     public async Task<SyncResult> SyncAsync(Guid operatorId, CancellationToken cancellationToken = default)
+    {
+        var gate = _operatorGates.GetOrAdd(operatorId, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            return await SyncCoreAsync(operatorId, cancellationToken);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<SyncResult> SyncCoreAsync(Guid operatorId, CancellationToken cancellationToken = default)
     {
         var pending = await _offlineStore.GetUnsyncedResultsAsync(operatorId);
         if (pending.Count == 0)
