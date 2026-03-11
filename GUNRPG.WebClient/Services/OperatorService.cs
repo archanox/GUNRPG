@@ -132,6 +132,32 @@ public sealed class OperatorService
     public async Task<(Guid? SessionId, string? Error)> StartCombatSessionAsync(Guid operatorId)
     {
         var local = await _offlineStore.GetInfiledOperatorAsync(operatorId);
+        if (_connection.IsOnline)
+        {
+            try
+            {
+                var response = await _api.PostAsync($"/operators/{operatorId}/infil/combat");
+                if (!response.IsSuccessStatusCode)
+                {
+                    var err = await ApiHelpers.TryReadErrorAsync(response);
+                    return (null, err ?? $"Failed to start combat: {response.StatusCode}");
+                }
+
+                var sessionId = await response.Content.ReadFromJsonAsync<Guid>();
+                if (sessionId == Guid.Empty)
+                    return (null, "Failed to start combat.");
+
+                if (local is not null)
+                    await _offlineStore.UpdateOperatorSnapshotAsync(operatorId, CloneOperator(local, sessionId));
+
+                return (sessionId, null);
+            }
+            catch (Exception ex)
+            {
+                return (null, ex.Message);
+            }
+        }
+
         if (local?.ActiveCombatSessionId is Guid existingSessionId)
             return (existingSessionId, null);
 
@@ -298,4 +324,24 @@ public sealed class OperatorService
             // Sync failures are surfaced when the player explicitly finalizes exfil.
         }
     }
+
+    private static OperatorState CloneOperator(OperatorState state, Guid? activeCombatSessionId) => new()
+    {
+        Id = state.Id,
+        Name = state.Name,
+        TotalXp = state.TotalXp,
+        CurrentHealth = state.CurrentHealth,
+        MaxHealth = state.MaxHealth,
+        EquippedWeaponName = state.EquippedWeaponName,
+        UnlockedPerks = state.UnlockedPerks.ToList(),
+        ExfilStreak = state.ExfilStreak,
+        IsDead = state.IsDead,
+        CurrentMode = state.CurrentMode,
+        InfilStartTime = state.InfilStartTime,
+        InfilSessionId = state.InfilSessionId,
+        ActiveCombatSessionId = activeCombatSessionId,
+        ActiveCombatSession = state.ActiveCombatSession,
+        LockedLoadout = state.LockedLoadout,
+        Pet = state.Pet
+    };
 }

@@ -3,6 +3,7 @@ using GUNRPG.ClientModels;
 using GUNRPG.WebClient.Services;
 using Microsoft.JSInterop;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 
@@ -145,6 +146,61 @@ public sealed class WebOfflineSupportTests
         Assert.Equal(0, results[1].EnvelopesSynced);
     }
 
+    [Fact]
+    public async Task OperatorService_StartCombatSessionAsync_UsesApiWhenOnlineWithoutOfflineSnapshot()
+    {
+        var js = new FakeBrowserJsRuntime();
+        var handler = new StartCombatHandler();
+        using var http = new HttpClient(handler);
+        var nodeService = new NodeConnectionService(js);
+        await nodeService.SetBaseUrlAsync("https://node.example.com");
+        var auth = new AuthService(js, http, nodeService);
+        var api = new ApiClient(http, nodeService, auth);
+        var offlineStore = new BrowserOfflineStore(js);
+        var combatStore = new BrowserCombatSessionStore(js);
+        var offlineGameplay = new OfflineGameplayService(combatStore, offlineStore);
+        var offlineSync = new OfflineSyncService(api, offlineStore);
+        var connection = new ConnectionStateService(js);
+        var service = new OperatorService(api, offlineStore, offlineGameplay, offlineSync, connection);
+        var operatorId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+
+        var (sessionId, error) = await service.StartCombatSessionAsync(operatorId);
+
+        Assert.Null(error);
+        Assert.Equal(handler.SessionId, sessionId);
+        Assert.Equal(1, handler.StartCombatCount);
+        Assert.Equal($"/operators/{operatorId}/infil/combat", handler.LastRequestPath);
+    }
+
+    [Fact]
+    public async Task OperatorService_StartCombatSessionAsync_WhenOnlineUpdatesLocalSnapshotWithActiveSession()
+    {
+        var js = new FakeBrowserJsRuntime();
+        var handler = new StartCombatHandler();
+        using var http = new HttpClient(handler);
+        var nodeService = new NodeConnectionService(js);
+        await nodeService.SetBaseUrlAsync("https://node.example.com");
+        var auth = new AuthService(js, http, nodeService);
+        var api = new ApiClient(http, nodeService, auth);
+        var offlineStore = new BrowserOfflineStore(js);
+        var combatStore = new BrowserCombatSessionStore(js);
+        var offlineGameplay = new OfflineGameplayService(combatStore, offlineStore);
+        var offlineSync = new OfflineSyncService(api, offlineStore);
+        var connection = new ConnectionStateService(js);
+        var service = new OperatorService(api, offlineStore, offlineGameplay, offlineSync, connection);
+        var operatorId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+        await offlineStore.SaveInfiledOperatorAsync(CreateOperator(operatorId, "Bravo"));
+
+        var (sessionId, error) = await service.StartCombatSessionAsync(operatorId);
+        var updatedOperator = await offlineStore.GetInfiledOperatorAsync(operatorId);
+
+        Assert.Null(error);
+        Assert.Equal(handler.SessionId, sessionId);
+        Assert.NotNull(updatedOperator);
+        Assert.Equal(handler.SessionId, updatedOperator.ActiveCombatSessionId);
+    }
+
     private static OperatorState CreateOperator(Guid id, string name) => new()
     {
         Id = id,
@@ -200,6 +256,33 @@ public sealed class WebOfflineSupportTests
             {
                 Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
             };
+        }
+    }
+
+    private sealed class StartCombatHandler : HttpMessageHandler
+    {
+        public Guid SessionId { get; } = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        public int StartCombatCount { get; private set; }
+        public string? LastRequestPath { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastRequestPath = request.RequestUri?.AbsolutePath;
+
+            if (request.Method == HttpMethod.Post &&
+                request.RequestUri?.AbsolutePath.EndsWith("/infil/combat", StringComparison.Ordinal) == true)
+            {
+                StartCombatCount++;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = JsonContent.Create(SessionId)
+                });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
+            });
         }
     }
 
