@@ -68,15 +68,8 @@ public sealed class OperatorService
         await TrySyncIfOnlineAsync(id);
 
         var local = await _offlineStore.GetInfiledOperatorAsync(id);
-        if (local is not null)
-        {
-            // Serve the offline snapshot only while the infil timer is still active, or when offline.
-            // If the timer has lapsed and we are online, bypass the stale cache: the server's
-            // GetOperatorAsync auto-fails timed-out infils and returns the authoritative Base-mode
-            // state, preventing the infil-page ↔ exfil-failed-page redirect loop.
-            if (InfilTimerStillActive(local.InfilStartTime) || !_connection.IsOnline)
-                return (local, null);
-        }
+        if (local is not null && !_connection.IsOnline)
+            return (local, null);
 
         try
         {
@@ -91,12 +84,14 @@ public sealed class OperatorService
             // The server auto-failed the timed-out infil — purge the now-stale offline snapshot.
             // Wrapped in its own try/catch so a storage failure (e.g., browser storage blocked)
             // does not prevent the successful server response from being returned.
-            if (local is not null && data is not null &&
-                !string.Equals(data.CurrentMode, "Infil", StringComparison.OrdinalIgnoreCase))
+            if (local is not null && data is not null)
             {
                 try
                 {
-                    await _offlineStore.RemoveInfiledOperatorAsync(id);
+                    if (string.Equals(data.CurrentMode, "Infil", StringComparison.OrdinalIgnoreCase))
+                        await _offlineStore.UpdateOperatorSnapshotAsync(id, data);
+                    else
+                        await _offlineStore.RemoveInfiledOperatorAsync(id);
                 }
                 catch
                 {
@@ -115,11 +110,6 @@ public sealed class OperatorService
             return (null, ex.Message);
         }
     }
-
-    private static bool InfilTimerStillActive(DateTimeOffset? infilStartTime) =>
-        infilStartTime.HasValue &&
-        (DateTimeOffset.UtcNow - infilStartTime.Value).TotalMinutes < InfilConstants.InfilDurationMinutes;
-
     public async Task<(OperatorState? Data, string? Error)> CreateAsync(string name)
     {
         try

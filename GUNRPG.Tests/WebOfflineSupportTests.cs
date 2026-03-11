@@ -260,11 +260,11 @@ public sealed class WebOfflineSupportTests
     }
 
     [Fact]
-    public async Task OperatorService_GetAsync_WhenInfilTimerStillActiveAndOnline_ReturnsLocalSnapshot()
+    public async Task OperatorService_GetAsync_WhenInfilTimerStillActiveAndOnline_PrefersServerStateAndPurgesStaleSnapshot()
     {
         var operatorId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
         var js = new FakeBrowserJsRuntime();
-        var handler = new CountingGetHandler();
+        var handler = new GetBaseOperatorHandler(operatorId);
         using var http = new HttpClient(handler);
         var nodeService = new NodeConnectionService(js);
         await nodeService.SetBaseUrlAsync("https://node.example.com");
@@ -282,11 +282,41 @@ public sealed class WebOfflineSupportTests
             infilStartTime: DateTimeOffset.UtcNow.AddMinutes(-5)));
 
         var (data, error) = await service.GetAsync(operatorId);
+        var remaining = await offlineStore.GetInfiledOperatorAsync(operatorId);
 
         Assert.Null(error);
         Assert.NotNull(data);
-        Assert.Equal("Infil", data.CurrentMode);       // Local snapshot returned
-        Assert.Equal(0, handler.GetOperatorCount);     // Server NOT queried for the operator
+        Assert.Equal("Base", data.CurrentMode);       // Authoritative server state returned
+        Assert.Equal(1, handler.GetOperatorCount);    // Server queried even while timer is active
+        Assert.Null(remaining);                       // Stale local snapshot was purged
+    }
+
+    [Fact]
+    public async Task OperatorService_GetAsync_WhenOnlineFetchFails_FallsBackToLocalSnapshot()
+    {
+        var operatorId = Guid.Parse("abababab-abab-abab-abab-abababababab");
+        var js = new FakeBrowserJsRuntime();
+        using var http = new HttpClient(new FailingHandler());
+        var nodeService = new NodeConnectionService(js);
+        await nodeService.SetBaseUrlAsync("https://node.example.com");
+        var auth = new AuthService(js, http, nodeService);
+        var api = new ApiClient(http, nodeService, auth);
+        var offlineStore = new BrowserOfflineStore(js);
+        var combatStore = new BrowserCombatSessionStore(js);
+        var offlineGameplay = new OfflineGameplayService(combatStore, offlineStore);
+        var offlineSync = new OfflineSyncService(api, offlineStore);
+        var connection = new ConnectionStateService(js); // IsOnline defaults to true
+        var service = new OperatorService(api, offlineStore, offlineGameplay, offlineSync, connection);
+
+        await offlineStore.SaveInfiledOperatorAsync(CreateOperator(operatorId, "Fallback",
+            infilStartTime: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        var (data, error) = await service.GetAsync(operatorId);
+
+        Assert.Null(error);
+        Assert.NotNull(data);
+        Assert.Equal("Infil", data.CurrentMode);
+        Assert.Equal(operatorId, data.Id);
     }
 
     [Fact]
