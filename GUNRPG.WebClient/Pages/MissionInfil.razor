@@ -87,7 +87,7 @@
 @code {
     [Parameter] public Guid OperatorId { get; set; }
 
-    private static readonly TimeSpan RaidDuration = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan RaidDuration = TimeSpan.FromMinutes(InfilConstants.InfilDurationMinutes);
 
     private OperatorState? _operator;
     private bool _loading = true;
