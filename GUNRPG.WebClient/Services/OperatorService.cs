@@ -131,7 +131,6 @@ public sealed class OperatorService
 
     public async Task<(Guid? SessionId, string? Error)> StartCombatSessionAsync(Guid operatorId)
     {
-        var local = await _offlineStore.GetInfiledOperatorAsync(operatorId);
         if (_connection.IsOnline)
         {
             try
@@ -147,8 +146,7 @@ public sealed class OperatorService
                 if (sessionId == Guid.Empty)
                     return (null, "Server returned an invalid combat session ID.");
 
-                if (local is not null)
-                    await _offlineStore.UpdateOperatorSnapshotAsync(operatorId, CloneOperator(local, sessionId));
+                await TryUpdateActiveCombatSessionIdAsync(operatorId, sessionId);
 
                 return (sessionId, null);
             }
@@ -158,6 +156,7 @@ public sealed class OperatorService
             }
         }
 
+        var local = await _offlineStore.GetInfiledOperatorAsync(operatorId);
         if (local?.ActiveCombatSessionId is Guid existingSessionId)
             return (existingSessionId, null);
 
@@ -325,23 +324,16 @@ public sealed class OperatorService
         }
     }
 
-    private static OperatorState CloneOperator(OperatorState state, Guid? activeCombatSessionId) => new()
+    private async Task TryUpdateActiveCombatSessionIdAsync(Guid operatorId, Guid sessionId)
     {
-        Id = state.Id,
-        Name = state.Name,
-        TotalXp = state.TotalXp,
-        CurrentHealth = state.CurrentHealth,
-        MaxHealth = state.MaxHealth,
-        EquippedWeaponName = state.EquippedWeaponName,
-        UnlockedPerks = state.UnlockedPerks.ToList(),
-        ExfilStreak = state.ExfilStreak,
-        IsDead = state.IsDead,
-        CurrentMode = state.CurrentMode,
-        InfilStartTime = state.InfilStartTime,
-        InfilSessionId = state.InfilSessionId,
-        ActiveCombatSessionId = activeCombatSessionId,
-        ActiveCombatSession = state.ActiveCombatSession,
-        LockedLoadout = state.LockedLoadout,
-        Pet = state.Pet
-    };
+        try
+        {
+            await _offlineStore.UpdateActiveCombatSessionIdAsync(operatorId, sessionId);
+        }
+        catch
+        {
+            // Local storage is optional for the online path; server-backed combat can continue
+            // even when Safari/iOS blocks IndexedDB or other browser storage APIs.
+        }
+    }
 }
