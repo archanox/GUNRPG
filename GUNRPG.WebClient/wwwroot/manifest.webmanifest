@@ -1,7 +1,7 @@
 {
   "name": "GUNRPG",
   "short_name": "GUNRPG",
-  "start_url": "/",
+  "start_url": "/GUNRPG",
   "display": "standalone",
   "background_color": "#111827",
   "theme_color": "#2563eb",
