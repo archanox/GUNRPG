@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using GUNRPG.ClientModels;
 using GUNRPG.WebClient.Helpers;
 using GUNRPG.WebClient.Models;
 
@@ -88,10 +89,20 @@ public sealed class OperatorService
             var data = await response.Content.ReadFromJsonAsync<OperatorState>();
 
             // The server auto-failed the timed-out infil — purge the now-stale offline snapshot.
+            // Wrapped in its own try/catch so a storage failure (e.g., browser storage blocked)
+            // does not prevent the successful server response from being returned.
             if (local is not null && data is not null &&
                 !string.Equals(data.CurrentMode, "Infil", StringComparison.OrdinalIgnoreCase))
             {
-                await _offlineStore.RemoveInfiledOperatorAsync(id);
+                try
+                {
+                    await _offlineStore.RemoveInfiledOperatorAsync(id);
+                }
+                catch
+                {
+                    // Ignore failures in offline cleanup so that a successful server response
+                    // is still returned even if browser storage APIs are unavailable.
+                }
             }
 
             return (data, null);
@@ -105,12 +116,9 @@ public sealed class OperatorService
         }
     }
 
-    // Must match OperatorExfilService.InfilTimerMinutes in GUNRPG.Application/Operators/OperatorExfilService.cs.
-    private const int InfilDurationMinutes = 30;
-
     private static bool InfilTimerStillActive(DateTimeOffset? infilStartTime) =>
         infilStartTime.HasValue &&
-        (DateTimeOffset.UtcNow - infilStartTime.Value).TotalMinutes < InfilDurationMinutes;
+        (DateTimeOffset.UtcNow - infilStartTime.Value).TotalMinutes < InfilConstants.InfilDurationMinutes;
 
     public async Task<(OperatorState? Data, string? Error)> CreateAsync(string name)
     {
