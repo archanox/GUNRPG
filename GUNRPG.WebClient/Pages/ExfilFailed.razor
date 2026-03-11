@@ -1,4 +1,5 @@
 @page "/missions/exfil-failed/{OperatorId:guid}"
+@using GUNRPG.WebClient.Helpers
 @inject AuthService Auth
 @inject NavigationManager Nav
 @inject OperatorService OperatorSvc
@@ -40,8 +41,8 @@
         {
             if (opData.CurrentMode == "Infil")
             {
-                if (opData.ActiveCombatSessionId.HasValue && opData.ActiveCombatSession?.IsConcluded == false)
-                    Nav.NavigateTo($"missions/{opData.ActiveCombatSessionId}");
+                if (OperatorNavigationHelper.HasActiveCombat(opData))
+                    Nav.NavigateTo($"missions/{opData.ActiveCombatSessionId}?operatorId={OperatorId}");
                 else
                     Nav.NavigateTo($"missions/infil/{OperatorId}");
             }

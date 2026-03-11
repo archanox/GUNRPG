@@ -1,4 +1,5 @@
 @page "/missions/infil/{OperatorId:guid}"
+@using GUNRPG.WebClient.Helpers
 @inject AuthService Auth
 @inject NavigationManager Nav
 @inject OperatorService OperatorSvc
@@ -59,7 +60,7 @@
         </FluentCard>
 
         <FluentStack Orientation="Orientation.Horizontal" Style="gap: 0.5rem; flex-wrap: wrap;">
-            @if (_operator.ActiveCombatSessionId.HasValue && _operator.ActiveCombatSession?.IsConcluded == false)
+            @if (OperatorNavigationHelper.HasActiveCombat(_operator))
             {
                 <FluentButton Appearance="Appearance.Accent"
                               OnClick="@(() => Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}?operatorId={OperatorId}"))">
@@ -123,8 +124,7 @@
                 return;
             }
 
-            if (_operator.ActiveCombatSessionId.HasValue &&
-                _operator.ActiveCombatSession?.IsConcluded == false)
+            if (OperatorNavigationHelper.HasActiveCombat(_operator))
             {
                 Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}?operatorId={OperatorId}");
                 return;
@@ -177,8 +177,7 @@
         }
 
         // Navigate to combat when another client starts a session
-        if (_operator.ActiveCombatSessionId.HasValue &&
-            _operator.ActiveCombatSession?.IsConcluded == false)
+        if (OperatorNavigationHelper.HasActiveCombat(_operator))
         {
             await InvokeAsync(() => Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}?operatorId={OperatorId}"));
             return;
