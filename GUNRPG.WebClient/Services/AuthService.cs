@@ -63,11 +63,11 @@ public sealed class AuthService
     {
         var refreshToken = await _js.InvokeAsync<string?>("tokenStorage.getRefreshToken");
         if (string.IsNullOrEmpty(refreshToken))
-            return !string.IsNullOrEmpty(_accessToken);
+            return false;
 
         var baseUrl = await _nodeService.GetBaseUrlAsync();
         if (string.IsNullOrEmpty(baseUrl))
-            return !string.IsNullOrEmpty(_accessToken);
+            return false;
 
         try
         {
@@ -79,7 +79,7 @@ public sealed class AuthService
             {
                 if ((int)response.StatusCode is >= 400 and < 500)
                     await ClearTokensAsync();
-                return !string.IsNullOrEmpty(_accessToken);
+                return false;
             }
 
             var result = await response.Content.ReadFromJsonAsync<TokenResponse>();
@@ -96,7 +96,7 @@ public sealed class AuthService
         }
         catch
         {
-            return !string.IsNullOrEmpty(_accessToken);
+            return false;
         }
     }
 

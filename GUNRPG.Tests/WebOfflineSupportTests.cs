@@ -2,11 +2,16 @@ using GUNRPG.Application.Backend;
 using GUNRPG.ClientModels;
 using GUNRPG.WebClient.Services;
 using Microsoft.JSInterop;
+using System.Net;
+using System.Text;
+using System.Text.Json;
 
 namespace GUNRPG.Tests;
 
 public sealed class WebOfflineSupportTests
 {
+    private static readonly Guid SyncOperatorId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
     [Fact]
     public async Task BrowserOfflineStore_SaveInfiledOperatorAsync_DeactivatesPreviousActiveSnapshot()
     {
@@ -74,6 +79,72 @@ public sealed class WebOfflineSupportTests
         Assert.Equal("cached-access", auth.GetAccessToken());
     }
 
+    [Fact]
+    public async Task AuthService_RefreshTokenAsync_ReturnsFalseWhenRefreshCannotRun()
+    {
+        var js = new FakeBrowserJsRuntime();
+        await js.InvokeVoidAsync("tokenStorage.storeAccessToken", "cached-access");
+
+        using var http = new HttpClient(new FailingHandler());
+        var nodeService = new NodeConnectionService(js);
+        var auth = new AuthService(js, http, nodeService);
+        await auth.TryRestoreAsync();
+
+        var refreshed = await auth.RefreshTokenAsync();
+        var sseToken = await auth.GetSseAccessTokenAsync(forceRefresh: true);
+
+        Assert.False(refreshed);
+        Assert.Null(sseToken);
+        Assert.Equal("cached-access", auth.GetAccessToken());
+    }
+
+    [Fact]
+    public async Task OfflineSyncService_SyncAsync_CoalescesConcurrentRequestsPerOperator()
+    {
+        var js = new FakeBrowserJsRuntime();
+        var store = new BrowserOfflineStore(js);
+        await store.SaveMissionResultAsync(new OfflineMissionEnvelope
+        {
+            Id = "env-1",
+            OperatorId = SyncOperatorId.ToString(),
+            SequenceNumber = 1,
+            RandomSeed = 1,
+            InitialOperatorStateHash = "h0",
+            ResultOperatorStateHash = "h1",
+            ExecutedUtc = DateTime.UtcNow,
+            Synced = true,
+            FullBattleLog = []
+        });
+        await store.SaveMissionResultAsync(new OfflineMissionEnvelope
+        {
+            Id = "env-2",
+            OperatorId = SyncOperatorId.ToString(),
+            SequenceNumber = 2,
+            RandomSeed = 2,
+            InitialOperatorStateHash = "h1",
+            ResultOperatorStateHash = "h2",
+            ExecutedUtc = DateTime.UtcNow,
+            FullBattleLog = []
+        });
+
+        var handler = new DelayedSyncHandler();
+        using var http = new HttpClient(handler);
+        var nodeService = new NodeConnectionService(js);
+        await nodeService.SetBaseUrlAsync("https://node.example.com");
+        var auth = new AuthService(js, http, nodeService);
+        var api = new ApiClient(http, nodeService, auth);
+        var sync = new OfflineSyncService(api, store);
+
+        var first = sync.SyncAsync(SyncOperatorId);
+        var second = sync.SyncAsync(SyncOperatorId);
+        var results = await Task.WhenAll(first, second);
+
+        Assert.Equal(1, handler.OfflineSyncPostCount);
+        Assert.Empty(await store.GetAllUnsyncedResultsAsync());
+        Assert.Equal(1, results[0].EnvelopesSynced);
+        Assert.Equal(0, results[1].EnvelopesSynced);
+    }
+
     private static OperatorState CreateOperator(Guid id, string name) => new()
     {
         Id = id,
@@ -89,6 +160,47 @@ public sealed class WebOfflineSupportTests
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
             throw new HttpRequestException("offline");
+    }
+
+    private sealed class DelayedSyncHandler : HttpMessageHandler
+    {
+        public int OfflineSyncPostCount { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Post && request.RequestUri?.AbsolutePath == "/operators/offline/sync")
+            {
+                OfflineSyncPostCount++;
+                await Task.Delay(50, cancellationToken);
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
+                };
+            }
+
+            if (request.Method == HttpMethod.Get && request.RequestUri?.AbsolutePath.StartsWith("/operators/", StringComparison.Ordinal) == true)
+            {
+                var op = new OperatorState
+                {
+                    Id = SyncOperatorId,
+                    Name = "Offline Op",
+                    CurrentMode = "Infil",
+                    CurrentHealth = 100,
+                    MaxHealth = 100,
+                    EquippedWeaponName = "Rifle",
+                    UnlockedPerks = []
+                };
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(op), Encoding.UTF8, "application/json")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
+            };
+        }
     }
 
     private sealed class FakeBrowserJsRuntime : IJSRuntime

@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @inject ConnectionStateService Connection
 @inject OfflineSyncService OfflineSync
+@inject NodeConnectionService NodeConnection
 @implements IAsyncDisposable
 
 <FluentLayout>
@@ -44,24 +45,39 @@
     {
         await Connection.InitializeAsync();
         Connection.Changed += HandleConnectionChanged;
-
-        if (Connection.IsOnline)
-        {
-            await OfflineSync.TrySyncAllAsync();
-        }
-
+        await TrySyncIfOnlineAsync();
         await RefreshStatusAsync();
     }
 
-    private async void HandleConnectionChanged()
+    private void HandleConnectionChanged()
     {
-        if (Connection.IsOnline)
-        {
-            await OfflineSync.TrySyncAllAsync();
-        }
+        _ = HandleConnectionChangedAsync();
+    }
 
-        await RefreshStatusAsync();
-        await InvokeAsync(StateHasChanged);
+    private async Task HandleConnectionChangedAsync()
+    {
+        try
+        {
+            await TrySyncIfOnlineAsync();
+            await RefreshStatusAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            // Swallow background sync errors so transient failures do not crash the UI.
+        }
+    }
+
+    private async Task TrySyncIfOnlineAsync()
+    {
+        if (!Connection.IsOnline)
+            return;
+
+        var baseUrl = await NodeConnection.GetBaseUrlAsync();
+        if (string.IsNullOrEmpty(baseUrl))
+            return;
+
+        await OfflineSync.TrySyncAllAsync();
     }
 
     private async Task RefreshStatusAsync()

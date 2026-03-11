@@ -37,8 +37,10 @@ self.addEventListener('fetch', event => {
         event.respondWith((async () => {
             try {
                 const networkResponse = await fetch(request);
-                const cache = await caches.open(CACHE_NAME);
-                cache.put('/index.html', networkResponse.clone());
+                if (networkResponse.ok) {
+                    const cache = await caches.open(CACHE_NAME);
+                    cache.put('/index.html', networkResponse.clone());
+                }
                 return networkResponse;
             } catch {
                 const cached = await caches.match('/index.html');
@@ -56,7 +58,7 @@ self.addEventListener('fetch', event => {
 
         try {
             const networkResponse = await fetch(request);
-            if (request.url.startsWith(self.location.origin)) {
+            if (networkResponse.ok && request.url.startsWith(self.location.origin)) {
                 const cache = await caches.open(CACHE_NAME);
                 cache.put(request, networkResponse.clone());
             }

@@ -119,15 +119,7 @@
         {
             if (_operator.CurrentMode == "Base")
             {
-                if (!Connection.IsOnline)
-        {
-            _statusIntent = MessageIntent.Info;
-            _statusMessage = "Exfil queued. Your mission will sync and validate when the connection returns.";
-            StateHasChanged();
-            return;
-        }
-
-        Nav.NavigateTo($"operators/{OperatorId}");
+                Nav.NavigateTo($"operators/{OperatorId}");
                 return;
             }
 
@@ -142,6 +134,8 @@
         if (_operator?.InfilStartTime.HasValue == true)
             _countdownTask = RunCountdownAsync();
 
+        if (Connection.IsOnline)
+            await StartSseAsync();
     }
 
     private async Task LoadAsync()
