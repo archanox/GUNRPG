@@ -57,6 +57,23 @@ public sealed class OperatorNavigationHelperTests
     }
 
     [Fact]
+    public void GetRealtimeRoute_ReturnsCombatRoute_WhenActiveCombatSessionDetailsAreMissing()
+    {
+        var operatorId = Guid.NewGuid();
+        var sessionId = Guid.NewGuid();
+        var operatorState = new OperatorState
+        {
+            Id = operatorId,
+            CurrentMode = "Infil",
+            ActiveCombatSessionId = sessionId
+        };
+
+        var route = OperatorNavigationHelper.GetRealtimeRoute(operatorState, operatorId);
+
+        Assert.Equal($"missions/{sessionId}?operatorId={operatorId}", route);
+    }
+
+    [Fact]
     public void GetRealtimeRoute_ReturnsInfilRoute_WhenCombatSessionIsConcluded()
     {
         var operatorId = Guid.NewGuid();
