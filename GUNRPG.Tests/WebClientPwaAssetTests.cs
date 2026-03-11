@@ -22,6 +22,20 @@ public sealed class WebClientPwaAssetTests
         Assert.DoesNotContain("navigator.serviceWorker.register('/service-worker.js')", indexHtml, StringComparison.Ordinal);
     }
 
-    private static string GetWebClientAssetPath(string fileName) =>
-        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../GUNRPG.WebClient/wwwroot", fileName));
+    private static string GetWebClientAssetPath(string fileName)
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "global.json")))
+        {
+            directory = directory.Parent;
+        }
+
+        if (directory is null)
+        {
+            throw new DirectoryNotFoundException("Could not locate the repository root from the test output directory.");
+        }
+
+        return Path.Combine(directory.FullName, "GUNRPG.WebClient", "wwwroot", fileName);
+    }
 }
