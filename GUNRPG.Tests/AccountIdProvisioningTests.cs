@@ -223,6 +223,8 @@ public sealed class ApiClientTests
                     return new ValueTask<TValue>((TValue?)GetValue(args, 0) ?? default!);
                 case "tokenStorage.getRefreshToken":
                     return new ValueTask<TValue>((TValue?)GetValue("refreshToken") ?? default!);
+                case "tokenStorage.getAccessToken":
+                    return new ValueTask<TValue>((TValue?)GetValue("accessToken") ?? default!);
                 case "localStorage.setItem":
                     _values[Convert.ToString(args?[0])!] = args?[1];
                     return new ValueTask<TValue>(default(TValue)!);
@@ -232,7 +234,17 @@ public sealed class ApiClientTests
                 case "tokenStorage.storeRefreshToken":
                     _values["refreshToken"] = args?[0];
                     return new ValueTask<TValue>(default(TValue)!);
+                case "tokenStorage.storeAccessToken":
+                    _values["accessToken"] = args?[0];
+                    return new ValueTask<TValue>(default(TValue)!);
                 case "tokenStorage.removeRefreshToken":
+                    _values.Remove("refreshToken");
+                    return new ValueTask<TValue>(default(TValue)!);
+                case "tokenStorage.removeAccessToken":
+                    _values.Remove("accessToken");
+                    return new ValueTask<TValue>(default(TValue)!);
+                case "tokenStorage.clearTokens":
+                    _values.Remove("accessToken");
                     _values.Remove("refreshToken");
                     return new ValueTask<TValue>(default(TValue)!);
                 default:

@@ -5,6 +5,7 @@
 @inject OperatorService OperatorSvc
 @inject NodeConnectionService NodeService
 @inject IJSRuntime JS
+@inject ConnectionStateService Connection
 @implements IAsyncDisposable
 
 <FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; max-width: 900px; margin: 0 auto;">
@@ -24,6 +25,15 @@
     @if (!string.IsNullOrEmpty(_error))
     {
         <FluentMessageBar Title="Error" Intent="MessageIntent.Error">@_error</FluentMessageBar>
+    }
+
+    @if (!Connection.IsOnline)
+    {
+        <FluentMessageBar Title="OFFLINE MODE" Intent="MessageIntent.Warning">Mission progress will sync when connection returns.</FluentMessageBar>
+    }
+    else if (_usingLocalSession)
+    {
+        <FluentMessageBar Title="Local Mission Session" Intent="MessageIntent.Info">Combat is running from your local replay session and will validate on exfil.</FluentMessageBar>
     }
 
     @if (_loading)
@@ -230,6 +240,7 @@
     private bool _busy;
     private string? _error;
     private bool _sessionNotFound;
+    private bool _usingLocalSession;
 
     // Exfil timer
     private DateTimeOffset? _infilStartTime;
@@ -297,7 +308,8 @@
         }
 
         // Start SSE streams for real-time sync (session and operator)
-        await StartSseAsync();
+        if (!_usingLocalSession)
+            await StartSseAsync();
 
         if (_infilStartTime.HasValue)
             _countdownTask = RunCountdownAsync();
@@ -402,6 +414,7 @@
     /// </summary>
     private async Task SilentRefreshAsync()
     {
+        _usingLocalSession = await MissionSvc.IsLocalSessionAsync(MissionId);
         var (data, error) = await MissionSvc.GetStateAsync(MissionId);
         if (data is not null)
         {
@@ -420,6 +433,7 @@
         _error = null;
         StateHasChanged();
 
+        _usingLocalSession = await MissionSvc.IsLocalSessionAsync(MissionId);
         var (data, error) = await MissionSvc.GetStateAsync(MissionId);
         _session = data;
         _error = error;

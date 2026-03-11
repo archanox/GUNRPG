@@ -1,0 +1,199 @@
+using GUNRPG.Application.Backend;
+using GUNRPG.ClientModels;
+using GUNRPG.WebClient.Services;
+using Microsoft.JSInterop;
+
+namespace GUNRPG.Tests;
+
+public sealed class WebOfflineSupportTests
+{
+    [Fact]
+    public async Task BrowserOfflineStore_SaveInfiledOperatorAsync_DeactivatesPreviousActiveSnapshot()
+    {
+        var js = new FakeBrowserJsRuntime();
+        var store = new BrowserOfflineStore(js);
+
+        await store.SaveInfiledOperatorAsync(CreateOperator(Guid.Parse("11111111-1111-1111-1111-111111111111"), "Alpha"));
+        await store.SaveInfiledOperatorAsync(CreateOperator(Guid.Parse("22222222-2222-2222-2222-222222222222"), "Bravo"));
+
+        var first = await store.GetInfiledOperatorAsync(Guid.Parse("11111111-1111-1111-1111-111111111111"));
+        var active = await store.GetActiveInfiledOperatorAsync();
+
+        Assert.NotNull(first);
+        Assert.NotNull(active);
+        Assert.Equal("Alpha", first.Name);
+        Assert.Equal("Bravo", active.Name);
+        Assert.Equal(Guid.Parse("22222222-2222-2222-2222-222222222222"), active.Id);
+    }
+
+    [Fact]
+    public async Task BrowserOfflineStore_SaveMissionResultAsync_RejectsBrokenHashChain()
+    {
+        var js = new FakeBrowserJsRuntime();
+        var store = new BrowserOfflineStore(js);
+
+        await store.SaveMissionResultAsync(new OfflineMissionEnvelope
+        {
+            OperatorId = "op-1",
+            SequenceNumber = 1,
+            RandomSeed = 1,
+            InitialOperatorStateHash = "h0",
+            ResultOperatorStateHash = "h1",
+            ExecutedUtc = DateTime.UtcNow,
+            FullBattleLog = []
+        });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => store.SaveMissionResultAsync(new OfflineMissionEnvelope
+        {
+            OperatorId = "op-1",
+            SequenceNumber = 2,
+            RandomSeed = 2,
+            InitialOperatorStateHash = "wrong",
+            ResultOperatorStateHash = "h2",
+            ExecutedUtc = DateTime.UtcNow,
+            FullBattleLog = []
+        }));
+    }
+
+    [Fact]
+    public async Task AuthService_TryRestoreAsync_UsesStoredAccessTokenWhenOffline()
+    {
+        var js = new FakeBrowserJsRuntime();
+        await js.InvokeVoidAsync("tokenStorage.storeAccessToken", "cached-access");
+        await js.InvokeVoidAsync("tokenStorage.storeRefreshToken", "cached-refresh");
+
+        using var http = new HttpClient(new FailingHandler());
+        var nodeService = new NodeConnectionService(js);
+        await nodeService.SetBaseUrlAsync("https://node.example.com");
+        var auth = new AuthService(js, http, nodeService);
+
+        var restored = await auth.TryRestoreAsync();
+
+        Assert.True(restored);
+        Assert.True(auth.IsAuthenticated);
+        Assert.Equal("cached-access", auth.GetAccessToken());
+    }
+
+    private static OperatorState CreateOperator(Guid id, string name) => new()
+    {
+        Id = id,
+        Name = name,
+        CurrentMode = "Infil",
+        CurrentHealth = 100,
+        MaxHealth = 100,
+        EquippedWeaponName = "Rifle",
+        UnlockedPerks = []
+    };
+
+    private sealed class FailingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            throw new HttpRequestException("offline");
+    }
+
+    private sealed class FakeBrowserJsRuntime : IJSRuntime
+    {
+        private readonly Dictionary<string, object?> _localStorage = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, object?> _tokens = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, BrowserOfflineStore.BrowserMetadataRecord> _metadata = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, BrowserOfflineStore.BrowserInfiledOperatorRecord> _infiledOperators = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, OfflineMissionEnvelope> _missionResults = new(StringComparer.Ordinal);
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, object?[]? args) => InvokeAsync<TValue>(identifier, CancellationToken.None, args);
+
+        public ValueTask<TValue> InvokeAsync<TValue>(string identifier, CancellationToken cancellationToken, object?[]? args)
+        {
+            object? value = identifier switch
+            {
+                "localStorage.getItem" => GetDictionaryValue(_localStorage, Convert.ToString(args?[0])),
+                "localStorage.setItem" => SetDictionaryValue(_localStorage, Convert.ToString(args?[0]), args?[1]),
+                "localStorage.removeItem" => RemoveDictionaryValue(_localStorage, Convert.ToString(args?[0])),
+                "tokenStorage.storeAccessToken" => SetDictionaryValue(_tokens, "accessToken", args?[0]),
+                "tokenStorage.getAccessToken" => GetDictionaryValue(_tokens, "accessToken"),
+                "tokenStorage.removeAccessToken" => RemoveDictionaryValue(_tokens, "accessToken"),
+                "tokenStorage.storeRefreshToken" => SetDictionaryValue(_tokens, "refreshToken", args?[0]),
+                "tokenStorage.getRefreshToken" => GetDictionaryValue(_tokens, "refreshToken"),
+                "tokenStorage.removeRefreshToken" => RemoveDictionaryValue(_tokens, "refreshToken"),
+                "tokenStorage.clearTokens" => ClearTokens(),
+                "gunRpgStorage.saveInfiledOperator" => SaveInfiledOperator((BrowserOfflineStore.BrowserInfiledOperatorRecord)args![0]!),
+                "gunRpgStorage.getInfiledOperator" => GetDictionaryValue(_infiledOperators, Convert.ToString(args?[0])),
+                "gunRpgStorage.getActiveInfiledOperator" => _infiledOperators.Values.FirstOrDefault(x => x.IsActive),
+                "gunRpgStorage.hasActiveInfiledOperator" => _infiledOperators.Values.Any(x => x.IsActive),
+                "gunRpgStorage.updateInfiledOperator" => SaveOrUpdateInfiledOperator((BrowserOfflineStore.BrowserInfiledOperatorRecord)args![0]!),
+                "gunRpgStorage.removeInfiledOperator" => RemoveDictionaryValue(_infiledOperators, Convert.ToString(args?[0])),
+                "gunRpgStorage.saveOfflineMissionResult" => SaveMissionResult((OfflineMissionEnvelope)args![0]!),
+                "gunRpgStorage.getOfflineMissionResult" => GetDictionaryValue(_missionResults, Convert.ToString(args?[0])),
+                "gunRpgStorage.getAllOfflineMissionResults" => _missionResults.Values.OrderBy(x => x.SequenceNumber).ToList(),
+                "gunRpgStorage.putValue" => PutMetadata(Convert.ToString(args?[1]), (BrowserOfflineStore.BrowserMetadataRecord)args![2]!),
+                "gunRpgStorage.getValue" => GetMetadata(Convert.ToString(args?[1])),
+                "gunRpgStorage.deleteValue" => DeleteMetadata(Convert.ToString(args?[1])),
+                "gunRpgStorage.getAllValues" => _metadata.Values.ToList(),
+                _ => throw new NotSupportedException(identifier)
+            };
+
+            return new ValueTask<TValue>((TValue?)value ?? default!);
+        }
+
+        private static object? SetDictionaryValue(IDictionary<string, object?> dictionary, string? key, object? value)
+        {
+            if (!string.IsNullOrEmpty(key))
+                dictionary[key] = value;
+            return null;
+        }
+
+        private static object? RemoveDictionaryValue<TValue>(IDictionary<string, TValue> dictionary, string? key)
+        {
+            if (!string.IsNullOrEmpty(key))
+                dictionary.Remove(key);
+            return null;
+        }
+
+        private static object? GetDictionaryValue<TValue>(IReadOnlyDictionary<string, TValue> dictionary, string? key)
+        {
+            return !string.IsNullOrEmpty(key) && dictionary.TryGetValue(key, out var value) ? value : default;
+        }
+
+        private object? ClearTokens()
+        {
+            _tokens.Clear();
+            return null;
+        }
+
+        private object? SaveInfiledOperator(BrowserOfflineStore.BrowserInfiledOperatorRecord record)
+        {
+            foreach (var existing in _infiledOperators.Values)
+                existing.IsActive = false;
+            _infiledOperators[record.Id] = record;
+            return null;
+        }
+
+        private object? SaveOrUpdateInfiledOperator(BrowserOfflineStore.BrowserInfiledOperatorRecord record)
+        {
+            _infiledOperators[record.Id] = record;
+            return null;
+        }
+
+        private object? SaveMissionResult(OfflineMissionEnvelope envelope)
+        {
+            _missionResults[envelope.Id] = envelope;
+            return null;
+        }
+
+        private object? PutMetadata(string? key, BrowserOfflineStore.BrowserMetadataRecord record)
+        {
+            if (!string.IsNullOrEmpty(key))
+                _metadata[key] = record;
+            return null;
+        }
+
+        private BrowserOfflineStore.BrowserMetadataRecord? GetMetadata(string? key) =>
+            !string.IsNullOrEmpty(key) && _metadata.TryGetValue(key, out var record) ? record : null;
+
+        private object? DeleteMetadata(string? key)
+        {
+            if (!string.IsNullOrEmpty(key))
+                _metadata.Remove(key);
+            return null;
+        }
+    }
+}

@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\GUNRPG.ClientModels\GUNRPG.ClientModels.csproj" />
+    <ProjectReference Include="..\GUNRPG.Application\GUNRPG.Application.csproj" />
   </ItemGroup>
 
 </Project>
