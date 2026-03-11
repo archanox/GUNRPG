@@ -68,7 +68,14 @@ public sealed class OperatorService
 
         var local = await _offlineStore.GetInfiledOperatorAsync(id);
         if (local is not null)
-            return (local, null);
+        {
+            // Serve the offline snapshot only while the infil timer is still active, or when offline.
+            // If the timer has lapsed and we are online, bypass the stale cache: the server's
+            // GetOperatorAsync auto-fails timed-out infils and returns the authoritative Base-mode
+            // state, preventing the infil-page ↔ exfil-failed-page redirect loop.
+            if (InfilTimerStillActive(local.InfilStartTime) || !_connection.IsOnline)
+                return (local, null);
+        }
 
         try
         {
@@ -79,13 +86,31 @@ public sealed class OperatorService
                 return (null, $"Failed to load operator: {response.StatusCode}");
 
             var data = await response.Content.ReadFromJsonAsync<OperatorState>();
+
+            // The server auto-failed the timed-out infil — purge the now-stale offline snapshot.
+            if (local is not null && data is not null &&
+                !string.Equals(data.CurrentMode, "Infil", StringComparison.OrdinalIgnoreCase))
+            {
+                await _offlineStore.RemoveInfiledOperatorAsync(id);
+            }
+
             return (data, null);
         }
         catch (Exception ex)
         {
+            // Network error — fall back to the local snapshot when available.
+            if (local is not null)
+                return (local, null);
             return (null, ex.Message);
         }
     }
+
+    // Must match OperatorExfilService.InfilTimerMinutes in GUNRPG.Application/Operators/OperatorExfilService.cs.
+    private const int InfilDurationMinutes = 30;
+
+    private static bool InfilTimerStillActive(DateTimeOffset? infilStartTime) =>
+        infilStartTime.HasValue &&
+        (DateTimeOffset.UtcNow - infilStartTime.Value).TotalMinutes < InfilDurationMinutes;
 
     public async Task<(OperatorState? Data, string? Error)> CreateAsync(string name)
     {
