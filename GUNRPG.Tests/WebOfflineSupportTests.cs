@@ -412,6 +412,39 @@ public sealed class WebOfflineSupportTests
         Assert.Equal(0, handler.GetOperatorCount);  // Server NOT queried while offline
     }
 
+    [Fact]
+    public async Task OperatorService_CompleteInfilAsync_WhenOnlineWithSnapshotAndNoPendingOfflineExfil_CallsServerApi()
+    {
+        // Regression test: after an online combat victory, the player clicks Exfil on the infil
+        // screen. An infil snapshot exists (saved at infil start) but there is no queued offline
+        // exfil. The old code returned early from SyncAndFinalizeAsync without calling the server,
+        // leaving the operator in Infil mode and causing OperatorDetails to redirect back to infil.
+        var operatorId = Guid.Parse("a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1");
+        var js = new FakeBrowserJsRuntime();
+        var handler = new InfilCompleteHandler();
+        using var http = new HttpClient(handler);
+        var nodeService = new NodeConnectionService(js);
+        await nodeService.SetBaseUrlAsync("https://node.example.com");
+        var auth = new AuthService(js, http, nodeService);
+        var api = new ApiClient(http, nodeService, auth);
+        var offlineStore = new BrowserOfflineStore(js);
+        var combatStore = new BrowserCombatSessionStore(js);
+        var offlineGameplay = new OfflineGameplayService(combatStore, offlineStore);
+        var offlineSync = new OfflineSyncService(api, offlineStore);
+        var connection = new ConnectionStateService(js); // IsOnline defaults to true
+        var service = new OperatorService(api, offlineStore, offlineGameplay, offlineSync, connection);
+
+        // Simulate an infil snapshot saved at infil start (always present for online infil).
+        // No pending offline combat envelopes and no queued offline exfil — this is the online path.
+        await offlineStore.SaveInfiledOperatorAsync(CreateOperator(operatorId, "Ghost",
+            infilStartTime: DateTimeOffset.UtcNow.AddMinutes(-5)));
+
+        var error = await service.CompleteInfilAsync(operatorId);
+
+        Assert.Null(error);
+        Assert.Equal(1, handler.InfilCompleteCount); // Server API must be called
+    }
+
     private static OperatorState CreateOperator(Guid id, string name, DateTimeOffset? infilStartTime = null) => new()
     {
         Id = id,
@@ -603,6 +636,29 @@ public sealed class WebOfflineSupportTests
                 !request.RequestUri.AbsolutePath.EndsWith("/operators/", StringComparison.Ordinal))
             {
                 GetOperatorCount++;
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class InfilCompleteHandler : HttpMessageHandler
+    {
+        public int InfilCompleteCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Post &&
+                request.RequestUri?.AbsolutePath.EndsWith("/infil/complete", StringComparison.Ordinal) == true)
+            {
+                InfilCompleteCount++;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
+                });
             }
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
