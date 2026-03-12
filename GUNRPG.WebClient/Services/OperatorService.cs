@@ -204,7 +204,16 @@ public sealed class OperatorService
                 return null;
             }
 
-            return await _offlineSync.SyncAndFinalizeAsync(operatorId);
+            // Sync any pending offline combat turns first, and finalize if there is a queued offline exfil.
+            var syncError = await _offlineSync.SyncAndFinalizeAsync(operatorId);
+            if (syncError is not null)
+                return syncError;
+
+            // SyncAndFinalizeAsync removes the local snapshot only when it processes a queued offline exfil.
+            // If no exfil was queued (e.g. the player fought online then clicked Exfil), the snapshot
+            // is still present and the server has not yet been told to exfil — fall through below.
+            if (await _offlineStore.GetInfiledOperatorAsync(operatorId) is null)
+                return null;
         }
 
         try
