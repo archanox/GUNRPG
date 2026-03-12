@@ -425,7 +425,7 @@
             // the local offline snapshot. This prevents MissionInfil from redirecting back to an
             // unreachable concluded session if the user goes offline after the victory screen.
             if (data.IsConcluded && !_usingLocalSession)
-                await OperatorSvc.OnCombatSessionConcludedAsync(data.OperatorId);
+                await OperatorSvc.ClearActiveCombatSessionAsync(data.OperatorId);
         }
         else if (error is not null)
         {
@@ -497,7 +497,7 @@
         // ActiveCombatSessionId from the local offline snapshot so MissionInfil won't
         // redirect to this concluded session if the user goes offline after victory.
         if (_session?.IsConcluded == true && !_usingLocalSession)
-            await OperatorSvc.OnCombatSessionConcludedAsync(_session.OperatorId);
+            await OperatorSvc.ClearActiveCombatSessionAsync(_session.OperatorId);
 
         StateHasChanged();
     }

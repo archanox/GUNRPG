@@ -447,12 +447,12 @@ public sealed class WebOfflineSupportTests
     }
 
     [Fact]
-    public async Task OperatorService_OnCombatSessionConcludedAsync_ClearsActiveCombatSessionIdFromLocalSnapshot()
+    public async Task OperatorService_ClearActiveCombatSessionAsync_ClearsActiveCombatSessionIdFromLocalSnapshot()
     {
         // Regression: after an online session concludes, the local snapshot still holds the
         // ActiveCombatSessionId. If the user goes offline before navigating away, MissionInfil
         // would treat the stale ID as an active session and redirect in an infinite loop.
-        // OnCombatSessionConcludedAsync must clear the ID so HasActiveCombat returns false offline.
+        // ClearActiveCombatSessionAsync must clear the ID so HasActiveCombat returns false offline.
         var operatorId = Guid.Parse("b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2");
         var sessionId = Guid.Parse("c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3");
         var js = new FakeBrowserJsRuntime();
@@ -478,7 +478,7 @@ public sealed class WebOfflineSupportTests
         var before = await offlineStore.GetInfiledOperatorAsync(operatorId);
         Assert.Equal(sessionId, before?.ActiveCombatSessionId);
 
-        await service.OnCombatSessionConcludedAsync(operatorId);
+        await service.ClearActiveCombatSessionAsync(operatorId);
 
         // After clearing, HasActiveCombat must return false so MissionInfil won't redirect offline
         var after = await offlineStore.GetInfiledOperatorAsync(operatorId);

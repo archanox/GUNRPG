@@ -132,7 +132,20 @@
                 // exists locally. When offline with a server-side session, the session may
                 // already be concluded; redirect would loop back here via a load failure,
                 // trapping the user on the mission success screen.
-                if (Connection.IsOnline || await MissionSvc.IsLocalSessionAsync(sessionId))
+                bool hasLocalSession = false;
+                if (!Connection.IsOnline)
+                {
+                    try
+                    {
+                        hasLocalSession = await MissionSvc.IsLocalSessionAsync(sessionId);
+                    }
+                    catch
+                    {
+                        hasLocalSession = false;
+                    }
+                }
+
+                if (Connection.IsOnline || hasLocalSession)
                 {
                     Nav.NavigateTo($"missions/{sessionId}?operatorId={OperatorId}");
                     return;
