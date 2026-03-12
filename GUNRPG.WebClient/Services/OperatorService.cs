@@ -258,6 +258,23 @@ public sealed class OperatorService
 
     public async Task<bool> HasQueuedExfilAsync(Guid operatorId) => await _offlineStore.HasPendingExfilAsync(operatorId);
 
+    /// <summary>
+    /// Clears the active combat session ID from the local offline snapshot when a server-side session
+    /// concludes. This prevents the stale snapshot from causing MissionInfil to redirect to an
+    /// unreachable concluded session after the user goes offline.
+    /// </summary>
+    public async Task OnCombatSessionConcludedAsync(Guid operatorId)
+    {
+        try
+        {
+            await _offlineStore.UpdateActiveCombatSessionIdAsync(operatorId, null);
+        }
+        catch
+        {
+            // Non-critical: a stale snapshot is only an issue for offline navigation.
+        }
+    }
+
     public async Task<(OperatorState? Data, string? Error)> ChangeLoadoutAsync(Guid operatorId, string weaponName)
     {
         try

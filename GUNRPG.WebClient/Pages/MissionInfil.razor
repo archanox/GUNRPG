@@ -2,6 +2,7 @@
 @inject AuthService Auth
 @inject NavigationManager Nav
 @inject OperatorService OperatorSvc
+@inject MissionService MissionSvc
 @inject NodeConnectionService NodeService
 @inject IJSRuntime JS
 @inject ConnectionStateService Connection
@@ -125,8 +126,17 @@
 
             if (OperatorNavigationHelper.HasActiveCombat(_operator))
             {
-                Nav.NavigateTo($"missions/{_operator.ActiveCombatSessionId}?operatorId={OperatorId}");
-                return;
+                var sessionId = _operator.ActiveCombatSessionId!.Value;
+
+                // Only redirect to an active combat session if we're online or the session
+                // exists locally. When offline with a server-side session, the session may
+                // already be concluded; redirect would loop back here via a load failure,
+                // trapping the user on the mission success screen.
+                if (Connection.IsOnline || await MissionSvc.IsLocalSessionAsync(sessionId))
+                {
+                    Nav.NavigateTo($"missions/{sessionId}?operatorId={OperatorId}");
+                    return;
+                }
             }
         }
 

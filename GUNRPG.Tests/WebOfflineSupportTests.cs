@@ -1,5 +1,6 @@
 using GUNRPG.Application.Backend;
 using GUNRPG.ClientModels;
+using GUNRPG.WebClient.Helpers;
 using GUNRPG.WebClient.Services;
 using Microsoft.JSInterop;
 using System.Net;
@@ -443,6 +444,47 @@ public sealed class WebOfflineSupportTests
 
         Assert.Null(error);
         Assert.Equal(1, handler.InfilCompleteCount); // Server API must be called
+    }
+
+    [Fact]
+    public async Task OperatorService_OnCombatSessionConcludedAsync_ClearsActiveCombatSessionIdFromLocalSnapshot()
+    {
+        // Regression: after an online session concludes, the local snapshot still holds the
+        // ActiveCombatSessionId. If the user goes offline before navigating away, MissionInfil
+        // would treat the stale ID as an active session and redirect in an infinite loop.
+        // OnCombatSessionConcludedAsync must clear the ID so HasActiveCombat returns false offline.
+        var operatorId = Guid.Parse("b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2");
+        var sessionId = Guid.Parse("c3c3c3c3-c3c3-c3c3-c3c3-c3c3c3c3c3c3");
+        var js = new FakeBrowserJsRuntime();
+        var handler = new FailingHandler();
+        using var http = new HttpClient(handler);
+        var nodeService = new NodeConnectionService(js);
+        await nodeService.SetBaseUrlAsync("https://node.example.com");
+        var auth = new AuthService(js, http, nodeService);
+        var api = new ApiClient(http, nodeService, auth);
+        var offlineStore = new BrowserOfflineStore(js);
+        var combatStore = new BrowserCombatSessionStore(js);
+        var offlineGameplay = new OfflineGameplayService(combatStore, offlineStore);
+        var offlineSync = new OfflineSyncService(api, offlineStore);
+        var connection = new ConnectionStateService(js);
+        var service = new OperatorService(api, offlineStore, offlineGameplay, offlineSync, connection);
+
+        // Save a snapshot with an active combat session ID (as happens when combat starts online)
+        await offlineStore.SaveInfiledOperatorAsync(CreateOperator(operatorId, "Hawk",
+            infilStartTime: DateTimeOffset.UtcNow.AddMinutes(-5)));
+        await offlineStore.UpdateActiveCombatSessionIdAsync(operatorId, sessionId);
+
+        // Verify the session ID is present before clearing
+        var before = await offlineStore.GetInfiledOperatorAsync(operatorId);
+        Assert.Equal(sessionId, before?.ActiveCombatSessionId);
+
+        await service.OnCombatSessionConcludedAsync(operatorId);
+
+        // After clearing, HasActiveCombat must return false so MissionInfil won't redirect offline
+        var after = await offlineStore.GetInfiledOperatorAsync(operatorId);
+        Assert.NotNull(after);
+        Assert.Null(after.ActiveCombatSessionId);
+        Assert.False(OperatorNavigationHelper.HasActiveCombat(after));
     }
 
     private static OperatorState CreateOperator(Guid id, string name, DateTimeOffset? infilStartTime = null) => new()
