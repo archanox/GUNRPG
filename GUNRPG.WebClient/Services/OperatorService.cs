@@ -263,7 +263,7 @@ public sealed class OperatorService
     /// concludes. This prevents the stale snapshot from causing MissionInfil to redirect to an
     /// unreachable concluded session after the user goes offline.
     /// </summary>
-    public async Task OnCombatSessionConcludedAsync(Guid operatorId)
+    public async Task ClearActiveCombatSessionAsync(Guid operatorId)
     {
         try
         {
