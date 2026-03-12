@@ -209,9 +209,9 @@ public sealed class OperatorService
             if (syncError is not null)
                 return syncError;
 
-            // SyncAndFinalizeAsync removes the local snapshot only when it processes a queued offline exfil.
-            // If no exfil was queued (e.g. the player fought online then clicked Exfil), the snapshot
-            // is still present and the server has not yet been told to exfil — fall through below.
+            // SyncAndFinalizeAsync may remove the local snapshot either when it processes a queued offline exfil
+            // or when the snapshot has already been reconciled to Base (e.g. CurrentMode is already Base).
+            // In those cases there is nothing left to exfil, so if the snapshot is gone we can return early here.
             if (await _offlineStore.GetInfiledOperatorAsync(operatorId) is null)
                 return null;
         }
