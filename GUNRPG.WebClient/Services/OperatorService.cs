@@ -284,6 +284,9 @@ public sealed class OperatorService
                 return (null, $"Failed to load weapons: {response.StatusCode}");
 
             var data = await response.Content.ReadFromJsonAsync<List<WeaponStats>>();
+            if (data is null)
+                return (null, "Received an empty or invalid response when loading weapons.");
+
             return (data, null);
         }
         catch (Exception ex)
