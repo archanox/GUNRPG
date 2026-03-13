@@ -43,15 +43,61 @@
 
         <FluentCard>
             <FluentLabel Typo="Typography.H5">Available Weapons</FluentLabel>
-            <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.5rem; margin-top: 0.5rem;">
+            <FluentStack Orientation="Orientation.Vertical" Style="gap: 1rem; margin-top: 0.5rem;">
                 @foreach (var weapon in _availableWeapons)
                 {
-                    <FluentButton Appearance="@(_operator.EquippedWeaponName == weapon ? Appearance.Accent : Appearance.Outline)"
-                                  OnClick="@(() => ChangeLoadoutAsync(weapon))"
-                                  Disabled="_busy || _operator.EquippedWeaponName == weapon"
-                                  Style="width: 100%; justify-content: flex-start;">
-                        @weapon @(_operator.EquippedWeaponName == weapon ? "(equipped)" : "")
-                    </FluentButton>
+                    var stats = _weaponStatsByName.GetValueOrDefault(weapon);
+                    var isEquipped = _operator.EquippedWeaponName == weapon;
+                    <FluentCard Style="@(isEquipped ? "border: 2px solid var(--accent-fill-rest);" : "")">
+                        <FluentStack Orientation="Orientation.Vertical" Style="gap: 0.5rem;">
+                            <FluentStack Orientation="Orientation.Horizontal" Style="align-items: center; justify-content: space-between;">
+                                <FluentLabel Typo="Typography.H6" Style="margin: 0;">
+                                    @weapon @(isEquipped ? " ✓ Equipped" : "")
+                                </FluentLabel>
+                                <FluentButton Appearance="@(isEquipped ? Appearance.Accent : Appearance.Outline)"
+                                              OnClick="@(() => ChangeLoadoutAsync(weapon))"
+                                              Disabled="_busy || isEquipped">
+                                    @(isEquipped ? "Equipped" : "Equip")
+                                </FluentButton>
+                            </FluentStack>
+
+                            @if (stats is not null)
+                            {
+                                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.25rem 1rem; font-size: 0.85rem;">
+                                    <div><strong>Fire Rate:</strong> @stats.RoundsPerMinute RPM</div>
+                                    <div><strong>Bullet Velocity:</strong> @stats.BulletVelocityMetersPerSecond.ToString("F0") m/s</div>
+                                    <div><strong>Magazine:</strong> @stats.MagazineSize rds</div>
+                                    <div><strong>Reload:</strong> @((stats.ReloadTimeMs / 1000f).ToString("F2"))s</div>
+                                    <div><strong>ADS Time:</strong> @stats.ADSTimeMs ms</div>
+                                    <div><strong>Sprint-to-Fire:</strong> @stats.SprintToFireTimeMs.ToString("F0") ms</div>
+                                    <div><strong>Hipfire Spread:</strong> @stats.HipfireSpreadDegrees.ToString("F2")°</div>
+                                    <div><strong>ADS Spread:</strong> @stats.ADSSpreadDegrees.ToString("F2")°</div>
+                                    <div><strong>V. Recoil:</strong> @stats.VerticalRecoil.ToString("F4")</div>
+                                    <div><strong>H. Recoil:</strong> @stats.HorizontalRecoil.ToString("F4")</div>
+                                    <div><strong>Flinch Resist:</strong> @((stats.FlinchResistance * 100).ToString("F0"))%</div>
+                                    <div><strong>Suppression:</strong> @stats.SuppressionFactor.ToString("F1")×</div>
+                                    <div><strong>Move Speed:</strong> @stats.MovementSpeedMetersPerSecond.ToString("F1") m/s</div>
+                                    <div><strong>Sprint Speed:</strong> @stats.SprintingMovementSpeedMetersPerSecond.ToString("F1") m/s</div>
+                                    <div><strong>ADS Move Speed:</strong> @stats.ADSMovementSpeedMetersPerSecond.ToString("F1") m/s</div>
+                                    <div><strong>Headshot Mult:</strong> @stats.HeadshotMultiplier.ToString("F1")×</div>
+                                </div>
+
+                                @if (stats.DamageRanges.Count > 0)
+                                {
+                                    <div>
+                                        <strong style="font-size: 0.85rem;">Damage by Range:</strong>
+                                        <div style="display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; font-size: 0.8rem; margin-top: 0.2rem;">
+                                            @foreach (var range in stats.DamageRanges)
+                                            {
+                                                var maxLabel = float.IsPositiveInfinity(range.MaxMeters) ? "∞" : range.MaxMeters.ToString("F0");
+                                                <span>@range.MinMeters.ToString("F0")–@(maxLabel)m: <strong>@range.Damage.ToString("F0")</strong> (@range.HeadDamage.ToString("F0") head)</span>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </FluentStack>
+                    </FluentCard>
                 }
             </FluentStack>
         </FluentCard>
@@ -64,6 +110,7 @@
     private static readonly string[] _availableWeapons = ["SOKOL 545", "STURMWOLF 45", "M15 MOD 0"];
 
     private OperatorState? _operator;
+    private Dictionary<string, WeaponStats> _weaponStatsByName = new();
     private bool _loading = true;
     private bool _busy;
     private string? _error;
@@ -79,7 +126,7 @@
             return;
         }
 
-        await LoadAsync();
+        await Task.WhenAll(LoadAsync(), LoadWeaponStatsAsync());
 
         if (await TryNavigateToRealtimeRouteAsync())
             return;
@@ -97,6 +144,15 @@
         _operator = data;
         _error = error;
         _loading = false;
+    }
+
+    private async Task LoadWeaponStatsAsync()
+    {
+        var (data, error) = await OperatorSvc.GetWeaponsAsync();
+        if (data is not null)
+            _weaponStatsByName = data.ToDictionary(w => w.Name, StringComparer.OrdinalIgnoreCase);
+        else if (error is not null)
+            _error = $"Failed to load weapon stats: {error}";
     }
 
     private async Task StartSseAsync()

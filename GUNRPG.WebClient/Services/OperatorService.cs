@@ -275,6 +275,23 @@ public sealed class OperatorService
         }
     }
 
+    public async Task<(List<WeaponStats>? Data, string? Error)> GetWeaponsAsync()
+    {
+        try
+        {
+            var response = await _api.GetAsync("/weapons");
+            if (!response.IsSuccessStatusCode)
+                return (null, $"Failed to load weapons: {response.StatusCode}");
+
+            var data = await response.Content.ReadFromJsonAsync<List<WeaponStats>>();
+            return (data, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
     public async Task<(OperatorState? Data, string? Error)> ChangeLoadoutAsync(Guid operatorId, string weaponName)
     {
         try
