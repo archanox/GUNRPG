@@ -15,9 +15,14 @@
         <h2 style="margin: 0;">Change Loadout</h2>
     </FluentStack>
 
-    @if (!string.IsNullOrEmpty(_error))
+    @if (!string.IsNullOrEmpty(_operatorError))
     {
-        <FluentMessageBar Title="Error" Intent="MessageIntent.Error">@_error</FluentMessageBar>
+        <FluentMessageBar Title="Error" Intent="MessageIntent.Error">@_operatorError</FluentMessageBar>
+    }
+
+    @if (!string.IsNullOrEmpty(_weaponStatsError))
+    {
+        <FluentMessageBar Title="Warning" Intent="MessageIntent.Warning">@_weaponStatsError</FluentMessageBar>
     }
 
     @if (!string.IsNullOrEmpty(_info))
@@ -107,13 +112,17 @@
 @code {
     [Parameter] public Guid Id { get; set; }
 
-    private static readonly string[] _availableWeapons = ["SOKOL 545", "STURMWOLF 45", "M15 MOD 0"];
+    // Fallback list used when the /weapons endpoint is unavailable.
+    private static readonly string[] _fallbackWeapons = ["SOKOL 545", "STURMWOLF 45", "M15 MOD 0"];
 
     private OperatorState? _operator;
     private Dictionary<string, WeaponStats> _weaponStatsByName = new();
+    // Weapons to display — populated from the catalogue; falls back to the hard-coded list.
+    private string[] _availableWeapons = _fallbackWeapons;
     private bool _loading = true;
     private bool _busy;
-    private string? _error;
+    private string? _operatorError;
+    private string? _weaponStatsError;
     private string? _info;
     private DotNetObjectReference<OperatorLoadout>? _dotNetRef;
     private string? _sseUrl;
@@ -137,12 +146,12 @@
     private async Task LoadAsync()
     {
         _loading = true;
-        _error = null;
+        _operatorError = null;
         StateHasChanged();
 
         var (data, error) = await OperatorSvc.GetAsync(Id);
         _operator = data;
-        _error = error;
+        _operatorError = error;
         _loading = false;
     }
 
@@ -150,9 +159,14 @@
     {
         var (data, error) = await OperatorSvc.GetWeaponsAsync();
         if (data is not null)
+        {
             _weaponStatsByName = data.ToDictionary(w => w.Name, StringComparer.OrdinalIgnoreCase);
-        else if (error is not null)
-            _error = $"Failed to load weapon stats: {error}";
+            _availableWeapons = data.Select(w => w.Name).ToArray();
+        }
+        else
+        {
+            _weaponStatsError = error is not null ? $"Failed to load weapon stats: {error}" : null;
+        }
     }
 
     private async Task StartSseAsync()
@@ -202,7 +216,7 @@
 
     private async Task ChangeLoadoutAsync(string weaponName)
     {
-        _error = null;
+        _operatorError = null;
         _info = null;
         _busy = true;
         StateHasChanged();
@@ -212,7 +226,7 @@
 
         if (error is not null)
         {
-            _error = error;
+            _operatorError = error;
             StateHasChanged();
             return;
         }
