@@ -45,7 +45,7 @@ public class WeaponsController : ControllerBase
         DamageRanges = w.DamageRanges.Select(r => new ApiWeaponDamageRangeDto
         {
             MinMeters = r.MinMeters,
-            MaxMeters = r.MaxMeters,
+            MaxMeters = float.IsPositiveInfinity(r.MaxMeters) ? null : r.MaxMeters,
             Damage = r.Damage,
             HeadDamage = r.BodyPartDamageOverrides is not null &&
                          r.BodyPartDamageOverrides.TryGetValue(BodyPart.Head, out var hd)

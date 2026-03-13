@@ -94,7 +94,7 @@
                                         <div style="display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; font-size: 0.8rem; margin-top: 0.2rem;">
                                             @foreach (var range in stats.DamageRanges)
                                             {
-                                                var maxLabel = float.IsPositiveInfinity(range.MaxMeters) ? "∞" : range.MaxMeters.ToString("F0");
+                                                var maxLabel = range.MaxMeters is null ? "∞" : range.MaxMeters.Value.ToString("F0");
                                                 <span>@range.MinMeters.ToString("F0")–@(maxLabel)m: <strong>@range.Damage.ToString("F0")</strong> (@range.HeadDamage.ToString("F0") head)</span>
                                             }
                                         </div>

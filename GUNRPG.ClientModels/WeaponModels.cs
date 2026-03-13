@@ -43,11 +43,12 @@ public sealed class WeaponStats
 
 /// <summary>
 /// A damage bracket for a weapon (damage varies by distance).
+/// Null <see cref="MaxMeters"/> means the bracket is unbounded (no maximum distance).
 /// </summary>
 public sealed class WeaponDamageRange
 {
     public float MinMeters { get; init; }
-    public float MaxMeters { get; init; }
+    public float? MaxMeters { get; init; }
     public float Damage { get; init; }
     public float HeadDamage { get; init; }
 }
