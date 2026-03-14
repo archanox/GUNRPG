@@ -23,7 +23,7 @@ public sealed class AuthorityRoot
         ArgumentNullException.ThrowIfNull(cert);
 
         var now = DateTimeOffset.UtcNow;
-        if (cert.ValidUntil <= cert.IssuedAt || cert.IssuedAt > now || cert.ValidUntil <= now)
+        if (cert.ValidUntil <= cert.IssuedAt || cert.IssuedAt > now || cert.ValidUntil < now)
         {
             return false;
         }
@@ -181,7 +181,7 @@ internal static class AuthorityCrypto
     {
         if (!value.TryWriteBytes(destination[offset..], bigEndian: true, out var bytesWritten) || bytesWritten != GuidSize)
         {
-            throw new InvalidOperationException("Failed to write Guid payload bytes.");
+            throw new InvalidOperationException("Failed to write a 16-byte big-endian Guid into the signature payload buffer.");
         }
 
         offset += bytesWritten;
