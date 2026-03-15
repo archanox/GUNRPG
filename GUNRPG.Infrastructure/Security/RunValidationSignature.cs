@@ -14,7 +14,7 @@ public sealed class RunValidationSignature
     {
         RunId = runId;
         PlayerId = playerId;
-        _finalStateHash = AuthorityCrypto.CloneAndValidateHash(finalStateHash);
+        _finalStateHash = AuthorityCrypto.CloneAndValidateSha256Hash(finalStateHash);
         ServerId = serverId;
         _signature = AuthorityCrypto.CloneAndValidateSignature(signature);
     }
@@ -28,6 +28,8 @@ public sealed class RunValidationSignature
     public Guid ServerId { get; }
 
     public byte[] Signature => (byte[])_signature.Clone();
+
+    internal byte[] SignatureBytes => _signature;
 
     internal byte[] ComputePayloadHash() =>
         AuthorityCrypto.ComputeRunValidationPayloadHash(RunId, PlayerId, _finalStateHash);

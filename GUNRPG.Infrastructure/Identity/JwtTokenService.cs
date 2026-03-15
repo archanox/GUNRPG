@@ -184,6 +184,15 @@ public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
         {
             var privateBytes = AuthorityCrypto.CloneAndValidatePrivateKey(existingDoc[PrivateKeyField].AsBinary);
             var publicBytes = AuthorityCrypto.CloneAndValidatePublicKey(existingDoc[PublicKeyField].AsBinary);
+            var derivedPublicBytes = AuthorityCrypto.GetPublicKey(privateBytes);
+
+            if (!CryptographicOperations.FixedTimeEquals(publicBytes, derivedPublicBytes))
+            {
+                existingDoc[PublicKeyField] = derivedPublicBytes;
+                _meta.Upsert(existingDoc);
+                return (privateBytes, derivedPublicBytes);
+            }
+
             return (privateBytes, publicBytes);
         }
 

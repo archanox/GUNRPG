@@ -66,7 +66,7 @@ internal static class AuthorityCrypto
         var signature = new byte[SignatureSize];
         new Ed25519PrivateKeyParameters(normalizedPrivateKey, 0).Sign(
             Ed25519.Algorithm.Ed25519,
-            null, // No RFC 8032 context: use plain Ed25519 over the canonical SHA-256 payload hash.
+            null, // No RFC 8032 context: use plain Ed25519 over the provided payload bytes.
             payload,
             signature);
         return signature;
@@ -87,13 +87,13 @@ internal static class AuthorityCrypto
 
     internal static byte[] SignHashedPayload(byte[] privateKey, byte[] payloadHash)
     {
-        var normalizedHash = CloneAndValidateHash(payloadHash);
+        var normalizedHash = CloneAndValidateSha256Hash(payloadHash);
         return SignPayload(privateKey, normalizedHash);
     }
 
     internal static bool VerifyHashedPayload(byte[] publicKey, byte[] payloadHash, byte[] signature)
     {
-        var normalizedHash = CloneAndValidateHash(payloadHash);
+        var normalizedHash = CloneAndValidateSha256Hash(payloadHash);
         return VerifyPayload(publicKey, normalizedHash, signature);
     }
 
@@ -117,7 +117,7 @@ internal static class AuthorityCrypto
 
     internal static byte[] ComputeRunValidationPayloadHash(Guid runId, Guid playerId, byte[] finalStateHash)
     {
-        var normalizedFinalStateHash = CloneAndValidateHash(finalStateHash);
+        var normalizedFinalStateHash = CloneAndValidateSha256Hash(finalStateHash);
         var buffer = new byte[GuidSize + GuidSize + Int32Size + normalizedFinalStateHash.Length];
         var offset = 0;
 
@@ -161,12 +161,12 @@ internal static class AuthorityCrypto
         return (byte[])signature.Clone();
     }
 
-    internal static byte[] CloneAndValidateHash(byte[] value)
+    internal static byte[] CloneAndValidateSha256Hash(byte[] value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        if (value.Length == 0)
+        if (value.Length != SHA256.HashSizeInBytes)
         {
-            throw new ArgumentException("Hash payloads must not be empty.", nameof(value));
+            throw new ArgumentException($"SHA-256 hashes must be {SHA256.HashSizeInBytes} bytes.", nameof(value));
         }
 
         return (byte[])value.Clone();

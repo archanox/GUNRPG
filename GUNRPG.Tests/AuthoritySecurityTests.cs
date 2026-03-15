@@ -46,7 +46,7 @@ public sealed class AuthoritySecurityTests
         var serverIdentity = CreateServerIdentity(out var authorityRoot);
         var verifier = new SignatureVerifier(authorityRoot);
 
-        var validation = serverIdentity.SignRunValidation(Guid.NewGuid(), Guid.NewGuid(), [1, 2, 3, 4]);
+        var validation = serverIdentity.SignRunValidation(Guid.NewGuid(), Guid.NewGuid(), CreateHash(1));
 
         Assert.True(verifier.VerifyRunSignature(validation, serverIdentity.Certificate, ReferenceNow));
     }
@@ -56,11 +56,11 @@ public sealed class AuthoritySecurityTests
     {
         var serverIdentity = CreateServerIdentity(out var authorityRoot);
         var verifier = new SignatureVerifier(authorityRoot);
-        var validation = serverIdentity.SignRunValidation(Guid.NewGuid(), Guid.NewGuid(), [10, 20, 30, 40]);
+        var validation = serverIdentity.SignRunValidation(Guid.NewGuid(), Guid.NewGuid(), CreateHash(10));
         var tampered = new RunValidationSignature(
             validation.RunId,
             validation.PlayerId,
-            [10, 20, 30, 41],
+            CreateHash(11),
             validation.ServerId,
             validation.Signature);
 
@@ -72,7 +72,7 @@ public sealed class AuthoritySecurityTests
     {
         var serverIdentity = CreateServerIdentity(out var authorityRoot);
         var verifier = new SignatureVerifier(authorityRoot);
-        var validation = serverIdentity.SignRunValidation(Guid.NewGuid(), Guid.NewGuid(), [7, 8, 9]);
+        var validation = serverIdentity.SignRunValidation(Guid.NewGuid(), Guid.NewGuid(), CreateHash(7));
         var mismatched = new RunValidationSignature(
             validation.RunId,
             validation.PlayerId,
@@ -89,9 +89,18 @@ public sealed class AuthoritySecurityTests
         var serverIdentity = CreateServerIdentity(out var authorityRoot);
         var verifier = new SignatureVerifier(authorityRoot);
 
-        var signedValidation = serverIdentity.SignSignedRunValidation(Guid.NewGuid(), Guid.NewGuid(), [11, 22, 33, 44]);
+        var signedValidation = serverIdentity.SignSignedRunValidation(Guid.NewGuid(), Guid.NewGuid(), CreateHash(11));
 
         Assert.True(verifier.Verify(signedValidation, ReferenceNow));
+    }
+
+    [Fact]
+    public void SignRunValidation_Throws_WhenFinalStateHashIsNotSha256Length()
+    {
+        var serverIdentity = CreateServerIdentity(out _);
+
+        Assert.Throws<ArgumentException>(() =>
+            serverIdentity.SignRunValidation(Guid.NewGuid(), Guid.NewGuid(), [1, 2, 3, 4]));
     }
 
     private static ServerIdentity CreateServerIdentity(out AuthorityRoot authorityRoot)
@@ -108,5 +117,16 @@ public sealed class AuthoritySecurityTests
             ReferenceNow.AddMinutes(30));
 
         return new ServerIdentity(certificate, serverPrivateKey);
+    }
+
+    private static byte[] CreateHash(byte seed)
+    {
+        var value = new byte[32];
+        for (var i = 0; i < value.Length; i++)
+        {
+            value[i] = (byte)(seed + i);
+        }
+
+        return value;
     }
 }
