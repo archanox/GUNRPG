@@ -136,8 +136,14 @@ public static class OfflineMissionHashing
         float Hydration,
         DateTimeOffset LastUpdated);
 
-    private static void WriteString(BinaryWriter writer, string value)
+    private static void WriteString(BinaryWriter writer, string? value)
     {
+        writer.Write(value != null);
+        if (value == null)
+        {
+            return;
+        }
+
         var bytes = Encoding.UTF8.GetBytes(value);
         writer.Write(bytes.Length);
         writer.Write(bytes);
@@ -151,8 +157,7 @@ public static class OfflineMissionHashing
             return;
         }
 
-        var guidBytes = value.Value.ToByteArray();
-        writer.Write(guidBytes);
+        WriteGuid(writer, value.Value);
     }
 
     private static void WriteNullableDateTimeOffset(BinaryWriter writer, DateTimeOffset? value)
@@ -170,5 +175,10 @@ public static class OfflineMissionHashing
     {
         writer.Write(value.UtcTicks);
         writer.Write(value.Offset.Ticks);
+    }
+
+    private static void WriteGuid(BinaryWriter writer, Guid value)
+    {
+        WriteString(writer, value.ToString("N"));
     }
 }
