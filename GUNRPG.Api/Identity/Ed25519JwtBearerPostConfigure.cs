@@ -1,11 +1,12 @@
 using GUNRPG.Application.Identity;
 using GUNRPG.Infrastructure.Identity;
+using Google.Protobuf;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
-using Org.BouncyCastle.Crypto.Parameters;
-using Org.BouncyCastle.Crypto.Signers;
+using Nethermind.Libp2p.Core;
+using Nethermind.Libp2p.Core.Dto;
 using System.Text;
 
 namespace GUNRPG.Api.Identity;
@@ -44,15 +45,15 @@ public sealed class Ed25519JwtBearerPostConfigure : IPostConfigureOptions<JwtBea
             throw new SecurityTokenInvalidSignatureException("Malformed JWT: expected 3 dot-separated parts.");
 
         var publicKeyBytes = _sp.GetRequiredService<IPublicKeyProvider>().GetPublicKeyBytes();
-        var publicKey = new Ed25519PublicKeyParameters(publicKeyBytes);
-
-        var verifier = new Ed25519Signer();
-        verifier.Init(false, publicKey);
         var data = Encoding.UTF8.GetBytes($"{parts[0]}.{parts[1]}");
-        verifier.BlockUpdate(data, 0, data.Length);
         var signature = Base64UrlDecode(parts[2]);
+        var verifier = new Identity(new PublicKey
+        {
+            Type = KeyType.Ed25519,
+            Data = ByteString.CopyFrom(publicKeyBytes),
+        });
 
-        if (!verifier.VerifySignature(signature))
+        if (!verifier.VerifySignature(data, signature))
             throw new SecurityTokenInvalidSignatureException("Ed25519 signature verification failed.");
 
         return new JsonWebToken(token);

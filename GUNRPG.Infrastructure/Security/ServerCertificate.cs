@@ -37,7 +37,7 @@ public sealed class ServerCertificate
     internal byte[] ComputePayloadHash() =>
         AuthorityCrypto.ComputeCertificatePayloadHash(ServerId, _publicKey, IssuedAt, ValidUntil);
 
-    public static ServerCertificate Create(
+    internal static ServerCertificate Create(
         Guid serverId,
         byte[] publicKey,
         DateTimeOffset issuedAt,
