@@ -56,15 +56,34 @@ public sealed class RunReplayEngineTests
     [Fact]
     public void ReplayRun_HashIsDeterministic()
     {
-        var runId = Guid.NewGuid();
-        var playerId = Guid.NewGuid();
         var engine = new RunReplayEngine();
         var events = CreateCompletedRunEvents();
 
-        var hash1 = engine.ValidateRunOnly(runId, playerId, events);
-        var hash2 = engine.ValidateRunOnly(runId, playerId, events);
+        var hash1 = engine.ValidateRunOnly(events);
+        var hash2 = engine.ValidateRunOnly(events);
 
         Assert.True(hash1.SequenceEqual(hash2));
+    }
+
+    [Fact]
+    public void ValidateRunOnly_ThrowsWhenChainTamperedAtTail()
+    {
+        var engine = new RunReplayEngine();
+        var events = CreateCompletedRunEvents().ToList();
+
+        // Replace the last event with one that has a broken previous-hash so replay stops short
+        var last = (InfilEndedEvent)events[^1];
+        var (wasSuccessful, endReason) = last.GetPayload();
+        var tampered = new InfilEndedEvent(
+            last.OperatorId,
+            last.SequenceNumber,
+            wasSuccessful,
+            endReason,
+            new string('0', last.PreviousHash.Length), // all-zero previous hash breaks chain
+            last.Timestamp);
+        events[^1] = tampered;
+
+        Assert.Throws<InvalidOperationException>(() => engine.ValidateRunOnly(events));
     }
 
     private static IReadOnlyList<OperatorEvent> CreateCompletedRunEvents()

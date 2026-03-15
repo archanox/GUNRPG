@@ -1,6 +1,8 @@
+using System.Security.Cryptography;
+
 namespace GUNRPG.Security;
 
-public sealed record RunValidationResult
+public sealed class RunValidationResult
 {
     private readonly byte[] _finalStateHash;
 
@@ -15,7 +17,16 @@ public sealed record RunValidationResult
         PlayerId = playerId;
         ServerId = serverId;
         _finalStateHash = AuthorityCrypto.CloneAndValidateSha256Hash(finalStateHash);
-        Attestation = attestation ?? throw new ArgumentNullException(nameof(attestation));
+        if (attestation == null) throw new ArgumentNullException(nameof(attestation));
+        if (attestation.Validation.RunId != runId)
+            throw new ArgumentException("Attestation RunId does not match RunId.", nameof(attestation));
+        if (attestation.Validation.PlayerId != playerId)
+            throw new ArgumentException("Attestation PlayerId does not match PlayerId.", nameof(attestation));
+        if (attestation.Validation.ServerId != serverId)
+            throw new ArgumentException("Attestation ServerId does not match ServerId.", nameof(attestation));
+        if (!CryptographicOperations.FixedTimeEquals(attestation.Validation.FinalStateHash, _finalStateHash))
+            throw new ArgumentException("Attestation FinalStateHash does not match FinalStateHash.", nameof(attestation));
+        Attestation = attestation;
     }
 
     public Guid RunId { get; }
