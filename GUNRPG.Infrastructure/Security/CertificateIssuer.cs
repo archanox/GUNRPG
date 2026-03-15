@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-
 namespace GUNRPG.Security;
 
 public sealed class CertificateIssuer
@@ -22,12 +20,6 @@ public sealed class CertificateIssuer
         DateTimeOffset validUntil)
     {
         return ServerCertificate.Create(serverId, serverPublicKey, issuedAt, validUntil, _rootPrivateKey);
-    }
-
-    public bool Matches(AuthorityRoot authorityRoot)
-    {
-        ArgumentNullException.ThrowIfNull(authorityRoot);
-        return CryptographicOperations.FixedTimeEquals(_rootPublicKey, authorityRoot.PublicKey);
     }
 
     public static byte[] GeneratePrivateKey() => AuthorityCrypto.GeneratePrivateKey();
