@@ -34,7 +34,7 @@ public static class OfflineMissionHashing
         using var buffer = new MemoryStream();
         using var writer = new BinaryWriter(buffer, Encoding.UTF8, leaveOpen: true);
 
-        WriteString(writer, aggregate.Id.Value.ToString());
+        WriteGuid(writer, aggregate.Id.Value);
         WriteString(writer, aggregate.Name);
         writer.Write(aggregate.TotalXp);
         writer.Write(BitConverter.SingleToInt32Bits(aggregate.CurrentHealth));
@@ -51,7 +51,7 @@ public static class OfflineMissionHashing
 
         writer.Write(aggregate.ExfilStreak);
         writer.Write(aggregate.IsDead);
-        WriteString(writer, aggregate.CurrentMode.ToString());
+        writer.Write((int)aggregate.CurrentMode);
         WriteNullableGuid(writer, aggregate.InfilSessionId);
         WriteNullableDateTimeOffset(writer, aggregate.InfilStartTime);
         WriteNullableGuid(writer, aggregate.ActiveCombatSessionId);
@@ -174,11 +174,16 @@ public static class OfflineMissionHashing
     private static void WriteDateTimeOffset(BinaryWriter writer, DateTimeOffset value)
     {
         writer.Write(value.UtcTicks);
-        writer.Write(value.Offset.Ticks);
     }
 
     private static void WriteGuid(BinaryWriter writer, Guid value)
     {
-        WriteString(writer, value.ToString("N"));
+        Span<byte> bytes = stackalloc byte[16];
+        if (!value.TryWriteBytes(bytes, bigEndian: true, out _))
+        {
+            throw new InvalidOperationException("Failed to write GUID bytes.");
+        }
+
+        writer.Write(bytes);
     }
 }
