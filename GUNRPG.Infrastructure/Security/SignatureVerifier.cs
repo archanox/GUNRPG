@@ -9,20 +9,21 @@ public sealed class SignatureVerifier
         _authorityRoot = authorityRoot ?? throw new ArgumentNullException(nameof(authorityRoot));
     }
 
-    public bool Verify(SignedRunValidation record)
+    public bool Verify(SignedRunValidation record, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(record);
-        return VerifyRunSignature(record.Validation, record.Certificate);
+        return VerifyRunSignature(record.Validation, record.Certificate, now);
     }
 
     public bool VerifyRunSignature(
         RunValidationSignature validation,
-        ServerCertificate cert)
+        ServerCertificate cert,
+        DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(validation);
         ArgumentNullException.ThrowIfNull(cert);
 
-        if (!_authorityRoot.VerifyServerCertificate(cert))
+        if (!_authorityRoot.VerifyServerCertificate(cert, now))
         {
             return false;
         }
