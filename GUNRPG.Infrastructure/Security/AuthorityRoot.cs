@@ -1,8 +1,7 @@
 using System.Buffers.Binary;
-using Google.Protobuf;
-using Nethermind.Libp2p.Core;
-using Nethermind.Libp2p.Core.Dto;
 using System.Security.Cryptography;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Math.EC.Rfc8032;
 
 namespace GUNRPG.Security;
 
@@ -56,7 +55,7 @@ internal static class AuthorityCrypto
     internal static byte[] GetPublicKey(byte[] privateKey)
     {
         var normalizedPrivateKey = CloneAndValidatePrivateKey(privateKey);
-        return CreatePrivateIdentity(normalizedPrivateKey).PublicKey.Data.ToByteArray();
+        return new Ed25519PrivateKeyParameters(normalizedPrivateKey, 0).GeneratePublicKey().GetEncoded();
     }
 
     internal static byte[] SignPayload(byte[] privateKey, byte[] payload)
@@ -64,7 +63,13 @@ internal static class AuthorityCrypto
         var normalizedPrivateKey = CloneAndValidatePrivateKey(privateKey);
         ArgumentNullException.ThrowIfNull(payload);
 
-        return CreatePrivateIdentity(normalizedPrivateKey).Sign(payload);
+        var signature = new byte[SignatureSize];
+        new Ed25519PrivateKeyParameters(normalizedPrivateKey, 0).Sign(
+            Ed25519.Algorithm.Ed25519,
+            null,
+            payload,
+            signature);
+        return signature;
     }
 
     internal static bool VerifyPayload(byte[] publicKey, byte[] payload, byte[] signature)
@@ -73,7 +78,11 @@ internal static class AuthorityCrypto
         ArgumentNullException.ThrowIfNull(payload);
         var normalizedSignature = CloneAndValidateSignature(signature);
 
-        return CreatePublicIdentity(normalizedPublicKey).VerifySignature(payload, normalizedSignature);
+        return new Ed25519PublicKeyParameters(normalizedPublicKey, 0).Verify(
+            Ed25519.Algorithm.Ed25519,
+            null,
+            payload,
+            normalizedSignature);
     }
 
     internal static byte[] SignHashedPayload(byte[] privateKey, byte[] payloadHash)
@@ -186,14 +195,4 @@ internal static class AuthorityCrypto
         value.CopyTo(destination[offset..]);
         offset += value.Length;
     }
-
-    private static Identity CreatePrivateIdentity(byte[] privateKey) =>
-        new(privateKey, KeyType.Ed25519);
-
-    private static Identity CreatePublicIdentity(byte[] publicKey) =>
-        new(new PublicKey
-        {
-            Type = KeyType.Ed25519,
-            Data = ByteString.CopyFrom(publicKey),
-        });
 }
