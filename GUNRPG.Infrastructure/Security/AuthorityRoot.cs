@@ -66,7 +66,7 @@ internal static class AuthorityCrypto
         var signature = new byte[SignatureSize];
         new Ed25519PrivateKeyParameters(normalizedPrivateKey, 0).Sign(
             Ed25519.Algorithm.Ed25519,
-            null, // No RFC 8032 context: use plain Ed25519 over the provided payload bytes.
+            null, // No RFC 8032 context: signs the raw payload bytes directly; callers pre-hash when needed.
             payload,
             signature);
         return signature;

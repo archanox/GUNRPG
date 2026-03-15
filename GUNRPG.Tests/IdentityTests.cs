@@ -392,7 +392,7 @@ public class JwtTokenServiceTests : IDisposable
     }
 
     [Fact]
-    public void KeyPair_PersistedToDatabase_CorrectsMismatchedStoredPublicKey()
+    public void KeyPair_PersistedToDatabase_AutomaticallyRepairsMismatchedStoredPublicKey()
     {
         var meta = _db.GetCollection<BsonDocument>("identity_meta");
         var stored = meta.FindOne(d => d["_id"] == "ed25519_private_key");
