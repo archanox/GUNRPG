@@ -2,11 +2,18 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using GUNRPG.Application.Dtos;
+using GUNRPG.Core.Operators;
 
 namespace GUNRPG.Application.Backend;
 
 public static class OfflineMissionHashing
 {
+    private static readonly JsonSerializerOptions ReplayValidationSerializerOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = false
+    };
+
     public static string ComputeOperatorStateHash(OperatorDto dto)
     {
         return ComputeHash(new OperatorHashState(
@@ -24,6 +31,40 @@ public static class OfflineMissionHashing
             dto.InfilStartTime,
             dto.LockedLoadout,
             dto.Pet == null ? null : new PetHashState(dto.Pet.Health, dto.Pet.Fatigue, dto.Pet.Injury, dto.Pet.Stress, dto.Pet.Morale, dto.Pet.Hunger, dto.Pet.Hydration, dto.Pet.LastUpdated)));
+    }
+
+    public static byte[] ComputeReplayFinalStateHash(OperatorAggregate aggregate)
+    {
+        ArgumentNullException.ThrowIfNull(aggregate);
+
+        return SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
+            new ReplayValidationHashState(
+                aggregate.Id.Value.ToString(),
+                aggregate.Name,
+                aggregate.TotalXp,
+                aggregate.CurrentHealth,
+                aggregate.MaxHealth,
+                aggregate.EquippedWeaponName,
+                aggregate.UnlockedPerks.OrderBy(x => x, StringComparer.Ordinal).ToArray(),
+                aggregate.ExfilStreak,
+                aggregate.IsDead,
+                aggregate.CurrentMode.ToString(),
+                aggregate.InfilSessionId,
+                aggregate.InfilStartTime,
+                aggregate.ActiveCombatSessionId,
+                aggregate.LockedLoadout,
+                aggregate.PetState == null
+                    ? null
+                    : new PetHashState(
+                        aggregate.PetState.Health,
+                        aggregate.PetState.Fatigue,
+                        aggregate.PetState.Injury,
+                        aggregate.PetState.Stress,
+                        aggregate.PetState.Morale,
+                        aggregate.PetState.Hunger,
+                        aggregate.PetState.Hydration,
+                        aggregate.PetState.LastUpdated)),
+            ReplayValidationSerializerOptions));
     }
 
     public static string ComputeOperatorStateHash(OperatorStateDto dto)
@@ -75,6 +116,23 @@ public static class OfflineMissionHashing
         string CurrentMode,
         Guid? InfilSessionId,
         DateTimeOffset? InfilStartTime,
+        string LockedLoadout,
+        PetHashState? Pet);
+
+    private sealed record ReplayValidationHashState(
+        string Id,
+        string Name,
+        long TotalXp,
+        float CurrentHealth,
+        float MaxHealth,
+        string EquippedWeaponName,
+        string[] UnlockedPerks,
+        int ExfilStreak,
+        bool IsDead,
+        string CurrentMode,
+        Guid? InfilSessionId,
+        DateTimeOffset? InfilStartTime,
+        Guid? ActiveCombatSessionId,
         string LockedLoadout,
         PetHashState? Pet);
 
