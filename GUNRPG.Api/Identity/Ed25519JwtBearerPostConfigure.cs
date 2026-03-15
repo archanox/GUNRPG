@@ -48,7 +48,11 @@ public sealed class Ed25519JwtBearerPostConfigure : IPostConfigureOptions<JwtBea
         var signature = Base64UrlDecode(parts[2]);
         var verifier = new Ed25519PublicKeyParameters(publicKeyBytes, 0);
 
-        if (!verifier.Verify(Ed25519.Algorithm.Ed25519, null, data, signature))
+        if (!verifier.Verify(
+            Ed25519.Algorithm.Ed25519,
+            null, // No RFC 8032 context: JWT signatures are plain Ed25519 over header.payload bytes.
+            data,
+            signature))
             throw new SecurityTokenInvalidSignatureException("Ed25519 signature verification failed.");
 
         return new JsonWebToken(token);
