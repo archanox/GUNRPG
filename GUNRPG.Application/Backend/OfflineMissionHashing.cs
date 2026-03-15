@@ -71,7 +71,7 @@ public static class OfflineMissionHashing
         }
 
         writer.Flush();
-        return SHA256.HashData(buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length)));
+        return SHA256.HashData(buffer.ToArray());
     }
 
     public static string ComputeOperatorStateHash(OperatorStateDto dto)
@@ -151,8 +151,7 @@ public static class OfflineMissionHashing
             return;
         }
 
-        Span<byte> guidBytes = stackalloc byte[16];
-        value.Value.TryWriteBytes(guidBytes);
+        var guidBytes = value.Value.ToByteArray();
         writer.Write(guidBytes);
     }
 
