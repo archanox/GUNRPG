@@ -34,8 +34,8 @@ public sealed class SignatureVerifier
         }
 
         return AuthorityCrypto.VerifyHashedPayload(
-            cert.PublicKey,
+            cert.PublicKeyBytes,
             validation.ComputePayloadHash(),
-            validation.Signature);
+            validation.SignatureBytes);
     }
 }

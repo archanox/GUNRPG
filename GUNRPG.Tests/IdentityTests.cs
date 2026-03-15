@@ -1,5 +1,6 @@
 using GUNRPG.Core.Identity;
 using GUNRPG.Infrastructure.Identity;
+using GUNRPG.Security;
 using LiteDB;
 using Microsoft.Extensions.Options;
 
@@ -388,6 +389,31 @@ public class JwtTokenServiceTests : IDisposable
 
         // The public key should be the same
         Assert.Equal(_service.GetPublicKeyBytes(), service2.GetPublicKeyBytes());
+    }
+
+    [Fact]
+    public void KeyPair_PersistedToDatabase_CorrectsMismatchedStoredPublicKey()
+    {
+        var meta = _db.GetCollection<BsonDocument>("identity_meta");
+        var stored = meta.FindOne(d => d["_id"] == "ed25519_private_key");
+        Assert.NotNull(stored);
+
+        stored!["ed25519_public_key"] = ServerIdentity.GetPublicKey(ServerIdentity.GeneratePrivateKey());
+        meta.Upsert(stored);
+
+        var options = Options.Create(new JwtOptions
+        {
+            Issuer = "test-issuer",
+            Audience = "test-audience",
+            AccessTokenExpiryMinutes = 15,
+            RefreshTokenExpiryDays = 30,
+        });
+
+        var reloadedService = new JwtTokenService(options, _db);
+        var repaired = meta.FindOne(d => d["_id"] == "ed25519_private_key");
+
+        Assert.Equal(_service.GetPublicKeyBytes(), reloadedService.GetPublicKeyBytes());
+        Assert.Equal(_service.GetPublicKeyBytes(), repaired?["ed25519_public_key"].AsBinary);
     }
 
     private static string DecodeBase64Url(string value)

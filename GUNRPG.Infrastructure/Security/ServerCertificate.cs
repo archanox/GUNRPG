@@ -28,6 +28,8 @@ public sealed class ServerCertificate
 
     public byte[] PublicKey => (byte[])_publicKey.Clone();
 
+    internal byte[] PublicKeyBytes => _publicKey;
+
     public DateTimeOffset IssuedAt { get; }
 
     public DateTimeOffset ValidUntil { get; }
