@@ -4,6 +4,8 @@ namespace GUNRPG.Tests;
 
 public sealed class AuthoritySecurityTests
 {
+    private static readonly DateTimeOffset ReferenceNow = new(2026, 03, 15, 04, 00, 00, TimeSpan.Zero);
+
     [Fact]
     public void VerifyServerCertificate_ReturnsTrue_ForRootSignedUnexpiredCertificate()
     {
@@ -12,12 +14,12 @@ public sealed class AuthoritySecurityTests
         var authorityRoot = new AuthorityRoot(certificateIssuer.RootPublicKey);
         var serverId = Guid.NewGuid();
         var serverPublicKey = ServerIdentity.GetPublicKey(ServerIdentity.GeneratePrivateKey());
-        var issuedAt = DateTimeOffset.UtcNow.AddMinutes(-5);
-        var validUntil = DateTimeOffset.UtcNow.AddMinutes(30);
+        var issuedAt = ReferenceNow.AddMinutes(-5);
+        var validUntil = ReferenceNow.AddMinutes(30);
 
         var certificate = certificateIssuer.IssueServerCertificate(serverId, serverPublicKey, issuedAt, validUntil);
 
-        Assert.True(authorityRoot.VerifyServerCertificate(certificate));
+        Assert.True(authorityRoot.VerifyServerCertificate(certificate, ReferenceNow));
     }
 
     [Fact]
@@ -32,10 +34,10 @@ public sealed class AuthoritySecurityTests
         var certificate = certificateIssuer.IssueServerCertificate(
             serverId,
             serverPublicKey,
-            DateTimeOffset.UtcNow.AddHours(-2),
-            DateTimeOffset.UtcNow.AddHours(-1));
+            ReferenceNow.AddHours(-2),
+            ReferenceNow.AddHours(-1));
 
-        Assert.False(authorityRoot.VerifyServerCertificate(certificate));
+        Assert.False(authorityRoot.VerifyServerCertificate(certificate, ReferenceNow));
     }
 
     [Fact]
@@ -46,7 +48,7 @@ public sealed class AuthoritySecurityTests
 
         var validation = serverIdentity.SignRunValidation(Guid.NewGuid(), Guid.NewGuid(), [1, 2, 3, 4]);
 
-        Assert.True(verifier.VerifyRunSignature(validation, serverIdentity.Certificate));
+        Assert.True(verifier.VerifyRunSignature(validation, serverIdentity.Certificate, ReferenceNow));
     }
 
     [Fact]
@@ -62,7 +64,7 @@ public sealed class AuthoritySecurityTests
             validation.ServerId,
             validation.Signature);
 
-        Assert.False(verifier.VerifyRunSignature(tampered, serverIdentity.Certificate));
+        Assert.False(verifier.VerifyRunSignature(tampered, serverIdentity.Certificate, ReferenceNow));
     }
 
     [Fact]
@@ -78,7 +80,7 @@ public sealed class AuthoritySecurityTests
             Guid.NewGuid(),
             validation.Signature);
 
-        Assert.False(verifier.VerifyRunSignature(mismatched, serverIdentity.Certificate));
+        Assert.False(verifier.VerifyRunSignature(mismatched, serverIdentity.Certificate, ReferenceNow));
     }
 
     [Fact]
@@ -89,7 +91,7 @@ public sealed class AuthoritySecurityTests
 
         var signedValidation = serverIdentity.SignSignedRunValidation(Guid.NewGuid(), Guid.NewGuid(), [11, 22, 33, 44]);
 
-        Assert.True(verifier.Verify(signedValidation));
+        Assert.True(verifier.Verify(signedValidation, ReferenceNow));
     }
 
     private static ServerIdentity CreateServerIdentity(out AuthorityRoot authorityRoot)
@@ -102,8 +104,8 @@ public sealed class AuthoritySecurityTests
         var certificate = certificateIssuer.IssueServerCertificate(
             Guid.NewGuid(),
             ServerIdentity.GetPublicKey(serverPrivateKey),
-            DateTimeOffset.UtcNow.AddMinutes(-5),
-            DateTimeOffset.UtcNow.AddMinutes(30));
+            ReferenceNow.AddMinutes(-5),
+            ReferenceNow.AddMinutes(30));
 
         return new ServerIdentity(certificate, serverPrivateKey);
     }

@@ -19,11 +19,10 @@ public sealed class AuthorityRoot
 
     public byte[] PublicKey => (byte[])_publicKey.Clone();
 
-    public bool VerifyServerCertificate(ServerCertificate cert)
+    public bool VerifyServerCertificate(ServerCertificate cert, DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(cert);
 
-        var now = DateTimeOffset.UtcNow;
         if (cert.ValidUntil <= cert.IssuedAt || cert.IssuedAt > now || cert.ValidUntil < now)
         {
             return false;
