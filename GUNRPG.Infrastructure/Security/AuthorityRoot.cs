@@ -66,7 +66,7 @@ internal static class AuthorityCrypto
         var signature = new byte[SignatureSize];
         new Ed25519PrivateKeyParameters(normalizedPrivateKey, 0).Sign(
             Ed25519.Algorithm.Ed25519,
-            null,
+            null, // No RFC 8032 context: use plain Ed25519 over the canonical SHA-256 payload hash.
             payload,
             signature);
         return signature;
@@ -80,7 +80,7 @@ internal static class AuthorityCrypto
 
         return new Ed25519PublicKeyParameters(normalizedPublicKey, 0).Verify(
             Ed25519.Algorithm.Ed25519,
-            null,
+            null, // No RFC 8032 context: verification must match the plain Ed25519 signing mode above.
             payload,
             normalizedSignature);
     }
