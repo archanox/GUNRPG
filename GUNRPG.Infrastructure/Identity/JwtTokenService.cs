@@ -6,17 +6,14 @@ using GUNRPG.Application.Identity;
 using GUNRPG.Application.Identity.Dtos;
 using GUNRPG.Application.Results;
 using GUNRPG.Core.Identity;
+using GUNRPG.Security;
 using LiteDB;
 using Microsoft.Extensions.Options;
-using Org.BouncyCastle.Crypto.Generators;
-using Org.BouncyCastle.Crypto.Parameters;
-using Org.BouncyCastle.Crypto.Signers;
-using Org.BouncyCastle.Security;
 
 namespace GUNRPG.Infrastructure.Identity;
 
 /// <summary>
-/// JWT token service using Ed25519 (EdDSA) signing via BouncyCastle.
+/// JWT token service using Ed25519 (EdDSA) signing.
 /// Ed25519 is a modern, compact, and high-performance signing algorithm.
 /// The key pair is generated on first run and persisted to the LiteDB metadata collection.
 ///
@@ -35,8 +32,8 @@ public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
     private readonly ILiteCollection<RefreshToken> _refreshTokens;
     private readonly ILiteCollection<ApplicationUser> _users;
 
-    private readonly Ed25519PrivateKeyParameters _privateKey;
-    private readonly Ed25519PublicKeyParameters _publicKey;
+    private readonly byte[] _privateKey;
+    private readonly byte[] _publicKey;
     /// <summary>SHA-256 thumbprint of the public key, used as the JWT <c>kid</c> header.</summary>
     private readonly string _keyId;
 
@@ -50,7 +47,7 @@ public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
         _refreshTokens.EnsureIndex(t => t.Token, unique: true);
 
         (_privateKey, _publicKey) = LoadOrGenerateKeyPair();
-        _keyId = ComputeKeyId(_publicKey.GetEncoded());
+        _keyId = ComputeKeyId(_publicKey);
     }
 
     // ── ITokenService ────────────────────────────────────────────────────────
@@ -160,11 +157,8 @@ public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
 
     private string SignToken(string headerDotPayload)
     {
-        var signer = new Ed25519Signer();
-        signer.Init(true, _privateKey);
         var data = Encoding.UTF8.GetBytes(headerDotPayload);
-        signer.BlockUpdate(data, 0, data.Length);
-        var signature = signer.GenerateSignature();
+        var signature = AuthorityCrypto.SignPayload(_privateKey, data);
         return $"{headerDotPayload}.{Base64UrlEncode(signature)}";
     }
 
@@ -183,34 +177,31 @@ public sealed class JwtTokenService : ITokenService, IPublicKeyProvider
         return Task.FromResult(token);
     }
 
-    private (Ed25519PrivateKeyParameters, Ed25519PublicKeyParameters) LoadOrGenerateKeyPair()
+    private (byte[] PrivateKey, byte[] PublicKey) LoadOrGenerateKeyPair()
     {
         var existingDoc = _meta.FindOne(d => d["_id"] == PrivateKeyField);
         if (existingDoc is not null)
         {
-            var privateBytes = existingDoc[PrivateKeyField].AsBinary;
-            var publicBytes = existingDoc[PublicKeyField].AsBinary;
-            return (new Ed25519PrivateKeyParameters(privateBytes), new Ed25519PublicKeyParameters(publicBytes));
+            var privateBytes = AuthorityCrypto.CloneAndValidatePrivateKey(existingDoc[PrivateKeyField].AsBinary);
+            var publicBytes = AuthorityCrypto.CloneAndValidatePublicKey(existingDoc[PublicKeyField].AsBinary);
+            return (privateBytes, publicBytes);
         }
 
-        var generator = new Ed25519KeyPairGenerator();
-        generator.Init(new Ed25519KeyGenerationParameters(new SecureRandom()));
-        var pair = generator.GenerateKeyPair();
-        var priv = (Ed25519PrivateKeyParameters)pair.Private;
-        var pub = (Ed25519PublicKeyParameters)pair.Public;
+        var priv = AuthorityCrypto.GeneratePrivateKey();
+        var pub = AuthorityCrypto.GetPublicKey(priv);
 
         _meta.Upsert(new BsonDocument
         {
             ["_id"] = PrivateKeyField,
-            [PrivateKeyField] = priv.GetEncoded(),
-            [PublicKeyField] = pub.GetEncoded(),
+            [PrivateKeyField] = priv,
+            [PublicKeyField] = pub,
         });
 
         return (priv, pub);
     }
 
     /// <summary>Exposes the Ed25519 public key bytes for node-to-node trust exchange.</summary>
-    public byte[] GetPublicKeyBytes() => _publicKey.GetEncoded();
+    public byte[] GetPublicKeyBytes() => (byte[])_publicKey.Clone();
 
     /// <summary>
     /// Returns the JWT <c>kid</c> (key ID) — a SHA-256 thumbprint of the public key bytes.

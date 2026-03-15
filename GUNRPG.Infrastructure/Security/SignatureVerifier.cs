@@ -9,6 +9,12 @@ public sealed class SignatureVerifier
         _authorityRoot = authorityRoot ?? throw new ArgumentNullException(nameof(authorityRoot));
     }
 
+    public bool Verify(SignedRunValidation record)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+        return VerifyRunSignature(record.Validation, record.Certificate);
+    }
+
     public bool VerifyRunSignature(
         RunValidationSignature validation,
         ServerCertificate cert)

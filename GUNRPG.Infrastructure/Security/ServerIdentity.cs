@@ -24,8 +24,6 @@ public sealed class ServerIdentity
 
     public ServerCertificate Certificate { get; }
 
-    public byte[] ServerPrivateKey => (byte[])_serverPrivateKey.Clone();
-
     public RunValidationSignature SignRunValidation(
         Guid runId,
         Guid playerId,
@@ -36,17 +34,8 @@ public sealed class ServerIdentity
         return new RunValidationSignature(runId, playerId, finalStateHash, Certificate.ServerId, signature);
     }
 
-    public static ServerIdentity Create(
-        Guid serverId,
-        byte[] rootPrivateKey,
-        DateTimeOffset issuedAt,
-        DateTimeOffset validUntil)
-    {
-        var serverPrivateKey = GeneratePrivateKey();
-        var serverPublicKey = AuthorityCrypto.GetPublicKey(serverPrivateKey);
-        var certificate = ServerCertificate.Create(serverId, serverPublicKey, issuedAt, validUntil, rootPrivateKey);
-        return new ServerIdentity(certificate, serverPrivateKey);
-    }
+    public SignedRunValidation SignSignedRunValidation(Guid runId, Guid playerId, byte[] finalStateHash) =>
+        new(SignRunValidation(runId, playerId, finalStateHash), Certificate);
 
     public static byte[] GeneratePrivateKey() => AuthorityCrypto.GeneratePrivateKey();
 
