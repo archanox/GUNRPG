@@ -20,9 +20,11 @@ public sealed class RunReplayEngineTests
 
         Assert.Equal(runId, result.RunId);
         Assert.Equal(playerId, result.PlayerId);
+        Assert.Equal(serverIdentity.Certificate.ServerId, result.ServerId);
         Assert.True(result.FinalStateHash.SequenceEqual(result.Attestation.Validation.FinalStateHash));
         Assert.Equal(runId, result.Attestation.Validation.RunId);
         Assert.Equal(playerId, result.Attestation.Validation.PlayerId);
+        Assert.Equal(result.ServerId, result.Attestation.Validation.ServerId);
         Assert.True(verifier.Verify(result.Attestation, ReferenceNow));
     }
 
@@ -49,6 +51,20 @@ public sealed class RunReplayEngineTests
             result.Attestation.Certificate);
 
         Assert.False(verifier.Verify(tamperedAttestation, ReferenceNow));
+    }
+
+    [Fact]
+    public void ReplayRun_HashIsDeterministic()
+    {
+        var runId = Guid.NewGuid();
+        var playerId = Guid.NewGuid();
+        var engine = new RunReplayEngine();
+        var events = CreateCompletedRunEvents();
+
+        var hash1 = engine.ValidateRunOnly(runId, playerId, events);
+        var hash2 = engine.ValidateRunOnly(runId, playerId, events);
+
+        Assert.True(hash1.SequenceEqual(hash2));
     }
 
     private static IReadOnlyList<OperatorEvent> CreateCompletedRunEvents()
