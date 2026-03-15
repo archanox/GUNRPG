@@ -179,7 +179,7 @@ public static class OfflineMissionHashing
     private static void WriteGuid(BinaryWriter writer, Guid value)
     {
         Span<byte> bytes = stackalloc byte[16];
-        if (!value.TryWriteBytes(bytes, bigEndian: true, out _))
+        if (!value.TryWriteBytes(bytes, bigEndian: true, out var bytesWritten) || bytesWritten != 16)
         {
             throw new InvalidOperationException("Failed to write GUID bytes.");
         }

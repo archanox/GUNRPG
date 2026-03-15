@@ -41,7 +41,7 @@ public sealed class RunReplayEngine
             serverIdentity.SignRunValidation(runId, playerId, finalStateHash),
             serverIdentity.Certificate);
 
-        _logger.LogInformation("Run {RunId} validated and signed by server {ServerId}", runId, serverIdentity.Certificate.ServerId);
+        _logger.LogDebug("Run {RunId} validated and signed by server {ServerId}", runId, serverIdentity.Certificate.ServerId);
 
         return new RunValidationResult(
             runId,
