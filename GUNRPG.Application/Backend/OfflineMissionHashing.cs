@@ -8,12 +8,6 @@ namespace GUNRPG.Application.Backend;
 
 public static class OfflineMissionHashing
 {
-    private static readonly JsonSerializerOptions ReplayValidationSerializerOptions = new(JsonSerializerDefaults.Web)
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
-    };
-
     public static string ComputeOperatorStateHash(OperatorDto dto)
     {
         return ComputeHash(new OperatorHashState(
@@ -37,34 +31,47 @@ public static class OfflineMissionHashing
     {
         ArgumentNullException.ThrowIfNull(aggregate);
 
-        return SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
-            new ReplayValidationHashState(
-                aggregate.Id.Value.ToString(),
-                aggregate.Name,
-                aggregate.TotalXp,
-                aggregate.CurrentHealth,
-                aggregate.MaxHealth,
-                aggregate.EquippedWeaponName,
-                aggregate.UnlockedPerks.OrderBy(x => x, StringComparer.Ordinal).ToArray(),
-                aggregate.ExfilStreak,
-                aggregate.IsDead,
-                aggregate.CurrentMode.ToString(),
-                aggregate.InfilSessionId,
-                aggregate.InfilStartTime,
-                aggregate.ActiveCombatSessionId,
-                aggregate.LockedLoadout,
-                aggregate.PetState == null
-                    ? null
-                    : new PetHashState(
-                        aggregate.PetState.Health,
-                        aggregate.PetState.Fatigue,
-                        aggregate.PetState.Injury,
-                        aggregate.PetState.Stress,
-                        aggregate.PetState.Morale,
-                        aggregate.PetState.Hunger,
-                        aggregate.PetState.Hydration,
-                        aggregate.PetState.LastUpdated)),
-            ReplayValidationSerializerOptions));
+        using var buffer = new MemoryStream();
+        using var writer = new BinaryWriter(buffer, Encoding.UTF8, leaveOpen: true);
+
+        WriteString(writer, aggregate.Id.Value.ToString());
+        WriteString(writer, aggregate.Name);
+        writer.Write(aggregate.TotalXp);
+        writer.Write(BitConverter.SingleToInt32Bits(aggregate.CurrentHealth));
+        writer.Write(BitConverter.SingleToInt32Bits(aggregate.MaxHealth));
+        WriteString(writer, aggregate.EquippedWeaponName);
+
+        var orderedPerks = aggregate.UnlockedPerks.ToArray();
+        Array.Sort(orderedPerks, StringComparer.Ordinal);
+        writer.Write(orderedPerks.Length);
+        foreach (var perk in orderedPerks)
+        {
+            WriteString(writer, perk);
+        }
+
+        writer.Write(aggregate.ExfilStreak);
+        writer.Write(aggregate.IsDead);
+        WriteString(writer, aggregate.CurrentMode.ToString());
+        WriteNullableGuid(writer, aggregate.InfilSessionId);
+        WriteNullableDateTimeOffset(writer, aggregate.InfilStartTime);
+        WriteNullableGuid(writer, aggregate.ActiveCombatSessionId);
+        WriteString(writer, aggregate.LockedLoadout);
+
+        writer.Write(aggregate.PetState != null);
+        if (aggregate.PetState != null)
+        {
+            writer.Write(BitConverter.SingleToInt32Bits(aggregate.PetState.Health));
+            writer.Write(BitConverter.SingleToInt32Bits(aggregate.PetState.Fatigue));
+            writer.Write(BitConverter.SingleToInt32Bits(aggregate.PetState.Injury));
+            writer.Write(BitConverter.SingleToInt32Bits(aggregate.PetState.Stress));
+            writer.Write(BitConverter.SingleToInt32Bits(aggregate.PetState.Morale));
+            writer.Write(BitConverter.SingleToInt32Bits(aggregate.PetState.Hunger));
+            writer.Write(BitConverter.SingleToInt32Bits(aggregate.PetState.Hydration));
+            WriteDateTimeOffset(writer, aggregate.PetState.LastUpdated);
+        }
+
+        writer.Flush();
+        return SHA256.HashData(buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length)));
     }
 
     public static string ComputeOperatorStateHash(OperatorStateDto dto)
@@ -119,23 +126,6 @@ public static class OfflineMissionHashing
         string LockedLoadout,
         PetHashState? Pet);
 
-    private sealed record ReplayValidationHashState(
-        string Id,
-        string Name,
-        long TotalXp,
-        float CurrentHealth,
-        float MaxHealth,
-        string EquippedWeaponName,
-        string[] UnlockedPerks,
-        int ExfilStreak,
-        bool IsDead,
-        string CurrentMode,
-        Guid? InfilSessionId,
-        DateTimeOffset? InfilStartTime,
-        Guid? ActiveCombatSessionId,
-        string LockedLoadout,
-        PetHashState? Pet);
-
     private sealed record PetHashState(
         float Health,
         float Fatigue,
@@ -145,4 +135,41 @@ public static class OfflineMissionHashing
         float Hunger,
         float Hydration,
         DateTimeOffset LastUpdated);
+
+    private static void WriteString(BinaryWriter writer, string value)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        writer.Write(bytes.Length);
+        writer.Write(bytes);
+    }
+
+    private static void WriteNullableGuid(BinaryWriter writer, Guid? value)
+    {
+        writer.Write(value.HasValue);
+        if (!value.HasValue)
+        {
+            return;
+        }
+
+        Span<byte> guidBytes = stackalloc byte[16];
+        value.Value.TryWriteBytes(guidBytes);
+        writer.Write(guidBytes);
+    }
+
+    private static void WriteNullableDateTimeOffset(BinaryWriter writer, DateTimeOffset? value)
+    {
+        writer.Write(value.HasValue);
+        if (!value.HasValue)
+        {
+            return;
+        }
+
+        WriteDateTimeOffset(writer, value.Value);
+    }
+
+    private static void WriteDateTimeOffset(BinaryWriter writer, DateTimeOffset value)
+    {
+        writer.Write(value.UtcTicks);
+        writer.Write(value.Offset.Ticks);
+    }
 }
