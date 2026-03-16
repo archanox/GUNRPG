@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using GUNRPG.Security;
@@ -10,7 +12,7 @@ public class RunLedger
     private const int GuidSize = 16;
     private const int Int64Size = 8;
 
-    private static readonly byte[] ZeroHash = new byte[HashSize];
+    private static readonly ImmutableArray<byte> ZeroHash = ImmutableArray.Create(new byte[HashSize]);
 
     private readonly List<RunLedgerEntry> _entries = [];
     private readonly ReadOnlyCollection<RunLedgerEntry> _readOnlyEntries;
@@ -34,9 +36,7 @@ public class RunLedger
         ArgumentNullException.ThrowIfNull(run);
 
         var index = (long)_entries.Count;
-        var previousHash = _entries.Count == 0
-            ? ZeroHash
-            : (byte[])_entries[^1].EntryHash.Clone();
+        var previousHash = _entries.Count == 0 ? ZeroHash : _entries[^1].EntryHash;
 
         var entryHash = ComputeEntryHash(index, previousHash, timestamp, run);
 
@@ -62,7 +62,7 @@ public class RunLedger
             }
 
             var recomputed = ComputeEntryHash(entry.Index, entry.PreviousHash, entry.Timestamp, entry.Run);
-            if (!CryptographicOperations.FixedTimeEquals(entry.EntryHash, recomputed))
+            if (!CryptographicOperations.FixedTimeEquals(entry.EntryHash.AsSpan(), recomputed.AsSpan()))
             {
                 return false;
             }
@@ -73,7 +73,7 @@ public class RunLedger
                 return false;
             }
 
-            if (!CryptographicOperations.FixedTimeEquals(entry.PreviousHash, expectedPreviousHash))
+            if (!CryptographicOperations.FixedTimeEquals(entry.PreviousHash.AsSpan(), expectedPreviousHash.AsSpan()))
             {
                 return false;
             }
@@ -82,9 +82,12 @@ public class RunLedger
         return true;
     }
 
-    internal static byte[] ComputeEntryHash(
+    // Replaces an entry at the given index — internal for tamper-detection testing only.
+    internal void ReplaceEntryForTest(int index, RunLedgerEntry entry) => _entries[index] = entry;
+
+    internal static ImmutableArray<byte> ComputeEntryHash(
         long index,
-        byte[] previousHash,
+        ImmutableArray<byte> previousHash,
         DateTimeOffset timestamp,
         RunValidationResult run)
     {
@@ -93,23 +96,23 @@ public class RunLedger
         var offset = 0;
 
         WriteInt64(index, buffer, ref offset);
-        WriteBytes(previousHash, buffer, ref offset);
+        WriteBytes(previousHash.AsSpan(), buffer, ref offset);
         WriteInt64(timestamp.UtcTicks, buffer, ref offset);
         WriteGuid(run.RunId, buffer, ref offset);
         WriteGuid(run.PlayerId, buffer, ref offset);
         WriteGuid(run.ServerId, buffer, ref offset);
         WriteBytes(run.FinalStateHash, buffer, ref offset);
 
-        return SHA256.HashData(buffer);
+        return ImmutableArray.Create(SHA256.HashData(buffer));
     }
 
     private static void WriteInt64(long value, Span<byte> destination, ref int offset)
     {
-        System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(destination[offset..], value);
+        BinaryPrimitives.WriteInt64BigEndian(destination[offset..], value);
         offset += Int64Size;
     }
 
-    private static void WriteBytes(byte[] value, Span<byte> destination, ref int offset)
+    private static void WriteBytes(ReadOnlySpan<byte> value, Span<byte> destination, ref int offset)
     {
         value.CopyTo(destination[offset..]);
         offset += value.Length;
