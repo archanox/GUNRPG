@@ -96,6 +96,11 @@ public class RunLedger
 
     public IReadOnlyList<RunLedgerEntry> GetEntriesFrom(long fromIndex, int maxCount = int.MaxValue)
     {
+        if (maxCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxCount), "maxCount must be non-negative.");
+        }
+
         if (fromIndex < 0 || fromIndex >= _entries.Count)
         {
             return [];
@@ -108,6 +113,11 @@ public class RunLedger
     public bool TryAppendEntry(RunLedgerEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
+
+        if (entry.Run is null)
+        {
+            return false;
+        }
 
         var expectedIndex = (long)_entries.Count;
         if (entry.Index != expectedIndex)
