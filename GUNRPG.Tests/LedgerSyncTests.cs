@@ -36,7 +36,7 @@ public sealed class LedgerSyncTests
         var request = syncEngine.BuildSyncRequest(peerHead);
         Assert.Equal(0L, request.FromIndex);
 
-        var entries = ledgerA.GetEntriesFrom(request.FromIndex);
+        var entries = ledgerA.GetEntriesFrom(request.FromIndex, LedgerSyncEngine.MaxSyncBatchSize);
         var response = new LedgerSyncResponse(entries);
 
         var applied = syncEngine.ApplyResponse(response);
@@ -132,6 +132,64 @@ public sealed class LedgerSyncTests
         var ledgerB = new RunLedger();
         Assert.True(ledgerB.TryAppendEntry(entry));
         Assert.False(ledgerB.TryAppendEntry(entry));
+    }
+
+    [Fact]
+    public void LedgerSync_ConvergesAfterExchange()
+    {
+        var serverIdentity = CreateServerIdentity();
+        var engine = new RunReplayEngine();
+
+        var ledgerA = new RunLedger();
+        var ledgerB = new RunLedger();
+
+        var result1 = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+        var result2 = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+
+        ledgerA.Append(result1);
+        ledgerA.Append(result2);
+
+        // Sync B from A
+        var syncEngineB = new LedgerSyncEngine(ledgerB);
+        var headA = ledgerA.GetHead();
+        Assert.True(syncEngineB.NeedsSync(headA));
+
+        var requestB = syncEngineB.BuildSyncRequest(headA);
+        var entriesForB = ledgerA.GetEntriesFrom(requestB.FromIndex, LedgerSyncEngine.MaxSyncBatchSize);
+        Assert.True(syncEngineB.ApplyResponse(new LedgerSyncResponse(entriesForB)));
+
+        // A should not need sync from B (B has no additional data)
+        var syncEngineA = new LedgerSyncEngine(ledgerA);
+        var headB = ledgerB.GetHead();
+        Assert.False(syncEngineA.NeedsSync(headB));
+
+        // Both heads must now match
+        Assert.True(syncEngineA.IsSameHead(headB));
+        Assert.True(syncEngineB.IsSameHead(ledgerA.GetHead()));
+    }
+
+    [Fact]
+    public void LedgerSync_DetectsFork()
+    {
+        var serverIdentity = CreateServerIdentity();
+        var engine = new RunReplayEngine();
+
+        var ledgerA = new RunLedger();
+        var ledgerB = new RunLedger();
+
+        // Both ledgers append different runs at the same index
+        var resultA = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+        var resultB = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+
+        ledgerA.Append(resultA);
+        ledgerB.Append(resultB);
+
+        var syncEngine = new LedgerSyncEngine(ledgerB);
+        var peerHead = ledgerA.GetHead();
+
+        // Same index, different hash — fork detected; sync must be rejected
+        Assert.False(syncEngine.NeedsSync(peerHead));
+        Assert.False(syncEngine.IsSameHead(peerHead));
     }
 
     private static IReadOnlyList<OperatorEvent> CreateCompletedRunEvents()

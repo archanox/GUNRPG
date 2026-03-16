@@ -94,14 +94,15 @@ public class RunLedger
         return new LedgerHead(head.Index, head.EntryHash);
     }
 
-    public IReadOnlyList<RunLedgerEntry> GetEntriesFrom(long fromIndex)
+    public IReadOnlyList<RunLedgerEntry> GetEntriesFrom(long fromIndex, int maxCount = int.MaxValue)
     {
         if (fromIndex < 0 || fromIndex >= _entries.Count)
         {
             return [];
         }
 
-        return _entries.GetRange((int)fromIndex, _entries.Count - (int)fromIndex).AsReadOnly();
+        var count = Math.Min(_entries.Count - (int)fromIndex, maxCount);
+        return _entries.GetRange((int)fromIndex, count).AsReadOnly();
     }
 
     public bool TryAppendEntry(RunLedgerEntry entry)
