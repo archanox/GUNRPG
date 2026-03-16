@@ -84,6 +84,55 @@ public sealed class RunLedgerTests
         Assert.True(ledger.Verify());
     }
 
+    [Fact]
+    public void LedgerHead_IsNullForEmptyLedger()
+    {
+        var ledger = new RunLedger();
+        Assert.Null(ledger.Head);
+    }
+
+    [Fact]
+    public void LedgerHead_ReturnsLastEntry()
+    {
+        var serverIdentity = CreateServerIdentity();
+        var engine = new RunReplayEngine();
+        var ledger = new RunLedger();
+
+        var result1 = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+        var result2 = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+
+        ledger.Append(result1);
+        var entry2 = ledger.Append(result2);
+
+        Assert.Equal(entry2, ledger.Head);
+    }
+
+    [Fact]
+    public void LedgerAppend_IsDeterministic()
+    {
+        var serverIdentity = CreateServerIdentity();
+        var engine = new RunReplayEngine();
+
+        var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+        var fixedTimestamp = new DateTimeOffset(2026, 3, 15, 12, 0, 0, TimeSpan.Zero);
+
+        var ledger1 = new RunLedger();
+        var entry1 = ledger1.Append(result, fixedTimestamp);
+
+        var ledger2 = new RunLedger();
+        var entry2 = ledger2.Append(result, fixedTimestamp);
+
+        Assert.True(entry1.EntryHash.SequenceEqual(entry2.EntryHash));
+    }
+
+    [Fact]
+    public void LedgerEntries_IsReadOnly()
+    {
+        var ledger = new RunLedger();
+        // Entries must not be castable back to a mutable list
+        Assert.IsNotType<List<RunLedgerEntry>>(ledger.Entries);
+    }
+
     private static IReadOnlyList<OperatorEvent> CreateCompletedRunEvents()
     {
         var operatorId = OperatorId.NewId();

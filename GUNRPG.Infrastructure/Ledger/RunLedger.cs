@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using GUNRPG.Security;
 
@@ -6,20 +7,37 @@ namespace GUNRPG.Ledger;
 public class RunLedger
 {
     private const int HashSize = SHA256.HashSizeInBytes;
-    private readonly List<RunLedgerEntry> _entries = [];
+    private const int GuidSize = 16;
+    private const int Int64Size = 8;
 
-    public IReadOnlyList<RunLedgerEntry> Entries => _entries;
+    private static readonly byte[] ZeroHash = new byte[HashSize];
+
+    private readonly List<RunLedgerEntry> _entries = [];
+    private readonly ReadOnlyCollection<RunLedgerEntry> _readOnlyEntries;
+
+    public RunLedger()
+    {
+        _readOnlyEntries = _entries.AsReadOnly();
+    }
+
+    public IReadOnlyList<RunLedgerEntry> Entries => _readOnlyEntries;
+
+    public RunLedgerEntry? Head => _entries.Count == 0 ? null : _entries[^1];
 
     public RunLedgerEntry Append(RunValidationResult run)
+    {
+        return Append(run, DateTimeOffset.UtcNow);
+    }
+
+    internal RunLedgerEntry Append(RunValidationResult run, DateTimeOffset timestamp)
     {
         ArgumentNullException.ThrowIfNull(run);
 
         var index = (long)_entries.Count;
         var previousHash = _entries.Count == 0
-            ? new byte[HashSize]
+            ? ZeroHash
             : (byte[])_entries[^1].EntryHash.Clone();
 
-        var timestamp = DateTimeOffset.UtcNow;
         var entryHash = ComputeEntryHash(index, previousHash, timestamp, run);
 
         var entry = new RunLedgerEntry(index, previousHash, entryHash, timestamp, run);
@@ -38,13 +56,23 @@ public class RunLedger
                 return false;
             }
 
+            if (entry.EntryHash.Length != HashSize || entry.PreviousHash.Length != HashSize)
+            {
+                return false;
+            }
+
             var recomputed = ComputeEntryHash(entry.Index, entry.PreviousHash, entry.Timestamp, entry.Run);
             if (!CryptographicOperations.FixedTimeEquals(entry.EntryHash, recomputed))
             {
                 return false;
             }
 
-            var expectedPreviousHash = i == 0 ? new byte[HashSize] : _entries[i - 1].EntryHash;
+            var expectedPreviousHash = i == 0 ? ZeroHash : _entries[i - 1].EntryHash;
+            if (expectedPreviousHash.Length != HashSize)
+            {
+                return false;
+            }
+
             if (!CryptographicOperations.FixedTimeEquals(entry.PreviousHash, expectedPreviousHash))
             {
                 return false;
@@ -54,31 +82,46 @@ public class RunLedger
         return true;
     }
 
-    private static byte[] ComputeEntryHash(
+    internal static byte[] ComputeEntryHash(
         long index,
         byte[] previousHash,
         DateTimeOffset timestamp,
         RunValidationResult run)
     {
-        using var ms = new MemoryStream();
-        using var writer = new BinaryWriter(ms);
+        // Fixed-width payload: int64 + 32 bytes + int64 + 3×16 bytes + 32 bytes = 144 bytes
+        var buffer = new byte[Int64Size + HashSize + Int64Size + GuidSize + GuidSize + GuidSize + HashSize];
+        var offset = 0;
 
-        writer.Write(index);
-        writer.Write(previousHash);
-        writer.Write(timestamp.UtcDateTime.Ticks);
-        WriteGuid(writer, run.RunId);
-        WriteGuid(writer, run.PlayerId);
-        WriteGuid(writer, run.ServerId);
-        writer.Write(run.FinalStateHash);
-        writer.Flush();
+        WriteInt64(index, buffer, ref offset);
+        WriteBytes(previousHash, buffer, ref offset);
+        WriteInt64(timestamp.UtcTicks, buffer, ref offset);
+        WriteGuid(run.RunId, buffer, ref offset);
+        WriteGuid(run.PlayerId, buffer, ref offset);
+        WriteGuid(run.ServerId, buffer, ref offset);
+        WriteBytes(run.FinalStateHash, buffer, ref offset);
 
-        return SHA256.HashData(ms.ToArray());
+        return SHA256.HashData(buffer);
     }
 
-    private static void WriteGuid(BinaryWriter writer, Guid value)
+    private static void WriteInt64(long value, Span<byte> destination, ref int offset)
     {
-        Span<byte> bytes = stackalloc byte[16];
-        value.TryWriteBytes(bytes, bigEndian: true, out _);
-        writer.Write(bytes);
+        System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(destination[offset..], value);
+        offset += Int64Size;
+    }
+
+    private static void WriteBytes(byte[] value, Span<byte> destination, ref int offset)
+    {
+        value.CopyTo(destination[offset..]);
+        offset += value.Length;
+    }
+
+    private static void WriteGuid(Guid value, Span<byte> destination, ref int offset)
+    {
+        if (!value.TryWriteBytes(destination[offset..], bigEndian: true, out var bytesWritten) || bytesWritten != GuidSize)
+        {
+            throw new InvalidOperationException("Failed to write a 16-byte big-endian Guid into the ledger entry hash buffer.");
+        }
+
+        offset += bytesWritten;
     }
 }
