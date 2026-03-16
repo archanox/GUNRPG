@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
+using GUNRPG.Gossip;
 using GUNRPG.Security;
 
 namespace GUNRPG.Ledger;
@@ -79,6 +80,58 @@ public class RunLedger
             }
         }
 
+        return true;
+    }
+
+    public LedgerHead GetHead()
+    {
+        if (_entries.Count == 0)
+        {
+            return new LedgerHead(-1, ZeroHash);
+        }
+
+        var head = _entries[^1];
+        return new LedgerHead(head.Index, head.EntryHash);
+    }
+
+    public IReadOnlyList<RunLedgerEntry> GetEntriesFrom(long fromIndex)
+    {
+        if (fromIndex < 0 || fromIndex >= _entries.Count)
+        {
+            return [];
+        }
+
+        return _entries.GetRange((int)fromIndex, _entries.Count - (int)fromIndex).AsReadOnly();
+    }
+
+    public bool TryAppendEntry(RunLedgerEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        var expectedIndex = (long)_entries.Count;
+        if (entry.Index != expectedIndex)
+        {
+            return false;
+        }
+
+        if (entry.EntryHash.Length != HashSize || entry.PreviousHash.Length != HashSize)
+        {
+            return false;
+        }
+
+        var expectedPreviousHash = _entries.Count == 0 ? ZeroHash : _entries[^1].EntryHash;
+        if (!CryptographicOperations.FixedTimeEquals(entry.PreviousHash.AsSpan(), expectedPreviousHash.AsSpan()))
+        {
+            return false;
+        }
+
+        var recomputed = ComputeEntryHash(entry.Index, entry.PreviousHash, entry.Timestamp, entry.Run);
+        if (!CryptographicOperations.FixedTimeEquals(entry.EntryHash.AsSpan(), recomputed.AsSpan()))
+        {
+            return false;
+        }
+
+        _entries.Add(entry);
         return true;
     }
 
