@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+using System.Security.Cryptography;
 using GUNRPG.Core.Operators;
 using GUNRPG.Ledger;
 using GUNRPG.Security;
@@ -37,7 +39,7 @@ public sealed class RunLedgerTests
         var entry = ledger.Append(result);
 
         Assert.Equal(0L, entry.Index);
-        Assert.Equal(new byte[32], entry.PreviousHash);
+        Assert.True(entry.PreviousHash.SequenceEqual(new byte[32]));
     }
 
     [Fact]
@@ -68,11 +70,12 @@ public sealed class RunLedgerTests
         var result1 = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
         var result2 = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
 
-        var entry1 = ledger.Append(result1);
+        ledger.Append(result1);
         ledger.Append(result2);
 
-        // Tamper with the first entry's hash
-        entry1.EntryHash[0] ^= 0xFF;
+        // Tamper: replace the first entry with a corrupted EntryHash
+        var corruptedHash = ImmutableArray.Create(new byte[SHA256.HashSizeInBytes]); // all-zero, not the real hash
+        ledger.ReplaceEntryForTest(0, ledger.Entries[0] with { EntryHash = corruptedHash });
 
         Assert.False(ledger.Verify());
     }
