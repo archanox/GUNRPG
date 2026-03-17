@@ -34,6 +34,11 @@ public sealed class SignedRunValidation
             throw new ArgumentException("Signed validations must represent the same result to merge signatures.", nameof(b));
         }
 
+        if (!HasMatchingAttestationMaterial(a, b))
+        {
+            throw new ArgumentException("Signed validations must have identical attestation material to merge signatures.", nameof(b));
+        }
+
         var mergedSignatures = new List<AuthoritySignature>();
         var seenSigners = new HashSet<string>(StringComparer.Ordinal);
 
@@ -78,5 +83,17 @@ public sealed class SignedRunValidation
 
             mergedSignatures.Add(signature);
         }
+    }
+
+    private static bool HasMatchingAttestationMaterial(
+        SignedRunValidation a,
+        SignedRunValidation b)
+    {
+        return CryptographicOperations.FixedTimeEquals(a.Validation.SignatureBytes, b.Validation.SignatureBytes)
+            && a.Certificate.ServerId == b.Certificate.ServerId
+            && a.Certificate.IssuedAt == b.Certificate.IssuedAt
+            && a.Certificate.ValidUntil == b.Certificate.ValidUntil
+            && CryptographicOperations.FixedTimeEquals(a.Certificate.PublicKey, b.Certificate.PublicKey)
+            && CryptographicOperations.FixedTimeEquals(a.Certificate.Signature, b.Certificate.Signature);
     }
 }

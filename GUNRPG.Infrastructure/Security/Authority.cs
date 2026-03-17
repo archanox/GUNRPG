@@ -1,6 +1,6 @@
 namespace GUNRPG.Security;
 
-public sealed record Authority
+public sealed class Authority
 {
     private readonly byte[] _publicKey;
 
