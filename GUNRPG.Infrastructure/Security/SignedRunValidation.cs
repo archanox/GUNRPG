@@ -18,12 +18,7 @@ public sealed class SignedRunValidation
 
     public List<AuthoritySignature> Signatures { get; init; } = [];
 
-    internal byte[] ComputeResultHash() =>
-        RunValidationResult.ComputeResultHash(
-            Validation.RunId,
-            Validation.PlayerId,
-            Validation.ServerId,
-            Validation.FinalStateHash);
+    internal byte[] ComputeResultHash() => RunValidationResult.ComputeResultHash(Validation);
 
     public static SignedRunValidation MergeSignatures(
         SignedRunValidation a,
@@ -57,11 +52,13 @@ public sealed class SignedRunValidation
         HashSet<string> seenSigners,
         List<AuthoritySignature> mergedSignatures)
     {
+        var signatureIndex = 0;
         foreach (var signature in signatures)
         {
+            var currentIndex = signatureIndex++;
             if (signature is null)
             {
-                throw new ArgumentException("Signature collections must not contain null entries.", nameof(signatures));
+                throw new ArgumentException($"Signature collections must not contain null entries (index {currentIndex}).", nameof(signatures));
             }
 
             var signerId = AuthoritySet.CreateKeyIdentifier(signature.PublicKeyBytes);
