@@ -3,6 +3,7 @@ using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using GUNRPG.Gossip;
+using GUNRPG.Ledger.Indexing;
 using GUNRPG.Security;
 
 namespace GUNRPG.Ledger;
@@ -17,15 +18,19 @@ public class RunLedger
 
     private readonly List<RunLedgerEntry> _entries = [];
     private readonly ReadOnlyCollection<RunLedgerEntry> _readOnlyEntries;
+    private readonly MerkleSkipIndex _merkleSkipIndex;
 
     public RunLedger()
     {
         _readOnlyEntries = _entries.AsReadOnly();
+        _merkleSkipIndex = new MerkleSkipIndex(GetEntryHashAt);
     }
 
     public IReadOnlyList<RunLedgerEntry> Entries => _readOnlyEntries;
 
     public RunLedgerEntry? Head => _entries.Count == 0 ? null : _entries[^1];
+
+    public MerkleSkipIndex MerkleSkipIndex => _merkleSkipIndex;
 
     public RunLedgerEntry Append(RunValidationResult run)
     {
@@ -43,44 +48,13 @@ public class RunLedger
 
         var entry = new RunLedgerEntry(index, previousHash, entryHash, timestamp, run);
         _entries.Add(entry);
+        _merkleSkipIndex.Append(entry);
         return entry;
     }
 
     public bool Verify()
     {
-        for (var i = 0; i < _entries.Count; i++)
-        {
-            var entry = _entries[i];
-
-            if (entry.Index != i)
-            {
-                return false;
-            }
-
-            if (entry.EntryHash.Length != HashSize || entry.PreviousHash.Length != HashSize)
-            {
-                return false;
-            }
-
-            var recomputed = ComputeEntryHash(entry.Index, entry.PreviousHash, entry.Timestamp, entry.Run);
-            if (!CryptographicOperations.FixedTimeEquals(entry.EntryHash.AsSpan(), recomputed.AsSpan()))
-            {
-                return false;
-            }
-
-            var expectedPreviousHash = i == 0 ? ZeroHash : _entries[i - 1].EntryHash;
-            if (expectedPreviousHash.Length != HashSize)
-            {
-                return false;
-            }
-
-            if (!CryptographicOperations.FixedTimeEquals(entry.PreviousHash.AsSpan(), expectedPreviousHash.AsSpan()))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return VerifyEntries(_entries);
     }
 
     public LedgerHead GetHead()
@@ -143,11 +117,69 @@ public class RunLedger
         }
 
         _entries.Add(entry);
+        _merkleSkipIndex.Append(entry);
         return true;
     }
 
     // Replaces an entry at the given index — internal for tamper-detection testing only.
-    internal void ReplaceEntryForTest(int index, RunLedgerEntry entry) => _entries[index] = entry;
+    internal void ReplaceEntryForTest(int index, RunLedgerEntry entry)
+    {
+        _entries[index] = entry;
+        _merkleSkipIndex.Rebuild(_entries);
+    }
+
+    internal void ReplaceEntriesFrom(long divergenceIndex, IReadOnlyList<RunLedgerEntry> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+
+        if (divergenceIndex < 0 || divergenceIndex > _entries.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(divergenceIndex));
+        }
+
+        _entries.RemoveRange((int)divergenceIndex, _entries.Count - (int)divergenceIndex);
+        _entries.AddRange(entries);
+        _merkleSkipIndex.Rebuild(_entries);
+    }
+
+    internal static bool VerifyEntries(IReadOnlyList<RunLedgerEntry> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+
+            if (entry.Index != i)
+            {
+                return false;
+            }
+
+            if (entry.Run is null || entry.EntryHash.Length != HashSize || entry.PreviousHash.Length != HashSize)
+            {
+                return false;
+            }
+
+            var recomputed = ComputeEntryHash(entry.Index, entry.PreviousHash, entry.Timestamp, entry.Run);
+            if (!CryptographicOperations.FixedTimeEquals(entry.EntryHash.AsSpan(), recomputed.AsSpan()))
+            {
+                return false;
+            }
+
+            var expectedPreviousHash = i == 0 ? ZeroHash : entries[i - 1].EntryHash;
+            if (expectedPreviousHash.Length != HashSize)
+            {
+                return false;
+            }
+
+            if (!CryptographicOperations.FixedTimeEquals(entry.PreviousHash.AsSpan(), expectedPreviousHash.AsSpan()))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     internal static ImmutableArray<byte> ComputeEntryHash(
         long index,
@@ -190,5 +222,15 @@ public class RunLedger
         }
 
         offset += bytesWritten;
+    }
+
+    private ImmutableArray<byte>? GetEntryHashAt(long index)
+    {
+        if (index < 0 || index >= _entries.Count)
+        {
+            return null;
+        }
+
+        return _entries[(int)index].EntryHash;
     }
 }
