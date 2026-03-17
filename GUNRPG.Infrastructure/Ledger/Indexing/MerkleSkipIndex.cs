@@ -30,14 +30,14 @@ public sealed class MerkleSkipIndex
 
     public void Append(RunLedgerEntry entry)
     {
+        RecordEntry(entry);
+    }
+
+    public void Update(RunLedgerEntry entry)
+    {
         ArgumentNullException.ThrowIfNull(entry);
 
-        HighestIndex = Math.Max(HighestIndex, entry.Index);
-
-        if (IsPowerOfTwo(entry.Index))
-        {
-            _index[entry.Index] = entry.EntryHash;
-        }
+        RecordEntry(entry);
     }
 
     public void Rebuild(IReadOnlyList<RunLedgerEntry> entries)
@@ -145,7 +145,7 @@ public sealed class MerkleSkipIndex
     private static long HighestPowerOfTwoAtMost(long value)
     {
         var power = 1L;
-        while (power <= value / 2)
+        while (power * 2 <= value)
         {
             power <<= 1;
         }
@@ -162,5 +162,17 @@ public sealed class MerkleSkipIndex
     {
         ArgumentNullException.ThrowIfNull(entries);
         return index => index >= 0 && index < entries.Count ? entries[(int)index].EntryHash : null;
+    }
+
+    private void RecordEntry(RunLedgerEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        HighestIndex = Math.Max(HighestIndex, entry.Index);
+
+        if (IsPowerOfTwo(entry.Index))
+        {
+            _index[entry.Index] = entry.EntryHash;
+        }
     }
 }

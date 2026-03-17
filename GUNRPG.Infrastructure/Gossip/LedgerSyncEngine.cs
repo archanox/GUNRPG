@@ -133,7 +133,7 @@ public class LedgerSyncEngine
             }
         }
 
-        localLedger.ReplaceEntriesFrom(divergenceIndex, peerEntries.Skip((int)divergenceIndex).ToArray());
+        localLedger.ReplaceEntriesFrom(divergenceIndex, peerEntries, (int)divergenceIndex);
         return true;
     }
 }

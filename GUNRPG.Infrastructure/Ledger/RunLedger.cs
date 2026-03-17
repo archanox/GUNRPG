@@ -124,11 +124,16 @@ public class RunLedger
     // Replaces an entry at the given index — internal for tamper-detection testing only.
     internal void ReplaceEntryForTest(int index, RunLedgerEntry entry)
     {
+        if (entry.Index != index)
+        {
+            throw new ArgumentException("Replacement entry index must match the target index.", nameof(entry));
+        }
+
         _entries[index] = entry;
-        _merkleSkipIndex.Rebuild(_entries);
+        _merkleSkipIndex.Update(entry);
     }
 
-    internal void ReplaceEntriesFrom(long divergenceIndex, IReadOnlyList<RunLedgerEntry> entries)
+    internal void ReplaceEntriesFrom(long divergenceIndex, IReadOnlyList<RunLedgerEntry> entries, int startIndex = 0)
     {
         ArgumentNullException.ThrowIfNull(entries);
 
@@ -137,8 +142,17 @@ public class RunLedger
             throw new ArgumentOutOfRangeException(nameof(divergenceIndex));
         }
 
+        if (startIndex < 0 || startIndex > entries.Count)
+        {
+            throw new ArgumentOutOfRangeException(nameof(startIndex));
+        }
+
         _entries.RemoveRange((int)divergenceIndex, _entries.Count - (int)divergenceIndex);
-        _entries.AddRange(entries);
+        for (var i = startIndex; i < entries.Count; i++)
+        {
+            _entries.Add(entries[i]);
+        }
+
         _merkleSkipIndex.Rebuild(_entries);
     }
 
