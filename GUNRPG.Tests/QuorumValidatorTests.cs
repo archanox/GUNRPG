@@ -127,7 +127,7 @@ public sealed class QuorumValidatorTests
             attestation);
         var ledger = new RunLedger();
 
-        var appended = ledger.TryAppendWithQuorum(quorumApprovedResult, signatureVerifier, validator, authoritySet, policy);
+        var appended = ledger.TryAppendWithQuorum(quorumApprovedResult, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
 
         Assert.True(appended);
         Assert.Single(ledger.Entries);
@@ -163,7 +163,7 @@ public sealed class QuorumValidatorTests
             tamperedAttestation);
         var ledger = new RunLedger();
 
-        var appended = ledger.TryAppendWithQuorum(tamperedResult, signatureVerifier, validator, authoritySet, policy);
+        var appended = ledger.TryAppendWithQuorum(tamperedResult, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
 
         Assert.False(appended);
         Assert.Empty(ledger.Entries);
@@ -327,7 +327,6 @@ public sealed class QuorumValidatorTests
 
     private static (ServerIdentity ServerIdentity, AuthorityRoot AuthorityRoot) CreateTrustedServerIdentity()
     {
-        var now = DateTimeOffset.UtcNow;
         var rootPrivateKey = CertificateIssuer.GeneratePrivateKey();
         var certificateIssuer = new CertificateIssuer(rootPrivateKey);
         var authorityRoot = new AuthorityRoot(certificateIssuer.RootPublicKey);
@@ -336,8 +335,8 @@ public sealed class QuorumValidatorTests
         var certificate = certificateIssuer.IssueServerCertificate(
             Guid.NewGuid(),
             ServerIdentity.GetPublicKey(serverPrivateKey),
-            now.AddMinutes(-5),
-            now.AddMinutes(30));
+            ReferenceNow.AddMinutes(-5),
+            ReferenceNow.AddMinutes(30));
 
         return (new ServerIdentity(certificate, serverPrivateKey), authorityRoot);
     }
