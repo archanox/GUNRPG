@@ -44,4 +44,24 @@ public sealed class RunValidationResult
     public byte[] FinalStateHash => (byte[])_finalStateHash.Clone();
 
     public SignedRunValidation Attestation { get; }
+
+    public byte[] ComputeResultHash() => ComputeResultHash(this);
+
+    public static byte[] ComputeResultHash(RunValidationResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+
+        return ComputeResultHash(
+            result.RunId,
+            result.PlayerId,
+            result.ServerId,
+            result._finalStateHash);
+    }
+
+    internal static byte[] ComputeResultHash(
+        Guid runId,
+        Guid playerId,
+        Guid serverId,
+        byte[] finalStateHash) =>
+        AuthorityCrypto.ComputeRunResultHash(runId, playerId, serverId, finalStateHash);
 }

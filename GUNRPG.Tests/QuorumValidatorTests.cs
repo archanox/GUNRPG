@@ -12,95 +12,95 @@ public sealed class QuorumValidatorTests
     public void QuorumValidator_RejectsUntrustedSigner()
     {
         var validator = new QuorumValidator();
-        var signedValidation = CreateSignedValidation();
+        var result = CreateValidatedResult();
         var trustedAuthority = CreateAuthority("trusted", out _);
         var untrustedAuthority = CreateAuthority("untrusted", out var untrustedPrivateKey);
         var validation = WithSignatures(
-            signedValidation,
-            SignValidation(signedValidation, untrustedAuthority, untrustedPrivateKey));
+            result.Attestation,
+            SignValidation(result, untrustedAuthority, untrustedPrivateKey));
 
-        var result = validator.HasQuorum(
+        var hasQuorum = validator.HasQuorum(
             validation,
             new AuthoritySet([trustedAuthority]),
             new QuorumPolicy(1));
 
-        Assert.False(result);
+        Assert.False(hasQuorum);
     }
 
     [Fact]
     public void QuorumValidator_RejectsDuplicateSignatures()
     {
         var validator = new QuorumValidator();
-        var signedValidation = CreateSignedValidation();
+        var result = CreateValidatedResult();
         var authority = CreateAuthority("authority-a", out var privateKey);
-        var signature = SignValidation(signedValidation, authority, privateKey);
-        var validation = WithSignatures(signedValidation, signature, SignValidation(signedValidation, authority, privateKey));
+        var signature = SignValidation(result, authority, privateKey);
+        var validation = WithSignatures(result.Attestation, signature, SignValidation(result, authority, privateKey));
 
-        var result = validator.HasQuorum(
+        var hasQuorum = validator.HasQuorum(
             validation,
             new AuthoritySet([authority]),
             new QuorumPolicy(1));
 
-        Assert.False(result);
+        Assert.False(hasQuorum);
     }
 
     [Fact]
     public void QuorumValidator_RequiresMinimumSignatures()
     {
         var validator = new QuorumValidator();
-        var signedValidation = CreateSignedValidation();
+        var result = CreateValidatedResult();
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out _);
         var validation = WithSignatures(
-            signedValidation,
-            SignValidation(signedValidation, authorityA, privateKeyA));
+            result.Attestation,
+            SignValidation(result, authorityA, privateKeyA));
 
-        var result = validator.HasQuorum(
+        var hasQuorum = validator.HasQuorum(
             validation,
             new AuthoritySet([authorityA, authorityB]),
             new QuorumPolicy(2));
 
-        Assert.False(result);
+        Assert.False(hasQuorum);
     }
 
     [Fact]
     public void QuorumValidator_AcceptsValidQuorum()
     {
         var validator = new QuorumValidator();
-        var signedValidation = CreateSignedValidation();
+        var result = CreateValidatedResult();
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
         var authorityC = CreateAuthority("authority-c", out _);
         var validation = WithSignatures(
-            signedValidation,
-            SignValidation(signedValidation, authorityA, privateKeyA),
-            SignValidation(signedValidation, authorityB, privateKeyB));
+            result.Attestation,
+            SignValidation(result, authorityA, privateKeyA),
+            SignValidation(result, authorityB, privateKeyB));
 
-        var result = validator.HasQuorum(
+        var hasQuorum = validator.HasQuorum(
             validation,
             new AuthoritySet([authorityA, authorityB, authorityC]),
             new QuorumPolicy(2));
 
-        Assert.True(result);
+        Assert.True(hasQuorum);
     }
 
     [Fact]
     public void QuorumValidator_RejectsMismatchedResult()
     {
         var validator = new QuorumValidator();
-        var signedValidation = CreateSignedValidation();
-        var otherValidation = CreateSignedValidation(seed: 8);
+        var result = CreateValidatedResult();
+        var otherResult = CreateValidatedResult(seed: 8);
         var authority = CreateAuthority("authority-a", out var privateKey);
         var validation = WithSignatures(
-            signedValidation,
-            SignValidation(otherValidation, authority, privateKey));
+            result.Attestation,
+            SignValidation(otherResult, authority, privateKey));
 
-        var result = validator.HasQuorum(
+        var hasQuorum = validator.HasQuorum(
             validation,
             new AuthoritySet([authority]),
             new QuorumPolicy(1));
 
-        Assert.False(result);
+        Assert.False(hasQuorum);
     }
 
     [Fact]
@@ -116,8 +116,8 @@ public sealed class QuorumValidatorTests
         var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
         var attestation = WithSignatures(
             result.Attestation,
-            SignValidation(result.Attestation, authorityA, privateKeyA),
-            SignValidation(result.Attestation, authorityB, privateKeyB));
+            SignValidation(result, authorityA, privateKeyA),
+            SignValidation(result, authorityB, privateKeyB));
         var quorumApprovedResult = new RunValidationResult(
             result.RunId,
             result.PlayerId,
@@ -132,10 +132,71 @@ public sealed class QuorumValidatorTests
         Assert.Single(ledger.Entries);
     }
 
-    private static SignedRunValidation CreateSignedValidation(byte seed = 1)
+    [Fact]
+    public void SignatureMerge_CombinesPartialQuorum()
+    {
+        var validator = new QuorumValidator();
+        var result = CreateValidatedResult();
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out var privateKeyB);
+        var partialA = WithSignatures(result.Attestation, SignValidation(result, authorityA, privateKeyA));
+        var partialB = WithSignatures(result.Attestation, SignValidation(result, authorityB, privateKeyB));
+
+        var merged = SignedRunValidation.MergeSignatures(partialA, partialB);
+
+        Assert.Equal(2, merged.Signatures.Count);
+        Assert.True(validator.HasQuorum(merged, new AuthoritySet([authorityA, authorityB]), new QuorumPolicy(2)));
+    }
+
+    [Fact]
+    public void ResultHash_IsDeterministic()
+    {
+        var result = CreateValidatedResult();
+        var equivalentResult = new RunValidationResult(
+            result.RunId,
+            result.PlayerId,
+            result.ServerId,
+            result.FinalStateHash,
+            new SignedRunValidation(result.Attestation.Validation, result.Attestation.Certificate));
+
+        var hashA = RunValidationResult.ComputeResultHash(result);
+        var hashB = RunValidationResult.ComputeResultHash(result);
+        var hashC = RunValidationResult.ComputeResultHash(equivalentResult);
+
+        Assert.True(hashA.SequenceEqual(hashB));
+        Assert.True(hashA.SequenceEqual(hashC));
+    }
+
+    [Fact]
+    public void LedgerEntryHash_ExcludesAuthoritySignatures()
+    {
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out var privateKeyB);
+        var result = CreateValidatedResult();
+        var timestamp = ReferenceNow.AddMinutes(1);
+        var entryWithOneSignature = CreateLedgerEntry(
+            AttachSignatures(result, SignValidation(result, authorityA, privateKeyA)),
+            timestamp);
+        var entryWithTwoSignatures = CreateLedgerEntry(
+            AttachSignatures(
+                result,
+                SignValidation(result, authorityA, privateKeyA),
+                SignValidation(result, authorityB, privateKeyB)),
+            timestamp);
+
+        Assert.True(entryWithOneSignature.EntryHash.SequenceEqual(entryWithTwoSignatures.EntryHash));
+    }
+
+    private static RunValidationResult CreateValidatedResult(byte seed = 1)
     {
         var serverIdentity = CreateServerIdentity();
-        return serverIdentity.SignSignedRunValidation(Guid.NewGuid(), Guid.NewGuid(), CreateHash(seed));
+        var signedValidation = serverIdentity.SignSignedRunValidation(Guid.NewGuid(), Guid.NewGuid(), CreateHash(seed));
+        return new RunValidationResult(
+            signedValidation.Validation.RunId,
+            signedValidation.Validation.PlayerId,
+            signedValidation.Validation.ServerId,
+            signedValidation.Validation.FinalStateHash,
+            signedValidation);
     }
 
     private static Authority CreateAuthority(string id, out byte[] privateKey)
@@ -145,13 +206,13 @@ public sealed class QuorumValidatorTests
     }
 
     private static AuthoritySignature SignValidation(
-        SignedRunValidation validation,
+        RunValidationResult result,
         Authority authority,
         byte[] privateKey)
     {
         return new AuthoritySignature(
             authority.PublicKey,
-            AuthorityCrypto.SignHashedPayload(privateKey, validation.ComputeResultHash()));
+            AuthorityCrypto.SignHashedPayload(privateKey, RunValidationResult.ComputeResultHash(result)));
     }
 
     private static SignedRunValidation WithSignatures(
@@ -162,6 +223,26 @@ public sealed class QuorumValidatorTests
         {
             Signatures = [.. signatures]
         };
+    }
+
+    private static RunValidationResult AttachSignatures(
+        RunValidationResult result,
+        params AuthoritySignature[] signatures)
+    {
+        return new RunValidationResult(
+            result.RunId,
+            result.PlayerId,
+            result.ServerId,
+            result.FinalStateHash,
+            WithSignatures(result.Attestation, signatures));
+    }
+
+    private static RunLedgerEntry CreateLedgerEntry(
+        RunValidationResult result,
+        DateTimeOffset timestamp)
+    {
+        var ledger = new RunLedger();
+        return ledger.Append(result, timestamp);
     }
 
     private static ServerIdentity CreateServerIdentity()
