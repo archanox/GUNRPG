@@ -61,7 +61,7 @@ public sealed class SignedRunValidation
         {
             if (signature is null)
             {
-                continue;
+                throw new ArgumentException("Signature collections must not contain null entries.", nameof(signatures));
             }
 
             var signerId = AuthoritySet.CreateKeyIdentifier(signature.PublicKeyBytes);
