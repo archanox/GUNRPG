@@ -36,6 +36,8 @@ public sealed class ServerCertificate
 
     public byte[] Signature => (byte[])_signature.Clone();
 
+    internal byte[] SignatureBytes => _signature;
+
     internal byte[] ComputePayloadHash() =>
         AuthorityCrypto.ComputeCertificatePayloadHash(ServerId, _publicKey, IssuedAt, ValidUntil);
 
