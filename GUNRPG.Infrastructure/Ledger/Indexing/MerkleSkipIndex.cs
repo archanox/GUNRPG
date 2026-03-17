@@ -6,6 +6,8 @@ namespace GUNRPG.Ledger.Indexing;
 
 public sealed class MerkleSkipIndex
 {
+    private const long PeriodicCheckpointInterval = 64;
+
     private readonly Dictionary<long, ImmutableArray<byte>> _index = [];
     private readonly ReadOnlyDictionary<long, ImmutableArray<byte>> _readOnlyIndex;
     private readonly Func<long, ImmutableArray<byte>?> _entryHashProvider;
@@ -92,6 +94,25 @@ public sealed class MerkleSkipIndex
             upperBound = checkpoint;
         }
 
+        for (var checkpoint = HighestPeriodicCheckpointAtMost(upperBound - 1);
+             checkpoint >= lowerBound && checkpoint >= PeriodicCheckpointInterval;
+             checkpoint -= PeriodicCheckpointInterval)
+        {
+            if (!TryGetCheckpointHash(checkpoint, out var localHash) ||
+                !peerIndex.TryGetCheckpointHash(checkpoint, out var peerHash))
+            {
+                continue;
+            }
+
+            if (CryptographicOperations.FixedTimeEquals(localHash.AsSpan(), peerHash.AsSpan()))
+            {
+                lowerBound = checkpoint + 1;
+                break;
+            }
+
+            upperBound = checkpoint;
+        }
+
         while (lowerBound < upperBound)
         {
             var midpoint = lowerBound + ((upperBound - lowerBound) / 2);
@@ -152,9 +173,21 @@ public sealed class MerkleSkipIndex
         return power;
     }
 
+    private static long HighestPeriodicCheckpointAtMost(long value)
+    {
+        return value < PeriodicCheckpointInterval
+            ? 0
+            : value - (value % PeriodicCheckpointInterval);
+    }
+
     private static bool IsPowerOfTwo(long value)
     {
         return value > 0 && (value & (value - 1)) == 0;
+    }
+
+    private static bool IsCheckpointIndex(long value)
+    {
+        return IsPowerOfTwo(value) || (value >= PeriodicCheckpointInterval && value % PeriodicCheckpointInterval == 0);
     }
 
     private static Func<long, ImmutableArray<byte>?> CreateEntryHashProvider(IReadOnlyList<RunLedgerEntry> entries)
@@ -169,7 +202,7 @@ public sealed class MerkleSkipIndex
 
         HighestIndex = Math.Max(HighestIndex, entry.Index);
 
-        if (IsPowerOfTwo(entry.Index))
+        if (IsCheckpointIndex(entry.Index))
         {
             _index[entry.Index] = entry.EntryHash;
         }
