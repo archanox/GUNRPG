@@ -170,7 +170,50 @@ public sealed class QuorumValidatorTests
     }
 
     [Fact]
-    public void SignatureMerge_CombinesPartialQuorum()
+    public void SignatureMerge_CombinesSignatures()
+    {
+        var result = CreateValidatedResult();
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out var privateKeyB);
+        var partialA = WithSignatures(result.Attestation, SignValidation(result, authorityA, privateKeyA));
+        var partialB = WithSignatures(result.Attestation, SignValidation(result, authorityB, privateKeyB));
+
+        var merged = SignedRunValidation.Merge(partialA, partialB);
+
+        Assert.Equal(2, merged.Signatures.Count);
+    }
+
+    [Fact]
+    public void SignatureMerge_DeduplicatesAuthorities()
+    {
+        var result = CreateValidatedResult();
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var partialA = WithSignatures(result.Attestation, SignValidation(result, authorityA, privateKeyA));
+        var partialB = WithSignatures(result.Attestation, SignValidation(result, authorityA, privateKeyA));
+
+        var merged = SignedRunValidation.Merge(partialA, partialB);
+
+        Assert.Single(merged.Signatures);
+    }
+
+    [Fact]
+    public void SignatureMerge_RejectsDifferentResults()
+    {
+        var resultA = CreateValidatedResult(seed: 3);
+        var resultB = CreateValidatedResult(seed: 7);
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out var privateKeyB);
+        var partialA = WithSignatures(resultA.Attestation, SignValidation(resultA, authorityA, privateKeyA));
+        var partialB = WithSignatures(resultB.Attestation, SignValidation(resultB, authorityB, privateKeyB));
+
+        var merged = SignedRunValidation.Merge(partialA, partialB);
+
+        Assert.Single(merged.Signatures);
+        Assert.True(merged.Signatures[0].PublicKey.SequenceEqual(partialA.Signatures[0].PublicKey));
+    }
+
+    [Fact]
+    public void SignatureMerge_ReachesQuorum()
     {
         var validator = new QuorumValidator();
         var result = CreateValidatedResult();
@@ -179,33 +222,33 @@ public sealed class QuorumValidatorTests
         var partialA = WithSignatures(result.Attestation, SignValidation(result, authorityA, privateKeyA));
         var partialB = WithSignatures(result.Attestation, SignValidation(result, authorityB, privateKeyB));
 
-        var merged = SignedRunValidation.MergeSignatures(partialA, partialB);
+        var merged = SignedRunValidation.Merge(partialA, partialB);
 
-        Assert.Equal(2, merged.Signatures.Count);
         Assert.True(validator.HasQuorum(merged, new AuthoritySet([authorityA, authorityB]), new QuorumPolicy(2)));
     }
 
     [Fact]
-    public void SignatureMerge_RejectsDifferentAttestationMaterial()
+    public void QuorumAppend_AccumulatesSignaturesAcrossSubmissions()
     {
-        var runId = Guid.NewGuid();
-        var playerId = Guid.NewGuid();
-        var serverId = Guid.NewGuid();
-        var finalStateHash = CreateHash(9);
-        var serverIdentityA = CreateServerIdentity(serverId);
-        var serverIdentityB = CreateServerIdentity(serverId);
-        var attestationA = serverIdentityA.SignSignedRunValidation(runId, playerId, finalStateHash);
-        var attestationB = serverIdentityB.SignSignedRunValidation(runId, playerId, finalStateHash);
+        var validator = new QuorumValidator();
+        var (serverIdentity, authorityRoot) = CreateTrustedServerIdentity();
+        var signatureVerifier = new SignatureVerifier(authorityRoot);
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
-        var partialA = WithSignatures(
-            attestationA,
-            SignValidation(new RunValidationResult(runId, playerId, serverId, finalStateHash, attestationA), authorityA, privateKeyA));
-        var partialB = WithSignatures(
-            attestationB,
-            SignValidation(new RunValidationResult(runId, playerId, serverId, finalStateHash, attestationB), authorityB, privateKeyB));
+        var authoritySet = new AuthoritySet([authorityA, authorityB]);
+        var policy = new QuorumPolicy(2);
+        var engine = new RunReplayEngine();
+        var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+        var partialResultA = AttachSignatures(result, SignValidation(result, authorityA, privateKeyA));
+        var partialResultB = AttachSignatures(result, SignValidation(result, authorityB, privateKeyB));
+        var ledger = new RunLedger();
 
-        Assert.Throws<ArgumentException>(() => SignedRunValidation.MergeSignatures(partialA, partialB));
+        var firstAppend = ledger.TryAppendWithQuorum(partialResultA, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
+        var secondAppend = ledger.TryAppendWithQuorum(partialResultB, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
+
+        Assert.False(firstAppend);
+        Assert.True(secondAppend);
+        Assert.Single(ledger.Entries);
     }
 
     [Fact]

@@ -19,6 +19,7 @@ public class RunLedger
     private readonly List<RunLedgerEntry> _entries = [];
     private readonly ReadOnlyCollection<RunLedgerEntry> _readOnlyEntries;
     private readonly MerkleSkipIndex _merkleSkipIndex;
+    private readonly Dictionary<string, SignedRunValidation> _validationCache = new(StringComparer.Ordinal);
 
     public RunLedger()
     {
@@ -86,17 +87,29 @@ public class RunLedger
         ArgumentNullException.ThrowIfNull(authoritySet);
         ArgumentNullException.ThrowIfNull(quorumPolicy);
 
-        if (!signatureVerifier.Verify(run.Attestation, timestamp))
+        var resultHashKey = Convert.ToBase64String(run.Attestation.ResultHash);
+        var mergedAttestation = _validationCache.TryGetValue(resultHashKey, out var cachedValidation)
+            ? SignedRunValidation.Merge(cachedValidation, run.Attestation)
+            : run.Attestation;
+        var sanitizedAttestation = FilterTrustedValidSignatures(mergedAttestation, authoritySet);
+        var candidateRun = ReferenceEquals(sanitizedAttestation, run.Attestation)
+            ? run
+            : new RunValidationResult(run.RunId, run.PlayerId, run.ServerId, run.FinalStateHash, sanitizedAttestation);
+
+        if (!signatureVerifier.Verify(candidateRun.Attestation, timestamp))
         {
             return false;
         }
 
-        if (!quorumValidator.HasQuorum(run.Attestation, authoritySet, quorumPolicy))
+        _validationCache[resultHashKey] = sanitizedAttestation;
+
+        if (!quorumValidator.HasQuorum(candidateRun.Attestation, authoritySet, quorumPolicy))
         {
             return false;
         }
 
-        Append(run, timestamp);
+        _validationCache.Remove(resultHashKey);
+        Append(candidateRun, timestamp);
         return true;
     }
 
@@ -294,5 +307,39 @@ public class RunLedger
         }
 
         return _entries[(int)index].EntryHash;
+    }
+
+    private static SignedRunValidation FilterTrustedValidSignatures(
+        SignedRunValidation validation,
+        AuthoritySet authoritySet)
+    {
+        var trustedValidSignatures = new List<AuthoritySignature>();
+        var seenSigners = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var signature in validation.Signatures)
+        {
+            if (signature is null || !authoritySet.IsTrusted(signature.PublicKeyBytes))
+            {
+                continue;
+            }
+
+            var signerId = Convert.ToBase64String(signature.PublicKey);
+            if (!seenSigners.Add(signerId))
+            {
+                continue;
+            }
+
+            if (!AuthorityCrypto.VerifyHashedPayload(signature.PublicKeyBytes, validation.ResultHash, signature.SignatureBytes))
+            {
+                continue;
+            }
+
+            trustedValidSignatures.Add(signature);
+        }
+
+        return new SignedRunValidation(validation.Validation, validation.Certificate)
+        {
+            Signatures = trustedValidSignatures
+        };
     }
 }
