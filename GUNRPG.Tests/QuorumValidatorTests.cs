@@ -107,11 +107,12 @@ public sealed class QuorumValidatorTests
     public void LedgerTryAppendWithQuorum_AppendsQuorumApprovedRun()
     {
         var validator = new QuorumValidator();
+        var (serverIdentity, authorityRoot) = CreateTrustedServerIdentity();
+        var signatureVerifier = new SignatureVerifier(authorityRoot);
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
         var authoritySet = new AuthoritySet([authorityA, authorityB]);
         var policy = new QuorumPolicy(2);
-        var serverIdentity = CreateServerIdentity();
         var engine = new RunReplayEngine();
         var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
         var attestation = WithSignatures(
@@ -126,10 +127,46 @@ public sealed class QuorumValidatorTests
             attestation);
         var ledger = new RunLedger();
 
-        var appended = ledger.TryAppendWithQuorum(quorumApprovedResult, validator, authoritySet, policy);
+        var appended = ledger.TryAppendWithQuorum(quorumApprovedResult, signatureVerifier, validator, authoritySet, policy);
 
         Assert.True(appended);
         Assert.Single(ledger.Entries);
+    }
+
+    [Fact]
+    public void LedgerTryAppendWithQuorum_RejectsInvalidServerAttestation()
+    {
+        var validator = new QuorumValidator();
+        var (serverIdentity, authorityRoot) = CreateTrustedServerIdentity();
+        var signatureVerifier = new SignatureVerifier(authorityRoot);
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out var privateKeyB);
+        var authoritySet = new AuthoritySet([authorityA, authorityB]);
+        var policy = new QuorumPolicy(2);
+        var engine = new RunReplayEngine();
+        var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+        var tamperedValidation = new RunValidationSignature(
+            result.Attestation.Validation.RunId,
+            result.Attestation.Validation.PlayerId,
+            result.Attestation.Validation.FinalStateHash,
+            result.Attestation.Validation.ServerId,
+            CreateInvalidSignatureBytes());
+        var tamperedAttestation = WithSignatures(
+            new SignedRunValidation(tamperedValidation, result.Attestation.Certificate),
+            SignValidation(result, authorityA, privateKeyA),
+            SignValidation(result, authorityB, privateKeyB));
+        var tamperedResult = new RunValidationResult(
+            result.RunId,
+            result.PlayerId,
+            result.ServerId,
+            result.FinalStateHash,
+            tamperedAttestation);
+        var ledger = new RunLedger();
+
+        var appended = ledger.TryAppendWithQuorum(tamperedResult, signatureVerifier, validator, authoritySet, policy);
+
+        Assert.False(appended);
+        Assert.Empty(ledger.Entries);
     }
 
     [Fact]
@@ -146,6 +183,29 @@ public sealed class QuorumValidatorTests
 
         Assert.Equal(2, merged.Signatures.Count);
         Assert.True(validator.HasQuorum(merged, new AuthoritySet([authorityA, authorityB]), new QuorumPolicy(2)));
+    }
+
+    [Fact]
+    public void SignatureMerge_RejectsDifferentAttestationMaterial()
+    {
+        var runId = Guid.NewGuid();
+        var playerId = Guid.NewGuid();
+        var serverId = Guid.NewGuid();
+        var finalStateHash = CreateHash(9);
+        var serverIdentityA = CreateServerIdentity(serverId);
+        var serverIdentityB = CreateServerIdentity(serverId);
+        var attestationA = serverIdentityA.SignSignedRunValidation(runId, playerId, finalStateHash);
+        var attestationB = serverIdentityB.SignSignedRunValidation(runId, playerId, finalStateHash);
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out var privateKeyB);
+        var partialA = WithSignatures(
+            attestationA,
+            SignValidation(new RunValidationResult(runId, playerId, serverId, finalStateHash, attestationA), authorityA, privateKeyA));
+        var partialB = WithSignatures(
+            attestationB,
+            SignValidation(new RunValidationResult(runId, playerId, serverId, finalStateHash, attestationB), authorityB, privateKeyB));
+
+        Assert.Throws<ArgumentException>(() => SignedRunValidation.MergeSignatures(partialA, partialB));
     }
 
     [Fact]
@@ -247,18 +307,42 @@ public sealed class QuorumValidatorTests
 
     private static ServerIdentity CreateServerIdentity()
     {
+        return CreateServerIdentity(Guid.NewGuid());
+    }
+
+    private static ServerIdentity CreateServerIdentity(Guid serverId)
+    {
         var rootPrivateKey = CertificateIssuer.GeneratePrivateKey();
         var certificateIssuer = new CertificateIssuer(rootPrivateKey);
 
         var serverPrivateKey = ServerIdentity.GeneratePrivateKey();
         var certificate = certificateIssuer.IssueServerCertificate(
-            Guid.NewGuid(),
+            serverId,
             ServerIdentity.GetPublicKey(serverPrivateKey),
             ReferenceNow.AddMinutes(-5),
             ReferenceNow.AddMinutes(30));
 
         return new ServerIdentity(certificate, serverPrivateKey);
     }
+
+    private static (ServerIdentity ServerIdentity, AuthorityRoot AuthorityRoot) CreateTrustedServerIdentity()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var rootPrivateKey = CertificateIssuer.GeneratePrivateKey();
+        var certificateIssuer = new CertificateIssuer(rootPrivateKey);
+        var authorityRoot = new AuthorityRoot(certificateIssuer.RootPublicKey);
+
+        var serverPrivateKey = ServerIdentity.GeneratePrivateKey();
+        var certificate = certificateIssuer.IssueServerCertificate(
+            Guid.NewGuid(),
+            ServerIdentity.GetPublicKey(serverPrivateKey),
+            now.AddMinutes(-5),
+            now.AddMinutes(30));
+
+        return (new ServerIdentity(certificate, serverPrivateKey), authorityRoot);
+    }
+
+    private static byte[] CreateInvalidSignatureBytes() => new byte[64];
 
     private static byte[] CreateHash(byte seed)
     {

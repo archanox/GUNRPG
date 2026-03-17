@@ -39,11 +39,12 @@ public class RunLedger
 
     public bool TryAppendWithQuorum(
         RunValidationResult run,
+        SignatureVerifier signatureVerifier,
         QuorumValidator quorumValidator,
         AuthoritySet authoritySet,
         QuorumPolicy quorumPolicy)
     {
-        return TryAppendWithQuorum(run, quorumValidator, authoritySet, quorumPolicy, DateTimeOffset.UtcNow);
+        return TryAppendWithQuorum(run, signatureVerifier, quorumValidator, authoritySet, quorumPolicy, DateTimeOffset.UtcNow);
     }
 
     internal RunLedgerEntry Append(RunValidationResult run, DateTimeOffset timestamp)
@@ -63,15 +64,22 @@ public class RunLedger
 
     internal bool TryAppendWithQuorum(
         RunValidationResult run,
+        SignatureVerifier signatureVerifier,
         QuorumValidator quorumValidator,
         AuthoritySet authoritySet,
         QuorumPolicy quorumPolicy,
         DateTimeOffset timestamp)
     {
         ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(signatureVerifier);
         ArgumentNullException.ThrowIfNull(quorumValidator);
         ArgumentNullException.ThrowIfNull(authoritySet);
         ArgumentNullException.ThrowIfNull(quorumPolicy);
+
+        if (!signatureVerifier.Verify(run.Attestation, timestamp))
+        {
+            return false;
+        }
 
         if (!quorumValidator.HasQuorum(run.Attestation, authoritySet, quorumPolicy))
         {
