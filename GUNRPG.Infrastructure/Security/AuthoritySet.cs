@@ -24,6 +24,6 @@ public sealed class AuthoritySet
 
     internal static string CreateKeyIdentifier(byte[] publicKey)
     {
-        return Convert.ToHexString(AuthorityCrypto.CloneAndValidatePublicKey(publicKey));
+        return Convert.ToBase64String(AuthorityCrypto.CloneAndValidatePublicKey(publicKey));
     }
 }
