@@ -37,6 +37,15 @@ public class RunLedger
         return Append(run, DateTimeOffset.UtcNow);
     }
 
+    public bool TryAppendWithQuorum(
+        RunValidationResult run,
+        QuorumValidator quorumValidator,
+        AuthoritySet authoritySet,
+        QuorumPolicy quorumPolicy)
+    {
+        return TryAppendWithQuorum(run, quorumValidator, authoritySet, quorumPolicy, DateTimeOffset.UtcNow);
+    }
+
     internal RunLedgerEntry Append(RunValidationResult run, DateTimeOffset timestamp)
     {
         ArgumentNullException.ThrowIfNull(run);
@@ -50,6 +59,27 @@ public class RunLedger
         _entries.Add(entry);
         _merkleSkipIndex.Append(entry);
         return entry;
+    }
+
+    internal bool TryAppendWithQuorum(
+        RunValidationResult run,
+        QuorumValidator quorumValidator,
+        AuthoritySet authoritySet,
+        QuorumPolicy quorumPolicy,
+        DateTimeOffset timestamp)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(quorumValidator);
+        ArgumentNullException.ThrowIfNull(authoritySet);
+        ArgumentNullException.ThrowIfNull(quorumPolicy);
+
+        if (!quorumValidator.HasQuorum(run.Attestation, authoritySet, quorumPolicy))
+        {
+            return false;
+        }
+
+        Append(run, timestamp);
+        return true;
     }
 
     public bool Verify()
