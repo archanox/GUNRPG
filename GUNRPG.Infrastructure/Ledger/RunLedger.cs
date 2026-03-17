@@ -13,13 +13,15 @@ public class RunLedger
     private const int HashSize = SHA256.HashSizeInBytes;
     private const int GuidSize = 16;
     private const int Int64Size = 8;
+    private const int MaxValidationCacheEntries = 512;
+    private static readonly TimeSpan ValidationCacheTtl = TimeSpan.FromMinutes(10);
 
     private static readonly ImmutableArray<byte> ZeroHash = ImmutableArray.Create(new byte[HashSize]);
 
     private readonly List<RunLedgerEntry> _entries = [];
     private readonly ReadOnlyCollection<RunLedgerEntry> _readOnlyEntries;
     private readonly MerkleSkipIndex _merkleSkipIndex;
-    private readonly Dictionary<string, SignedRunValidation> _validationCache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CachedValidation> _validationCache = new(StringComparer.Ordinal);
 
     public RunLedger()
     {
@@ -87,10 +89,19 @@ public class RunLedger
         ArgumentNullException.ThrowIfNull(authoritySet);
         ArgumentNullException.ThrowIfNull(quorumPolicy);
 
+        PruneValidationCache(timestamp);
+
         var resultHashKey = Convert.ToBase64String(run.Attestation.ResultHash);
-        var mergedAttestation = _validationCache.TryGetValue(resultHashKey, out var cachedValidation)
-            ? SignedRunValidation.Merge(cachedValidation, run.Attestation)
-            : run.Attestation;
+        var mergedAttestation = run.Attestation;
+        if (_validationCache.TryGetValue(resultHashKey, out var cachedValidation))
+        {
+            mergedAttestation = SignedRunValidation.Merge(cachedValidation.Validation, run.Attestation);
+            if (ReferenceEquals(mergedAttestation, cachedValidation.Validation))
+            {
+                mergedAttestation = run.Attestation;
+            }
+        }
+
         var sanitizedAttestation = FilterTrustedValidSignatures(mergedAttestation, authoritySet);
         var candidateRun = ReferenceEquals(sanitizedAttestation, run.Attestation)
             ? run
@@ -101,7 +112,8 @@ public class RunLedger
             return false;
         }
 
-        _validationCache[resultHashKey] = sanitizedAttestation;
+        _validationCache[resultHashKey] = new CachedValidation(sanitizedAttestation, timestamp);
+        TrimValidationCacheIfNeeded();
 
         if (!quorumValidator.HasQuorum(candidateRun.Attestation, authoritySet, quorumPolicy))
         {
@@ -315,6 +327,7 @@ public class RunLedger
     {
         var trustedValidSignatures = new List<AuthoritySignature>();
         var seenSigners = new HashSet<string>(StringComparer.Ordinal);
+        var resultHash = validation.ResultHash;
 
         foreach (var signature in validation.Signatures)
         {
@@ -323,13 +336,13 @@ public class RunLedger
                 continue;
             }
 
-            var signerId = Convert.ToBase64String(signature.PublicKey);
+            var signerId = Convert.ToBase64String(signature.PublicKeyBytes);
             if (!seenSigners.Add(signerId))
             {
                 continue;
             }
 
-            if (!AuthorityCrypto.VerifyHashedPayload(signature.PublicKeyBytes, validation.ResultHash, signature.SignatureBytes))
+            if (!AuthorityCrypto.VerifyHashedPayload(signature.PublicKeyBytes, resultHash, signature.SignatureBytes))
             {
                 continue;
             }
@@ -342,4 +355,52 @@ public class RunLedger
             Signatures = trustedValidSignatures
         };
     }
+
+    private void PruneValidationCache(DateTimeOffset now)
+    {
+        if (_validationCache.Count == 0)
+        {
+            return;
+        }
+
+        List<string>? expiredKeys = null;
+        foreach (var cacheEntry in _validationCache)
+        {
+            var age = now - cacheEntry.Value.CachedAt;
+            if (age > ValidationCacheTtl || cacheEntry.Value.Validation.Certificate.ValidUntil <= now)
+            {
+                expiredKeys ??= [];
+                expiredKeys.Add(cacheEntry.Key);
+            }
+        }
+
+        if (expiredKeys is null)
+        {
+            return;
+        }
+
+        foreach (var key in expiredKeys)
+        {
+            _validationCache.Remove(key);
+        }
+    }
+
+    private void TrimValidationCacheIfNeeded()
+    {
+        var overflow = _validationCache.Count - MaxValidationCacheEntries;
+        if (overflow <= 0)
+        {
+            return;
+        }
+
+        var cacheEntries = new List<KeyValuePair<string, CachedValidation>>(_validationCache);
+        cacheEntries.Sort(static (left, right) => left.Value.CachedAt.CompareTo(right.Value.CachedAt));
+
+        for (var i = 0; i < overflow && i < cacheEntries.Count; i++)
+        {
+            _validationCache.Remove(cacheEntries[i].Key);
+        }
+    }
+
+    private sealed record CachedValidation(SignedRunValidation Validation, DateTimeOffset CachedAt);
 }
