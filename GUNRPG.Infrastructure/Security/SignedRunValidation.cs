@@ -5,12 +5,15 @@ namespace GUNRPG.Security;
 
 public sealed class SignedRunValidation
 {
+    private readonly byte[] _resultHash;
+
     public SignedRunValidation(
         RunValidationSignature validation,
         ServerCertificate certificate)
     {
         Validation = validation ?? throw new ArgumentNullException(nameof(validation));
         Certificate = certificate ?? throw new ArgumentNullException(nameof(certificate));
+        _resultHash = RunValidationResult.ComputeResultHash(Validation);
     }
 
     public RunValidationSignature Validation { get; }
@@ -19,25 +22,31 @@ public sealed class SignedRunValidation
 
     public List<AuthoritySignature> Signatures { get; init; } = [];
 
-    internal byte[] ComputeResultHash() => RunValidationResult.ComputeResultHash(Validation);
+    public byte[] ResultHash => (byte[])_resultHash.Clone();
 
-    public static SignedRunValidation MergeSignatures(
+    internal byte[] ComputeResultHash() => ResultHash;
+
+    /// <summary>
+    /// Merges authority signatures for the same attested run result.
+    /// If attestation material does not match, the original instance <paramref name="a"/> is returned unchanged.
+    /// </summary>
+    public static SignedRunValidation Merge(
         SignedRunValidation a,
         SignedRunValidation b)
     {
         ArgumentNullException.ThrowIfNull(a);
         ArgumentNullException.ThrowIfNull(b);
 
-        var aResultHash = a.ComputeResultHash();
-        var bResultHash = b.ComputeResultHash();
+        var aResultHash = a._resultHash;
+        var bResultHash = b._resultHash;
         if (!CryptographicOperations.FixedTimeEquals(aResultHash, bResultHash))
         {
-            throw new ArgumentException("Signed validations must represent the same result to merge signatures.", nameof(b));
+            return a;
         }
 
         if (!HasMatchingAttestationMaterial(a, b))
         {
-            throw new ArgumentException("Signed validations must have identical attestation material to merge signatures.", nameof(b));
+            return a;
         }
 
         var mergedSignatures = new List<AuthoritySignature>();
@@ -51,6 +60,10 @@ public sealed class SignedRunValidation
             Signatures = mergedSignatures
         };
     }
+
+    public static SignedRunValidation MergeSignatures(
+        SignedRunValidation a,
+        SignedRunValidation b) => Merge(a, b);
 
     private static void AddValidUniqueSignatures(
         IEnumerable<AuthoritySignature> signatures,
@@ -68,7 +81,7 @@ public sealed class SignedRunValidation
 
             signatureIndex++;
 
-            var signerId = AuthoritySet.CreateKeyIdentifier(signature.PublicKeyBytes);
+            var signerId = Convert.ToBase64String(signature.PublicKey);
             if (!seenSigners.Add(signerId))
             {
                 continue;
