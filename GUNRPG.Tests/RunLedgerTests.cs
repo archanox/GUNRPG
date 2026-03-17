@@ -145,7 +145,7 @@ public sealed class RunLedgerTests
         var engine = new RunReplayEngine();
         var ledger = new RunLedger();
 
-        for (var i = 0; i < 9; i++)
+        for (var i = 0; i < 193; i++)
         {
             var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
             ledger.Append(result, ReferenceNow.AddMinutes(i));
@@ -157,6 +157,10 @@ public sealed class RunLedgerTests
         Assert.False(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(3));
         Assert.True(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(4));
         Assert.True(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(8));
+        Assert.True(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(64));
+        Assert.True(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(128));
+        Assert.True(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(192));
+        Assert.False(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(191));
         Assert.IsType<ReadOnlyDictionary<long, ImmutableArray<byte>>>(ledger.MerkleSkipIndex.Checkpoints);
     }
 
@@ -168,7 +172,7 @@ public sealed class RunLedgerTests
         var ledgerA = new RunLedger();
         var ledgerB = new RunLedger();
 
-        for (var i = 0; i < 16; i++)
+        for (var i = 0; i < 64; i++)
         {
             var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
             var timestamp = ReferenceNow.AddMinutes(i);
@@ -179,10 +183,10 @@ public sealed class RunLedgerTests
             Assert.True(entryA.EntryHash.SequenceEqual(entryB.EntryHash));
         }
 
-        AppendRuns(ledgerA, engine, serverIdentity, 4, ReferenceNow.AddMinutes(16));
-        AppendRuns(ledgerB, engine, serverIdentity, 6, ReferenceNow.AddHours(1));
+        AppendRuns(ledgerA, engine, serverIdentity, 36, ReferenceNow.AddMinutes(64));
+        AppendRuns(ledgerB, engine, serverIdentity, 36, ReferenceNow.AddHours(2));
 
-        Assert.Equal(16L, ledgerA.MerkleSkipIndex.FindDivergenceIndex(ledgerB.MerkleSkipIndex));
+        Assert.Equal(64L, ledgerA.MerkleSkipIndex.FindDivergenceIndex(ledgerB.MerkleSkipIndex));
     }
 
     private static IReadOnlyList<OperatorEvent> CreateCompletedRunEvents()

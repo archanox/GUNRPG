@@ -211,6 +211,10 @@ public sealed class LedgerSyncTests
             Assert.True(entryA.EntryHash.SequenceEqual(entryB.EntryHash));
         }
 
+        var sharedPrefixHashes = ledgerA.Entries
+            .Select(entry => entry.EntryHash)
+            .ToArray();
+
         for (var i = 0; i < 2; i++)
         {
             var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
@@ -231,10 +235,52 @@ public sealed class LedgerSyncTests
         Assert.True(syncEngineA.ResolveFork(ledgerB.Entries));
         Assert.False(syncEngineB.ResolveFork(ledgerA.Entries));
         Assert.Equal(ledgerA.Entries.Count, ledgerB.Entries.Count);
+        for (var i = 0; i < sharedPrefixHashes.Length; i++)
+        {
+            Assert.True(sharedPrefixHashes[i].SequenceEqual(ledgerA.Entries[i].EntryHash));
+        }
+
         Assert.True(syncEngineA.IsSameHead(ledgerB.GetHead()));
         Assert.Equal(-1L, ledgerA.MerkleSkipIndex.FindDivergenceIndex(ledgerB.MerkleSkipIndex));
         Assert.True(ledgerA.Verify());
         Assert.True(ledgerB.Verify());
+    }
+
+    [Fact]
+    public void ForkResolution_RejectsInvalidPeerChain()
+    {
+        var serverIdentity = CreateServerIdentity();
+        var engine = new RunReplayEngine();
+        var localLedger = new RunLedger();
+        var peerLedger = new RunLedger();
+
+        for (var i = 0; i < 8; i++)
+        {
+            var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+            var timestamp = ReferenceNow.AddMinutes(i);
+
+            localLedger.Append(result, timestamp);
+            peerLedger.Append(result, timestamp);
+        }
+
+        for (var i = 0; i < 3; i++)
+        {
+            var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+            peerLedger.Append(result, ReferenceNow.AddHours(1).AddMinutes(i));
+        }
+
+        var originalHead = localLedger.GetHead();
+        var invalidPeerEntries = new List<RunLedgerEntry>(peerLedger.Entries);
+        invalidPeerEntries[^1] = invalidPeerEntries[^1] with
+        {
+            EntryHash = ImmutableArray.Create(new byte[SHA256.HashSizeInBytes])
+        };
+
+        var syncEngine = new LedgerSyncEngine(localLedger);
+
+        Assert.False(syncEngine.ResolveFork(invalidPeerEntries));
+        Assert.True(syncEngine.IsSameHead(originalHead));
+        Assert.Equal(8, localLedger.Entries.Count);
     }
 
     private static IReadOnlyList<OperatorEvent> CreateCompletedRunEvents()
