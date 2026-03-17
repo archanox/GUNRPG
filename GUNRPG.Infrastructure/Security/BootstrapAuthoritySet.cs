@@ -1,10 +1,10 @@
 namespace GUNRPG.Security;
 
-public sealed class AuthoritySet
+public sealed class BootstrapAuthoritySet
 {
     private readonly HashSet<string> _allowedKeys;
 
-    public AuthoritySet(IEnumerable<Authority> authorities)
+    public BootstrapAuthoritySet(IEnumerable<Authority> authorities)
     {
         ArgumentNullException.ThrowIfNull(authorities);
 

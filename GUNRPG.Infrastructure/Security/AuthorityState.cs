@@ -21,22 +21,13 @@ public sealed class AuthorityState
 
     public bool IsTrusted(byte[] publicKey)
     {
-        return _activeAuthorities.Contains(AuthoritySet.CreateKeyIdentifier(publicKey));
+        return _activeAuthorities.Contains(BootstrapAuthoritySet.CreateKeyIdentifier(publicKey));
     }
 
     public static AuthorityState BuildFromLedger(RunLedger ledger)
     {
         ArgumentNullException.ThrowIfNull(ledger);
-        return BuildFromLedger(ledger, fallbackBootstrapAuthorities: null);
-    }
-
-    internal static AuthorityState BuildFromLedger(
-        RunLedger ledger,
-        AuthoritySet? fallbackBootstrapAuthorities)
-    {
-        ArgumentNullException.ThrowIfNull(ledger);
-
-        var state = ledger.GetBootstrapAuthorityState(fallbackBootstrapAuthorities);
+        var state = ledger.GetBootstrapAuthorityState();
         foreach (var entry in ledger.Entries)
         {
             if (entry.AuthorityEvent is null)
@@ -50,6 +41,12 @@ public sealed class AuthorityState
         return state;
     }
 
+    internal bool IsEquivalentTo(AuthorityState other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        return _activeAuthorities.SetEquals(other._activeAuthorities);
+    }
+
     internal AuthorityState Apply(AuthorityEvent authorityEvent)
     {
         ArgumentNullException.ThrowIfNull(authorityEvent);
@@ -58,14 +55,14 @@ public sealed class AuthorityState
         switch (authorityEvent)
         {
             case AuthorityAdded added:
-                next.Add(AuthoritySet.CreateKeyIdentifier(added.PublicKeyBytes));
+                next.Add(BootstrapAuthoritySet.CreateKeyIdentifier(added.PublicKeyBytes));
                 break;
             case AuthorityRemoved removed:
-                next.Remove(AuthoritySet.CreateKeyIdentifier(removed.PublicKeyBytes));
+                next.Remove(BootstrapAuthoritySet.CreateKeyIdentifier(removed.PublicKeyBytes));
                 break;
             case AuthorityRotated rotated:
-                next.Remove(AuthoritySet.CreateKeyIdentifier(rotated.OldKeyBytes));
-                next.Add(AuthoritySet.CreateKeyIdentifier(rotated.NewKeyBytes));
+                next.Remove(BootstrapAuthoritySet.CreateKeyIdentifier(rotated.OldKeyBytes));
+                next.Add(BootstrapAuthoritySet.CreateKeyIdentifier(rotated.NewKeyBytes));
                 break;
             default:
                 throw new ArgumentException("Unsupported authority event type.", nameof(authorityEvent));
@@ -83,7 +80,7 @@ public sealed class AuthorityState
         foreach (var authority in authorities)
         {
             ArgumentNullException.ThrowIfNull(authority);
-            yield return AuthoritySet.CreateKeyIdentifier(authority.PublicKeyBytes);
+            yield return BootstrapAuthoritySet.CreateKeyIdentifier(authority.PublicKeyBytes);
         }
     }
 }

@@ -15,9 +15,8 @@ public sealed class AuthorityLedgerTests
         var authorityC = CreateAuthority("authority-c", out var privateKeyC);
         var authorityD = CreateAuthority("authority-d", out _);
         var authorityE = CreateAuthority("authority-e", out _);
-        var bootstrapAuthorities = new AuthoritySet([authorityA, authorityB, authorityC]);
-        var ledgerA = new RunLedger([authorityA, authorityB, authorityC]);
-        var ledgerB = new RunLedger([authorityA, authorityB, authorityC]);
+        var ledgerA = new RunLedger([authorityA, authorityB, authorityC], new QuorumPolicy(2));
+        var ledgerB = new RunLedger([authorityA, authorityB, authorityC], new QuorumPolicy(2));
         var policy = new QuorumPolicy(2);
         var validator = new QuorumValidator();
         var addEvent = new AuthorityAdded(authorityD.PublicKey);
@@ -30,7 +29,6 @@ public sealed class AuthorityLedgerTests
                 SignAuthorityEvent(addEvent, authorityB, privateKeyB)
             ],
             validator,
-            bootstrapAuthorities,
             policy,
             ReferenceNow));
         Assert.True(ledgerA.TryAppendAuthorityEventWithQuorum(
@@ -40,7 +38,6 @@ public sealed class AuthorityLedgerTests
                 SignAuthorityEvent(rotateEvent, authorityC, privateKeyC)
             ],
             validator,
-            bootstrapAuthorities,
             policy,
             ReferenceNow.AddMinutes(1)));
 
@@ -51,7 +48,6 @@ public sealed class AuthorityLedgerTests
                 SignAuthorityEvent(addEvent, authorityB, privateKeyB)
             ],
             validator,
-            bootstrapAuthorities,
             policy,
             ReferenceNow));
         Assert.True(ledgerB.TryAppendAuthorityEventWithQuorum(
@@ -61,7 +57,6 @@ public sealed class AuthorityLedgerTests
                 SignAuthorityEvent(rotateEvent, authorityC, privateKeyC)
             ],
             validator,
-            bootstrapAuthorities,
             policy,
             ReferenceNow.AddMinutes(1)));
 
@@ -83,8 +78,7 @@ public sealed class AuthorityLedgerTests
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
         var authorityC = CreateAuthority("authority-c", out _);
         var authorityD = CreateAuthority("authority-d", out _);
-        var bootstrapAuthorities = new AuthoritySet([authorityA, authorityB, authorityC]);
-        var ledger = new RunLedger([authorityA, authorityB, authorityC]);
+        var ledger = new RunLedger([authorityA, authorityB, authorityC], new QuorumPolicy(2));
         var validator = new QuorumValidator();
         var addEvent = new AuthorityAdded(authorityD.PublicKey);
 
@@ -95,7 +89,6 @@ public sealed class AuthorityLedgerTests
                 SignAuthorityEvent(addEvent, authorityB, privateKeyB)
             ],
             validator,
-            bootstrapAuthorities,
             new QuorumPolicy(2),
             ReferenceNow);
 
@@ -110,8 +103,7 @@ public sealed class AuthorityLedgerTests
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
         var authorityC = CreateAuthority("authority-c", out _);
-        var bootstrapAuthorities = new AuthoritySet([authorityA, authorityB, authorityC]);
-        var ledger = new RunLedger([authorityA, authorityB, authorityC]);
+        var ledger = new RunLedger([authorityA, authorityB, authorityC], new QuorumPolicy(2));
         var validator = new QuorumValidator();
         var removeEvent = new AuthorityRemoved(authorityC.PublicKey);
 
@@ -122,7 +114,6 @@ public sealed class AuthorityLedgerTests
                 SignAuthorityEvent(removeEvent, authorityB, privateKeyB)
             ],
             validator,
-            bootstrapAuthorities,
             new QuorumPolicy(2),
             ReferenceNow);
 
@@ -138,8 +129,7 @@ public sealed class AuthorityLedgerTests
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
         var authorityC = CreateAuthority("authority-c", out _);
         var authorityD = CreateAuthority("authority-d", out _);
-        var bootstrapAuthorities = new AuthoritySet([authorityA, authorityB, authorityC]);
-        var ledger = new RunLedger([authorityA, authorityB, authorityC]);
+        var ledger = new RunLedger([authorityA, authorityB, authorityC], new QuorumPolicy(2));
         var validator = new QuorumValidator();
         var rotateEvent = new AuthorityRotated(authorityB.PublicKey, authorityD.PublicKey);
 
@@ -150,7 +140,6 @@ public sealed class AuthorityLedgerTests
                 SignAuthorityEvent(rotateEvent, authorityB, privateKeyB)
             ],
             validator,
-            bootstrapAuthorities,
             new QuorumPolicy(2),
             ReferenceNow);
 
@@ -167,8 +156,7 @@ public sealed class AuthorityLedgerTests
         var authorityB = CreateAuthority("authority-b", out _);
         var authorityC = CreateAuthority("authority-c", out _);
         var authorityD = CreateAuthority("authority-d", out _);
-        var bootstrapAuthorities = new AuthoritySet([authorityA, authorityB, authorityC]);
-        var ledger = new RunLedger([authorityA, authorityB, authorityC]);
+        var ledger = new RunLedger([authorityA, authorityB, authorityC], new QuorumPolicy(2));
         var validator = new QuorumValidator();
         var addEvent = new AuthorityAdded(authorityD.PublicKey);
 
@@ -178,7 +166,6 @@ public sealed class AuthorityLedgerTests
                 SignAuthorityEvent(addEvent, authorityA, privateKeyA)
             ],
             validator,
-            bootstrapAuthorities,
             new QuorumPolicy(2),
             ReferenceNow);
 
@@ -193,8 +180,7 @@ public sealed class AuthorityLedgerTests
         var authorityB = CreateAuthority("authority-b", out _);
         var authorityC = CreateAuthority("authority-c", out _);
         var authorityD = CreateAuthority("authority-d", out var privateKeyD);
-        var bootstrapAuthorities = new AuthoritySet([authorityA, authorityB, authorityC]);
-        var ledger = new RunLedger([authorityA, authorityB, authorityC]);
+        var ledger = new RunLedger([authorityA, authorityB, authorityC], new QuorumPolicy(2));
         var validator = new QuorumValidator();
         var addEvent = new AuthorityAdded(authorityD.PublicKey);
 
@@ -205,7 +191,6 @@ public sealed class AuthorityLedgerTests
                 SignAuthorityEvent(addEvent, authorityD, privateKeyD)
             ],
             validator,
-            bootstrapAuthorities,
             new QuorumPolicy(2),
             ReferenceNow);
 
@@ -219,8 +204,7 @@ public sealed class AuthorityLedgerTests
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
         var authorityC = CreateAuthority("authority-c", out _);
-        var bootstrapAuthorities = new AuthoritySet([authorityA, authorityB, authorityC]);
-        var ledger = new RunLedger([authorityA, authorityB, authorityC]);
+        var ledger = new RunLedger([authorityA, authorityB, authorityC], new QuorumPolicy(3));
         var validator = new QuorumValidator();
         var removeEvent = new AuthorityRemoved(authorityC.PublicKey);
 
@@ -231,12 +215,98 @@ public sealed class AuthorityLedgerTests
                 SignAuthorityEvent(removeEvent, authorityB, privateKeyB)
             ],
             validator,
-            bootstrapAuthorities,
             new QuorumPolicy(3),
             ReferenceNow);
 
         Assert.False(appended);
         Assert.True(AuthorityState.BuildFromLedger(ledger).IsTrusted(authorityC.PublicKey));
+    }
+
+    [Fact]
+    public void AuthorityState_CacheMatchesRebuild()
+    {
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out var privateKeyB);
+        var authorityC = CreateAuthority("authority-c", out var privateKeyC);
+        var authorityD = CreateAuthority("authority-d", out _);
+        var authorityE = CreateAuthority("authority-e", out _);
+        var ledger = new RunLedger([authorityA, authorityB, authorityC], new QuorumPolicy(2));
+        var validator = new QuorumValidator();
+
+        var addEvent = new AuthorityAdded(authorityD.PublicKey);
+        var rotateEvent = new AuthorityRotated(authorityB.PublicKey, authorityE.PublicKey);
+        Assert.True(ledger.TryAppendAuthorityEventWithQuorum(
+            addEvent,
+            [SignAuthorityEvent(addEvent, authorityA, privateKeyA), SignAuthorityEvent(addEvent, authorityB, privateKeyB)],
+            validator,
+            new QuorumPolicy(2),
+            ReferenceNow));
+        Assert.True(ledger.TryAppendAuthorityEventWithQuorum(
+            rotateEvent,
+            [SignAuthorityEvent(rotateEvent, authorityA, privateKeyA), SignAuthorityEvent(rotateEvent, authorityC, privateKeyC)],
+            validator,
+            new QuorumPolicy(2),
+            ReferenceNow.AddMinutes(1)));
+
+        var rebuilt = AuthorityState.BuildFromLedger(ledger);
+        var cached = ledger.CurrentAuthorityState;
+
+        Assert.True(cached.IsEquivalentTo(rebuilt));
+    }
+
+    [Fact]
+    public void AuthorityState_IncrementalUpdateMatchesFullRebuild()
+    {
+        var authorityA = CreateAuthority("authority-a", out _);
+        var authorityB = CreateAuthority("authority-b", out _);
+        var authorityC = CreateAuthority("authority-c", out _);
+        var authorityD = CreateAuthority("authority-d", out _);
+        var authorityE = CreateAuthority("authority-e", out _);
+        var ledger = new RunLedger([authorityA, authorityB, authorityC], new QuorumPolicy(2));
+
+        ledger.Append(new AuthorityAdded(authorityD.PublicKey), [CreateDummySignature(authorityA), CreateDummySignature(authorityB)], ReferenceNow);
+        ledger.Append(new AuthorityRotated(authorityB.PublicKey, authorityE.PublicKey), [CreateDummySignature(authorityA), CreateDummySignature(authorityC)], ReferenceNow.AddMinutes(1));
+
+        Assert.True(ledger.CurrentAuthorityState.IsEquivalentTo(AuthorityState.BuildFromLedger(ledger)));
+    }
+
+    [Fact]
+    public void Ledger_Verify_DetectsInvalidAuthorityTransition()
+    {
+        var authorityA = CreateAuthority("authority-a", out _);
+        var authorityB = CreateAuthority("authority-b", out _);
+        var authorityC = CreateAuthority("authority-c", out _);
+        var authorityD = CreateAuthority("authority-d", out _);
+        var ledger = new RunLedger([authorityA, authorityB, authorityC], new QuorumPolicy(2));
+
+        var invalidEvent = new AuthorityAdded(authorityD.PublicKey);
+        ledger.Append(invalidEvent, [CreateDummySignature(authorityD)], ReferenceNow);
+
+        Assert.False(ledger.Verify());
+    }
+
+    [Fact]
+    public void SignatureNormalization_RemovesDuplicates()
+    {
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out var privateKeyB);
+        var authorityC = CreateAuthority("authority-c", out _);
+        var authorityD = CreateAuthority("authority-d", out _);
+        var ledger = new RunLedger([authorityA, authorityB, authorityC], new QuorumPolicy(2));
+        var validator = new QuorumValidator();
+        var addEvent = new AuthorityAdded(authorityD.PublicKey);
+        var duplicateSignature = SignAuthorityEvent(addEvent, authorityA, privateKeyA);
+
+        var appended = ledger.TryAppendAuthorityEventWithQuorum(
+            addEvent,
+            [duplicateSignature, duplicateSignature, SignAuthorityEvent(addEvent, authorityB, privateKeyB)],
+            validator,
+            new QuorumPolicy(2),
+            ReferenceNow);
+
+        Assert.True(appended);
+        Assert.Single(ledger.Entries);
+        Assert.Equal(2, ledger.Entries[0].AuthoritySignatures.Length);
     }
 
     private static Authority CreateAuthority(string id, out byte[] privateKey)
@@ -253,5 +323,12 @@ public sealed class AuthorityLedgerTests
         return new AuthoritySignature(
             authority.PublicKey,
             AuthorityCrypto.SignHashedPayload(privateKey, AuthorityCrypto.ComputeAuthorityEventHash(authorityEvent)));
+    }
+
+    private static AuthoritySignature CreateDummySignature(Authority authority)
+    {
+        return new AuthoritySignature(
+            authority.PublicKey,
+            new byte[AuthorityCrypto.SignatureSize]);
     }
 }
