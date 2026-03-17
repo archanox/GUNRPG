@@ -53,21 +53,21 @@ public sealed class SignedRunValidation
 
         AddValidUniqueSignatures(a.Signatures, aResultHash, seenSigners, mergedSignatures);
         AddValidUniqueSignatures(b.Signatures, aResultHash, seenSigners, mergedSignatures);
-        mergedSignatures.Sort(static (left, right) =>
+        var orderedItems = mergedSignatures
+            .Select(static signature => (Signature: signature, SignerId: AuthoritySignatureOrdering.CreateSignerId(signature.PublicKeyBytes)))
+            .ToList();
+        orderedItems.Sort(static (left, right) =>
         {
-            var signerComparison = StringComparer.Ordinal.Compare(
-                Convert.ToBase64String(left.PublicKeyBytes),
-                Convert.ToBase64String(right.PublicKeyBytes));
-            return signerComparison != 0
-                ? signerComparison
-                : StringComparer.Ordinal.Compare(
-                    Convert.ToHexString(left.SignatureBytes),
-                    Convert.ToHexString(right.SignatureBytes));
+            return AuthoritySignatureOrdering.Compare(
+                left.SignerId,
+                left.Signature.SignatureBytes,
+                right.SignerId,
+                right.Signature.SignatureBytes);
         });
 
         return new SignedRunValidation(a.Validation, a.Certificate)
         {
-            Signatures = mergedSignatures
+            Signatures = [.. orderedItems.Select(static item => item.Signature)]
         };
     }
 
@@ -91,7 +91,7 @@ public sealed class SignedRunValidation
 
             signatureIndex++;
 
-            var signerId = Convert.ToBase64String(signature.PublicKeyBytes);
+            var signerId = AuthoritySignatureOrdering.CreateSignerId(signature.PublicKeyBytes);
             if (!seenSigners.Add(signerId))
             {
                 continue;
