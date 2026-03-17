@@ -22,6 +22,8 @@ public sealed class AuthoritySet
         return _allowedKeys.Contains(CreateKeyIdentifier(publicKey));
     }
 
+    internal IEnumerable<string> KeyIdentifiers => _allowedKeys;
+
     internal static string CreateKeyIdentifier(byte[] publicKey)
     {
         return Convert.ToHexString(AuthorityCrypto.CloneAndValidatePublicKey(publicKey));

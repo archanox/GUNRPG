@@ -13,6 +13,7 @@ public class RunLedger
     private const int HashSize = SHA256.HashSizeInBytes;
     private const int GuidSize = 16;
     private const int Int64Size = 8;
+    private const int Int32Size = 4;
     private const int MaxValidationCacheEntries = 512;
     private static readonly TimeSpan ValidationCacheTtl = TimeSpan.FromMinutes(10);
 
@@ -22,11 +23,15 @@ public class RunLedger
     private readonly ReadOnlyCollection<RunLedgerEntry> _readOnlyEntries;
     private readonly MerkleSkipIndex _merkleSkipIndex;
     private readonly Dictionary<string, CachedValidation> _validationCache = new(StringComparer.Ordinal);
+    private readonly AuthorityState _bootstrapAuthorityState;
 
-    public RunLedger()
+    public RunLedger(IEnumerable<Authority>? bootstrapAuthorities = null)
     {
         _readOnlyEntries = _entries.AsReadOnly();
         _merkleSkipIndex = new MerkleSkipIndex(GetEntryHashAt);
+        _bootstrapAuthorityState = bootstrapAuthorities is null
+            ? new AuthorityState(Array.Empty<Authority>())
+            : new AuthorityState(bootstrapAuthorities);
     }
 
     public IReadOnlyList<RunLedgerEntry> Entries => _readOnlyEntries;
@@ -38,6 +43,11 @@ public class RunLedger
     public RunLedgerEntry Append(RunValidationResult run)
     {
         return Append(run, DateTimeOffset.UtcNow);
+    }
+
+    public RunLedgerEntry Append(AuthorityEvent authorityEvent, IEnumerable<AuthoritySignature> signatures)
+    {
+        return Append(authorityEvent, signatures, DateTimeOffset.UtcNow);
     }
 
     [Obsolete("Use the TryAppendWithQuorum overload that accepts a SignatureVerifier.")]
@@ -60,16 +70,43 @@ public class RunLedger
         return TryAppendWithQuorum(run, signatureVerifier, quorumValidator, authoritySet, quorumPolicy, DateTimeOffset.UtcNow);
     }
 
+    public bool TryAppendAuthorityEventWithQuorum(
+        AuthorityEvent authorityEvent,
+        IEnumerable<AuthoritySignature> signatures,
+        QuorumValidator quorumValidator,
+        AuthoritySet authoritySet,
+        QuorumPolicy quorumPolicy)
+    {
+        return TryAppendAuthorityEventWithQuorum(authorityEvent, signatures, quorumValidator, authoritySet, quorumPolicy, DateTimeOffset.UtcNow);
+    }
+
     internal RunLedgerEntry Append(RunValidationResult run, DateTimeOffset timestamp)
     {
         ArgumentNullException.ThrowIfNull(run);
 
         var index = (long)_entries.Count;
         var previousHash = _entries.Count == 0 ? ZeroHash : _entries[^1].EntryHash;
-
-        var entryHash = ComputeEntryHash(index, previousHash, timestamp, run);
+        var entryHash = ComputeEntryHash(index, previousHash, timestamp, run, authoritySignatures: []);
 
         var entry = new RunLedgerEntry(index, previousHash, entryHash, timestamp, run);
+        _entries.Add(entry);
+        _merkleSkipIndex.Append(entry);
+        return entry;
+    }
+
+    internal RunLedgerEntry Append(
+        AuthorityEvent authorityEvent,
+        IEnumerable<AuthoritySignature> signatures,
+        DateTimeOffset timestamp)
+    {
+        ArgumentNullException.ThrowIfNull(authorityEvent);
+
+        var normalizedSignatures = NormalizeAuthoritySignatures(signatures);
+        var index = (long)_entries.Count;
+        var previousHash = _entries.Count == 0 ? ZeroHash : _entries[^1].EntryHash;
+        var entryHash = ComputeEntryHash(index, previousHash, timestamp, authorityEvent, normalizedSignatures);
+
+        var entry = new RunLedgerEntry(index, previousHash, entryHash, timestamp, authorityEvent, normalizedSignatures);
         _entries.Add(entry);
         _merkleSkipIndex.Append(entry);
         return entry;
@@ -91,6 +128,7 @@ public class RunLedger
 
         PruneValidationCache(timestamp);
 
+        var currentAuthorities = AuthorityState.BuildFromLedger(this, authoritySet);
         var resultHashKey = Convert.ToBase64String(run.Attestation.ResultHash);
         var mergedAttestation = run.Attestation;
         if (_validationCache.TryGetValue(resultHashKey, out var cachedValidation))
@@ -102,7 +140,7 @@ public class RunLedger
             }
         }
 
-        var sanitizedAttestation = FilterTrustedValidSignatures(mergedAttestation, authoritySet);
+        var sanitizedAttestation = FilterTrustedValidSignatures(mergedAttestation, currentAuthorities);
         var candidateRun = ReferenceEquals(sanitizedAttestation, run.Attestation)
             ? run
             : new RunValidationResult(run.RunId, run.PlayerId, run.ServerId, run.FinalStateHash, sanitizedAttestation);
@@ -115,13 +153,44 @@ public class RunLedger
         _validationCache[resultHashKey] = new CachedValidation(sanitizedAttestation, timestamp);
         TrimValidationCacheIfNeeded();
 
-        if (!quorumValidator.HasQuorum(candidateRun.Attestation, authoritySet, quorumPolicy))
+        if (!quorumValidator.HasQuorum(candidateRun.Attestation, currentAuthorities, quorumPolicy))
         {
             return false;
         }
 
         _validationCache.Remove(resultHashKey);
         Append(candidateRun, timestamp);
+        return true;
+    }
+
+    internal bool TryAppendAuthorityEventWithQuorum(
+        AuthorityEvent authorityEvent,
+        IEnumerable<AuthoritySignature> signatures,
+        QuorumValidator quorumValidator,
+        AuthoritySet authoritySet,
+        QuorumPolicy quorumPolicy,
+        DateTimeOffset timestamp)
+    {
+        ArgumentNullException.ThrowIfNull(authorityEvent);
+        ArgumentNullException.ThrowIfNull(quorumValidator);
+        ArgumentNullException.ThrowIfNull(authoritySet);
+        ArgumentNullException.ThrowIfNull(quorumPolicy);
+
+        var currentAuthorities = AuthorityState.BuildFromLedger(this, authoritySet);
+        if (!CanApplyAuthorityEvent(currentAuthorities, authorityEvent, quorumPolicy))
+        {
+            return false;
+        }
+
+        var normalizedSignatures = NormalizeAuthoritySignatures(signatures);
+        var excludedSignerPublicKey = authorityEvent is AuthorityAdded added ? added.PublicKeyBytes : null;
+        var eventHash = AuthorityCrypto.ComputeAuthorityEventHash(authorityEvent);
+        if (!quorumValidator.HasQuorum(normalizedSignatures, eventHash, currentAuthorities, quorumPolicy, excludedSignerPublicKey))
+        {
+            return false;
+        }
+
+        Append(authorityEvent, normalizedSignatures, timestamp);
         return true;
     }
 
@@ -161,7 +230,7 @@ public class RunLedger
     {
         ArgumentNullException.ThrowIfNull(entry);
 
-        if (entry.Run is null)
+        if (!HasSupportedPayload(entry))
         {
             return false;
         }
@@ -183,7 +252,7 @@ public class RunLedger
             return false;
         }
 
-        var recomputed = ComputeEntryHash(entry.Index, entry.PreviousHash, entry.Timestamp, entry.Run);
+        var recomputed = ComputeEntryHash(entry.Index, entry.PreviousHash, entry.Timestamp, entry.Payload, entry.AuthoritySignatures);
         if (!CryptographicOperations.FixedTimeEquals(entry.EntryHash.AsSpan(), recomputed.AsSpan()))
         {
             return false;
@@ -229,6 +298,18 @@ public class RunLedger
         _merkleSkipIndex.Rebuild(_entries);
     }
 
+    internal AuthorityState GetBootstrapAuthorityState(AuthoritySet? fallbackBootstrapAuthorities)
+    {
+        if (_bootstrapAuthorityState.Count > 0)
+        {
+            return _bootstrapAuthorityState.Clone();
+        }
+
+        return fallbackBootstrapAuthorities is null
+            ? new AuthorityState(Array.Empty<Authority>())
+            : new AuthorityState(fallbackBootstrapAuthorities.KeyIdentifiers);
+    }
+
     internal static bool VerifyEntries(IReadOnlyList<RunLedgerEntry> entries)
     {
         ArgumentNullException.ThrowIfNull(entries);
@@ -242,12 +323,12 @@ public class RunLedger
                 return false;
             }
 
-            if (entry.Run is null || entry.EntryHash.Length != HashSize || entry.PreviousHash.Length != HashSize)
+            if (!HasSupportedPayload(entry) || entry.EntryHash.Length != HashSize || entry.PreviousHash.Length != HashSize)
             {
                 return false;
             }
 
-            var recomputed = ComputeEntryHash(entry.Index, entry.PreviousHash, entry.Timestamp, entry.Run);
+            var recomputed = ComputeEntryHash(entry.Index, entry.PreviousHash, entry.Timestamp, entry.Payload, entry.AuthoritySignatures);
             if (!CryptographicOperations.FixedTimeEquals(entry.EntryHash.AsSpan(), recomputed.AsSpan()))
             {
                 return false;
@@ -272,6 +353,33 @@ public class RunLedger
         long index,
         ImmutableArray<byte> previousHash,
         DateTimeOffset timestamp,
+        object payload,
+        ImmutableArray<AuthoritySignature> authoritySignatures)
+    {
+        return payload switch
+        {
+            RunValidationResult run when authoritySignatures.IsDefaultOrEmpty
+                => ComputeRunEntryHash(index, previousHash, timestamp, run),
+            AuthorityEvent authorityEvent
+                => ComputeAuthorityEntryHash(index, previousHash, timestamp, authorityEvent, authoritySignatures.IsDefault ? [] : authoritySignatures),
+            RunValidationResult => throw new ArgumentException("Run validation entries must not carry authority event signatures.", nameof(authoritySignatures)),
+            _ => throw new ArgumentException("Unsupported ledger payload type.", nameof(payload))
+        };
+    }
+
+    internal static ImmutableArray<byte> ComputeEntryHash(
+        long index,
+        ImmutableArray<byte> previousHash,
+        DateTimeOffset timestamp,
+        RunValidationResult run)
+    {
+        return ComputeRunEntryHash(index, previousHash, timestamp, run);
+    }
+
+    private static ImmutableArray<byte> ComputeRunEntryHash(
+        long index,
+        ImmutableArray<byte> previousHash,
+        DateTimeOffset timestamp,
         RunValidationResult run)
     {
         // Fixed-width payload: int64 + 32 bytes + int64 + 3×16 bytes + 32 bytes = 144 bytes
@@ -285,6 +393,38 @@ public class RunLedger
         WriteGuid(run.PlayerId, buffer, ref offset);
         WriteGuid(run.ServerId, buffer, ref offset);
         WriteBytes(run.FinalStateHash, buffer, ref offset);
+
+        return ImmutableArray.Create(SHA256.HashData(buffer));
+    }
+
+    private static ImmutableArray<byte> ComputeAuthorityEntryHash(
+        long index,
+        ImmutableArray<byte> previousHash,
+        DateTimeOffset timestamp,
+        AuthorityEvent authorityEvent,
+        ImmutableArray<AuthoritySignature> authoritySignatures)
+    {
+        var normalizedSignatures = NormalizeAuthoritySignatures(authoritySignatures);
+        var orderedSignatures = normalizedSignatures
+            .OrderBy(static signature => AuthoritySet.CreateKeyIdentifier(signature.PublicKeyBytes), StringComparer.Ordinal)
+            .ThenBy(static signature => Convert.ToHexString(signature.SignatureBytes), StringComparer.Ordinal)
+            .ToArray();
+        var eventHash = AuthorityCrypto.ComputeAuthorityEventHash(authorityEvent);
+        var buffer = new byte[Int64Size + HashSize + Int64Size + HashSize + Int32Size + (orderedSignatures.Length * (AuthorityCrypto.KeySize + AuthorityCrypto.SignatureSize))];
+        var offset = 0;
+
+        WriteInt64(index, buffer, ref offset);
+        WriteBytes(previousHash.AsSpan(), buffer, ref offset);
+        WriteInt64(timestamp.UtcTicks, buffer, ref offset);
+        WriteBytes(eventHash, buffer, ref offset);
+        BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(offset), orderedSignatures.Length);
+        offset += Int32Size;
+
+        foreach (var signature in orderedSignatures)
+        {
+            WriteBytes(signature.PublicKeyBytes, buffer, ref offset);
+            WriteBytes(signature.SignatureBytes, buffer, ref offset);
+        }
 
         return ImmutableArray.Create(SHA256.HashData(buffer));
     }
@@ -323,7 +463,7 @@ public class RunLedger
 
     private static SignedRunValidation FilterTrustedValidSignatures(
         SignedRunValidation validation,
-        AuthoritySet authoritySet)
+        AuthorityState authorityState)
     {
         var trustedValidSignatures = new List<AuthoritySignature>();
         var seenSigners = new HashSet<string>(StringComparer.Ordinal);
@@ -331,7 +471,7 @@ public class RunLedger
 
         foreach (var signature in validation.Signatures)
         {
-            if (signature is null || !authoritySet.IsTrusted(signature.PublicKeyBytes))
+            if (signature is null || !authorityState.IsTrusted(signature.PublicKeyBytes))
             {
                 continue;
             }
@@ -353,6 +493,43 @@ public class RunLedger
         return new SignedRunValidation(validation.Validation, validation.Certificate)
         {
             Signatures = trustedValidSignatures
+        };
+    }
+
+    private static ImmutableArray<AuthoritySignature> NormalizeAuthoritySignatures(IEnumerable<AuthoritySignature> signatures)
+    {
+        ArgumentNullException.ThrowIfNull(signatures);
+
+        var normalized = new List<AuthoritySignature>();
+        foreach (var signature in signatures)
+        {
+            normalized.Add(signature ?? throw new ArgumentException("Authority signature collections must not contain null entries.", nameof(signatures)));
+        }
+
+        return [.. normalized];
+    }
+
+    private static bool HasSupportedPayload(RunLedgerEntry entry)
+    {
+        return entry.Run is not null && entry.AuthoritySignatures.IsDefaultOrEmpty
+            || entry.AuthorityEvent is not null;
+    }
+
+    private static bool CanApplyAuthorityEvent(
+        AuthorityState currentAuthorities,
+        AuthorityEvent authorityEvent,
+        QuorumPolicy quorumPolicy)
+    {
+        return authorityEvent switch
+        {
+            AuthorityAdded added => !currentAuthorities.IsTrusted(added.PublicKeyBytes),
+            AuthorityRemoved removed => currentAuthorities.IsTrusted(removed.PublicKeyBytes)
+                && currentAuthorities.Apply(authorityEvent).Count >= quorumPolicy.RequiredSignatures,
+            AuthorityRotated rotated => !CryptographicOperations.FixedTimeEquals(rotated.OldKeyBytes, rotated.NewKeyBytes)
+                && currentAuthorities.IsTrusted(rotated.OldKeyBytes)
+                && !currentAuthorities.IsTrusted(rotated.NewKeyBytes)
+                && currentAuthorities.Apply(authorityEvent).Count >= quorumPolicy.RequiredSignatures,
+            _ => false
         };
     }
 
