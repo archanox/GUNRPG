@@ -7,22 +7,43 @@ public sealed class QuorumValidator
         AuthoritySet authorities,
         QuorumPolicy policy)
     {
+        ArgumentNullException.ThrowIfNull(authorities);
+        return HasQuorum(validation, new AuthorityState(authorities.KeyIdentifiers), policy);
+    }
+
+    public bool HasQuorum(
+        SignedRunValidation validation,
+        AuthorityState authorities,
+        QuorumPolicy policy)
+    {
         ArgumentNullException.ThrowIfNull(validation);
         ArgumentNullException.ThrowIfNull(authorities);
         ArgumentNullException.ThrowIfNull(policy);
 
-        var resultHash = validation.ComputeResultHash();
+        return HasQuorum(validation.Signatures, validation.ComputeResultHash(), authorities, policy, excludedSignerPublicKey: null);
+    }
+
+    internal bool HasQuorum(
+        IEnumerable<AuthoritySignature> signatures,
+        byte[] payloadHash,
+        AuthorityState authorities,
+        QuorumPolicy policy,
+        byte[]? excludedSignerPublicKey)
+    {
+        ArgumentNullException.ThrowIfNull(signatures);
+        ArgumentNullException.ThrowIfNull(payloadHash);
+        ArgumentNullException.ThrowIfNull(authorities);
+        ArgumentNullException.ThrowIfNull(policy);
+
+        var excludedSignerId = excludedSignerPublicKey is null
+            ? null
+            : AuthoritySet.CreateKeyIdentifier(excludedSignerPublicKey);
         var seenSigners = new HashSet<string>(StringComparer.Ordinal);
         var validSignatures = 0;
 
-        foreach (var signature in validation.Signatures)
+        foreach (var signature in signatures)
         {
             if (signature is null)
-            {
-                return false;
-            }
-
-            if (!authorities.IsTrusted(signature.PublicKeyBytes))
             {
                 return false;
             }
@@ -33,9 +54,19 @@ public sealed class QuorumValidator
                 return false;
             }
 
+            if (excludedSignerId is not null && signerId == excludedSignerId)
+            {
+                continue;
+            }
+
+            if (!authorities.IsTrusted(signature.PublicKeyBytes))
+            {
+                return false;
+            }
+
             if (!AuthorityCrypto.VerifyHashedPayload(
                     signature.PublicKeyBytes,
-                    resultHash,
+                    payloadHash,
                     signature.SignatureBytes))
             {
                 return false;

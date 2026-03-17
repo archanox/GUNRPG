@@ -142,6 +142,19 @@ internal static class AuthorityCrypto
         return SHA256.HashData(buffer);
     }
 
+    internal static byte[] ComputeAuthorityEventHash(AuthorityEvent authorityEvent)
+    {
+        ArgumentNullException.ThrowIfNull(authorityEvent);
+
+        return authorityEvent switch
+        {
+            AuthorityAdded added => ComputeAuthorityEventHash(1, added.PublicKeyBytes),
+            AuthorityRemoved removed => ComputeAuthorityEventHash(2, removed.PublicKeyBytes),
+            AuthorityRotated rotated => ComputeAuthorityEventHash(3, rotated.OldKeyBytes, rotated.NewKeyBytes),
+            _ => throw new ArgumentException("Unsupported authority event type.", nameof(authorityEvent))
+        };
+    }
+
     internal static byte[] CloneAndValidatePublicKey(byte[] publicKey)
     {
         ArgumentNullException.ThrowIfNull(publicKey);
@@ -208,5 +221,22 @@ internal static class AuthorityCrypto
         offset += Int32Size;
         value.CopyTo(destination[offset..]);
         offset += value.Length;
+    }
+
+    private static byte[] ComputeAuthorityEventHash(int eventType, params byte[][] keys)
+    {
+        var buffer = new byte[Int32Size + (keys.Length * KeySize)];
+        var offset = 0;
+        BinaryPrimitives.WriteInt32BigEndian(buffer, eventType);
+        offset += Int32Size;
+
+        foreach (var key in keys)
+        {
+            var normalizedKey = CloneAndValidatePublicKey(key);
+            normalizedKey.CopyTo(buffer, offset);
+            offset += normalizedKey.Length;
+        }
+
+        return SHA256.HashData(buffer);
     }
 }
