@@ -55,11 +55,12 @@ public sealed class SignedRunValidation
         var signatureIndex = 0;
         foreach (var signature in signatures)
         {
-            var currentIndex = signatureIndex++;
             if (signature is null)
             {
-                throw new ArgumentException($"Signature collections must not contain null entries (index {currentIndex}).", nameof(signatures));
+                throw new ArgumentException($"Signature collections must not contain null entries (index {signatureIndex}).", nameof(signatures));
             }
+
+            signatureIndex++;
 
             var signerId = AuthoritySet.CreateKeyIdentifier(signature.PublicKeyBytes);
             if (!seenSigners.Add(signerId))
