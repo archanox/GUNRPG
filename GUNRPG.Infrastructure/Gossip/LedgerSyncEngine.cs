@@ -87,9 +87,8 @@ public class LedgerSyncEngine
         return true;
     }
 
-    public bool ResolveFork(RunLedger localLedger, IReadOnlyList<RunLedgerEntry> peerEntries)
+    public bool ResolveFork(IReadOnlyList<RunLedgerEntry> peerEntries)
     {
-        ArgumentNullException.ThrowIfNull(localLedger);
         ArgumentNullException.ThrowIfNull(peerEntries);
 
         if (!RunLedger.VerifyEntries(peerEntries))
@@ -102,7 +101,7 @@ public class LedgerSyncEngine
             return false;
         }
 
-        var localHead = localLedger.GetHead();
+        var localHead = _ledger.GetHead();
         var peerHead = new LedgerHead(peerEntries[^1].Index, peerEntries[^1].EntryHash);
 
         if (peerHead.Index <= localHead.Index)
@@ -111,11 +110,11 @@ public class LedgerSyncEngine
         }
 
         var peerIndex = new MerkleSkipIndex(peerEntries);
-        var divergenceIndex = localLedger.MerkleSkipIndex.FindDivergenceIndex(peerIndex);
+        var divergenceIndex = _ledger.MerkleSkipIndex.FindDivergenceIndex(peerIndex);
 
         if (divergenceIndex < 0)
         {
-            divergenceIndex = localLedger.Entries.Count;
+            divergenceIndex = _ledger.Entries.Count;
         }
 
         if (divergenceIndex > peerEntries.Count)
@@ -126,14 +125,14 @@ public class LedgerSyncEngine
         for (var i = 0; i < divergenceIndex; i++)
         {
             if (!CryptographicOperations.FixedTimeEquals(
-                    localLedger.Entries[i].EntryHash.AsSpan(),
+                    _ledger.Entries[i].EntryHash.AsSpan(),
                     peerEntries[i].EntryHash.AsSpan()))
             {
                 return false;
             }
         }
 
-        localLedger.ReplaceEntriesFrom(divergenceIndex, peerEntries, (int)divergenceIndex);
+        _ledger.ReplaceEntriesFrom(divergenceIndex, peerEntries, (int)divergenceIndex);
         return true;
     }
 }

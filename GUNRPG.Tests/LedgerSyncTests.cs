@@ -228,8 +228,8 @@ public sealed class LedgerSyncTests
         var syncEngineA = new LedgerSyncEngine(ledgerA);
         var syncEngineB = new LedgerSyncEngine(ledgerB);
 
-        Assert.True(syncEngineA.ResolveFork(ledgerA, ledgerB.Entries));
-        Assert.False(syncEngineB.ResolveFork(ledgerB, ledgerA.Entries));
+        Assert.True(syncEngineA.ResolveFork(ledgerB.Entries));
+        Assert.False(syncEngineB.ResolveFork(ledgerA.Entries));
         Assert.Equal(ledgerA.Entries.Count, ledgerB.Entries.Count);
         Assert.True(syncEngineA.IsSameHead(ledgerB.GetHead()));
         Assert.Equal(-1L, ledgerA.MerkleSkipIndex.FindDivergenceIndex(ledgerB.MerkleSkipIndex));
