@@ -4,7 +4,7 @@ public sealed class QuorumValidator
 {
     public bool HasQuorum(
         SignedRunValidation validation,
-        AuthoritySet authorities,
+        BootstrapAuthoritySet authorities,
         QuorumPolicy policy)
     {
         ArgumentNullException.ThrowIfNull(authorities);
@@ -37,7 +37,7 @@ public sealed class QuorumValidator
 
         var excludedSignerId = excludedSignerPublicKey is null
             ? null
-            : AuthoritySet.CreateKeyIdentifier(excludedSignerPublicKey);
+            : BootstrapAuthoritySet.CreateKeyIdentifier(excludedSignerPublicKey);
         var seenSigners = new HashSet<string>(StringComparer.Ordinal);
         var validSignatures = 0;
 
@@ -48,7 +48,7 @@ public sealed class QuorumValidator
                 return false;
             }
 
-            var signerId = AuthoritySet.CreateKeyIdentifier(signature.PublicKeyBytes);
+            var signerId = BootstrapAuthoritySet.CreateKeyIdentifier(signature.PublicKeyBytes);
             if (!seenSigners.Add(signerId))
             {
                 return false;

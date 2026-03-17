@@ -21,7 +21,7 @@ public sealed class QuorumValidatorTests
 
         var hasQuorum = validator.HasQuorum(
             validation,
-            new AuthoritySet([trustedAuthority]),
+            new BootstrapAuthoritySet([trustedAuthority]),
             new QuorumPolicy(1));
 
         Assert.False(hasQuorum);
@@ -38,7 +38,7 @@ public sealed class QuorumValidatorTests
 
         var hasQuorum = validator.HasQuorum(
             validation,
-            new AuthoritySet([authority]),
+            new BootstrapAuthoritySet([authority]),
             new QuorumPolicy(1));
 
         Assert.False(hasQuorum);
@@ -57,7 +57,7 @@ public sealed class QuorumValidatorTests
 
         var hasQuorum = validator.HasQuorum(
             validation,
-            new AuthoritySet([authorityA, authorityB]),
+            new BootstrapAuthoritySet([authorityA, authorityB]),
             new QuorumPolicy(2));
 
         Assert.False(hasQuorum);
@@ -78,7 +78,7 @@ public sealed class QuorumValidatorTests
 
         var hasQuorum = validator.HasQuorum(
             validation,
-            new AuthoritySet([authorityA, authorityB, authorityC]),
+            new BootstrapAuthoritySet([authorityA, authorityB, authorityC]),
             new QuorumPolicy(2));
 
         Assert.True(hasQuorum);
@@ -97,7 +97,7 @@ public sealed class QuorumValidatorTests
 
         var hasQuorum = validator.HasQuorum(
             validation,
-            new AuthoritySet([authority]),
+            new BootstrapAuthoritySet([authority]),
             new QuorumPolicy(1));
 
         Assert.False(hasQuorum);
@@ -111,7 +111,7 @@ public sealed class QuorumValidatorTests
         var signatureVerifier = new SignatureVerifier(authorityRoot);
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
-        var authoritySet = new AuthoritySet([authorityA, authorityB]);
+        var authoritySet = new BootstrapAuthoritySet([authorityA, authorityB]);
         var policy = new QuorumPolicy(2);
         var engine = new RunReplayEngine();
         var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
@@ -125,9 +125,9 @@ public sealed class QuorumValidatorTests
             result.ServerId,
             result.FinalStateHash,
             attestation);
-        var ledger = new RunLedger();
+        var ledger = new RunLedger([authorityA, authorityB], policy);
 
-        var appended = ledger.TryAppendWithQuorum(quorumApprovedResult, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
+        var appended = ledger.TryAppendWithQuorum(quorumApprovedResult, signatureVerifier, validator, policy, ReferenceNow);
 
         Assert.True(appended);
         Assert.Single(ledger.Entries);
@@ -141,7 +141,7 @@ public sealed class QuorumValidatorTests
         var signatureVerifier = new SignatureVerifier(authorityRoot);
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
-        var authoritySet = new AuthoritySet([authorityA, authorityB]);
+        var authoritySet = new BootstrapAuthoritySet([authorityA, authorityB]);
         var policy = new QuorumPolicy(2);
         var engine = new RunReplayEngine();
         var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
@@ -161,9 +161,9 @@ public sealed class QuorumValidatorTests
             result.ServerId,
             result.FinalStateHash,
             tamperedAttestation);
-        var ledger = new RunLedger();
+        var ledger = new RunLedger([authorityA, authorityB], policy);
 
-        var appended = ledger.TryAppendWithQuorum(tamperedResult, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
+        var appended = ledger.TryAppendWithQuorum(tamperedResult, signatureVerifier, validator, policy, ReferenceNow);
 
         Assert.False(appended);
         Assert.Empty(ledger.Entries);
@@ -224,7 +224,7 @@ public sealed class QuorumValidatorTests
 
         var merged = SignedRunValidation.Merge(partialA, partialB);
 
-        Assert.True(validator.HasQuorum(merged, new AuthoritySet([authorityA, authorityB]), new QuorumPolicy(2)));
+        Assert.True(validator.HasQuorum(merged, new BootstrapAuthoritySet([authorityA, authorityB]), new QuorumPolicy(2)));
     }
 
     [Fact]
@@ -272,16 +272,16 @@ public sealed class QuorumValidatorTests
         var signatureVerifier = new SignatureVerifier(authorityRoot);
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
-        var authoritySet = new AuthoritySet([authorityA, authorityB]);
+        var authoritySet = new BootstrapAuthoritySet([authorityA, authorityB]);
         var policy = new QuorumPolicy(2);
         var engine = new RunReplayEngine();
         var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
         var partialResultA = AttachSignatures(result, SignValidation(result, authorityA, privateKeyA));
         var partialResultB = AttachSignatures(result, SignValidation(result, authorityB, privateKeyB));
-        var ledger = new RunLedger();
+        var ledger = new RunLedger([authorityA, authorityB], policy);
 
-        var firstAppend = ledger.TryAppendWithQuorum(partialResultA, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
-        var secondAppend = ledger.TryAppendWithQuorum(partialResultB, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
+        var firstAppend = ledger.TryAppendWithQuorum(partialResultA, signatureVerifier, validator, policy, ReferenceNow);
+        var secondAppend = ledger.TryAppendWithQuorum(partialResultB, signatureVerifier, validator, policy, ReferenceNow);
 
         Assert.False(firstAppend);
         Assert.True(secondAppend);
@@ -315,7 +315,7 @@ public sealed class QuorumValidatorTests
         var signatureVerifier = new SignatureVerifier(authorityRoot);
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
-        var authoritySet = new AuthoritySet([authorityA, authorityB]);
+        var authoritySet = new BootstrapAuthoritySet([authorityA, authorityB]);
         var policy = new QuorumPolicy(2);
         var runId = Guid.NewGuid();
         var playerId = Guid.NewGuid();
@@ -327,11 +327,11 @@ public sealed class QuorumValidatorTests
         var partialResultA = AttachSignatures(resultA, SignValidation(resultA, authorityA, privateKeyA));
         var partialResultB = AttachSignatures(resultB, SignValidation(resultB, authorityB, privateKeyB));
         var partialResultB2 = AttachSignatures(resultB, SignValidation(resultB, authorityA, privateKeyA));
-        var ledger = new RunLedger();
+        var ledger = new RunLedger([authorityA, authorityB], policy);
 
-        var firstAppend = ledger.TryAppendWithQuorum(partialResultA, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
-        var secondAppend = ledger.TryAppendWithQuorum(partialResultB, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
-        var thirdAppend = ledger.TryAppendWithQuorum(partialResultB2, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
+        var firstAppend = ledger.TryAppendWithQuorum(partialResultA, signatureVerifier, validator, policy, ReferenceNow);
+        var secondAppend = ledger.TryAppendWithQuorum(partialResultB, signatureVerifier, validator, policy, ReferenceNow);
+        var thirdAppend = ledger.TryAppendWithQuorum(partialResultB2, signatureVerifier, validator, policy, ReferenceNow);
 
         Assert.False(firstAppend);
         Assert.False(secondAppend);

@@ -53,6 +53,17 @@ public sealed class SignedRunValidation
 
         AddValidUniqueSignatures(a.Signatures, aResultHash, seenSigners, mergedSignatures);
         AddValidUniqueSignatures(b.Signatures, aResultHash, seenSigners, mergedSignatures);
+        mergedSignatures.Sort(static (left, right) =>
+        {
+            var signerComparison = StringComparer.Ordinal.Compare(
+                Convert.ToBase64String(left.PublicKeyBytes),
+                Convert.ToBase64String(right.PublicKeyBytes));
+            return signerComparison != 0
+                ? signerComparison
+                : StringComparer.Ordinal.Compare(
+                    Convert.ToHexString(left.SignatureBytes),
+                    Convert.ToHexString(right.SignatureBytes));
+        });
 
         return new SignedRunValidation(a.Validation, a.Certificate)
         {
