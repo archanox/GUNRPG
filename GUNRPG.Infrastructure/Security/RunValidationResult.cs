@@ -64,4 +64,15 @@ public sealed class RunValidationResult
         Guid serverId,
         byte[] finalStateHash) =>
         AuthorityCrypto.ComputeRunResultHash(runId, playerId, serverId, finalStateHash);
+
+    internal static byte[] ComputeResultHash(RunValidationSignature validation)
+    {
+        ArgumentNullException.ThrowIfNull(validation);
+
+        return ComputeResultHash(
+            validation.RunId,
+            validation.PlayerId,
+            validation.ServerId,
+            validation.FinalStateHash);
+    }
 }
