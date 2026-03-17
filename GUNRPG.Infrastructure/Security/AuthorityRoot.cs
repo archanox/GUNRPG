@@ -128,6 +128,20 @@ internal static class AuthorityCrypto
         return SHA256.HashData(buffer);
     }
 
+    internal static byte[] ComputeRunResultHash(Guid runId, Guid playerId, Guid serverId, byte[] finalStateHash)
+    {
+        var normalizedFinalStateHash = CloneAndValidateSha256Hash(finalStateHash);
+        var buffer = new byte[GuidSize + GuidSize + GuidSize + Int32Size + normalizedFinalStateHash.Length];
+        var offset = 0;
+
+        WriteGuid(runId, buffer, ref offset);
+        WriteGuid(playerId, buffer, ref offset);
+        WriteGuid(serverId, buffer, ref offset);
+        WriteLengthPrefixed(normalizedFinalStateHash, buffer, ref offset);
+
+        return SHA256.HashData(buffer);
+    }
+
     internal static byte[] CloneAndValidatePublicKey(byte[] publicKey)
     {
         ArgumentNullException.ThrowIfNull(publicKey);
