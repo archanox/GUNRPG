@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 using GUNRPG.Core.Operators;
 using GUNRPG.Ledger;
@@ -156,6 +157,7 @@ public sealed class RunLedgerTests
         Assert.False(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(3));
         Assert.True(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(4));
         Assert.True(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(8));
+        Assert.IsType<ReadOnlyDictionary<long, ImmutableArray<byte>>>(ledger.MerkleSkipIndex.Checkpoints);
     }
 
     [Fact]

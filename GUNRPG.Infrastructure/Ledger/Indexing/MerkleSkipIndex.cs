@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Collections.ObjectModel;
 using System.Security.Cryptography;
 
 namespace GUNRPG.Ledger.Indexing;
@@ -6,16 +7,14 @@ namespace GUNRPG.Ledger.Indexing;
 public sealed class MerkleSkipIndex
 {
     private readonly Dictionary<long, ImmutableArray<byte>> _index = [];
-    private readonly Func<long, ImmutableArray<byte>?>? _entryHashProvider;
-
-    public MerkleSkipIndex()
-    {
-    }
+    private readonly ReadOnlyDictionary<long, ImmutableArray<byte>> _readOnlyIndex;
+    private readonly Func<long, ImmutableArray<byte>?> _entryHashProvider;
 
     internal MerkleSkipIndex(Func<long, ImmutableArray<byte>?> entryHashProvider)
     {
         ArgumentNullException.ThrowIfNull(entryHashProvider);
         _entryHashProvider = entryHashProvider;
+        _readOnlyIndex = new ReadOnlyDictionary<long, ImmutableArray<byte>>(_index);
     }
 
     public MerkleSkipIndex(IReadOnlyList<RunLedgerEntry> entries)
@@ -24,7 +23,7 @@ public sealed class MerkleSkipIndex
         Rebuild(entries);
     }
 
-    public IReadOnlyDictionary<long, ImmutableArray<byte>> Checkpoints => _index;
+    public IReadOnlyDictionary<long, ImmutableArray<byte>> Checkpoints => _readOnlyIndex;
 
     public long HighestIndex { get; private set; } = -1;
 
@@ -139,7 +138,7 @@ public sealed class MerkleSkipIndex
             return checkpointHash;
         }
 
-        return _entryHashProvider?.Invoke(index);
+        return _entryHashProvider(index);
     }
 
     private static long HighestPowerOfTwoAtMost(long value)
