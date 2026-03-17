@@ -1,8 +1,10 @@
+using System.Security.Cryptography;
+
 namespace GUNRPG.Security;
 
-public abstract record AuthorityEvent;
+public abstract class AuthorityEvent;
 
-public sealed record AuthorityAdded : AuthorityEvent
+public sealed class AuthorityAdded : AuthorityEvent, IEquatable<AuthorityAdded>
 {
     private readonly byte[] _publicKey;
 
@@ -14,9 +16,24 @@ public sealed record AuthorityAdded : AuthorityEvent
     public byte[] PublicKey => (byte[])_publicKey.Clone();
 
     internal byte[] PublicKeyBytes => _publicKey;
+
+    public bool Equals(AuthorityAdded? other)
+    {
+        return other is not null
+            && CryptographicOperations.FixedTimeEquals(_publicKey, other._publicKey);
+    }
+
+    public override bool Equals(object? obj) => obj is AuthorityAdded other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.AddBytes(_publicKey);
+        return hash.ToHashCode();
+    }
 }
 
-public sealed record AuthorityRemoved : AuthorityEvent
+public sealed class AuthorityRemoved : AuthorityEvent, IEquatable<AuthorityRemoved>
 {
     private readonly byte[] _publicKey;
 
@@ -28,9 +45,24 @@ public sealed record AuthorityRemoved : AuthorityEvent
     public byte[] PublicKey => (byte[])_publicKey.Clone();
 
     internal byte[] PublicKeyBytes => _publicKey;
+
+    public bool Equals(AuthorityRemoved? other)
+    {
+        return other is not null
+            && CryptographicOperations.FixedTimeEquals(_publicKey, other._publicKey);
+    }
+
+    public override bool Equals(object? obj) => obj is AuthorityRemoved other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.AddBytes(_publicKey);
+        return hash.ToHashCode();
+    }
 }
 
-public sealed record AuthorityRotated : AuthorityEvent
+public sealed class AuthorityRotated : AuthorityEvent, IEquatable<AuthorityRotated>
 {
     private readonly byte[] _oldKey;
     private readonly byte[] _newKey;
@@ -48,4 +80,21 @@ public sealed record AuthorityRotated : AuthorityEvent
     public byte[] NewKey => (byte[])_newKey.Clone();
 
     internal byte[] NewKeyBytes => _newKey;
+
+    public bool Equals(AuthorityRotated? other)
+    {
+        return other is not null
+            && CryptographicOperations.FixedTimeEquals(_oldKey, other._oldKey)
+            && CryptographicOperations.FixedTimeEquals(_newKey, other._newKey);
+    }
+
+    public override bool Equals(object? obj) => obj is AuthorityRotated other && Equals(other);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.AddBytes(_oldKey);
+        hash.AddBytes(_newKey);
+        return hash.ToHashCode();
+    }
 }

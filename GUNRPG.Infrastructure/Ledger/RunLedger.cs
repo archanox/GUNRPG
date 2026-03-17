@@ -229,7 +229,8 @@ public class RunLedger
 
     public bool Verify()
     {
-        return VerifyEntries(_entries) && VerifyAuthorityStateTransitions();
+        return VerifyEntryChain(_entries, allowAuthorityEvents: true)
+            && VerifyAuthorityStateTransitions(_entries, expectedFinalState: _currentAuthorityState);
     }
 
     public LedgerHead GetHead()
@@ -296,6 +297,11 @@ public class RunLedger
             return false;
         }
 
+        if (entry.AuthorityEvent is not null && !CanAppendVerifiedAuthorityEntry(entry.AuthorityEvent, entry.AuthoritySignatures))
+        {
+            return false;
+        }
+
         _entries.Add(entry);
         _merkleSkipIndex.Append(entry);
         if (entry.AuthorityEvent is not null)
@@ -350,46 +356,7 @@ public class RunLedger
 
     internal static bool VerifyEntries(IReadOnlyList<RunLedgerEntry> entries)
     {
-        ArgumentNullException.ThrowIfNull(entries);
-
-        for (var i = 0; i < entries.Count; i++)
-        {
-            var entry = entries[i];
-
-            if (entry.Index != i)
-            {
-                return false;
-            }
-
-            if (!HasSupportedPayload(entry) || entry.EntryHash.Length != HashSize || entry.PreviousHash.Length != HashSize)
-            {
-                return false;
-            }
-
-            if (entry.AuthorityEvent is not null && !HasCanonicalAuthoritySignatures(entry.AuthoritySignatures))
-            {
-                return false;
-            }
-
-            var recomputed = ComputeEntryHash(entry.Index, entry.PreviousHash, entry.Timestamp, entry.Payload, entry.AuthoritySignatures);
-            if (!CryptographicOperations.FixedTimeEquals(entry.EntryHash.AsSpan(), recomputed.AsSpan()))
-            {
-                return false;
-            }
-
-            var expectedPreviousHash = i == 0 ? ZeroHash : entries[i - 1].EntryHash;
-            if (expectedPreviousHash.Length != HashSize)
-            {
-                return false;
-            }
-
-            if (!CryptographicOperations.FixedTimeEquals(entry.PreviousHash.AsSpan(), expectedPreviousHash.AsSpan()))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return VerifyEntryChain(entries, allowAuthorityEvents: false);
     }
 
     internal static ImmutableArray<byte> ComputeEntryHash(
@@ -419,9 +386,17 @@ public class RunLedger
         return ComputeRunEntryHash(index, previousHash, timestamp, run);
     }
 
-    private bool VerifyAuthorityStateTransitions()
+    internal bool VerifyEntriesForCurrentConfiguration(IReadOnlyList<RunLedgerEntry> entries)
     {
-        if (_entries.All(static entry => entry.AuthorityEvent is null))
+        return VerifyEntryChain(entries, allowAuthorityEvents: true)
+            && VerifyAuthorityStateTransitions(entries, expectedFinalState: null);
+    }
+
+    private bool VerifyAuthorityStateTransitions(
+        IReadOnlyList<RunLedgerEntry> entries,
+        AuthorityState? expectedFinalState)
+    {
+        if (entries.All(static entry => entry.AuthorityEvent is null))
         {
             return true;
         }
@@ -434,7 +409,7 @@ public class RunLedger
         var authorityState = _bootstrapAuthorityState.Clone();
         var quorumValidator = new QuorumValidator();
 
-        foreach (var entry in _entries)
+        foreach (var entry in entries)
         {
             if (entry.AuthorityEvent is null)
             {
@@ -460,8 +435,9 @@ public class RunLedger
             authorityState = authorityState.Apply(entry.AuthorityEvent);
         }
 
-        return authorityState.Count == _currentAuthorityState.Count
-            && authorityState.IsEquivalentTo(_currentAuthorityState);
+        return expectedFinalState is null
+            || (authorityState.Count == expectedFinalState.Count
+                && authorityState.IsEquivalentTo(expectedFinalState));
     }
 
     private static ImmutableArray<byte> ComputeRunEntryHash(
@@ -646,6 +622,78 @@ public class RunLedger
     {
         return entry.Run is not null && entry.AuthoritySignatures.IsDefaultOrEmpty
             || (entry.AuthorityEvent is not null && !entry.AuthoritySignatures.IsDefault);
+    }
+
+    private bool CanAppendVerifiedAuthorityEntry(
+        AuthorityEvent authorityEvent,
+        ImmutableArray<AuthoritySignature> authoritySignatures)
+    {
+        if (_configuredQuorumPolicy is null)
+        {
+            return false;
+        }
+
+        if (!CanApplyAuthorityEvent(_currentAuthorityState, authorityEvent, _configuredQuorumPolicy))
+        {
+            return false;
+        }
+
+        var excludedSignerPublicKey = authorityEvent is AuthorityAdded added ? added.PublicKeyBytes : null;
+        return new QuorumValidator().HasQuorum(
+            authoritySignatures,
+            AuthorityCrypto.ComputeAuthorityEventHash(authorityEvent),
+            _currentAuthorityState,
+            _configuredQuorumPolicy,
+            excludedSignerPublicKey);
+    }
+
+    private static bool VerifyEntryChain(
+        IReadOnlyList<RunLedgerEntry> entries,
+        bool allowAuthorityEvents)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+
+            if (entry.Index != i)
+            {
+                return false;
+            }
+
+            if (!HasSupportedPayload(entry) || entry.EntryHash.Length != HashSize || entry.PreviousHash.Length != HashSize)
+            {
+                return false;
+            }
+
+            if (entry.AuthorityEvent is not null)
+            {
+                if (!allowAuthorityEvents || !HasCanonicalAuthoritySignatures(entry.AuthoritySignatures))
+                {
+                    return false;
+                }
+            }
+
+            var recomputed = ComputeEntryHash(entry.Index, entry.PreviousHash, entry.Timestamp, entry.Payload, entry.AuthoritySignatures);
+            if (!CryptographicOperations.FixedTimeEquals(entry.EntryHash.AsSpan(), recomputed.AsSpan()))
+            {
+                return false;
+            }
+
+            var expectedPreviousHash = i == 0 ? ZeroHash : entries[i - 1].EntryHash;
+            if (expectedPreviousHash.Length != HashSize)
+            {
+                return false;
+            }
+
+            if (!CryptographicOperations.FixedTimeEquals(entry.PreviousHash.AsSpan(), expectedPreviousHash.AsSpan()))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static bool CanApplyAuthorityEvent(

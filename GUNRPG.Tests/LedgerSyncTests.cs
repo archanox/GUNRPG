@@ -283,6 +283,63 @@ public sealed class LedgerSyncTests
         Assert.Equal(8, localLedger.Entries.Count);
     }
 
+    [Fact]
+    public void LedgerSync_TryAppendEntry_RejectsUnverifiedAuthorityEvent()
+    {
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out _);
+        var authorityC = CreateAuthority("authority-c", out _);
+        var authorityD = CreateAuthority("authority-d", out _);
+        var policy = new QuorumPolicy(2);
+        var sourceLedger = new RunLedger([authorityA, authorityB, authorityC], policy);
+        var targetLedger = new RunLedger([authorityA, authorityB, authorityC], policy);
+        var addEvent = new AuthorityAdded(authorityD.PublicKey);
+        var entry = sourceLedger.Append(
+            addEvent,
+            [SignAuthorityEvent(addEvent, authorityA, privateKeyA)],
+            ReferenceNow);
+
+        Assert.False(targetLedger.TryAppendEntry(entry));
+        Assert.Empty(targetLedger.Entries);
+        Assert.False(targetLedger.CurrentAuthorityState.IsTrusted(authorityD.PublicKey));
+    }
+
+    [Fact]
+    public void ForkResolution_RejectsUnverifiedAuthorityEventChain()
+    {
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out _);
+        var authorityC = CreateAuthority("authority-c", out _);
+        var authorityD = CreateAuthority("authority-d", out _);
+        var policy = new QuorumPolicy(2);
+        var localLedger = new RunLedger([authorityA, authorityB, authorityC], policy);
+        var peerLedger = new RunLedger([authorityA, authorityB, authorityC], policy);
+        var addEvent = new AuthorityAdded(authorityD.PublicKey);
+        peerLedger.Append(
+            addEvent,
+            [SignAuthorityEvent(addEvent, authorityA, privateKeyA)],
+            ReferenceNow);
+
+        var syncEngine = new LedgerSyncEngine(localLedger);
+
+        Assert.False(syncEngine.ResolveFork(peerLedger.Entries));
+        Assert.Empty(localLedger.Entries);
+        Assert.False(localLedger.CurrentAuthorityState.IsTrusted(authorityD.PublicKey));
+    }
+
+    [Fact]
+    public void AuthorityEvent_UsesContentEquality()
+    {
+        var authority = CreateAuthority("authority-a", out _);
+        var rotatedNew = CreateAuthority("authority-b", out _);
+
+        Assert.Equal(new AuthorityAdded(authority.PublicKey), new AuthorityAdded(authority.PublicKey.ToArray()));
+        Assert.Equal(new AuthorityRemoved(authority.PublicKey), new AuthorityRemoved(authority.PublicKey.ToArray()));
+        Assert.Equal(
+            new AuthorityRotated(authority.PublicKey, rotatedNew.PublicKey),
+            new AuthorityRotated(authority.PublicKey.ToArray(), rotatedNew.PublicKey.ToArray()));
+    }
+
     private static IReadOnlyList<OperatorEvent> CreateCompletedRunEvents()
     {
         var operatorId = OperatorId.NewId();
@@ -318,5 +375,21 @@ public sealed class LedgerSyncTests
             ReferenceNow.AddMinutes(30));
 
         return new ServerIdentity(certificate, serverPrivateKey);
+    }
+
+    private static Authority CreateAuthority(string id, out byte[] privateKey)
+    {
+        privateKey = AuthorityCrypto.GeneratePrivateKey();
+        return new Authority(AuthorityCrypto.GetPublicKey(privateKey), id);
+    }
+
+    private static AuthoritySignature SignAuthorityEvent(
+        AuthorityEvent authorityEvent,
+        Authority authority,
+        byte[] privateKey)
+    {
+        return new AuthoritySignature(
+            authority.PublicKey,
+            AuthorityCrypto.SignHashedPayload(privateKey, AuthorityCrypto.ComputeAuthorityEventHash(authorityEvent)));
     }
 }
