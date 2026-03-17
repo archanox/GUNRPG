@@ -559,7 +559,7 @@ public class RunLedger
                 continue;
             }
 
-            var signerId = Convert.ToBase64String(signature.PublicKeyBytes);
+            var signerId = AuthoritySignatureOrdering.CreateSignerId(signature.PublicKeyBytes);
             if (!seenSigners.Add(signerId))
             {
                 continue;
@@ -584,22 +584,22 @@ public class RunLedger
     {
         ArgumentNullException.ThrowIfNull(signatures);
 
-        var ordered = new List<(AuthoritySignature Signature, string SignerId, string SignatureId)>();
+        var ordered = new List<(AuthoritySignature Signature, string SignerId)>();
         foreach (var signature in signatures)
         {
             var normalizedSignature = signature ?? throw new ArgumentException("Authority signature collections must not contain null entries.", nameof(signatures));
             ordered.Add((
                 normalizedSignature,
-                Convert.ToBase64String(normalizedSignature.PublicKeyBytes),
-                Convert.ToHexString(normalizedSignature.SignatureBytes)));
+                AuthoritySignatureOrdering.CreateSignerId(normalizedSignature.PublicKeyBytes)));
         }
 
         ordered.Sort(static (left, right) =>
         {
-            var signerComparison = StringComparer.Ordinal.Compare(left.SignerId, right.SignerId);
-            return signerComparison != 0
-                ? signerComparison
-                : StringComparer.Ordinal.Compare(left.SignatureId, right.SignatureId);
+            return AuthoritySignatureOrdering.Compare(
+                left.SignerId,
+                left.Signature.SignatureBytes,
+                right.SignerId,
+                right.Signature.SignatureBytes);
         });
 
         var seenSigners = new HashSet<string>(StringComparer.Ordinal);
@@ -645,7 +645,7 @@ public class RunLedger
     private static bool HasSupportedPayload(RunLedgerEntry entry)
     {
         return entry.Run is not null && entry.AuthoritySignatures.IsDefaultOrEmpty
-            || entry.AuthorityEvent is not null && !entry.AuthoritySignatures.IsDefault;
+            || (entry.AuthorityEvent is not null && !entry.AuthoritySignatures.IsDefault);
     }
 
     private static bool CanApplyAuthorityEvent(
