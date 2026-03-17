@@ -37,6 +37,16 @@ public class RunLedger
         return Append(run, DateTimeOffset.UtcNow);
     }
 
+    [Obsolete("Use the TryAppendWithQuorum overload that accepts a SignatureVerifier.")]
+    public bool TryAppendWithQuorum(
+        RunValidationResult run,
+        QuorumValidator quorumValidator,
+        AuthoritySet authoritySet,
+        QuorumPolicy quorumPolicy)
+    {
+        throw new NotSupportedException("Use the TryAppendWithQuorum overload that accepts a SignatureVerifier.");
+    }
+
     public bool TryAppendWithQuorum(
         RunValidationResult run,
         SignatureVerifier signatureVerifier,

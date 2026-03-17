@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 
 namespace GUNRPG.Security;
@@ -91,9 +92,18 @@ public sealed class SignedRunValidation
     {
         return CryptographicOperations.FixedTimeEquals(a.Validation.SignatureBytes, b.Validation.SignatureBytes)
             && a.Certificate.ServerId == b.Certificate.ServerId
-            && a.Certificate.IssuedAt == b.Certificate.IssuedAt
-            && a.Certificate.ValidUntil == b.Certificate.ValidUntil
-            && CryptographicOperations.FixedTimeEquals(a.Certificate.PublicKey, b.Certificate.PublicKey)
-            && CryptographicOperations.FixedTimeEquals(a.Certificate.Signature, b.Certificate.Signature);
+            && FixedTimeEqualsTimestamp(a.Certificate.IssuedAt, b.Certificate.IssuedAt)
+            && FixedTimeEqualsTimestamp(a.Certificate.ValidUntil, b.Certificate.ValidUntil)
+            && CryptographicOperations.FixedTimeEquals(a.Certificate.PublicKeyBytes, b.Certificate.PublicKeyBytes)
+            && CryptographicOperations.FixedTimeEquals(a.Certificate.SignatureBytes, b.Certificate.SignatureBytes);
+    }
+
+    private static bool FixedTimeEqualsTimestamp(DateTimeOffset a, DateTimeOffset b)
+    {
+        Span<byte> left = stackalloc byte[sizeof(long)];
+        Span<byte> right = stackalloc byte[sizeof(long)];
+        BinaryPrimitives.WriteInt64BigEndian(left, a.ToUnixTimeMilliseconds());
+        BinaryPrimitives.WriteInt64BigEndian(right, b.ToUnixTimeMilliseconds());
+        return CryptographicOperations.FixedTimeEquals(left, right);
     }
 }
