@@ -331,13 +331,13 @@ public sealed class LedgerSyncTests
     public void AuthorityEvent_UsesContentEquality()
     {
         var authority = CreateAuthority("authority-a", out _);
-        var rotatedNew = CreateAuthority("authority-b", out _);
+        var newAuthority = CreateAuthority("authority-b", out _);
 
         Assert.Equal(new AuthorityAdded(authority.PublicKey), new AuthorityAdded(authority.PublicKey.ToArray()));
         Assert.Equal(new AuthorityRemoved(authority.PublicKey), new AuthorityRemoved(authority.PublicKey.ToArray()));
         Assert.Equal(
-            new AuthorityRotated(authority.PublicKey, rotatedNew.PublicKey),
-            new AuthorityRotated(authority.PublicKey.ToArray(), rotatedNew.PublicKey.ToArray()));
+            new AuthorityRotated(authority.PublicKey, newAuthority.PublicKey),
+            new AuthorityRotated(authority.PublicKey.ToArray(), newAuthority.PublicKey.ToArray()));
     }
 
     private static IReadOnlyList<OperatorEvent> CreateCompletedRunEvents()
