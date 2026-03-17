@@ -91,7 +91,7 @@ public class LedgerSyncEngine
     {
         ArgumentNullException.ThrowIfNull(peerEntries);
 
-        if (!RunLedger.VerifyEntries(peerEntries))
+        if (!_ledger.VerifyEntriesForCurrentConfiguration(peerEntries))
         {
             return false;
         }

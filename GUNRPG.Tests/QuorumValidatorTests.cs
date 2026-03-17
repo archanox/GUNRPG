@@ -111,7 +111,6 @@ public sealed class QuorumValidatorTests
         var signatureVerifier = new SignatureVerifier(authorityRoot);
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
-        var authoritySet = new BootstrapAuthoritySet([authorityA, authorityB]);
         var policy = new QuorumPolicy(2);
         var engine = new RunReplayEngine();
         var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
@@ -141,7 +140,6 @@ public sealed class QuorumValidatorTests
         var signatureVerifier = new SignatureVerifier(authorityRoot);
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
-        var authoritySet = new BootstrapAuthoritySet([authorityA, authorityB]);
         var policy = new QuorumPolicy(2);
         var engine = new RunReplayEngine();
         var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
@@ -272,7 +270,6 @@ public sealed class QuorumValidatorTests
         var signatureVerifier = new SignatureVerifier(authorityRoot);
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
-        var authoritySet = new BootstrapAuthoritySet([authorityA, authorityB]);
         var policy = new QuorumPolicy(2);
         var engine = new RunReplayEngine();
         var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
@@ -315,7 +312,6 @@ public sealed class QuorumValidatorTests
         var signatureVerifier = new SignatureVerifier(authorityRoot);
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
-        var authoritySet = new BootstrapAuthoritySet([authorityA, authorityB]);
         var policy = new QuorumPolicy(2);
         var runId = Guid.NewGuid();
         var playerId = Guid.NewGuid();
