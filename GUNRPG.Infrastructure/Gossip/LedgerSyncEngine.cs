@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using GUNRPG.Ledger;
+using GUNRPG.Ledger.Indexing;
 
 namespace GUNRPG.Gossip;
 
@@ -83,6 +84,56 @@ public class LedgerSyncEngine
             }
         }
 
+        return true;
+    }
+
+    public bool ResolveFork(RunLedger localLedger, IReadOnlyList<RunLedgerEntry> peerEntries)
+    {
+        ArgumentNullException.ThrowIfNull(localLedger);
+        ArgumentNullException.ThrowIfNull(peerEntries);
+
+        if (!RunLedger.VerifyEntries(peerEntries))
+        {
+            return false;
+        }
+
+        if (peerEntries.Count == 0)
+        {
+            return false;
+        }
+
+        var localHead = localLedger.GetHead();
+        var peerHead = new LedgerHead(peerEntries[^1].Index, peerEntries[^1].EntryHash);
+
+        if (peerHead.Index <= localHead.Index)
+        {
+            return false;
+        }
+
+        var peerIndex = new MerkleSkipIndex(peerEntries);
+        var divergenceIndex = localLedger.MerkleSkipIndex.FindDivergenceIndex(peerIndex);
+
+        if (divergenceIndex < 0)
+        {
+            divergenceIndex = localLedger.Entries.Count;
+        }
+
+        if (divergenceIndex > peerEntries.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < divergenceIndex; i++)
+        {
+            if (!CryptographicOperations.FixedTimeEquals(
+                    localLedger.Entries[i].EntryHash.AsSpan(),
+                    peerEntries[i].EntryHash.AsSpan()))
+            {
+                return false;
+            }
+        }
+
+        localLedger.ReplaceEntriesFrom(divergenceIndex, peerEntries.Skip((int)divergenceIndex).ToArray());
         return true;
     }
 }

@@ -192,6 +192,51 @@ public sealed class LedgerSyncTests
         Assert.False(syncEngine.IsSameHead(peerHead));
     }
 
+    [Fact]
+    public void ForkResolution_SelectsLongestChain()
+    {
+        var serverIdentity = CreateServerIdentity();
+        var engine = new RunReplayEngine();
+        var ledgerA = new RunLedger();
+        var ledgerB = new RunLedger();
+
+        for (var i = 0; i < 8; i++)
+        {
+            var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+            var timestamp = ReferenceNow.AddMinutes(i);
+
+            var entryA = ledgerA.Append(result, timestamp);
+            var entryB = ledgerB.Append(result, timestamp);
+
+            Assert.True(entryA.EntryHash.SequenceEqual(entryB.EntryHash));
+        }
+
+        for (var i = 0; i < 2; i++)
+        {
+            var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+            ledgerA.Append(result, ReferenceNow.AddMinutes(8 + i));
+        }
+
+        for (var i = 0; i < 5; i++)
+        {
+            var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+            ledgerB.Append(result, ReferenceNow.AddHours(1).AddMinutes(i));
+        }
+
+        Assert.Equal(8L, ledgerA.MerkleSkipIndex.FindDivergenceIndex(ledgerB.MerkleSkipIndex));
+
+        var syncEngineA = new LedgerSyncEngine(ledgerA);
+        var syncEngineB = new LedgerSyncEngine(ledgerB);
+
+        Assert.True(syncEngineA.ResolveFork(ledgerA, ledgerB.Entries));
+        Assert.False(syncEngineB.ResolveFork(ledgerB, ledgerA.Entries));
+        Assert.Equal(ledgerA.Entries.Count, ledgerB.Entries.Count);
+        Assert.True(syncEngineA.IsSameHead(ledgerB.GetHead()));
+        Assert.Equal(-1L, ledgerA.MerkleSkipIndex.FindDivergenceIndex(ledgerB.MerkleSkipIndex));
+        Assert.True(ledgerA.Verify());
+        Assert.True(ledgerB.Verify());
+    }
+
     private static IReadOnlyList<OperatorEvent> CreateCompletedRunEvents()
     {
         var operatorId = OperatorId.NewId();

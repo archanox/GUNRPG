@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Security.Cryptography;
 using GUNRPG.Core.Operators;
 using GUNRPG.Ledger;
+using GUNRPG.Ledger.Indexing;
 using GUNRPG.Security;
 
 namespace GUNRPG.Tests;
@@ -136,6 +137,52 @@ public sealed class RunLedgerTests
         Assert.IsNotType<List<RunLedgerEntry>>(ledger.Entries);
     }
 
+    [Fact]
+    public void MerkleIndex_UpdatesOnAppend()
+    {
+        var serverIdentity = CreateServerIdentity();
+        var engine = new RunReplayEngine();
+        var ledger = new RunLedger();
+
+        for (var i = 0; i < 9; i++)
+        {
+            var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+            ledger.Append(result, ReferenceNow.AddMinutes(i));
+        }
+
+        Assert.False(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(0));
+        Assert.True(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(1));
+        Assert.True(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(2));
+        Assert.False(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(3));
+        Assert.True(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(4));
+        Assert.True(ledger.MerkleSkipIndex.Checkpoints.ContainsKey(8));
+    }
+
+    [Fact]
+    public void MerkleIndex_DetectsDivergence()
+    {
+        var serverIdentity = CreateServerIdentity();
+        var engine = new RunReplayEngine();
+        var ledgerA = new RunLedger();
+        var ledgerB = new RunLedger();
+
+        for (var i = 0; i < 16; i++)
+        {
+            var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+            var timestamp = ReferenceNow.AddMinutes(i);
+
+            var entryA = ledgerA.Append(result, timestamp);
+            var entryB = ledgerB.Append(result, timestamp);
+
+            Assert.True(entryA.EntryHash.SequenceEqual(entryB.EntryHash));
+        }
+
+        AppendRuns(ledgerA, engine, serverIdentity, 4, ReferenceNow.AddMinutes(16));
+        AppendRuns(ledgerB, engine, serverIdentity, 6, ReferenceNow.AddHours(1));
+
+        Assert.Equal(16L, ledgerA.MerkleSkipIndex.FindDivergenceIndex(ledgerB.MerkleSkipIndex));
+    }
+
     private static IReadOnlyList<OperatorEvent> CreateCompletedRunEvents()
     {
         var operatorId = OperatorId.NewId();
@@ -171,5 +218,19 @@ public sealed class RunLedgerTests
             ReferenceNow.AddMinutes(30));
 
         return new ServerIdentity(certificate, serverPrivateKey);
+    }
+
+    private static void AppendRuns(
+        RunLedger ledger,
+        RunReplayEngine engine,
+        ServerIdentity serverIdentity,
+        int count,
+        DateTimeOffset startTime)
+    {
+        for (var i = 0; i < count; i++)
+        {
+            var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+            ledger.Append(result, startTime.AddMinutes(i));
+        }
     }
 }
