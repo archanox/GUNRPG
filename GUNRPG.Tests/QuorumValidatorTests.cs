@@ -228,6 +228,43 @@ public sealed class QuorumValidatorTests
     }
 
     [Fact]
+    public void SignatureMerge_AllowsRenewedCertificateWithSameServerKey()
+    {
+        var runId = Guid.NewGuid();
+        var playerId = Guid.NewGuid();
+        var serverId = Guid.NewGuid();
+        var finalStateHash = CreateHash(14);
+        var rootPrivateKey = CertificateIssuer.GeneratePrivateKey();
+        var certificateIssuer = new CertificateIssuer(rootPrivateKey);
+        var serverPrivateKey = ServerIdentity.GeneratePrivateKey();
+        var serverPublicKey = ServerIdentity.GetPublicKey(serverPrivateKey);
+        var certificateA = certificateIssuer.IssueServerCertificate(
+            serverId,
+            serverPublicKey,
+            ReferenceNow.AddMinutes(-20),
+            ReferenceNow.AddMinutes(5));
+        var certificateB = certificateIssuer.IssueServerCertificate(
+            serverId,
+            serverPublicKey,
+            ReferenceNow.AddMinutes(-4),
+            ReferenceNow.AddMinutes(60));
+        var serverIdentityA = new ServerIdentity(certificateA, serverPrivateKey);
+        var serverIdentityB = new ServerIdentity(certificateB, serverPrivateKey);
+        var attestationA = serverIdentityA.SignSignedRunValidation(runId, playerId, finalStateHash);
+        var attestationB = serverIdentityB.SignSignedRunValidation(runId, playerId, finalStateHash);
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out var privateKeyB);
+        var resultA = new RunValidationResult(runId, playerId, serverId, finalStateHash, attestationA);
+        var resultB = new RunValidationResult(runId, playerId, serverId, finalStateHash, attestationB);
+        var partialA = WithSignatures(attestationA, SignValidation(resultA, authorityA, privateKeyA));
+        var partialB = WithSignatures(attestationB, SignValidation(resultB, authorityB, privateKeyB));
+
+        var merged = SignedRunValidation.Merge(partialA, partialB);
+
+        Assert.Equal(2, merged.Signatures.Count);
+    }
+
+    [Fact]
     public void QuorumAppend_AccumulatesSignaturesAcrossSubmissions()
     {
         var validator = new QuorumValidator();
@@ -248,6 +285,57 @@ public sealed class QuorumValidatorTests
 
         Assert.False(firstAppend);
         Assert.True(secondAppend);
+        Assert.Single(ledger.Entries);
+    }
+
+    [Fact]
+    public void QuorumAppend_ReplacesUnmergeableCachedAttestation()
+    {
+        var validator = new QuorumValidator();
+        var rootPrivateKey = CertificateIssuer.GeneratePrivateKey();
+        var certificateIssuer = new CertificateIssuer(rootPrivateKey);
+        var authorityRoot = new AuthorityRoot(certificateIssuer.RootPublicKey);
+        var serverId = Guid.NewGuid();
+        var serverPrivateKeyA = ServerIdentity.GeneratePrivateKey();
+        var serverPrivateKeyB = ServerIdentity.GeneratePrivateKey();
+        var serverIdentityA = new ServerIdentity(
+            certificateIssuer.IssueServerCertificate(
+                serverId,
+                ServerIdentity.GetPublicKey(serverPrivateKeyA),
+                ReferenceNow.AddMinutes(-5),
+                ReferenceNow.AddMinutes(30)),
+            serverPrivateKeyA);
+        var serverIdentityB = new ServerIdentity(
+            certificateIssuer.IssueServerCertificate(
+                serverId,
+                ServerIdentity.GetPublicKey(serverPrivateKeyB),
+                ReferenceNow.AddMinutes(-5),
+                ReferenceNow.AddMinutes(30)),
+            serverPrivateKeyB);
+        var signatureVerifier = new SignatureVerifier(authorityRoot);
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out var privateKeyB);
+        var authoritySet = new AuthoritySet([authorityA, authorityB]);
+        var policy = new QuorumPolicy(2);
+        var runId = Guid.NewGuid();
+        var playerId = Guid.NewGuid();
+        var finalStateHash = CreateHash(23);
+        var attestationA = serverIdentityA.SignSignedRunValidation(runId, playerId, finalStateHash);
+        var attestationB = serverIdentityB.SignSignedRunValidation(runId, playerId, finalStateHash);
+        var resultA = new RunValidationResult(runId, playerId, serverId, finalStateHash, attestationA);
+        var resultB = new RunValidationResult(runId, playerId, serverId, finalStateHash, attestationB);
+        var partialResultA = AttachSignatures(resultA, SignValidation(resultA, authorityA, privateKeyA));
+        var partialResultB = AttachSignatures(resultB, SignValidation(resultB, authorityB, privateKeyB));
+        var partialResultB2 = AttachSignatures(resultB, SignValidation(resultB, authorityA, privateKeyA));
+        var ledger = new RunLedger();
+
+        var firstAppend = ledger.TryAppendWithQuorum(partialResultA, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
+        var secondAppend = ledger.TryAppendWithQuorum(partialResultB, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
+        var thirdAppend = ledger.TryAppendWithQuorum(partialResultB2, signatureVerifier, validator, authoritySet, policy, ReferenceNow);
+
+        Assert.False(firstAppend);
+        Assert.False(secondAppend);
+        Assert.True(thirdAppend);
         Assert.Single(ledger.Entries);
     }
 
