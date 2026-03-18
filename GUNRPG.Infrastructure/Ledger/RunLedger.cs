@@ -598,8 +598,8 @@ public class RunLedger
 
     private static bool HasMatchingResult(RunValidationResult authoritativeResult, RunValidationResult submittedResult)
     {
-        var authoritativeHash = authoritativeResult.ComputeResultHash();
-        var submittedHash = submittedResult.ComputeResultHash();
+        var authoritativeHash = authoritativeResult.Attestation.ResultHash;
+        var submittedHash = submittedResult.Attestation.ResultHash;
         return CryptographicOperations.FixedTimeEquals(authoritativeHash, submittedHash);
     }
 
