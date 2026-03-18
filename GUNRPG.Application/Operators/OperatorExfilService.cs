@@ -26,6 +26,7 @@ namespace GUNRPG.Application.Operators;
 public sealed class OperatorExfilService
 {
     public const int InfilTimerMinutes = 30;
+    private const float HealthComparisonTolerance = 0.001f;
 
     private readonly IOperatorEventStore _eventStore;
     private readonly OperatorEventReplicator? _replicator;
@@ -1112,8 +1113,8 @@ public sealed class OperatorExfilService
         return legacy.Id == projected.Id
             && legacy.Name == projected.Name
             && legacy.TotalXp == projected.TotalXp
-            && Math.Abs(legacy.CurrentHealth - projected.CurrentHealth) < 0.001f
-            && Math.Abs(legacy.MaxHealth - projected.MaxHealth) < 0.001f
+            && WithinTolerance(legacy.CurrentHealth, projected.CurrentHealth)
+            && WithinTolerance(legacy.MaxHealth, projected.MaxHealth)
             && legacy.EquippedWeaponName == projected.EquippedWeaponName
             && legacy.UnlockedPerks.SequenceEqual(projected.UnlockedPerks)
             && legacy.ExfilStreak == projected.ExfilStreak
@@ -1122,5 +1123,10 @@ public sealed class OperatorExfilService
             && legacy.InfilSessionId == projected.InfilSessionId
             && legacy.ActiveCombatSessionId == projected.ActiveCombatSessionId
             && legacy.LockedLoadout == projected.LockedLoadout;
+    }
+
+    private static bool WithinTolerance(float left, float right)
+    {
+        return Math.Abs(left - right) < HealthComparisonTolerance;
     }
 }
