@@ -1071,7 +1071,11 @@ public sealed class OperatorExfilService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to mirror operator {OperatorId} events into the run ledger.", operatorId.Value);
+            _logger.LogWarning(
+                "Failed to mirror operator {OperatorId} events into the run ledger: {ErrorType}: {ErrorMessage}",
+                operatorId.Value,
+                ex.GetType().Name,
+                ex.Message);
             return;
         }
 

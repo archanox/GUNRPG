@@ -9,6 +9,7 @@ using GUNRPG.Ledger;
 using GUNRPG.Security;
 using LiteDB;
 using Microsoft.Extensions.Logging.Abstractions;
+using GameplayState = GUNRPG.Application.Gameplay.GameState;
 
 namespace GUNRPG.Tests;
 
@@ -184,7 +185,12 @@ public sealed class LedgerProjectionTests : IDisposable
 
     private sealed class ThrowingGameplayLedgerBridge : IGameplayLedgerBridge
     {
-        public Task MirrorAsync(Guid runId, OperatorId operatorId, IReadOnlyList<OperatorEvent> operatorEvents, IReadOnlyList<GameplayLedgerEvent>? gameplayEvents = null, CancellationToken cancellationToken = default)
+        public Task MirrorAsync(
+            Guid runId,
+            OperatorId operatorId,
+            IReadOnlyList<OperatorEvent> operatorEvents,
+            IReadOnlyList<GameplayLedgerEvent>? gameplayEvents = null,
+            CancellationToken cancellationToken = default)
         {
             throw new InvalidOperationException("Mirror failed.");
         }
@@ -195,7 +201,7 @@ public sealed class LedgerProjectionTests : IDisposable
         public Task<IReadOnlyList<OperatorId>> ListProjectedOperatorsAsync(CancellationToken cancellationToken = default)
             => Task.FromResult<IReadOnlyList<OperatorId>>([]);
 
-        public Task<GUNRPG.Application.Gameplay.GameState> ProjectAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(new GUNRPG.Application.Gameplay.GameState());
+        public Task<GameplayState> ProjectAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new GameplayState());
     }
 }
