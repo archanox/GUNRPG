@@ -145,9 +145,11 @@ public sealed class RunLedgerGameplayBridge : IGameplayLedgerBridge
                     yield return new RunCompletedLedgerEvent(false, died.GetCauseOfDeath());
                     break;
                 case InfilStartedEvent infilStarted:
-                    var (sessionId, _, _) = infilStarted.GetPayload();
+                    var (sessionId, lockedLoadout, infilStartTime) = infilStarted.GetPayload();
                     yield return new InfilStateChangedLedgerEvent("Started", "InfilStarted");
                     yield return new CombatSessionLedgerEvent(sessionId, "Infil");
+                    _ = lockedLoadout;
+                    _ = infilStartTime;
                     break;
                 case InfilEndedEvent infilEnded:
                     var (wasSuccessful, endedReason) = infilEnded.GetPayload();

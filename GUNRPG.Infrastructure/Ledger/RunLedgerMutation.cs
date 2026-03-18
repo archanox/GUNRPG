@@ -86,7 +86,7 @@ public sealed class RunLedgerMutation
                 pet.Morale.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 pet.Hunger.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 pet.Hydration.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-            _ => throw new ArgumentException($"Unsupported gameplay ledger event type {evt.GetType().Name}.", nameof(evt))
+            _ => throw new InvalidOperationException($"Unsupported gameplay ledger event type {evt.GetType().Name}.")
         };
 
         return Encoding.UTF8.GetBytes(text);
