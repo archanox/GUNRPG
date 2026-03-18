@@ -83,6 +83,16 @@ public sealed class RunReplayEngineTests
     }
 
     [Fact]
+    public void Replay_ThrowsWhenMutationIsNull()
+    {
+        var serverIdentity = CreateServerIdentity(out _);
+        var input = CreateRunInput() with { Mutation = null! };
+        var engine = new RunReplayEngine(serverIdentity);
+
+        Assert.Throws<ArgumentNullException>(() => engine.Replay(input));
+    }
+
+    [Fact]
     public void ValidateRunOnly_ThrowsWhenChainTamperedAtTail()
     {
         var engine = new RunReplayEngine();

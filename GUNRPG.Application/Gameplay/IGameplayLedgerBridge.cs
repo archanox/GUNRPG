@@ -8,7 +8,7 @@ public interface IGameplayLedgerBridge
         Guid runId,
         OperatorId operatorId,
         IReadOnlyList<OperatorEvent> operatorEvents,
-        IReadOnlyList<object>? gameplayEvents = null,
+        IReadOnlyList<GUNRPG.Ledger.GameplayLedgerEvent>? gameplayEvents = null,
         CancellationToken cancellationToken = default);
 
     Task<OperatorAggregate?> LoadProjectedOperatorAsync(

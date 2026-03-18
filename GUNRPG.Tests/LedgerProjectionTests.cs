@@ -62,8 +62,7 @@ public sealed class LedgerProjectionTests : IDisposable
             replayEngine,
             gossip,
             authority,
-            authorityPrivateKey,
-            signatureVerifier);
+            authorityPrivateKey);
 
         _service = new OperatorExfilService(
             _eventStore,
@@ -159,5 +158,44 @@ public sealed class LedgerProjectionTests : IDisposable
 
         Assert.True(result.IsSuccess);
         Assert.Equal(40, result.Value!.TotalXp);
+    }
+
+    [Fact]
+    public async Task LegacyWrite_SucceedsWhenLedgerMirrorThrows()
+    {
+        var throwingService = new OperatorExfilService(
+            _eventStore,
+            ledgerBridge: new ThrowingGameplayLedgerBridge(),
+            ledgerOptions: new GameplayLedgerOptions
+            {
+                MirrorLegacyWrites = true,
+                PreferLedgerReads = false,
+                CompareLegacyAndLedgerState = true
+            });
+
+        var create = await throwingService.CreateOperatorAsync("Best Effort");
+
+        Assert.True(create.IsSuccess);
+
+        var load = await throwingService.LoadOperatorAsync(create.Value!);
+        Assert.True(load.IsSuccess);
+        Assert.Equal("Best Effort", load.Value!.Name);
+    }
+
+    private sealed class ThrowingGameplayLedgerBridge : IGameplayLedgerBridge
+    {
+        public Task MirrorAsync(Guid runId, OperatorId operatorId, IReadOnlyList<OperatorEvent> operatorEvents, IReadOnlyList<GameplayLedgerEvent>? gameplayEvents = null, CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException("Mirror failed.");
+        }
+
+        public Task<OperatorAggregate?> LoadProjectedOperatorAsync(OperatorId operatorId, CancellationToken cancellationToken = default)
+            => Task.FromResult<OperatorAggregate?>(null);
+
+        public Task<IReadOnlyList<OperatorId>> ListProjectedOperatorsAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyList<OperatorId>>([]);
+
+        public Task<GUNRPG.Application.Gameplay.GameState> ProjectAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult(new GUNRPG.Application.Gameplay.GameState());
     }
 }
