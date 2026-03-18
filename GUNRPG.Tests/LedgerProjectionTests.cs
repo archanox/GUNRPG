@@ -250,7 +250,6 @@ public sealed class LedgerProjectionTests : IDisposable
             Guid runId,
             OperatorId operatorId,
             IReadOnlyList<OperatorEvent> operatorEvents,
-            IReadOnlyList<GameplayLedgerEvent>? gameplayEvents = null,
             CancellationToken cancellationToken = default)
         {
             throw new InvalidOperationException("Mirror failed.");
