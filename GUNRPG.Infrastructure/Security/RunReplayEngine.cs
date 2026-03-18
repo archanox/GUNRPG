@@ -1,7 +1,9 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
 using GUNRPG.Application.Backend;
+using GUNRPG.Application.Gameplay;
 using GUNRPG.Core.Operators;
+using GUNRPG.Ledger;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -56,7 +58,8 @@ public sealed class RunReplayEngine : IRunReplayEngine
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(serverIdentity);
 
-        var finalStateHash = ComputeReplayHash(input);
+        var mutation = ComputeMutationFromOperatorEvents(input.OperatorEvents);
+        var finalStateHash = ComputeReplayHash(input, mutation);
         var attestation = new SignedRunValidation(
             serverIdentity.SignRunValidation(input.RunId, input.PlayerId, finalStateHash),
             serverIdentity.Certificate);
@@ -69,7 +72,7 @@ public sealed class RunReplayEngine : IRunReplayEngine
             serverIdentity.Certificate.ServerId,
             finalStateHash,
             attestation,
-            input.Mutation);
+            mutation);
     }
 
     public RunValidationResult ValidateAndSignRun(
@@ -95,11 +98,11 @@ public sealed class RunReplayEngine : IRunReplayEngine
             attestation);
     }
 
-    private static byte[] ComputeReplayHash(RunInput input)
+    private static byte[] ComputeReplayHash(RunInput input, RunLedgerMutation mutation)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Actions);
-        ArgumentNullException.ThrowIfNull(input.Mutation);
+        ArgumentNullException.ThrowIfNull(input.OperatorEvents);
 
         var actionPayloads = new byte[input.Actions.Count][];
         var bufferLength = GuidSize + GuidSize + Int32Size;
@@ -127,7 +130,7 @@ public sealed class RunReplayEngine : IRunReplayEngine
             offset += payload.Length;
         }
 
-        var mutationHash = input.Mutation.ComputeHash();
+        var mutationHash = mutation.ComputeHash();
         var expanded = GC.AllocateUninitializedArray<byte>(buffer.Length + Int32Size + mutationHash.Length);
         buffer.CopyTo(expanded, 0);
         offset = buffer.Length;
@@ -136,6 +139,72 @@ public sealed class RunReplayEngine : IRunReplayEngine
         mutationHash.CopyTo(expanded, offset);
 
         return SHA256.HashData(expanded);
+    }
+
+    private static RunLedgerMutation ComputeMutationFromOperatorEvents(IReadOnlyList<OperatorEvent> operatorEvents)
+    {
+        if (operatorEvents.Count == 0)
+        {
+            return RunLedgerMutation.Empty;
+        }
+
+        var gameplayEvents = BuildSemanticEvents(operatorEvents).ToArray();
+        return new RunLedgerMutation(operatorEvents, gameplayEvents);
+    }
+
+    private static IEnumerable<GameplayLedgerEvent> BuildSemanticEvents(IEnumerable<OperatorEvent> operatorEvents)
+    {
+        foreach (var evt in operatorEvents)
+        {
+            switch (evt)
+            {
+                case OperatorCreatedEvent created:
+                    yield return new OperatorCreatedLedgerEvent(created.GetName());
+                    break;
+                case XpGainedEvent xp:
+                    var (amount, reason) = xp.GetPayload();
+                    yield return new XpAwardedLedgerEvent(amount, reason);
+                    break;
+                case WoundsTreatedEvent healed:
+                    yield return new PlayerHealedLedgerEvent(healed.GetHealthRestored(), "TreatWounds");
+                    break;
+                case LoadoutChangedEvent loadout:
+                    yield return new ItemAcquiredLedgerEvent(loadout.GetWeaponName());
+                    break;
+                case PerkUnlockedEvent perk:
+                    yield return new PerkUnlockedLedgerEvent(perk.GetPerkName());
+                    break;
+                case CombatVictoryEvent:
+                    yield return new RunCompletedLedgerEvent(true, "Victory");
+                    break;
+                case ExfilFailedEvent failed:
+                    yield return new RunCompletedLedgerEvent(false, failed.GetReason());
+                    break;
+                case OperatorDiedEvent died:
+                    yield return new PlayerDamagedLedgerEvent(100f, died.GetCauseOfDeath());
+                    yield return new RunCompletedLedgerEvent(false, died.GetCauseOfDeath());
+                    break;
+                case InfilStartedEvent infilStarted:
+                    var (sessionId, lockedLoadout, infilStartTime) = infilStarted.GetPayload();
+                    yield return new InfilStateChangedLedgerEvent("Started", "InfilStarted");
+                    yield return new CombatSessionLedgerEvent(sessionId, "Infil");
+                    _ = lockedLoadout;
+                    _ = infilStartTime;
+                    break;
+                case InfilEndedEvent infilEnded:
+                    var (wasSuccessful, endedReason) = infilEnded.GetPayload();
+                    yield return new InfilStateChangedLedgerEvent("Ended", endedReason);
+                    yield return new RunCompletedLedgerEvent(wasSuccessful, endedReason);
+                    break;
+                case CombatSessionStartedEvent combatStarted:
+                    yield return new CombatSessionLedgerEvent(combatStarted.GetPayload(), "Started");
+                    break;
+                case PetActionAppliedEvent petAction:
+                    var (action, health, fatigue, injury, stress, morale, hunger, hydration, _) = petAction.GetPayload();
+                    yield return new PetStateLedgerEvent(action, health, fatigue, injury, stress, morale, hunger, hydration);
+                    break;
+            }
+        }
     }
 
     private static byte[] SerializeAction(PlayerAction action)

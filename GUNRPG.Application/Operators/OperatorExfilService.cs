@@ -1058,7 +1058,17 @@ public sealed class OperatorExfilService
 
     private async Task MirrorLedgerWriteAsync(IReadOnlyList<OperatorEvent> events)
     {
-        if (!_ledgerOptions.MirrorLegacyWrites || _ledgerBridge is null || events.Count == 0)
+        if (_ledgerBridge is null || events.Count == 0)
+        {
+            if (_ledgerOptions.RequireLedgerWrites && _ledgerBridge is null)
+            {
+                throw new InvalidOperationException("RequireLedgerWrites is enabled but no ledger bridge is configured.");
+            }
+
+            return;
+        }
+
+        if (!_ledgerOptions.MirrorLegacyWrites && !_ledgerOptions.RequireLedgerWrites)
         {
             return;
         }
@@ -1069,7 +1079,7 @@ public sealed class OperatorExfilService
         {
             await _ledgerBridge.MirrorAsync(runId, operatorId, events);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!_ledgerOptions.RequireLedgerWrites)
         {
             _logger.LogWarning(
                 "Failed to mirror operator {OperatorId} events into the run ledger: {ErrorType}: {ErrorMessage}",

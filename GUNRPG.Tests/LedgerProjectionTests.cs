@@ -183,6 +183,67 @@ public sealed class LedgerProjectionTests : IDisposable
         Assert.Equal("Best Effort", load.Value!.Name);
     }
 
+    [Fact]
+    public async Task Ledger_Is_Source_Of_Truth()
+    {
+        // Arrange: simulate a run via the service (which calls MirrorAsync → replay → ledger)
+        var create = await _service.CreateOperatorAsync("Source Ranger");
+        var operatorId = create.Value!;
+
+        await _service.ChangeLoadoutAsync(operatorId, "M4");
+        await _service.UnlockPerkAsync(operatorId, "Marksman");
+        var infil = await _service.StartInfilAsync(operatorId);
+        await _service.StartCombatSessionAsync(operatorId, infil.Value);
+        await _service.ProcessCombatOutcomeAsync(new CombatOutcome(
+            infil.Value,
+            operatorId,
+            operatorDied: false,
+            xpGained: 100,
+            gearLost: [],
+            isVictory: true,
+            turnsSurvived: 5,
+            damageTaken: 10f));
+        await _service.CompleteInfilSuccessfullyAsync(operatorId);
+
+        // Assert: ledger entries have mutations produced entirely by the replay engine
+        var runEntries = _ledger.Entries.Where(e => e.Run is not null).ToList();
+        Assert.NotEmpty(runEntries);
+
+        foreach (var entry in runEntries)
+        {
+            var mutation = entry.Run!.Mutation;
+            // Mutation must carry operator events - proving replay generated it from real events
+            Assert.NotEmpty(mutation.OperatorEvents);
+            // Mutation must carry gameplay events - proving semantic translation happened in replay
+            Assert.NotEmpty(mutation.GameplayEvents);
+        }
+
+        // Assert: projected state matches reality (ledger is the source of truth)
+        var projected = await _bridge.LoadProjectedOperatorAsync(operatorId);
+        Assert.NotNull(projected);
+        Assert.Equal("M4", projected!.EquippedWeaponName);
+        Assert.Contains("Marksman", projected.UnlockedPerks);
+    }
+
+    [Fact]
+    public async Task RequireLedgerWrites_FailsOperationWhenLedgerThrows()
+    {
+        var strictService = new OperatorExfilService(
+            _eventStore,
+            ledgerBridge: new ThrowingGameplayLedgerBridge(),
+            ledgerOptions: new GameplayLedgerOptions
+            {
+                MirrorLegacyWrites = true,
+                RequireLedgerWrites = true,
+                CompareLegacyAndLedgerState = false
+            });
+
+        var result = await strictService.CreateOperatorAsync("Strict Writer");
+
+        // When RequireLedgerWrites is true and ledger throws, the operation must fail
+        Assert.False(result.IsSuccess);
+    }
+
     private sealed class ThrowingGameplayLedgerBridge : IGameplayLedgerBridge
     {
         public Task MirrorAsync(

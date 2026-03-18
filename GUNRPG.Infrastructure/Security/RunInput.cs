@@ -1,3 +1,5 @@
+using GUNRPG.Core.Operators;
+
 namespace GUNRPG.Security;
 
 public sealed record RunInput
@@ -8,5 +10,5 @@ public sealed record RunInput
 
     public IReadOnlyList<PlayerAction> Actions { get; init; } = [];
 
-    public GUNRPG.Ledger.RunLedgerMutation Mutation { get; init; } = GUNRPG.Ledger.RunLedgerMutation.Empty;
+    public IReadOnlyList<OperatorEvent> OperatorEvents { get; init; } = [];
 }
