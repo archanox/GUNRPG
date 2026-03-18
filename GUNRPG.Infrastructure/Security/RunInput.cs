@@ -7,4 +7,6 @@ public sealed record RunInput
     public Guid PlayerId { get; init; }
 
     public IReadOnlyList<PlayerAction> Actions { get; init; } = [];
+
+    public GUNRPG.Ledger.RunLedgerMutation Mutation { get; init; } = GUNRPG.Ledger.RunLedgerMutation.Empty;
 }

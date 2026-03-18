@@ -192,7 +192,7 @@ public class RunLedger
         var sanitizedAttestation = FilterTrustedValidSignatures(mergedAttestation, _currentAuthorityState);
         var candidateRun = ReferenceEquals(sanitizedAttestation, run.Attestation)
             ? run
-            : new RunValidationResult(run.RunId, run.PlayerId, run.ServerId, run.FinalStateHash, sanitizedAttestation);
+            : new RunValidationResult(run.RunId, run.PlayerId, run.ServerId, run.FinalStateHash, sanitizedAttestation, run.Mutation);
 
         if (!signatureVerifier.Verify(candidateRun.Attestation, timestamp))
         {
@@ -624,7 +624,8 @@ public class RunLedger
             authoritativeResult.PlayerId,
             authoritativeResult.ServerId,
             authoritativeResult.FinalStateHash,
-            authoritativeAttestation);
+            authoritativeAttestation,
+            authoritativeResult.Mutation);
     }
 
     private static ImmutableArray<AuthoritySignature> NormalizeAuthoritySignatures(IEnumerable<AuthoritySignature> signatures)
