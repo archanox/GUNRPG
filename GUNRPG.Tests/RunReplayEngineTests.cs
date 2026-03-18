@@ -83,13 +83,26 @@ public sealed class RunReplayEngineTests
     }
 
     [Fact]
-    public void Replay_ThrowsWhenMutationIsNull()
+    public void Replay_ProducesMutationFromOperatorEvents()
     {
         var serverIdentity = CreateServerIdentity(out _);
-        var input = CreateRunInput() with { Mutation = null! };
+        var events = CreateCompletedRunEvents();
+        var operatorId = events[0].OperatorId;
         var engine = new RunReplayEngine(serverIdentity);
 
-        Assert.Throws<ArgumentNullException>(() => engine.Replay(input));
+        var input = new RunInput
+        {
+            RunId = Guid.NewGuid(),
+            PlayerId = operatorId.Value,
+            Actions = [],
+            OperatorEvents = events
+        };
+
+        var result = engine.Replay(input);
+
+        Assert.NotNull(result.Mutation);
+        Assert.Equal(events.Count, result.Mutation.OperatorEvents.Count);
+        Assert.NotEmpty(result.Mutation.GameplayEvents);
     }
 
     [Fact]

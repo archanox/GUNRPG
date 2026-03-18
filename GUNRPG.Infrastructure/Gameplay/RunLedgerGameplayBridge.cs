@@ -40,15 +40,12 @@ public sealed class RunLedgerGameplayBridge : IGameplayLedgerBridge
     {
         ArgumentNullException.ThrowIfNull(operatorEvents);
 
-        var semanticEvents = gameplayEvents is { Count: > 0 }
-            ? gameplayEvents.ToArray()
-            : BuildSemanticEvents(operatorEvents).ToArray();
         var input = new RunInput
         {
             RunId = runId,
             PlayerId = operatorId.Value,
             Actions = [],
-            Mutation = new RunLedgerMutation(operatorEvents, semanticEvents)
+            OperatorEvents = operatorEvents
         };
 
         var replayed = _replayEngine.Replay(input);
@@ -108,60 +105,5 @@ public sealed class RunLedgerGameplayBridge : IGameplayLedgerBridge
             replayed.FinalStateHash,
             attestation,
             replayed.Mutation);
-    }
-
-    private static IEnumerable<GameplayLedgerEvent> BuildSemanticEvents(IEnumerable<OperatorEvent> operatorEvents)
-    {
-        foreach (var evt in operatorEvents)
-        {
-            switch (evt)
-            {
-                case OperatorCreatedEvent created:
-                    yield return new OperatorCreatedLedgerEvent(created.GetName());
-                    break;
-                case XpGainedEvent xp:
-                    var (amount, reason) = xp.GetPayload();
-                    yield return new XpAwardedLedgerEvent(amount, reason);
-                    break;
-                case WoundsTreatedEvent healed:
-                    yield return new PlayerHealedLedgerEvent(healed.GetHealthRestored(), "TreatWounds");
-                    break;
-                case LoadoutChangedEvent loadout:
-                    yield return new ItemAcquiredLedgerEvent(loadout.GetWeaponName());
-                    break;
-                case PerkUnlockedEvent perk:
-                    yield return new PerkUnlockedLedgerEvent(perk.GetPerkName());
-                    break;
-                case CombatVictoryEvent:
-                    yield return new RunCompletedLedgerEvent(true, "Victory");
-                    break;
-                case ExfilFailedEvent failed:
-                    yield return new RunCompletedLedgerEvent(false, failed.GetReason());
-                    break;
-                case OperatorDiedEvent died:
-                    yield return new PlayerDamagedLedgerEvent(100f, died.GetCauseOfDeath());
-                    yield return new RunCompletedLedgerEvent(false, died.GetCauseOfDeath());
-                    break;
-                case InfilStartedEvent infilStarted:
-                    var (sessionId, lockedLoadout, infilStartTime) = infilStarted.GetPayload();
-                    yield return new InfilStateChangedLedgerEvent("Started", "InfilStarted");
-                    yield return new CombatSessionLedgerEvent(sessionId, "Infil");
-                    _ = lockedLoadout;
-                    _ = infilStartTime;
-                    break;
-                case InfilEndedEvent infilEnded:
-                    var (wasSuccessful, endedReason) = infilEnded.GetPayload();
-                    yield return new InfilStateChangedLedgerEvent("Ended", endedReason);
-                    yield return new RunCompletedLedgerEvent(wasSuccessful, endedReason);
-                    break;
-                case CombatSessionStartedEvent combatStarted:
-                    yield return new CombatSessionLedgerEvent(combatStarted.GetPayload(), "Started");
-                    break;
-                case PetActionAppliedEvent petAction:
-                    var (action, health, fatigue, injury, stress, morale, hunger, hydration, _) = petAction.GetPayload();
-                    yield return new PetStateLedgerEvent(action, health, fatigue, injury, stress, morale, hunger, hydration);
-                    break;
-            }
-        }
     }
 }
