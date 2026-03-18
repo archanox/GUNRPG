@@ -185,11 +185,9 @@ public sealed class RunReplayEngine : IRunReplayEngine
                     yield return new RunCompletedLedgerEvent(false, died.GetCauseOfDeath());
                     break;
                 case InfilStartedEvent infilStarted:
-                    var (sessionId, lockedLoadout, infilStartTime) = infilStarted.GetPayload();
+                    var (sessionId, _, _) = infilStarted.GetPayload();
                     yield return new InfilStateChangedLedgerEvent("Started", "InfilStarted");
                     yield return new CombatSessionLedgerEvent(sessionId, "Infil");
-                    _ = lockedLoadout;
-                    _ = infilStartTime;
                     break;
                 case InfilEndedEvent infilEnded:
                     var (wasSuccessful, endedReason) = infilEnded.GetPayload();
