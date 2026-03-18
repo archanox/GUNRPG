@@ -57,6 +57,7 @@ public sealed class RunReplayEngine : IRunReplayEngine
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(serverIdentity);
+        ArgumentNullException.ThrowIfNull(input.OperatorEvents);
 
         var mutation = ComputeMutationFromOperatorEvents(input.OperatorEvents);
         var finalStateHash = ComputeReplayHash(input, mutation);

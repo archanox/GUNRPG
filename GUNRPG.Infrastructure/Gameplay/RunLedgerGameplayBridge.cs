@@ -35,7 +35,6 @@ public sealed class RunLedgerGameplayBridge : IGameplayLedgerBridge
         Guid runId,
         OperatorId operatorId,
         IReadOnlyList<OperatorEvent> operatorEvents,
-        IReadOnlyList<GameplayLedgerEvent>? gameplayEvents = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(operatorEvents);
