@@ -86,6 +86,24 @@ public class RunLedger
         return TryAppendWithQuorum(run, signatureVerifier, quorumValidator, quorumPolicy, DateTimeOffset.UtcNow);
     }
 
+    public bool TryAppendWithReplayValidation(
+        RunInput input,
+        RunValidationResult? submittedResult,
+        IRunReplayEngine replayEngine,
+        SignatureVerifier signatureVerifier,
+        QuorumValidator quorumValidator,
+        QuorumPolicy quorumPolicy)
+    {
+        return TryAppendWithReplayValidation(
+            input,
+            submittedResult,
+            replayEngine,
+            signatureVerifier,
+            quorumValidator,
+            quorumPolicy,
+            DateTimeOffset.UtcNow);
+    }
+
     [Obsolete("Bootstrap authority sets are only used during ledger initialization.")]
     public bool TryAppendAuthorityEventWithQuorum(
         AuthorityEvent authorityEvent,
@@ -192,6 +210,28 @@ public class RunLedger
         _validationCache.Remove(resultHashKey);
         Append(candidateRun, timestamp);
         return true;
+    }
+
+    internal bool TryAppendWithReplayValidation(
+        RunInput input,
+        RunValidationResult? submittedResult,
+        IRunReplayEngine replayEngine,
+        SignatureVerifier signatureVerifier,
+        QuorumValidator quorumValidator,
+        QuorumPolicy quorumPolicy,
+        DateTimeOffset timestamp)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(replayEngine);
+
+        var authoritativeResult = replayEngine.Replay(input);
+        if (submittedResult is not null && !HasMatchingResult(authoritativeResult, submittedResult))
+        {
+            return false;
+        }
+
+        var replayValidatedResult = AttachAuthoritySignatures(authoritativeResult, submittedResult?.Attestation.Signatures);
+        return TryAppendWithQuorum(replayValidatedResult, signatureVerifier, quorumValidator, quorumPolicy, timestamp);
     }
 
     internal bool TryAppendAuthorityEventWithQuorum(
@@ -554,6 +594,37 @@ public class RunLedger
         {
             Signatures = [.. normalizedSignatures]
         };
+    }
+
+    private static bool HasMatchingResult(RunValidationResult authoritativeResult, RunValidationResult submittedResult)
+    {
+        var authoritativeHash = authoritativeResult.ComputeResultHash();
+        var submittedHash = submittedResult.ComputeResultHash();
+        return CryptographicOperations.FixedTimeEquals(authoritativeHash, submittedHash);
+    }
+
+    private static RunValidationResult AttachAuthoritySignatures(
+        RunValidationResult authoritativeResult,
+        IEnumerable<AuthoritySignature>? signatures)
+    {
+        if (signatures is null)
+        {
+            return authoritativeResult;
+        }
+
+        var authoritativeAttestation = new SignedRunValidation(
+            authoritativeResult.Attestation.Validation,
+            authoritativeResult.Attestation.Certificate)
+        {
+            Signatures = [.. signatures]
+        };
+
+        return new RunValidationResult(
+            authoritativeResult.RunId,
+            authoritativeResult.PlayerId,
+            authoritativeResult.ServerId,
+            authoritativeResult.FinalStateHash,
+            authoritativeAttestation);
     }
 
     private static ImmutableArray<AuthoritySignature> NormalizeAuthoritySignatures(IEnumerable<AuthoritySignature> signatures)

@@ -1,3 +1,4 @@
+using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
 using GUNRPG.Security;
 
@@ -66,6 +67,22 @@ public sealed class RunReplayEngineTests
     }
 
     [Fact]
+    public void Replay_IsDeterministic()
+    {
+        var serverIdentity = CreateServerIdentity(out _);
+        var input = CreateRunInput();
+        var engineA = new RunReplayEngine(serverIdentity);
+        var engineB = new RunReplayEngine(serverIdentity);
+
+        var resultA = engineA.Replay(input);
+        var resultB = engineB.Replay(input);
+
+        Assert.True(resultA.FinalStateHash.SequenceEqual(resultB.FinalStateHash));
+        Assert.True(resultA.ComputeResultHash().SequenceEqual(resultB.ComputeResultHash()));
+        Assert.True(resultA.Attestation.Validation.Signature.SequenceEqual(resultB.Attestation.Validation.Signature));
+    }
+
+    [Fact]
     public void ValidateRunOnly_ThrowsWhenChainTamperedAtTail()
     {
         var engine = new RunReplayEngine();
@@ -106,6 +123,21 @@ public sealed class RunReplayEngineTests
         var exfil = new InfilEndedEvent(operatorId, 7, true, "EXFIL", victory.Hash, ReferenceNow.AddMinutes(-3));
 
         return [created, loadout, perk, infil, combatStart, xp, victory, exfil];
+    }
+
+    private static RunInput CreateRunInput()
+    {
+        return new RunInput
+        {
+            RunId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            PlayerId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            Actions =
+            [
+                new PlayerAction { SequenceNumber = 1, Primary = PrimaryAction.Fire, Movement = MovementAction.WalkToward },
+                new PlayerAction { SequenceNumber = 2, Stance = StanceAction.EnterADS },
+                new PlayerAction { SequenceNumber = 3, Primary = PrimaryAction.Reload, CancelMovement = true }
+            ]
+        };
     }
 
     private static ServerIdentity CreateServerIdentity(out AuthorityRoot authorityRoot)
