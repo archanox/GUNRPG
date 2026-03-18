@@ -1,11 +1,17 @@
 using System.Buffers.Binary;
 using System.Security.Cryptography;
+using GUNRPG.Application.Gameplay;
 using GUNRPG.Core.Operators;
 
 namespace GUNRPG.Ledger;
 
 public sealed class RunLedgerMutation
 {
+    private const int GuidSize = 16;
+    private const int Int32Size = sizeof(int);
+    private const int Int64Size = sizeof(long);
+    private const int SingleSize = sizeof(float);
+
     public static RunLedgerMutation Empty { get; } = new([], []);
 
     public RunLedgerMutation(
@@ -67,7 +73,7 @@ public sealed class RunLedgerMutation
         var previousHashBytes = EncodeUtf8(evt.PreviousHash);
         var hashBytes = EncodeUtf8(evt.Hash);
         var buffer = GC.AllocateUninitializedArray<byte>(
-            16 + sizeof(long) + (sizeof(int) * 4) + eventTypeBytes.Length + payloadBytes.Length + previousHashBytes.Length + hashBytes.Length + sizeof(long));
+            GuidSize + Int64Size + (Int32Size * 4) + eventTypeBytes.Length + payloadBytes.Length + previousHashBytes.Length + hashBytes.Length + Int64Size);
         var offset = 0;
         WriteGuid(evt.OperatorId.Value, buffer, ref offset);
         WriteInt64(evt.SequenceNumber, buffer, ref offset);
@@ -111,13 +117,13 @@ public sealed class RunLedgerMutation
     private static void WriteInt32(int value, Span<byte> destination, ref int offset)
     {
         BinaryPrimitives.WriteInt32BigEndian(destination[offset..], value);
-        offset += sizeof(int);
+        offset += Int32Size;
     }
 
     private static void WriteInt64(long value, Span<byte> destination, ref int offset)
     {
         BinaryPrimitives.WriteInt64BigEndian(destination[offset..], value);
-        offset += sizeof(long);
+        offset += Int64Size;
     }
 
     private static void WriteBytes(ReadOnlySpan<byte> value, Span<byte> destination, ref int offset)
@@ -129,9 +135,10 @@ public sealed class RunLedgerMutation
 
     private static void WriteGuid(Guid value, Span<byte> destination, ref int offset)
     {
-        if (!value.TryWriteBytes(destination[offset..], bigEndian: true, out var bytesWritten) || bytesWritten != 16)
+        if (!value.TryWriteBytes(destination[offset..], bigEndian: true, out var bytesWritten) || bytesWritten != GuidSize)
         {
-            throw new InvalidOperationException("Failed to encode GUID for run-ledger mutation hashing.");
+            throw new InvalidOperationException(
+                $"Failed to encode GUID {value:D} for run-ledger mutation hashing. Expected {GuidSize} bytes but wrote {bytesWritten}.");
         }
 
         offset += bytesWritten;
@@ -140,7 +147,7 @@ public sealed class RunLedgerMutation
     private static byte[] SerializeGameplayEvent(int typeId, string eventType, IReadOnlyList<byte[]> fields)
     {
         var eventTypeBytes = EncodeUtf8(eventType);
-        var totalLength = sizeof(int) + sizeof(int) + eventTypeBytes.Length + fields.Sum(static field => sizeof(int) + field.Length);
+        var totalLength = Int32Size + Int32Size + eventTypeBytes.Length + fields.Sum(static field => Int32Size + field.Length);
         var buffer = GC.AllocateUninitializedArray<byte>(totalLength);
         var offset = 0;
         WriteInt32(typeId, buffer, ref offset);
@@ -164,24 +171,25 @@ public sealed class RunLedgerMutation
 
     private static byte[] EncodeSingle(float value)
     {
-        var buffer = GC.AllocateUninitializedArray<byte>(sizeof(float));
+        var buffer = GC.AllocateUninitializedArray<byte>(SingleSize);
         BinaryPrimitives.WriteSingleBigEndian(buffer, value);
         return buffer;
     }
 
     private static byte[] EncodeInt64(long value)
     {
-        var buffer = GC.AllocateUninitializedArray<byte>(sizeof(long));
+        var buffer = GC.AllocateUninitializedArray<byte>(Int64Size);
         BinaryPrimitives.WriteInt64BigEndian(buffer, value);
         return buffer;
     }
 
     private static byte[] EncodeGuid(Guid value)
     {
-        var buffer = GC.AllocateUninitializedArray<byte>(16);
-        if (!value.TryWriteBytes(buffer, bigEndian: true, out var bytesWritten) || bytesWritten != 16)
+        var buffer = GC.AllocateUninitializedArray<byte>(GuidSize);
+        if (!value.TryWriteBytes(buffer, bigEndian: true, out var bytesWritten) || bytesWritten != GuidSize)
         {
-            throw new InvalidOperationException("Failed to encode GUID for run-ledger mutation hashing.");
+            throw new InvalidOperationException(
+                $"Failed to encode GUID {value:D} for run-ledger mutation hashing. Expected {GuidSize} bytes but wrote {bytesWritten}.");
         }
 
         return buffer;

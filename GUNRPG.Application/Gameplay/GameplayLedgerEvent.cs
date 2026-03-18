@@ -1,4 +1,4 @@
-namespace GUNRPG.Ledger;
+namespace GUNRPG.Application.Gameplay;
 
 public abstract record GameplayLedgerEvent(string EventType);
 
