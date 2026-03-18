@@ -15,6 +15,12 @@ public sealed class RunReplayEngine : IRunReplayEngine
     private const int Int64Size = 8;
     private const int Int32Size = 4;
 
+    // Base hit-chance used when processing AttackActions.
+    private const double BaseHitChance = 0.6;
+    private const float MinAttackDamage = 10f;
+    private const float MaxAttackDamage = 30f;
+    private const float AttackDamageRange = MaxAttackDamage - MinAttackDamage;
+
     private readonly ILogger<RunReplayEngine> _logger;
     private readonly ServerIdentity? _serverIdentity;
 
@@ -57,15 +63,23 @@ public sealed class RunReplayEngine : IRunReplayEngine
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(serverIdentity);
-        ArgumentNullException.ThrowIfNull(input.OperatorEvents);
 
-        var mutation = ComputeMutationFromOperatorEvents(input.OperatorEvents);
-        var finalStateHash = ComputeReplayHash(input, mutation);
+        // Deterministic RNG seeded from RunInput — same seed always produces same events.
+        var rng = new Random(input.Seed);
+        var events = ProcessActions(input.Actions, rng);
+
+        var mutation = new RunLedgerMutation([], events);
+        var finalStateHash = ComputeReplayHash(input, events);
         var attestation = new SignedRunValidation(
             serverIdentity.SignRunValidation(input.RunId, input.PlayerId, finalStateHash),
             serverIdentity.Certificate);
 
-        _logger.LogDebug("Run {RunId} replayed deterministically for player {PlayerId}", input.RunId, input.PlayerId);
+        _logger.LogDebug(
+            "Run {RunId} replayed deterministically for player {PlayerId}: {ActionCount} action(s), {EventCount} event(s)",
+            input.RunId,
+            input.PlayerId,
+            input.Actions.Count,
+            events.Count);
 
         return new RunValidationResult(
             input.RunId,
@@ -99,18 +113,59 @@ public sealed class RunReplayEngine : IRunReplayEngine
             attestation);
     }
 
-    private static byte[] ComputeReplayHash(RunInput input, RunLedgerMutation mutation)
+    /// <summary>
+    /// Processes player actions sequentially using a seeded, deterministic RNG to simulate all
+    /// gameplay effects (combat, damage, loot, status changes) and returns the resulting events.
+    /// </summary>
+    private static IReadOnlyList<GameplayLedgerEvent> ProcessActions(
+        IReadOnlyList<PlayerAction> actions,
+        Random rng)
+    {
+        var events = new List<GameplayLedgerEvent>(capacity: actions.Count);
+
+        foreach (var action in actions)
+        {
+            switch (action)
+            {
+                case MoveAction move:
+                    events.Add(new InfilStateChangedLedgerEvent("Moving", move.Direction.ToString()));
+                    break;
+
+                case AttackAction attack:
+                    // Combat: seeded RNG determines hit outcome.
+                    if (rng.NextDouble() < BaseHitChance)
+                    {
+                        var damage = MinAttackDamage + (float)(rng.NextDouble() * AttackDamageRange);
+                        events.Add(new PlayerDamagedLedgerEvent(damage, attack.TargetId.ToString("N")));
+                    }
+                    break;
+
+                case UseItemAction useItem:
+                    events.Add(new ItemAcquiredLedgerEvent(useItem.ItemId.ToString("N")));
+                    break;
+
+                case ExfilAction:
+                    events.Add(new RunCompletedLedgerEvent(true, "Exfil"));
+                    break;
+            }
+        }
+
+        return events;
+    }
+
+    private static byte[] ComputeReplayHash(RunInput input, IReadOnlyList<GameplayLedgerEvent> events)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Actions);
-        ArgumentNullException.ThrowIfNull(input.OperatorEvents);
 
         var actionPayloads = new byte[input.Actions.Count][];
-        var bufferLength = GuidSize + GuidSize + Int32Size;
+        // RunId (16) + PlayerId (16) + Seed (4) + action-count (4)
+        var bufferLength = GuidSize + GuidSize + Int32Size + Int32Size;
 
         for (var i = 0; i < input.Actions.Count; i++)
         {
-            var action = input.Actions[i] ?? throw new ArgumentException($"Action at index {i} in run input must not be null.", nameof(input));
+            var action = input.Actions[i] ?? throw new ArgumentException(
+                $"Action at index {i} in run input must not be null.", nameof(input));
             var payload = SerializeAction(action);
             actionPayloads[i] = payload;
             bufferLength += Int32Size + payload.Length;
@@ -120,6 +175,8 @@ public sealed class RunReplayEngine : IRunReplayEngine
         var offset = 0;
         WriteGuid(input.RunId, buffer, ref offset);
         WriteGuid(input.PlayerId, buffer, ref offset);
+        BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(offset, Int32Size), input.Seed);
+        offset += Int32Size;
         BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(offset, Int32Size), actionPayloads.Length);
         offset += Int32Size;
 
@@ -131,104 +188,62 @@ public sealed class RunReplayEngine : IRunReplayEngine
             offset += payload.Length;
         }
 
-        var mutationHash = mutation.ComputeHash();
-        var expanded = GC.AllocateUninitializedArray<byte>(buffer.Length + Int32Size + mutationHash.Length);
+        // Include a hash of the derived events so the final hash covers all gameplay outcomes.
+        var eventsHash = new RunLedgerMutation([], events).ComputeHash();
+        var expanded = GC.AllocateUninitializedArray<byte>(buffer.Length + Int32Size + eventsHash.Length);
         buffer.CopyTo(expanded, 0);
         offset = buffer.Length;
-        BinaryPrimitives.WriteInt32BigEndian(expanded.AsSpan(offset, Int32Size), mutationHash.Length);
+        BinaryPrimitives.WriteInt32BigEndian(expanded.AsSpan(offset, Int32Size), eventsHash.Length);
         offset += Int32Size;
-        mutationHash.CopyTo(expanded, offset);
+        eventsHash.CopyTo(expanded, offset);
 
         return SHA256.HashData(expanded);
     }
 
-    private static RunLedgerMutation ComputeMutationFromOperatorEvents(IReadOnlyList<OperatorEvent> operatorEvents)
-    {
-        if (operatorEvents.Count == 0)
-        {
-            return RunLedgerMutation.Empty;
-        }
-
-        var gameplayEvents = BuildSemanticEvents(operatorEvents).ToArray();
-        return new RunLedgerMutation(operatorEvents, gameplayEvents);
-    }
-
-    private static IEnumerable<GameplayLedgerEvent> BuildSemanticEvents(IEnumerable<OperatorEvent> operatorEvents)
-    {
-        foreach (var evt in operatorEvents)
-        {
-            switch (evt)
-            {
-                case OperatorCreatedEvent created:
-                    yield return new OperatorCreatedLedgerEvent(created.GetName());
-                    break;
-                case XpGainedEvent xp:
-                    var (amount, reason) = xp.GetPayload();
-                    yield return new XpAwardedLedgerEvent(amount, reason);
-                    break;
-                case WoundsTreatedEvent healed:
-                    yield return new PlayerHealedLedgerEvent(healed.GetHealthRestored(), "TreatWounds");
-                    break;
-                case LoadoutChangedEvent loadout:
-                    yield return new ItemAcquiredLedgerEvent(loadout.GetWeaponName());
-                    break;
-                case PerkUnlockedEvent perk:
-                    yield return new PerkUnlockedLedgerEvent(perk.GetPerkName());
-                    break;
-                case CombatVictoryEvent:
-                    yield return new RunCompletedLedgerEvent(true, "Victory");
-                    break;
-                case ExfilFailedEvent failed:
-                    yield return new RunCompletedLedgerEvent(false, failed.GetReason());
-                    break;
-                case OperatorDiedEvent died:
-                    yield return new PlayerDamagedLedgerEvent(100f, died.GetCauseOfDeath());
-                    yield return new RunCompletedLedgerEvent(false, died.GetCauseOfDeath());
-                    break;
-                case InfilStartedEvent infilStarted:
-                    var (sessionId, _, _) = infilStarted.GetPayload();
-                    yield return new InfilStateChangedLedgerEvent("Started", "InfilStarted");
-                    yield return new CombatSessionLedgerEvent(sessionId, "Infil");
-                    break;
-                case InfilEndedEvent infilEnded:
-                    var (wasSuccessful, endedReason) = infilEnded.GetPayload();
-                    yield return new InfilStateChangedLedgerEvent("Ended", endedReason);
-                    yield return new RunCompletedLedgerEvent(wasSuccessful, endedReason);
-                    break;
-                case CombatSessionStartedEvent combatStarted:
-                    yield return new CombatSessionLedgerEvent(combatStarted.GetPayload(), "Started");
-                    break;
-                case PetActionAppliedEvent petAction:
-                    var (action, health, fatigue, injury, stress, morale, hunger, hydration, _) = petAction.GetPayload();
-                    yield return new PetStateLedgerEvent(action, health, fatigue, injury, stress, morale, hunger, hydration);
-                    break;
-            }
-        }
-    }
-
     private static byte[] SerializeAction(PlayerAction action)
     {
-        var buffer = GC.AllocateUninitializedArray<byte>(Int64Size + (Int32Size * 4) + 1);
-        var offset = 0;
+        return action switch
+        {
+            MoveAction move => SerializeMoveAction(move),
+            AttackAction attack => SerializeAttackAction(attack),
+            UseItemAction useItem => SerializeUseItemAction(useItem),
+            ExfilAction => SerializeExfilAction(),
+            _ => throw new InvalidOperationException($"Cannot serialize unknown action type '{action.GetType().Name}'.")
+        };
+    }
 
-        BinaryPrimitives.WriteInt64BigEndian(buffer.AsSpan(offset, Int64Size), action.SequenceNumber);
-        offset += Int64Size;
-        BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(offset, Int32Size), EncodeOptionalEnum(action.Primary));
-        offset += Int32Size;
-        BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(offset, Int32Size), EncodeOptionalEnum(action.Movement));
-        offset += Int32Size;
-        BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(offset, Int32Size), EncodeOptionalEnum(action.Stance));
-        offset += Int32Size;
-        BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(offset, Int32Size), EncodeOptionalEnum(action.Cover));
-        offset += Int32Size;
-        buffer[offset] = action.CancelMovement ? (byte)1 : (byte)0;
-
+    private static byte[] SerializeMoveAction(MoveAction move)
+    {
+        // tag (1) + Direction as int (4)
+        var buffer = GC.AllocateUninitializedArray<byte>(1 + Int32Size);
+        buffer[0] = 1;
+        BinaryPrimitives.WriteInt32BigEndian(buffer.AsSpan(1, Int32Size), (int)move.Direction);
         return buffer;
     }
 
-    private static int EncodeOptionalEnum<TEnum>(TEnum? value)
-        where TEnum : struct, Enum =>
-        value.HasValue ? Convert.ToInt32(value.Value) : -1;
+    private static byte[] SerializeAttackAction(AttackAction attack)
+    {
+        // tag (1) + TargetId (16)
+        var buffer = GC.AllocateUninitializedArray<byte>(1 + GuidSize);
+        buffer[0] = 2;
+        WriteGuidToSpan(attack.TargetId, buffer.AsSpan(1, GuidSize));
+        return buffer;
+    }
+
+    private static byte[] SerializeUseItemAction(UseItemAction useItem)
+    {
+        // tag (1) + ItemId (16)
+        var buffer = GC.AllocateUninitializedArray<byte>(1 + GuidSize);
+        buffer[0] = 3;
+        WriteGuidToSpan(useItem.ItemId, buffer.AsSpan(1, GuidSize));
+        return buffer;
+    }
+
+    private static byte[] SerializeExfilAction()
+    {
+        // tag (1) only
+        return [4];
+    }
 
     private static void WriteGuid(Guid value, byte[] buffer, ref int offset)
     {
@@ -240,5 +255,14 @@ public sealed class RunReplayEngine : IRunReplayEngine
         }
 
         offset += GuidSize;
+    }
+
+    private static void WriteGuidToSpan(Guid value, Span<byte> destination)
+    {
+        if (!value.TryWriteBytes(destination, bigEndian: true, out var bytesWritten) || bytesWritten != GuidSize)
+        {
+            throw new InvalidOperationException(
+                $"Expected {GuidSize} bytes when encoding GUID for replay hashing.");
+        }
     }
 }

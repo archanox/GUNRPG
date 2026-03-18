@@ -1,4 +1,3 @@
-using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
 using GUNRPG.Ledger;
 using GUNRPG.Security;
@@ -563,11 +562,12 @@ public sealed class QuorumValidatorTests
         {
             RunId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             PlayerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            Seed = 42,
             Actions =
             [
-                new PlayerAction { SequenceNumber = 1, Primary = PrimaryAction.Fire, Movement = MovementAction.WalkToward },
-                new PlayerAction { SequenceNumber = 2, Movement = MovementAction.SprintToward, Stance = StanceAction.EnterADS },
-                new PlayerAction { SequenceNumber = 3, Cover = CoverAction.EnterPartial, CancelMovement = true }
+                new MoveAction(Direction.North),
+                new AttackAction(Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc")),
+                new ExfilAction()
             ]
         };
     }

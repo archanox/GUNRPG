@@ -6,8 +6,10 @@ using GUNRPG.Application.Requests;
 using GUNRPG.Application.Results;
 using GUNRPG.Core.Operators;
 using GUNRPG.Core.VirtualPet;
+using GUNRPG.Security;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using System.Buffers.Binary;
 
 namespace GUNRPG.Application.Operators;
 
@@ -1075,9 +1077,20 @@ public sealed class OperatorExfilService
 
         var operatorId = events[0].OperatorId;
         var runId = TryGetRunId(events) ?? Guid.NewGuid();
+
+        // Build RunInput from player intent.  Actions are empty here because the operator
+        // pipeline is still event-driven; the seed is derived deterministically from the runId.
+        var runInput = new RunInput
+        {
+            RunId = runId,
+            PlayerId = operatorId.Value,
+            Seed = DeriveRunSeed(runId),
+            Actions = []
+        };
+
         try
         {
-            await _ledgerBridge.MirrorAsync(runId, operatorId, events);
+            await _ledgerBridge.MirrorAsync(runInput, events);
         }
         catch (Exception ex) when (!_ledgerOptions.RequireLedgerWrites)
         {
@@ -1128,6 +1141,17 @@ public sealed class OperatorExfilService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Derives a deterministic integer seed from a run identifier so the replay engine can be
+    /// seeded reproducibly without relying on external randomness.
+    /// </summary>
+    private static int DeriveRunSeed(Guid runId)
+    {
+        Span<byte> bytes = stackalloc byte[16];
+        runId.TryWriteBytes(bytes, bigEndian: true, out _);
+        return BinaryPrimitives.ReadInt32BigEndian(bytes);
     }
 
     private static bool HaveEquivalentState(OperatorAggregate legacy, OperatorAggregate projected)
