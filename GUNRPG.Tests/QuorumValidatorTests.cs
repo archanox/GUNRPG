@@ -1,3 +1,4 @@
+using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
 using GUNRPG.Ledger;
 using GUNRPG.Security;
@@ -112,8 +113,9 @@ public sealed class QuorumValidatorTests
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
         var policy = new QuorumPolicy(2);
-        var engine = new RunReplayEngine();
-        var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+        var input = CreateRunInput();
+        var engine = new RunReplayEngine(serverIdentity);
+        var result = engine.Replay(input);
         var attestation = WithSignatures(
             result.Attestation,
             SignValidation(result, authorityA, privateKeyA),
@@ -126,14 +128,14 @@ public sealed class QuorumValidatorTests
             attestation);
         var ledger = new RunLedger([authorityA, authorityB], policy);
 
-        var appended = ledger.TryAppendWithQuorum(quorumApprovedResult, signatureVerifier, validator, policy, ReferenceNow);
+        var appended = ledger.TryAppendWithReplayValidation(input, quorumApprovedResult, engine, signatureVerifier, validator, policy, ReferenceNow);
 
         Assert.True(appended);
         Assert.Single(ledger.Entries);
     }
 
     [Fact]
-    public void LedgerTryAppendWithQuorum_RejectsInvalidServerAttestation()
+    public void LedgerTryAppendWithReplayValidation_IgnoresTamperedSubmittedAttestation()
     {
         var validator = new QuorumValidator();
         var (serverIdentity, authorityRoot) = CreateTrustedServerIdentity();
@@ -141,8 +143,9 @@ public sealed class QuorumValidatorTests
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
         var policy = new QuorumPolicy(2);
-        var engine = new RunReplayEngine();
-        var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+        var input = CreateRunInput();
+        var engine = new RunReplayEngine(serverIdentity);
+        var result = engine.Replay(input);
         var tamperedValidation = new RunValidationSignature(
             result.Attestation.Validation.RunId,
             result.Attestation.Validation.PlayerId,
@@ -161,10 +164,11 @@ public sealed class QuorumValidatorTests
             tamperedAttestation);
         var ledger = new RunLedger([authorityA, authorityB], policy);
 
-        var appended = ledger.TryAppendWithQuorum(tamperedResult, signatureVerifier, validator, policy, ReferenceNow);
+        var appended = ledger.TryAppendWithReplayValidation(input, tamperedResult, engine, signatureVerifier, validator, policy, ReferenceNow);
 
-        Assert.False(appended);
-        Assert.Empty(ledger.Entries);
+        Assert.True(appended);
+        Assert.Single(ledger.Entries);
+        Assert.True(ledger.Entries[0].Run!.Attestation.Validation.Signature.SequenceEqual(result.Attestation.Validation.Signature));
     }
 
     [Fact]
@@ -271,18 +275,68 @@ public sealed class QuorumValidatorTests
         var authorityA = CreateAuthority("authority-a", out var privateKeyA);
         var authorityB = CreateAuthority("authority-b", out var privateKeyB);
         var policy = new QuorumPolicy(2);
-        var engine = new RunReplayEngine();
-        var result = engine.ValidateAndSignRun(Guid.NewGuid(), Guid.NewGuid(), CreateCompletedRunEvents(), serverIdentity);
+        var input = CreateRunInput();
+        var engine = new RunReplayEngine(serverIdentity);
+        var result = engine.Replay(input);
         var partialResultA = AttachSignatures(result, SignValidation(result, authorityA, privateKeyA));
         var partialResultB = AttachSignatures(result, SignValidation(result, authorityB, privateKeyB));
         var ledger = new RunLedger([authorityA, authorityB], policy);
 
-        var firstAppend = ledger.TryAppendWithQuorum(partialResultA, signatureVerifier, validator, policy, ReferenceNow);
-        var secondAppend = ledger.TryAppendWithQuorum(partialResultB, signatureVerifier, validator, policy, ReferenceNow);
+        var firstAppend = ledger.TryAppendWithReplayValidation(input, partialResultA, engine, signatureVerifier, validator, policy, ReferenceNow);
+        var secondAppend = ledger.TryAppendWithReplayValidation(input, partialResultB, engine, signatureVerifier, validator, policy, ReferenceNow);
 
         Assert.False(firstAppend);
         Assert.True(secondAppend);
         Assert.Single(ledger.Entries);
+    }
+
+    [Fact]
+    public void Replay_MismatchIsRejected()
+    {
+        var validator = new QuorumValidator();
+        var (serverIdentity, authorityRoot) = CreateTrustedServerIdentity();
+        var signatureVerifier = new SignatureVerifier(authorityRoot);
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out var privateKeyB);
+        var policy = new QuorumPolicy(2);
+        var input = CreateRunInput();
+        var engine = new RunReplayEngine(serverIdentity);
+        var authoritativeResult = engine.Replay(input);
+        var tamperedResult = AttachSignatures(
+            CreateValidatedResult(seed: 55),
+            SignValidation(authoritativeResult, authorityA, privateKeyA),
+            SignValidation(authoritativeResult, authorityB, privateKeyB));
+        var ledger = new RunLedger([authorityA, authorityB], policy);
+
+        var appended = ledger.TryAppendWithReplayValidation(input, tamperedResult, engine, signatureVerifier, validator, policy, ReferenceNow);
+
+        Assert.False(appended);
+        Assert.Empty(ledger.Entries);
+    }
+
+    [Fact]
+    public void Replay_ValidRun_ReachesQuorum()
+    {
+        var validator = new QuorumValidator();
+        var (serverIdentity, authorityRoot) = CreateTrustedServerIdentity();
+        var signatureVerifier = new SignatureVerifier(authorityRoot);
+        var authorityA = CreateAuthority("authority-a", out var privateKeyA);
+        var authorityB = CreateAuthority("authority-b", out var privateKeyB);
+        var policy = new QuorumPolicy(2);
+        var input = CreateRunInput();
+        var engine = new RunReplayEngine(serverIdentity);
+        var result = engine.Replay(input);
+        var submittedResult = AttachSignatures(
+            result,
+            SignValidation(result, authorityA, privateKeyA),
+            SignValidation(result, authorityB, privateKeyB));
+        var ledger = new RunLedger([authorityA, authorityB], policy);
+
+        var appended = ledger.TryAppendWithReplayValidation(input, submittedResult, engine, signatureVerifier, validator, policy, ReferenceNow);
+
+        Assert.True(appended);
+        Assert.Single(ledger.Entries);
+        Assert.True(ledger.Entries[0].Run!.FinalStateHash.SequenceEqual(result.FinalStateHash));
     }
 
     [Fact]
@@ -501,5 +555,20 @@ public sealed class QuorumValidatorTests
         var exfil = new InfilEndedEvent(operatorId, 7, true, "EXFIL", victory.Hash, ReferenceNow.AddMinutes(-3));
 
         return [created, loadout, perk, infil, combatStart, xp, victory, exfil];
+    }
+
+    private static RunInput CreateRunInput()
+    {
+        return new RunInput
+        {
+            RunId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            PlayerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            Actions =
+            [
+                new PlayerAction { SequenceNumber = 1, Primary = PrimaryAction.Fire, Movement = MovementAction.WalkToward },
+                new PlayerAction { SequenceNumber = 2, Movement = MovementAction.SprintToward, Stance = StanceAction.EnterADS },
+                new PlayerAction { SequenceNumber = 3, Cover = CoverAction.EnterPartial, CancelMovement = true }
+            ]
+        };
     }
 }
