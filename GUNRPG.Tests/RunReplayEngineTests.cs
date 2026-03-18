@@ -1,4 +1,3 @@
-using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
 using GUNRPG.Security;
 
@@ -66,6 +65,10 @@ public sealed class RunReplayEngineTests
         Assert.True(hash1.SequenceEqual(hash2));
     }
 
+    /// <summary>
+    /// Same RunInput (identical Actions + Seed) must always produce exactly the same events,
+    /// FinalStateHash, and attestation signature — across multiple engine instances.
+    /// </summary>
     [Fact]
     public void Replay_IsDeterministic()
     {
@@ -82,27 +85,66 @@ public sealed class RunReplayEngineTests
         Assert.True(resultA.Attestation.Validation.Signature.SequenceEqual(resultB.Attestation.Validation.Signature));
     }
 
+    /// <summary>
+    /// Replay engine must derive GameplayLedgerEvents from Actions.
+    /// ExfilAction → RunCompletedLedgerEvent; AttackAction → optional PlayerDamagedLedgerEvent.
+    /// </summary>
     [Fact]
-    public void Replay_ProducesMutationFromOperatorEvents()
+    public void Replay_ProducesEvents()
     {
         var serverIdentity = CreateServerIdentity(out _);
-        var events = CreateCompletedRunEvents();
-        var operatorId = events[0].OperatorId;
         var engine = new RunReplayEngine(serverIdentity);
+        var targetId = Guid.NewGuid();
 
         var input = new RunInput
         {
             RunId = Guid.NewGuid(),
-            PlayerId = operatorId.Value,
-            Actions = [],
-            OperatorEvents = events
+            PlayerId = Guid.NewGuid(),
+            Seed = 42,
+            Actions =
+            [
+                new MoveAction(Direction.North),
+                new AttackAction(targetId),
+                new ExfilAction()
+            ]
         };
 
         var result = engine.Replay(input);
 
+        Assert.NotNull(result.Events);
+        Assert.NotEmpty(result.Events);
+        Assert.Contains(result.Events, e => e is GUNRPG.Application.Gameplay.RunCompletedLedgerEvent);
+        Assert.Contains(result.Events, e => e is GUNRPG.Application.Gameplay.InfilStateChangedLedgerEvent);
+    }
+
+    /// <summary>
+    /// RunInput must NOT have an OperatorEvents or Mutation property.
+    /// External mutation injection via RunInput must be impossible.
+    /// </summary>
+    [Fact]
+    public void Replay_NoExternalMutation()
+    {
+        // Compile-time proof: RunInput has no OperatorEvents or Mutation property.
+        var inputType = typeof(RunInput);
+        Assert.Null(inputType.GetProperty("OperatorEvents"));
+        Assert.Null(inputType.GetProperty("Mutation"));
+
+        // Runtime proof: Replay produces its own mutation internally.
+        var serverIdentity = CreateServerIdentity(out _);
+        var engine = new RunReplayEngine(serverIdentity);
+        var input = new RunInput
+        {
+            RunId = Guid.NewGuid(),
+            PlayerId = Guid.NewGuid(),
+            Seed = 0,
+            Actions = [new ExfilAction()]
+        };
+
+        var result = engine.Replay(input);
+
+        // Mutation is always derived — never null, never empty when there are actions.
         Assert.NotNull(result.Mutation);
-        Assert.Equal(events.Count, result.Mutation.OperatorEvents.Count);
-        Assert.NotEmpty(result.Mutation.GameplayEvents);
+        Assert.NotEmpty(result.Events);
     }
 
     [Fact]
@@ -154,11 +196,13 @@ public sealed class RunReplayEngineTests
         {
             RunId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
             PlayerId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            Seed = 12345,
             Actions =
             [
-                new PlayerAction { SequenceNumber = 1, Primary = PrimaryAction.Fire, Movement = MovementAction.WalkToward },
-                new PlayerAction { SequenceNumber = 2, Stance = StanceAction.EnterADS },
-                new PlayerAction { SequenceNumber = 3, Primary = PrimaryAction.Reload, CancelMovement = true }
+                new MoveAction(Direction.North),
+                new AttackAction(Guid.Parse("33333333-3333-3333-3333-333333333333")),
+                new UseItemAction(Guid.Parse("44444444-4444-4444-4444-444444444444")),
+                new ExfilAction()
             ]
         };
     }

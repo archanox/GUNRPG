@@ -247,8 +247,7 @@ public sealed class LedgerProjectionTests : IDisposable
     private sealed class ThrowingGameplayLedgerBridge : IGameplayLedgerBridge
     {
         public Task MirrorAsync(
-            Guid runId,
-            OperatorId operatorId,
+            RunInput runInput,
             IReadOnlyList<OperatorEvent> operatorEvents,
             CancellationToken cancellationToken = default)
         {

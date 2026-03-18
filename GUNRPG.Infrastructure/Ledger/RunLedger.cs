@@ -224,13 +224,47 @@ public class RunLedger
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(replayEngine);
 
+        // Independently replay from Actions + Seed to get the authoritative GameplayLedgerEvents.
         var authoritativeResult = replayEngine.Replay(input);
         if (submittedResult is not null && !HasMatchingResult(authoritativeResult, submittedResult))
         {
             return false;
         }
 
-        var replayValidatedResult = AttachAuthoritySignatures(authoritativeResult, submittedResult?.Attestation.Signatures);
+        // Preserve server-supplied OperatorEvents from the submitted mutation (if any) so that
+        // ledger-projection queries can reconstruct operator state.  Only the FinalStateHash
+        // (which covers Actions + Seed + derived gameplay events) is validated above; the
+        // OperatorEvents are server-internal and are never accepted via RunInput.
+        //
+        // For GameplayLedgerEvents: prefer the authoritative replay-derived events when
+        // non-empty; fall back to the bridge-supplied semantic events so that ledger entries
+        // always carry gameplay history while the service is still transitioning to full
+        // action-based replay.
+        RunValidationResult resultToStore;
+        if (submittedResult is not null && submittedResult.Mutation.OperatorEvents.Count > 0)
+        {
+            var gameplayEvents = authoritativeResult.Events.Count > 0
+                ? authoritativeResult.Events
+                : submittedResult.Mutation.GameplayEvents;
+
+            var mergedMutation = new RunLedgerMutation(
+                submittedResult.Mutation.OperatorEvents,
+                gameplayEvents);
+
+            resultToStore = new RunValidationResult(
+                authoritativeResult.RunId,
+                authoritativeResult.PlayerId,
+                authoritativeResult.ServerId,
+                authoritativeResult.FinalStateHash,
+                authoritativeResult.Attestation,
+                mergedMutation);
+        }
+        else
+        {
+            resultToStore = authoritativeResult;
+        }
+
+        var replayValidatedResult = AttachAuthoritySignatures(resultToStore, submittedResult?.Attestation.Signatures);
         return TryAppendWithQuorum(replayValidatedResult, signatureVerifier, quorumValidator, quorumPolicy, timestamp);
     }
 

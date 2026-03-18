@@ -32,24 +32,36 @@ public sealed class RunLedgerGameplayBridge : IGameplayLedgerBridge
     }
 
     public async Task MirrorAsync(
-        Guid runId,
-        OperatorId operatorId,
+        RunInput runInput,
         IReadOnlyList<OperatorEvent> operatorEvents,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(runInput);
         ArgumentNullException.ThrowIfNull(operatorEvents);
 
-        var input = new RunInput
-        {
-            RunId = runId,
-            PlayerId = operatorId.Value,
-            Actions = [],
-            OperatorEvents = operatorEvents
-        };
+        // Replay derives GameplayLedgerEvents from Actions + Seed.
+        // OperatorEvents are NOT in RunInput — they are supplied by the server pipeline here
+        // and merged into the mutation for projection purposes only.
+        var replayed = _replayEngine.Replay(runInput);
 
-        var replayed = _replayEngine.Replay(input);
-        var signedResult = AttachAuthoritySignature(replayed);
-        await _gossipService.MergePartialValidationAsync(input, signedResult, cancellationToken).ConfigureAwait(false);
+        // Combine gameplay events: action-based events from the replay engine take precedence;
+        // if the run had no actions yet, fall back to a semantic translation of the server-side
+        // OperatorEvents so that GameplayEvents are always populated for ledger-history queries.
+        IReadOnlyList<GameplayLedgerEvent> gameplayEvents = replayed.Events.Count > 0
+            ? replayed.Events
+            : BuildSemanticEvents(operatorEvents);
+
+        var enrichedMutation = new RunLedgerMutation(operatorEvents, gameplayEvents);
+        var enrichedResult = new RunValidationResult(
+            replayed.RunId,
+            replayed.PlayerId,
+            replayed.ServerId,
+            replayed.FinalStateHash,
+            replayed.Attestation,
+            enrichedMutation);
+
+        var signedResult = AttachAuthoritySignature(enrichedResult);
+        await _gossipService.MergePartialValidationAsync(runInput, signedResult, cancellationToken).ConfigureAwait(false);
     }
 
     public Task<OperatorAggregate?> LoadProjectedOperatorAsync(OperatorId operatorId, CancellationToken cancellationToken = default)
@@ -104,5 +116,67 @@ public sealed class RunLedgerGameplayBridge : IGameplayLedgerBridge
             replayed.FinalStateHash,
             attestation,
             replayed.Mutation);
+    }
+
+    /// <summary>
+    /// Translates server-side OperatorEvents into GameplayLedgerEvents.
+    /// This is used as a fallback when the RunInput contains no player Actions so that
+    /// ledger entries always carry gameplay history for UI and analytics queries.
+    /// Once the service fully migrates to action-based replay this path will be phased out.
+    /// </summary>
+    private static IReadOnlyList<GameplayLedgerEvent> BuildSemanticEvents(IEnumerable<OperatorEvent> operatorEvents)
+    {
+        var events = new List<GameplayLedgerEvent>();
+        foreach (var evt in operatorEvents)
+        {
+            switch (evt)
+            {
+                case OperatorCreatedEvent created:
+                    events.Add(new OperatorCreatedLedgerEvent(created.GetName()));
+                    break;
+                case XpGainedEvent xp:
+                    var (amount, reason) = xp.GetPayload();
+                    events.Add(new XpAwardedLedgerEvent(amount, reason));
+                    break;
+                case WoundsTreatedEvent healed:
+                    events.Add(new PlayerHealedLedgerEvent(healed.GetHealthRestored(), "TreatWounds"));
+                    break;
+                case LoadoutChangedEvent loadout:
+                    events.Add(new ItemAcquiredLedgerEvent(loadout.GetWeaponName()));
+                    break;
+                case PerkUnlockedEvent perk:
+                    events.Add(new PerkUnlockedLedgerEvent(perk.GetPerkName()));
+                    break;
+                case CombatVictoryEvent:
+                    events.Add(new RunCompletedLedgerEvent(true, "Victory"));
+                    break;
+                case ExfilFailedEvent failed:
+                    events.Add(new RunCompletedLedgerEvent(false, failed.GetReason()));
+                    break;
+                case OperatorDiedEvent died:
+                    events.Add(new PlayerDamagedLedgerEvent(100f, died.GetCauseOfDeath()));
+                    events.Add(new RunCompletedLedgerEvent(false, died.GetCauseOfDeath()));
+                    break;
+                case InfilStartedEvent infilStarted:
+                    var (sessionId, _, _) = infilStarted.GetPayload();
+                    events.Add(new InfilStateChangedLedgerEvent("Started", "InfilStarted"));
+                    events.Add(new CombatSessionLedgerEvent(sessionId, "Infil"));
+                    break;
+                case InfilEndedEvent infilEnded:
+                    var (wasSuccessful, endedReason) = infilEnded.GetPayload();
+                    events.Add(new InfilStateChangedLedgerEvent("Ended", endedReason));
+                    events.Add(new RunCompletedLedgerEvent(wasSuccessful, endedReason));
+                    break;
+                case CombatSessionStartedEvent combatStarted:
+                    events.Add(new CombatSessionLedgerEvent(combatStarted.GetPayload(), "Started"));
+                    break;
+                case PetActionAppliedEvent petAction:
+                    var (action, health, fatigue, injury, stress, morale, hunger, hydration, _) = petAction.GetPayload();
+                    events.Add(new PetStateLedgerEvent(action, health, fatigue, injury, stress, morale, hunger, hydration));
+                    break;
+            }
+        }
+
+        return events;
     }
 }
