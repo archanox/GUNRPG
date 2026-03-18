@@ -68,7 +68,8 @@ public sealed class RunReplayEngine : IRunReplayEngine
             input.PlayerId,
             serverIdentity.Certificate.ServerId,
             finalStateHash,
-            attestation);
+            attestation,
+            input.Mutation);
     }
 
     public RunValidationResult ValidateAndSignRun(
@@ -124,7 +125,15 @@ public sealed class RunReplayEngine : IRunReplayEngine
             offset += payload.Length;
         }
 
-        return SHA256.HashData(buffer);
+        var mutationHash = input.Mutation.ComputeHash();
+        var expanded = GC.AllocateUninitializedArray<byte>(buffer.Length + Int32Size + mutationHash.Length);
+        buffer.CopyTo(expanded, 0);
+        offset = buffer.Length;
+        BinaryPrimitives.WriteInt32BigEndian(expanded.AsSpan(offset, Int32Size), mutationHash.Length);
+        offset += Int32Size;
+        mutationHash.CopyTo(expanded, offset);
+
+        return SHA256.HashData(expanded);
     }
 
     private static byte[] SerializeAction(PlayerAction action)

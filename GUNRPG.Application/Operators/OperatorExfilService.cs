@@ -1,10 +1,13 @@
 using GUNRPG.Application.Combat;
 using GUNRPG.Application.Distributed;
 using GUNRPG.Application.Dtos;
+using GUNRPG.Application.Gameplay;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Results;
 using GUNRPG.Core.Operators;
 using GUNRPG.Core.VirtualPet;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace GUNRPG.Application.Operators;
 
@@ -27,12 +30,24 @@ public sealed class OperatorExfilService
     private readonly IOperatorEventStore _eventStore;
     private readonly OperatorEventReplicator? _replicator;
     private readonly OperatorUpdateHub? _updateHub;
+    private readonly IGameplayLedgerBridge? _ledgerBridge;
+    private readonly GameplayLedgerOptions _ledgerOptions;
+    private readonly ILogger<OperatorExfilService> _logger;
 
-    public OperatorExfilService(IOperatorEventStore eventStore, OperatorEventReplicator? replicator = null, OperatorUpdateHub? updateHub = null)
+    public OperatorExfilService(
+        IOperatorEventStore eventStore,
+        OperatorEventReplicator? replicator = null,
+        OperatorUpdateHub? updateHub = null,
+        IGameplayLedgerBridge? ledgerBridge = null,
+        GameplayLedgerOptions? ledgerOptions = null,
+        ILogger<OperatorExfilService>? logger = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
         _replicator = replicator;
         _updateHub = updateHub;
+        _ledgerBridge = ledgerBridge;
+        _ledgerOptions = ledgerOptions ?? new GameplayLedgerOptions();
+        _logger = logger ?? NullLogger<OperatorExfilService>.Instance;
     }
 
     /// <summary>
@@ -70,6 +85,15 @@ public sealed class OperatorExfilService
     {
         try
         {
+            if (_ledgerOptions.PreferLedgerReads && _ledgerBridge is not null)
+            {
+                var projected = await _ledgerBridge.LoadProjectedOperatorAsync(operatorId);
+                if (projected is not null)
+                {
+                    return ServiceResult<OperatorAggregate>.Success(projected);
+                }
+            }
+
             var events = await _eventStore.LoadEventsAsync(operatorId);
             if (events.Count == 0)
                 return ServiceResult<OperatorAggregate>.NotFound($"Operator {operatorId} not found");
@@ -821,6 +845,15 @@ public sealed class OperatorExfilService
     {
         try
         {
+            if (_ledgerOptions.PreferLedgerReads && _ledgerBridge is not null)
+            {
+                var projectedIds = await _ledgerBridge.ListProjectedOperatorsAsync();
+                if (projectedIds.Count > 0)
+                {
+                    return ServiceResult<IReadOnlyList<OperatorId>>.Success(projectedIds);
+                }
+            }
+
             var operatorIds = await _eventStore.ListOperatorIdsAsync();
             return ServiceResult<IReadOnlyList<OperatorId>>.Success(operatorIds);
         }
@@ -995,6 +1028,8 @@ public sealed class OperatorExfilService
             try { await _replicator.BroadcastAsync(evt); }
             catch (Exception) { /* best-effort: local append succeeded */ }
         }
+
+        await MirrorLedgerWriteAsync([evt]);
     }
 
     /// <summary>
@@ -1016,5 +1051,76 @@ public sealed class OperatorExfilService
                 catch (Exception) { /* best-effort: local batch already persisted */ }
             }
         }
+
+        await MirrorLedgerWriteAsync(events);
+    }
+
+    private async Task MirrorLedgerWriteAsync(IReadOnlyList<OperatorEvent> events)
+    {
+        if (!_ledgerOptions.MirrorLegacyWrites || _ledgerBridge is null || events.Count == 0)
+        {
+            return;
+        }
+
+        var operatorId = events[0].OperatorId;
+        var runId = TryGetRunId(events) ?? Guid.NewGuid();
+        await _ledgerBridge.MirrorAsync(runId, operatorId, events);
+
+        if (!_ledgerOptions.CompareLegacyAndLedgerState)
+        {
+            return;
+        }
+
+        try
+        {
+            var legacyEvents = await _eventStore.LoadEventsAsync(operatorId);
+            var legacy = OperatorAggregate.FromEvents(legacyEvents);
+            var projected = await _ledgerBridge.LoadProjectedOperatorAsync(operatorId);
+            if (projected is not null && !HaveEquivalentState(legacy, projected))
+            {
+                _logger.LogWarning(
+                    "Ledger projection mismatch for operator {OperatorId}. Legacy sequence {LegacySequence}, projected sequence {ProjectedSequence}.",
+                    operatorId.Value,
+                    legacy.CurrentSequence,
+                    projected.CurrentSequence);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to compare legacy and ledger state for operator {OperatorId}.", operatorId.Value);
+        }
+    }
+
+    private static Guid? TryGetRunId(IEnumerable<OperatorEvent> events)
+    {
+        foreach (var evt in events)
+        {
+            switch (evt)
+            {
+                case InfilStartedEvent infilStarted:
+                    return infilStarted.GetPayload().SessionId;
+                case CombatSessionStartedEvent combatSessionStarted:
+                    return combatSessionStarted.GetPayload();
+            }
+        }
+
+        return null;
+    }
+
+    private static bool HaveEquivalentState(OperatorAggregate legacy, OperatorAggregate projected)
+    {
+        return legacy.Id == projected.Id
+            && legacy.Name == projected.Name
+            && legacy.TotalXp == projected.TotalXp
+            && Math.Abs(legacy.CurrentHealth - projected.CurrentHealth) < 0.001f
+            && Math.Abs(legacy.MaxHealth - projected.MaxHealth) < 0.001f
+            && legacy.EquippedWeaponName == projected.EquippedWeaponName
+            && legacy.UnlockedPerks.SequenceEqual(projected.UnlockedPerks)
+            && legacy.ExfilStreak == projected.ExfilStreak
+            && legacy.IsDead == projected.IsDead
+            && legacy.CurrentMode == projected.CurrentMode
+            && legacy.InfilSessionId == projected.InfilSessionId
+            && legacy.ActiveCombatSessionId == projected.ActiveCombatSessionId
+            && legacy.LockedLoadout == projected.LockedLoadout;
     }
 }

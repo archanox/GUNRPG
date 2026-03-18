@@ -11,7 +11,8 @@ public sealed class RunValidationResult
         Guid playerId,
         Guid serverId,
         byte[] finalStateHash,
-        SignedRunValidation attestation)
+        SignedRunValidation attestation,
+        GUNRPG.Ledger.RunLedgerMutation? mutation = null)
     {
         RunId = runId;
         PlayerId = playerId;
@@ -33,6 +34,7 @@ public sealed class RunValidationResult
         if (!CryptographicOperations.FixedTimeEquals(attestation.Validation.FinalStateHash, _finalStateHash))
             throw new ArgumentException("Attestation FinalStateHash does not match FinalStateHash.", nameof(attestation));
         Attestation = attestation;
+        Mutation = mutation ?? GUNRPG.Ledger.RunLedgerMutation.Empty;
     }
 
     public Guid RunId { get; }
@@ -44,6 +46,8 @@ public sealed class RunValidationResult
     public byte[] FinalStateHash => (byte[])_finalStateHash.Clone();
 
     public SignedRunValidation Attestation { get; }
+
+    public GUNRPG.Ledger.RunLedgerMutation Mutation { get; }
 
     public byte[] ComputeResultHash() => ComputeResultHash(this);
 
