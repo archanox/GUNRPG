@@ -103,7 +103,7 @@ public sealed class RunReplayEngine : IRunReplayEngine
 
         for (var i = 0; i < input.Actions.Count; i++)
         {
-            var action = input.Actions[i] ?? throw new ArgumentException("Run inputs must not contain null actions.", nameof(input));
+            var action = input.Actions[i] ?? throw new ArgumentException($"Action at index {i} in run input must not be null.", nameof(input));
             var payload = SerializeAction(action);
             actionPayloads[i] = payload;
             bufferLength += Int32Size + payload.Length;
@@ -156,7 +156,8 @@ public sealed class RunReplayEngine : IRunReplayEngine
         value.TryWriteBytes(buffer.AsSpan(offset, GuidSize), bigEndian: true, out var bytesWritten);
         if (bytesWritten != GuidSize)
         {
-            throw new InvalidOperationException("Unable to encode GUID for replay hashing.");
+            throw new InvalidOperationException(
+                $"Expected {GuidSize} bytes when encoding GUID for replay hashing, but wrote {bytesWritten} bytes.");
         }
 
         offset += GuidSize;
