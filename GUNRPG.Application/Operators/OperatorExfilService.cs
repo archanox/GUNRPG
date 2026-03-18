@@ -1065,7 +1065,15 @@ public sealed class OperatorExfilService
 
         var operatorId = events[0].OperatorId;
         var runId = TryGetRunId(events) ?? Guid.NewGuid();
-        await _ledgerBridge.MirrorAsync(runId, operatorId, events);
+        try
+        {
+            await _ledgerBridge.MirrorAsync(runId, operatorId, events);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to mirror operator {OperatorId} events into the run ledger.", operatorId.Value);
+            return;
+        }
 
         if (!_ledgerOptions.CompareLegacyAndLedgerState)
         {

@@ -97,7 +97,9 @@ public sealed class RunReplayEngine : IRunReplayEngine
 
     private static byte[] ComputeReplayHash(RunInput input)
     {
+        ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(input.Actions);
+        ArgumentNullException.ThrowIfNull(input.Mutation);
 
         var actionPayloads = new byte[input.Actions.Count][];
         var bufferLength = GuidSize + GuidSize + Int32Size;

@@ -21,8 +21,7 @@ public sealed class RunLedgerGameplayBridge : IGameplayLedgerBridge
         IRunReplayEngine replayEngine,
         IGossipService gossipService,
         Authority authority,
-        byte[] authorityPrivateKey,
-        SignatureVerifier signatureVerifier)
+        byte[] authorityPrivateKey)
     {
         _ledger = ledger ?? throw new ArgumentNullException(nameof(ledger));
         _projector = projector ?? throw new ArgumentNullException(nameof(projector));
@@ -30,20 +29,19 @@ public sealed class RunLedgerGameplayBridge : IGameplayLedgerBridge
         _gossipService = gossipService ?? throw new ArgumentNullException(nameof(gossipService));
         _authority = authority ?? throw new ArgumentNullException(nameof(authority));
         _authorityPrivateKey = authorityPrivateKey ?? throw new ArgumentNullException(nameof(authorityPrivateKey));
-        ArgumentNullException.ThrowIfNull(signatureVerifier);
     }
 
     public async Task MirrorAsync(
         Guid runId,
         OperatorId operatorId,
         IReadOnlyList<OperatorEvent> operatorEvents,
-        IReadOnlyList<object>? gameplayEvents = null,
+        IReadOnlyList<GameplayLedgerEvent>? gameplayEvents = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(operatorEvents);
 
         var semanticEvents = gameplayEvents is { Count: > 0 }
-            ? gameplayEvents.Cast<GameplayLedgerEvent>().ToArray()
+            ? gameplayEvents.ToArray()
             : BuildSemanticEvents(operatorEvents).ToArray();
         var input = new RunInput
         {
