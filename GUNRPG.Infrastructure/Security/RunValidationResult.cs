@@ -50,8 +50,11 @@ public sealed class RunValidationResult
     public GUNRPG.Ledger.RunLedgerMutation Mutation { get; }
 
     /// <summary>
-    /// Gameplay events produced deterministically by the replay engine from the run's actions.
-    /// These are always derived — never trusted from external input.
+    /// Gameplay events produced deterministically by the replay engine from the run's
+    /// <see cref="RunInput.Actions"/> and <see cref="RunInput.Seed"/>.
+    /// These are the exact events committed to by <see cref="FinalStateHash"/>
+    /// and were never supplied from external input.
+    /// May be empty when the run was submitted with no player actions.
     /// </summary>
     public IReadOnlyList<GUNRPG.Application.Gameplay.GameplayLedgerEvent> Events => Mutation.GameplayEvents;
 

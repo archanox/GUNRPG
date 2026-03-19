@@ -83,6 +83,13 @@ public sealed class RunReplayEngineTests
         Assert.True(resultA.FinalStateHash.SequenceEqual(resultB.FinalStateHash));
         Assert.True(resultA.ComputeResultHash().SequenceEqual(resultB.ComputeResultHash()));
         Assert.True(resultA.Attestation.Validation.Signature.SequenceEqual(resultB.Attestation.Validation.Signature));
+        // GameplayLedgerEvent subtypes are C# records: Assert.Equal uses value/structural equality,
+        // so all positional properties (EventType, amounts, target IDs, etc.) are verified.
+        Assert.Equal(resultA.Events.Count, resultB.Events.Count);
+        for (var i = 0; i < resultA.Events.Count; i++)
+        {
+            Assert.Equal(resultA.Events[i], resultB.Events[i]);
+        }
     }
 
     /// <summary>
@@ -142,7 +149,8 @@ public sealed class RunReplayEngineTests
 
         var result = engine.Replay(input);
 
-        // Mutation is always derived — never null, never empty when there are actions.
+        // Mutation is non-null, and Events is non-empty because ExfilAction always
+        // produces exactly one RunCompletedLedgerEvent regardless of RNG outcome.
         Assert.NotNull(result.Mutation);
         Assert.NotEmpty(result.Events);
     }

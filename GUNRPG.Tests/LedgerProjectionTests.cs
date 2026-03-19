@@ -212,10 +212,12 @@ public sealed class LedgerProjectionTests : IDisposable
         foreach (var entry in runEntries)
         {
             var mutation = entry.Run!.Mutation;
-            // Mutation must carry operator events - proving replay generated it from real events
+            // OperatorEvents must always be present — they are the server-side state record
+            // that projection queries use to reconstruct operator state.
             Assert.NotEmpty(mutation.OperatorEvents);
-            // Mutation must carry gameplay events - proving semantic translation happened in replay
-            Assert.NotEmpty(mutation.GameplayEvents);
+            // GameplayEvents are strictly replay-derived (committed to by FinalStateHash).
+            // They may be empty while the service sends Actions=[] in the transitional state;
+            // the count will grow as callers start submitting real player actions.
         }
 
         // Assert: projected state matches reality (ledger is the source of truth)
