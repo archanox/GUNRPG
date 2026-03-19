@@ -233,23 +233,19 @@ public class RunLedger
 
         // Preserve server-supplied OperatorEvents from the submitted mutation (if any) so that
         // ledger-projection queries can reconstruct operator state.  Only the FinalStateHash
-        // (which covers Actions + Seed + derived gameplay events) is validated above; the
-        // OperatorEvents are server-internal and are never accepted via RunInput.
+        // (which covers Actions + Seed + replay-derived gameplay events) is validated above;
+        // the OperatorEvents are server-internal and are never accepted via RunInput.
         //
-        // For GameplayLedgerEvents: prefer the authoritative replay-derived events when
-        // non-empty; fall back to the bridge-supplied semantic events so that ledger entries
-        // always carry gameplay history while the service is still transitioning to full
-        // action-based replay.
+        // IMPORTANT: Mutation.GameplayEvents stores ONLY the authoritative replay-derived events
+        // — the exact events committed to by FinalStateHash.  The fallback to submitted
+        // GameplayEvents is intentionally absent to prevent storing attested gameplay history
+        // that was not produced by the replay engine.
         RunValidationResult resultToStore;
         if (submittedResult is not null && submittedResult.Mutation.OperatorEvents.Count > 0)
         {
-            var gameplayEvents = authoritativeResult.Events.Count > 0
-                ? authoritativeResult.Events
-                : submittedResult.Mutation.GameplayEvents;
-
             var mergedMutation = new RunLedgerMutation(
                 submittedResult.Mutation.OperatorEvents,
-                gameplayEvents);
+                authoritativeResult.Events);
 
             resultToStore = new RunValidationResult(
                 authoritativeResult.RunId,

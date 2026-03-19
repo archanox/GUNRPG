@@ -1150,7 +1150,12 @@ public sealed class OperatorExfilService
     private static int DeriveRunSeed(Guid runId)
     {
         Span<byte> bytes = stackalloc byte[16];
-        runId.TryWriteBytes(bytes, bigEndian: true, out _);
+        if (!runId.TryWriteBytes(bytes, bigEndian: true, out var bytesWritten) || bytesWritten != 16)
+        {
+            throw new InvalidOperationException(
+                $"Failed to encode run identifier {runId:D} for seed derivation: TryWriteBytes returned false or wrote {bytesWritten} byte(s) instead of expected 16.");
+        }
+
         return BinaryPrimitives.ReadInt32BigEndian(bytes);
     }
 
