@@ -24,3 +24,5 @@ public sealed record CombatSessionLedgerEvent(Guid SessionId, string State) : Ga
 
 public sealed record PetStateLedgerEvent(string Action, float Health, float Fatigue, float Injury, float Stress, float Morale, float Hunger, float Hydration)
     : GameplayLedgerEvent("PetStateUpdated");
+
+public sealed record EnemyDamagedLedgerEvent(int Amount, string Reason) : GameplayLedgerEvent("EnemyDamaged");
