@@ -110,6 +110,7 @@ public sealed class RunLedgerMutation
                 EncodeSingle(pet.Morale),
                 EncodeSingle(pet.Hunger),
                 EncodeSingle(pet.Hydration)]),
+            EnemyDamagedLedgerEvent enemyDamaged => SerializeGameplayEvent(12, evt.EventType, [EncodeInt32(enemyDamaged.Amount), EncodeUtf8(enemyDamaged.Reason)]),
             _ => throw new InvalidOperationException($"Unsupported gameplay ledger event type {evt.GetType().Name}.")
         };
     }
@@ -168,6 +169,13 @@ public sealed class RunLedgerMutation
     }
 
     private static byte[] EncodeBoolean(bool value) => [value ? (byte)1 : (byte)0];
+
+    private static byte[] EncodeInt32(int value)
+    {
+        var buffer = GC.AllocateUninitializedArray<byte>(Int32Size);
+        BinaryPrimitives.WriteInt32BigEndian(buffer, value);
+        return buffer;
+    }
 
     private static byte[] EncodeSingle(float value)
     {

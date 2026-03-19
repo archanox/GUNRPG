@@ -15,12 +15,6 @@ public sealed class RunReplayEngine : IRunReplayEngine
     private const int Int64Size = 8;
     private const int Int32Size = 4;
 
-    // Base hit-chance used when processing AttackActions.
-    private const double BaseHitChance = 0.6;
-    private const float MinAttackDamage = 10f;
-    private const float MaxAttackDamage = 30f;
-    private const float AttackDamageRange = MaxAttackDamage - MinAttackDamage;
-
     private readonly ILogger<RunReplayEngine> _logger;
     private readonly ServerIdentity? _serverIdentity;
 
@@ -114,43 +108,16 @@ public sealed class RunReplayEngine : IRunReplayEngine
     }
 
     /// <summary>
-    /// Processes player actions sequentially using a seeded, deterministic RNG to simulate all
-    /// gameplay effects (combat, damage, loot, status changes) and returns the resulting events.
+    /// Runs the tick-based deterministic simulation for the given player actions.
+    /// Delegates to <see cref="SimulationEngine"/> which enforces all determinism rules:
+    /// integer-only math, no <c>DateTime</c>, no <c>Guid.NewGuid()</c>, no parallel
+    /// execution, and deterministic collection ordering.
     /// </summary>
     private static IReadOnlyList<GameplayLedgerEvent> ProcessActions(
         IReadOnlyList<PlayerAction> actions,
         Random rng)
     {
-        var events = new List<GameplayLedgerEvent>(capacity: actions.Count);
-
-        foreach (var action in actions)
-        {
-            switch (action)
-            {
-                case MoveAction move:
-                    events.Add(new InfilStateChangedLedgerEvent("Moving", move.Direction.ToString()));
-                    break;
-
-                case AttackAction attack:
-                    // Combat: seeded RNG determines hit outcome.
-                    if (rng.NextDouble() < BaseHitChance)
-                    {
-                        var damage = MinAttackDamage + (float)(rng.NextDouble() * AttackDamageRange);
-                        events.Add(new PlayerDamagedLedgerEvent(damage, attack.TargetId.ToString("N")));
-                    }
-                    break;
-
-                case UseItemAction useItem:
-                    events.Add(new ItemAcquiredLedgerEvent(useItem.ItemId.ToString("N")));
-                    break;
-
-                case ExfilAction:
-                    events.Add(new RunCompletedLedgerEvent(true, "Exfil"));
-                    break;
-            }
-        }
-
-        return events;
+        return SimulationEngine.Run(actions, rng);
     }
 
     private static byte[] ComputeReplayHash(RunInput input, IReadOnlyList<GameplayLedgerEvent> events)
