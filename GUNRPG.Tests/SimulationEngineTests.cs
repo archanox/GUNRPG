@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
-using System.Text;
 using GUNRPG.Application.Gameplay;
 using GUNRPG.Core.Operators;
+using GUNRPG.Ledger;
 using GUNRPG.Security;
 using Xunit;
 
@@ -59,7 +59,7 @@ public sealed class SimulationEngineTests
     /// A known RunInput must produce specific, expected GameplayLedgerEvents.
     /// Seed 0 with [MoveAction(North), AttackAction(...), UseItemAction(...), ExfilAction()]
     /// must always yield: InfilStateChanged, ItemAcquired, PlayerHealed, RunCompleted.
-    /// The AttackAction may also produce a PlayerDamaged event depending on the RNG outcome.
+    /// The AttackAction may also produce an EnemyDamagedLedgerEvent depending on the RNG outcome.
     /// </summary>
     [Fact]
     public void Simulation_ProducesExpectedEvents()
@@ -144,21 +144,14 @@ public sealed class SimulationEngineTests
     };
 
     /// <summary>
-    /// Computes a deterministic SHA-256 hex string over the ordered event sequence.
-    /// Each event contributes its EventType and string representation of all fields.
+    /// Computes a stable SHA-256 hex string over the ordered event sequence using the
+    /// deterministic binary serialization already defined in <see cref="RunLedgerMutation"/>.
+    /// Avoids <c>ToString()</c> which can vary with <c>CultureInfo.CurrentCulture</c>.
     /// </summary>
     private static string ComputeEventSequenceHash(IReadOnlyList<GameplayLedgerEvent> events)
     {
-        var sb = new StringBuilder();
-        foreach (var evt in events)
-        {
-            sb.Append(evt.EventType);
-            sb.Append(':');
-            sb.AppendLine(evt.ToString());
-        }
-
-        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-        return Convert.ToHexString(SHA256.HashData(bytes));
+        var mutation = new RunLedgerMutation([], events);
+        return Convert.ToHexString(mutation.ComputeHash());
     }
 
     private static ServerIdentity CreateServerIdentity()
