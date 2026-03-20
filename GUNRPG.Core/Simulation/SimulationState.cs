@@ -2,7 +2,7 @@ using GUNRPG.Core.Time;
 
 namespace GUNRPG.Core.Simulation;
 
-public sealed record RandomState(int Seed, int CallCount);
+public sealed record RngState(int Seed, int CallCount);
 
 /// <summary>
 /// Full deterministic simulation state at a given tick.
@@ -11,7 +11,7 @@ public sealed class SimulationState
 {
     public SimulationState(
         SimulationTime time,
-        RandomState random,
+        RngState random,
         SimulationPlayerState player,
         IReadOnlyList<SimulationEnemyState> enemies,
         IReadOnlyList<SimulationEvent>? events = null,
@@ -26,7 +26,7 @@ public sealed class SimulationState
     }
 
     public SimulationTime Time { get; }
-    public RandomState Random { get; }
+    public RngState Random { get; }
     public SimulationPlayerState Player { get; }
     public IReadOnlyList<SimulationEnemyState> Enemies { get; }
     public IReadOnlyList<SimulationEvent> Events { get; }

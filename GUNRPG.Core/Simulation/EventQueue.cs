@@ -15,7 +15,7 @@ public sealed class EventQueue<TEvent>
         _events.Add(new ScheduledEvent<TEvent>(tick, sequence, value));
     }
 
-    public ScheduledEvent<TEvent>? PeekNext() => _events.FirstOrDefault();
+    public ScheduledEvent<TEvent>? PeekNext() => _events.Count == 0 ? null : _events.Min;
 
     public ScheduledEvent<TEvent>? DequeueNext()
     {

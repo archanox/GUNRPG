@@ -114,13 +114,12 @@ public static class Simulation
             .OrderBy(enemy => enemy.Id)
             .ToList();
 
-        var updatedTime = new SimulationTime(state.Time.CurrentTimeMs);
-        updatedTime.Advance(1);
+        var updatedTime = new SimulationTime(state.Time.CurrentTimeMs + 1);
 
         var allEvents = state.Events.Concat(emittedEvents).ToArray();
         return new SimulationState(
             updatedTime,
-            new RandomState(state.Random.Seed, random.CallCount),
+            new RngState(state.Random.Seed, random.CallCount),
             player,
             enemies,
             allEvents,

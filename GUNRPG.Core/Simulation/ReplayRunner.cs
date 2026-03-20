@@ -46,7 +46,7 @@ public sealed class ReplayRunner
     {
         return new SimulationState(
             new SimulationTime(),
-            new RandomState(seed, 0),
+            new RngState(seed, 0),
             new SimulationPlayerState(100, 100),
             [new SimulationEnemyState(1, 100, 100)]);
     }
