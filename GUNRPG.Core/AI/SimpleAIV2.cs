@@ -1,6 +1,7 @@
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
+using GUNRPG.Core.Simulation;
 
 namespace GUNRPG.Core.AI;
 
@@ -10,7 +11,7 @@ namespace GUNRPG.Core.AI;
 /// </summary>
 public class SimpleAIV2
 {
-    private readonly Random _random;
+    private readonly IRandom _random;
 
     // AI decision constants
     private const int LOW_AMMO_THRESHOLD = 5;
@@ -19,7 +20,7 @@ public class SimpleAIV2
 
     public SimpleAIV2(int? seed = null)
     {
-        _random = seed.HasValue ? new Random(seed.Value) : new Random();
+        _random = new SeededRandom(seed ?? 0);
     }
 
     /// <summary>
@@ -162,7 +163,7 @@ public class SimpleAIV2
         if (opponent.WeaponState == WeaponState.Ready &&
             self.DistanceToOpponent > 10 &&
             self.Stamina > 50 &&
-            _random.NextDouble() < 0.3)
+            _random.Next(0, 100) < 30)
         {
             var intents = new SimultaneousIntents(self.Id);
             intents.Movement = MovementAction.SprintToward;
