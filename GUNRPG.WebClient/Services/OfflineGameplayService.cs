@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Combat;
+using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Sessions;
 using GUNRPG.WebClient.Helpers;
@@ -13,7 +14,6 @@ public sealed class OfflineGameplayService
     private readonly BrowserCombatSessionStore _combatStore;
     private readonly BrowserOfflineStore _offlineStore;
     private readonly JsonSerializerOptions _jsonOptions = new(JsonSerializerDefaults.Web);
-    private readonly IDeterministicCombatEngine _deterministicEngine = new DeterministicCombatEngine();
 
     public OfflineGameplayService(BrowserCombatSessionStore combatStore, BrowserOfflineStore offlineStore)
     {
@@ -80,7 +80,7 @@ public sealed class OfflineGameplayService
 
         if (result.Value.Phase == SessionPhase.Completed)
         {
-            var outcomeError = await ProcessCombatOutcomeOfflineAsync(sessionId, operatorId);
+            var outcomeError = await ProcessCombatOutcomeOfflineAsync(sessionId, operatorId, result.Value);
             if (outcomeError is not null)
                 return (OfflineModelMapper.ToClientModel(result.Value), outcomeError);
         }
@@ -107,7 +107,7 @@ public sealed class OfflineGameplayService
 
     public Task QueueExfilAsync(Guid operatorId) => _offlineStore.SetPendingExfilAsync(operatorId);
 
-    private async Task<string?> ProcessCombatOutcomeOfflineAsync(Guid sessionId, Guid operatorId)
+    private async Task<string?> ProcessCombatOutcomeOfflineAsync(Guid sessionId, Guid operatorId, CombatSessionDto completedSession)
     {
         if (await _offlineStore.IsOutcomeProcessedAsync(sessionId))
             return null;
@@ -120,10 +120,20 @@ public sealed class OfflineGameplayService
         if (snapshot is null)
             return "Offline combat session snapshot is missing.";
 
+        var sessionService = new CombatSessionService(_combatStore);
         var initialDto = OfflineModelMapper.ToBackendDto(operatorState);
         var initialHash = OfflineMissionHashing.ComputeOperatorStateHash(initialDto);
-        var combatResult = _deterministicEngine.Execute(initialDto, snapshot.Seed);
-        var updatedDto = combatResult.ResultOperator;
+        var outcomeResult = await sessionService.GetCombatOutcomeAsync(sessionId);
+        if (outcomeResult.Status != GUNRPG.Application.Results.ResultStatus.Success || outcomeResult.Value is null)
+            return outcomeResult.ErrorMessage ?? "Offline combat outcome is unavailable.";
+
+        var replay = await OfflineCombatReplay.ReplayAsync(snapshot.ReplayInitialSnapshotJson, snapshot.ReplayTurns);
+        var actualCombatHash = OfflineCombatReplay.ComputeCombatSnapshotHash(completedSession);
+        var replayCombatHash = OfflineCombatReplay.ComputeCombatSnapshotHash(replay.FinalSession);
+        if (!string.Equals(actualCombatHash, replayCombatHash, StringComparison.Ordinal))
+            return "Offline combat replay diverged from the recorded session.";
+
+        var updatedDto = OfflineCombatReplay.ProjectOperatorResult(initialDto, outcomeResult.Value);
         var updatedState = CloneOperator(OfflineModelMapper.ToOperatorState(updatedDto), null);
         var resultHash = OfflineMissionHashing.ComputeOperatorStateHash(updatedDto);
         var nextSequence = await _offlineStore.GetNextMissionSequenceAsync(operatorId);
@@ -135,9 +145,12 @@ public sealed class OfflineGameplayService
             RandomSeed = snapshot.Seed,
             InitialSnapshotJson = OfflineModelMapper.ToCanonicalJson(initialDto, _jsonOptions),
             ResultSnapshotJson = OfflineModelMapper.ToCanonicalJson(updatedDto, _jsonOptions),
+            InitialCombatSnapshotJson = snapshot.ReplayInitialSnapshotJson,
+            FinalCombatSnapshotHash = replayCombatHash,
             InitialOperatorStateHash = initialHash,
             ResultOperatorStateHash = resultHash,
-            FullBattleLog = combatResult.BattleLog,
+            ReplayTurns = snapshot.ReplayTurns.ToList(),
+            FullBattleLog = completedSession.BattleLog,
             ExecutedUtc = DateTime.UtcNow,
             Synced = false
         };

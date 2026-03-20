@@ -6,8 +6,12 @@ public sealed class ApiOfflineMissionEnvelopeDto
     public long SequenceNumber { get; init; }
     public int RandomSeed { get; init; }
     public string InitialSnapshotJson { get; init; } = string.Empty;
+    public string ResultSnapshotJson { get; init; } = string.Empty;
+    public string InitialCombatSnapshotJson { get; init; } = string.Empty;
+    public string FinalCombatSnapshotHash { get; init; } = string.Empty;
     public string InitialOperatorStateHash { get; init; } = string.Empty;
     public string ResultOperatorStateHash { get; init; } = string.Empty;
+    public List<ApiIntentSnapshotDto>? ReplayTurns { get; init; } = new();
     public List<ApiBattleLogEntryDto>? FullBattleLog { get; init; } = new();
     public DateTime ExecutedUtc { get; init; }
     public bool Synced { get; init; }

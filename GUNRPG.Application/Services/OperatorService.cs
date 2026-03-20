@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Combat;
@@ -526,12 +525,14 @@ public sealed class OperatorService
         if (envelope.SequenceNumber <= 0)
             return ServiceResult.ValidationError("Offline mission envelope sequence must be positive");
 
-        // When the engine is injected, require InitialSnapshotJson for server-authoritative replay.
-        // Without the engine, fall back to the battle-log-based approach (legacy/test path).
-        if (_combatEngine != null && string.IsNullOrEmpty(envelope.InitialSnapshotJson))
-            return ServiceResult.ValidationError("Offline mission envelope must include an initial snapshot");
-        if (_combatEngine == null && (envelope.FullBattleLog == null || envelope.FullBattleLog.Count == 0))
-            return ServiceResult.ValidationError("Offline mission envelope must include a full battle log");
+        if (string.IsNullOrEmpty(envelope.InitialSnapshotJson))
+            return ServiceResult.ValidationError("Offline mission envelope must include an initial operator snapshot");
+        if (string.IsNullOrEmpty(envelope.InitialCombatSnapshotJson))
+            return ServiceResult.ValidationError("Offline mission envelope must include an initial combat snapshot");
+        if (string.IsNullOrEmpty(envelope.FinalCombatSnapshotHash))
+            return ServiceResult.ValidationError("Offline mission envelope must include a final combat snapshot hash");
+        if (envelope.ReplayTurns == null || envelope.ReplayTurns.Count == 0)
+            return ServiceResult.ValidationError("Offline mission envelope must include recorded replay turns");
 
         // _offlineSyncHeadStore remains optional for lightweight test construction paths.
         var previous = _offlineSyncHeadStore == null ? null : await _offlineSyncHeadStore.GetAsync(operatorId);
@@ -569,12 +570,57 @@ public sealed class OperatorService
                 return ServiceResult.InvalidState("Offline mission envelope initial state hash mismatch");
         }
 
-        var replayedState = ReplayOfflineMission(envelope, _combatEngine, currentState);
-        if (replayedState == null)
-            return ServiceResult.InvalidState("Offline mission envelope initial snapshot could not be deserialized");
+        OperatorDto initialOperator;
+        try
+        {
+            initialOperator = JsonSerializer.Deserialize<OperatorDto>(envelope.InitialSnapshotJson, _replayJsonOptions)
+                ?? throw new InvalidOperationException();
+        }
+        catch (Exception)
+        {
+            return ServiceResult.InvalidState("Offline mission envelope initial operator snapshot could not be deserialized");
+        }
+
+        OfflineCombatReplayResult replay;
+        try
+        {
+            replay = await OfflineCombatReplay.ReplayAsync(envelope.InitialCombatSnapshotJson, envelope.ReplayTurns);
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult.InvalidState($"Offline mission replay failed: {ex.Message}");
+        }
+
+        var replayedCombatHash = OfflineCombatReplay.ComputeCombatSnapshotHash(replay.FinalSession);
+        if (!string.Equals(replayedCombatHash, envelope.FinalCombatSnapshotHash, StringComparison.Ordinal))
+            return ServiceResult.InvalidState("Offline mission envelope combat replay hash mismatch");
+
+        if (!BattleLogsMatch(replay.FinalSession.BattleLog, envelope.FullBattleLog))
+            return ServiceResult.InvalidState("Offline mission envelope battle log mismatch");
+
+        var replayedState = OfflineCombatReplay.ProjectOperatorResult(initialOperator, replay.Outcome);
         var replayedHash = OfflineMissionHashing.ComputeOperatorStateHash(replayedState);
         if (!string.Equals(replayedHash, envelope.ResultOperatorStateHash, StringComparison.Ordinal))
             return ServiceResult.InvalidState("Offline mission envelope final state hash mismatch");
+
+        var applyResult = await _exfilService.ProcessCombatOutcomeAsync(replay.Outcome, playerConfirmed: true);
+        if (applyResult.Status != ResultStatus.Success)
+        {
+            return applyResult.Status switch
+            {
+                ResultStatus.NotFound => ServiceResult.NotFound(applyResult.ErrorMessage),
+                ResultStatus.ValidationError => ServiceResult.ValidationError(applyResult.ErrorMessage!),
+                _ => ServiceResult.InvalidState(applyResult.ErrorMessage!)
+            };
+        }
+
+        var postSyncState = await GetOperatorAsync(operatorId);
+        if (!postSyncState.IsSuccess || postSyncState.Value == null)
+            return ServiceResult.InvalidState(postSyncState.ErrorMessage ?? "Offline mission sync could not reload operator state.");
+
+        var actualResultHash = OfflineMissionHashing.ComputeOperatorStateHash(postSyncState.Value);
+        if (!string.Equals(actualResultHash, envelope.ResultOperatorStateHash, StringComparison.Ordinal))
+            return ServiceResult.InvalidState("Offline mission envelope applied state hash mismatch");
 
         if (_offlineSyncHeadStore != null)
         {
@@ -582,7 +628,7 @@ public sealed class OperatorService
             {
                 OperatorId = operatorId,
                 SequenceNumber = envelope.SequenceNumber,
-                ResultOperatorStateHash = envelope.ResultOperatorStateHash
+                ResultOperatorStateHash = actualResultHash
             });
         }
         return ServiceResult.Success();
@@ -590,84 +636,26 @@ public sealed class OperatorService
 
     private static readonly JsonSerializerOptions _replayJsonOptions = new(JsonSerializerDefaults.Web);
 
-    /// <summary>
-    /// Replays an offline mission to produce the authoritative result operator state.
-    /// When <paramref name="engine"/> is provided, deserializes <see cref="OfflineMissionEnvelope.InitialSnapshotJson"/>
-    /// and executes it deterministically. Falls back to a log-based stub when no engine is injected
-    /// (legacy / test paths only).
-    /// </summary>
-    private static OperatorDto? ReplayOfflineMission(
-        OfflineMissionEnvelope envelope,
-        IDeterministicCombatEngine? engine,
-        OperatorStateDto? fallbackState = null)
+    private static bool BattleLogsMatch(
+        IReadOnlyList<BattleLogEntryDto> actual,
+        IReadOnlyList<BattleLogEntryDto>? expected)
     {
-        if (engine != null)
+        expected ??= [];
+        if (actual.Count != expected.Count)
+            return false;
+
+        for (var i = 0; i < actual.Count; i++)
         {
-            OperatorDto? initialDto;
-            try
+            if (!string.Equals(actual[i].EventType, expected[i].EventType, StringComparison.Ordinal) ||
+                actual[i].TimeMs != expected[i].TimeMs ||
+                !string.Equals(actual[i].Message, expected[i].Message, StringComparison.Ordinal) ||
+                !string.Equals(actual[i].ActorName, expected[i].ActorName, StringComparison.Ordinal))
             {
-                initialDto = JsonSerializer.Deserialize<OperatorDto>(envelope.InitialSnapshotJson, _replayJsonOptions);
+                return false;
             }
-            catch (JsonException)
-            {
-                // Malformed InitialSnapshotJson — caller maps null return to InvalidState error.
-                return null;
-            }
-
-            if (initialDto == null)
-                return null;
-
-            var engineResult = engine.Execute(initialDto, envelope.RandomSeed);
-            return engineResult.ResultOperator;
         }
 
-        // Fallback (no engine injected): derive result from battle log and server state.
-        if (fallbackState == null)
-            return null;
-
-        const int victoryXp = 100, survivalXp = 50;
-        var damageTaken = (envelope.FullBattleLog ?? [])
-            .Where(x => x.EventType == "Damage" && x.Message.Contains($"{fallbackState.Name} took ", StringComparison.Ordinal))
-            .Select(ParseDamageAmount)
-            .Sum();
-        var operatorDied = damageTaken >= fallbackState.CurrentHealth;
-        var enemyDamaged = (envelope.FullBattleLog ?? []).Any(x => x.EventType == "Damage" && !x.Message.Contains($"{fallbackState.Name} took ", StringComparison.Ordinal));
-        var victory = !operatorDied && enemyDamaged;
-        var xpGained = victory ? victoryXp : operatorDied ? 0 : survivalXp;
-
-        return new OperatorDto
-        {
-            Id = fallbackState.Id.ToString(),
-            Name = fallbackState.Name,
-            TotalXp = fallbackState.TotalXp + xpGained,
-            CurrentHealth = operatorDied ? fallbackState.MaxHealth : Math.Max(1f, fallbackState.CurrentHealth - damageTaken),
-            MaxHealth = fallbackState.MaxHealth,
-            EquippedWeaponName = fallbackState.EquippedWeaponName,
-            UnlockedPerks = fallbackState.UnlockedPerks,
-            ExfilStreak = fallbackState.ExfilStreak,
-            IsDead = false,
-            CurrentMode = operatorDied ? "Base" : "Infil",
-            ActiveCombatSessionId = null,
-            InfilSessionId = operatorDied ? null : fallbackState.InfilSessionId,
-            InfilStartTime = operatorDied ? null : fallbackState.InfilStartTime,
-            LockedLoadout = fallbackState.LockedLoadout,
-            Pet = fallbackState.Pet
-        };
-    }
-
-    private static float ParseDamageAmount(BattleLogEntryDto entry)
-    {
-        var start = entry.Message.IndexOf(" took ", StringComparison.Ordinal);
-        if (start < 0)
-            return 0f;
-        start += " took ".Length;
-        var end = entry.Message.IndexOf(" damage", start, StringComparison.Ordinal);
-        if (end <= start)
-            return 0f;
-
-        return float.TryParse(entry.Message[start..end], NumberStyles.Float, CultureInfo.InvariantCulture, out var damage)
-            ? damage
-            : 0f;
+        return true;
     }
 
     private static OperatorStateDto ToDto(OperatorAggregate aggregate)

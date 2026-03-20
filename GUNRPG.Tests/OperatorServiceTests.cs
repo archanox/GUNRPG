@@ -1,5 +1,7 @@
+using System.Text.Json;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Backend;
+using GUNRPG.Application.Combat;
 using GUNRPG.Application.Operators;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Results;
@@ -247,7 +249,7 @@ public sealed class OperatorServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SyncOfflineMission_WithNullBattleLog_ReturnsValidationError()
+    public async Task SyncOfflineMission_WithMissingReplaySnapshot_ReturnsValidationError()
     {
         var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "SyncOp" });
         Assert.True(createResult.IsSuccess);
@@ -257,6 +259,10 @@ public sealed class OperatorServiceTests : IDisposable
             OperatorId = createResult.Value!.Id.ToString(),
             SequenceNumber = 1,
             RandomSeed = 7,
+            InitialSnapshotJson = string.Empty,
+            InitialCombatSnapshotJson = "{}",
+            FinalCombatSnapshotHash = "hash-c",
+            ReplayTurns = [new IntentSnapshot()],
             InitialOperatorStateHash = "hash-a",
             ResultOperatorStateHash = "hash-b",
             FullBattleLog = null!,
@@ -277,7 +283,29 @@ public sealed class OperatorServiceTests : IDisposable
         Assert.True(createResult.IsSuccess);
         var operatorId = createResult.Value!.Id;
 
+        var infilResult = await operatorService.StartInfilAsync(operatorId);
+        Assert.True(infilResult.IsSuccess);
+        var sessionId = await operatorService.StartCombatSessionAsync(operatorId);
+        Assert.True(sessionId.IsSuccess);
+
+        for (var i = 0; i < 20; i++)
+        {
+            var submitResult = await _sessionService.SubmitPlayerIntentsAsync(sessionId.Value!, new SubmitIntentsRequest
+            {
+                OperatorId = operatorId,
+                Intents = new IntentDto { Primary = PrimaryAction.Fire }
+            });
+            Assert.True(submitResult.IsSuccess);
+
+            var advanceResult = await _sessionService.AdvanceAsync(sessionId.Value!, operatorId);
+            Assert.True(advanceResult.IsSuccess);
+
+            if (advanceResult.Value!.Phase == SessionPhase.Completed)
+                break;
+        }
+
         var state = await operatorService.GetOperatorAsync(operatorId);
+        Assert.True(state.IsSuccess);
         var initialHash = OfflineMissionHashing.ComputeOperatorStateHash(state.Value!);
 
         await storeWithHead.UpsertAsync(new OfflineSyncHead
@@ -287,42 +315,125 @@ public sealed class OperatorServiceTests : IDisposable
             ResultOperatorStateHash = initialHash
         });
 
-        var expectedResultHash = OfflineMissionHashing.ComputeOperatorStateHash(new OperatorDto
+        var sessionSnapshot = await _sessionStore.LoadAsync(sessionId.Value!);
+        Assert.NotNull(sessionSnapshot);
+
+        var sessionResult = await _sessionService.GetStateAsync(sessionId.Value!);
+        var outcomeResult = await _sessionService.GetCombatOutcomeAsync(sessionId.Value!);
+        Assert.True(sessionResult.IsSuccess);
+        Assert.True(outcomeResult.IsSuccess);
+        var replayResult = await OfflineCombatReplay.ReplayAsync(sessionSnapshot.ReplayInitialSnapshotJson, sessionSnapshot.ReplayTurns);
+
+        var initialOperator = new OperatorDto
         {
             Id = operatorId.ToString(),
             Name = state.Value!.Name,
-            TotalXp = state.Value.TotalXp + 100,
+            TotalXp = state.Value.TotalXp,
             CurrentHealth = state.Value.CurrentHealth,
             MaxHealth = state.Value.MaxHealth,
             EquippedWeaponName = state.Value.EquippedWeaponName,
             UnlockedPerks = state.Value.UnlockedPerks,
             ExfilStreak = state.Value.ExfilStreak,
-            IsDead = false,
-            CurrentMode = "Infil",
-            ActiveCombatSessionId = null,
+            IsDead = state.Value.IsDead,
+            CurrentMode = state.Value.CurrentMode.ToString(),
+            ActiveCombatSessionId = state.Value.ActiveCombatSessionId,
             InfilSessionId = state.Value.InfilSessionId,
             InfilStartTime = state.Value.InfilStartTime,
             LockedLoadout = state.Value.LockedLoadout,
             Pet = state.Value.Pet
-        });
+        };
+        var expectedResult = OfflineCombatReplay.ProjectOperatorResult(initialOperator, outcomeResult.Value!);
+        var expectedResultHash = OfflineMissionHashing.ComputeOperatorStateHash(expectedResult);
 
         var envelope = new OfflineMissionEnvelope
         {
             OperatorId = operatorId.ToString(),
             SequenceNumber = 2,
-            RandomSeed = 42,
+            RandomSeed = sessionSnapshot!.Seed,
+            InitialSnapshotJson = System.Text.Json.JsonSerializer.Serialize(initialOperator),
+            ResultSnapshotJson = System.Text.Json.JsonSerializer.Serialize(expectedResult),
+            InitialCombatSnapshotJson = sessionSnapshot.ReplayInitialSnapshotJson,
+            FinalCombatSnapshotHash = OfflineCombatReplay.ComputeCombatSnapshotHash(replayResult.FinalSession),
             InitialOperatorStateHash = initialHash,
             ResultOperatorStateHash = expectedResultHash,
-            FullBattleLog = new List<BattleLogEntryDto>
-            {
-                new() { EventType = "Damage", TimeMs = 1, Message = "Enemy took 10 damage (Torso)!" }
-            },
+            ReplayTurns = sessionSnapshot.ReplayTurns.ToList(),
+            FullBattleLog = sessionResult.Value!.BattleLog,
             ExecutedUtc = DateTime.UtcNow
         };
 
         var result = await operatorService.SyncOfflineMission(envelope);
 
-        Assert.True(result.IsSuccess);
+        Assert.True(result.IsSuccess, result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task SyncOfflineMission_WithTamperedCombatHash_RejectsEnvelope()
+    {
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TamperOp" });
+        Assert.True(createResult.IsSuccess);
+        var operatorId = createResult.Value!.Id;
+
+        Assert.True((await _operatorService.StartInfilAsync(operatorId)).IsSuccess);
+        var sessionId = await _operatorService.StartCombatSessionAsync(operatorId);
+        Assert.True(sessionId.IsSuccess);
+
+        for (var i = 0; i < 20; i++)
+        {
+            Assert.True((await _sessionService.SubmitPlayerIntentsAsync(sessionId.Value!, new SubmitIntentsRequest
+            {
+                OperatorId = operatorId,
+                Intents = new IntentDto { Primary = PrimaryAction.Fire }
+            })).IsSuccess);
+
+            var advanceResult = await _sessionService.AdvanceAsync(sessionId.Value!, operatorId);
+            Assert.True(advanceResult.IsSuccess);
+            if (advanceResult.Value!.Phase == SessionPhase.Completed)
+                break;
+        }
+
+        var operatorState = await _operatorService.GetOperatorAsync(operatorId);
+        var sessionSnapshot = await _sessionStore.LoadAsync(sessionId.Value!);
+        var outcome = await _sessionService.GetCombatOutcomeAsync(sessionId.Value!);
+        var replay = await OfflineCombatReplay.ReplayAsync(sessionSnapshot!.ReplayInitialSnapshotJson, sessionSnapshot.ReplayTurns);
+
+        var initialOperator = new OperatorDto
+        {
+            Id = operatorId.ToString(),
+            Name = operatorState.Value!.Name,
+            TotalXp = operatorState.Value.TotalXp,
+            CurrentHealth = operatorState.Value.CurrentHealth,
+            MaxHealth = operatorState.Value.MaxHealth,
+            EquippedWeaponName = operatorState.Value.EquippedWeaponName,
+            UnlockedPerks = operatorState.Value.UnlockedPerks,
+            ExfilStreak = operatorState.Value.ExfilStreak,
+            IsDead = operatorState.Value.IsDead,
+            CurrentMode = operatorState.Value.CurrentMode.ToString(),
+            ActiveCombatSessionId = operatorState.Value.ActiveCombatSessionId,
+            InfilSessionId = operatorState.Value.InfilSessionId,
+            InfilStartTime = operatorState.Value.InfilStartTime,
+            LockedLoadout = operatorState.Value.LockedLoadout,
+            Pet = operatorState.Value.Pet
+        };
+
+        var projected = OfflineCombatReplay.ProjectOperatorResult(initialOperator, outcome.Value!);
+        var result = await _operatorService.SyncOfflineMission(new OfflineMissionEnvelope
+        {
+            OperatorId = operatorId.ToString(),
+            SequenceNumber = 1,
+            RandomSeed = sessionSnapshot.Seed,
+            InitialSnapshotJson = System.Text.Json.JsonSerializer.Serialize(initialOperator),
+            ResultSnapshotJson = System.Text.Json.JsonSerializer.Serialize(projected),
+            InitialCombatSnapshotJson = sessionSnapshot.ReplayInitialSnapshotJson,
+            FinalCombatSnapshotHash = "BAD-HASH",
+            InitialOperatorStateHash = OfflineMissionHashing.ComputeOperatorStateHash(operatorState.Value!),
+            ResultOperatorStateHash = OfflineMissionHashing.ComputeOperatorStateHash(projected),
+            ReplayTurns = sessionSnapshot.ReplayTurns.ToList(),
+            FullBattleLog = replay.FinalSession.BattleLog,
+            ExecutedUtc = DateTime.UtcNow
+        });
+
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Contains("combat replay hash mismatch", result.ErrorMessage);
     }
 
     [Fact]

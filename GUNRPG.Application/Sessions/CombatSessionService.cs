@@ -65,6 +65,11 @@ public sealed class CombatSessionService
             id: request.Id,
             operatorId: request.OperatorId);
 
+        if (string.IsNullOrEmpty(session.ReplayInitialSnapshotJson))
+        {
+            session.SetReplayInitialSnapshotJson(OfflineCombatReplay.SerializeCombatSnapshot(SessionMapping.ToSnapshot(session)));
+        }
+
         await _store.SaveAsync(SessionMapping.ToSnapshot(session));
         return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
     }
@@ -183,6 +188,11 @@ public sealed class CombatSessionService
 
         if (session.Combat.Phase == CombatPhase.Planning)
         {
+            if (pendingIntents.player != null)
+            {
+                session.RecordReplayTurn(pendingIntents.player);
+            }
+
             session.TransitionTo(SessionPhase.Resolving);
             session.Combat.BeginExecution();
         }
@@ -353,7 +363,8 @@ public sealed class CombatSessionService
             opponentDifficulty = Math.Min(100f, opponentDifficulty * DefeatDifficultyModifier);
         }
 
-        session.PetState = PetRules.Apply(session.PetState, new MissionInput(hitsTaken, opponentDifficulty), DateTimeOffset.UtcNow);
+        var missionResolvedAt = session.CreatedAt + TimeSpan.FromMilliseconds(session.Combat.CurrentTimeMs);
+        session.PetState = PetRules.Apply(session.PetState, new MissionInput(hitsTaken, opponentDifficulty), missionResolvedAt);
 
         // XP gain is now handled by OperatorExfilService, not in combat sessions
 

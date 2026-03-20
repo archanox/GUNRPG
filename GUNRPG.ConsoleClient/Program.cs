@@ -274,7 +274,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     private CombatSessionService? _localCombatService;
     private bool _usingLocalCombat;
     private int _activeOfflineMissionSeed;
-    private readonly IDeterministicCombatEngine _deterministicEngine = new DeterministicCombatEngine();
 
     private DateTime? _raidStartTimeUtc;
     private static readonly TimeSpan RaidDuration = TimeSpan.FromMinutes(30);
@@ -2005,11 +2004,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         }
     }
 
-    /// <summary>
-    /// Processes a combat outcome for an offline session using the deterministic combat engine.
-    /// The engine computes the authoritative result from the initial operator state and seed,
-    /// ensuring the server can independently replay and verify the outcome.
-    /// </summary>
     void ProcessCombatOutcomeOffline()
     {
         ApplyPendingRaidStateTransitions();
@@ -2019,13 +2013,32 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         if (CurrentOperator == null || offlineStore == null)
             return;
 
+        var sessionId = ActiveSessionId ?? CurrentSession?.Id;
+        if (sessionId == null || _localCombatService == null)
+            return;
+
+        var snapshot = offlineDb == null
+            ? null
+            : new LiteDbCombatSessionStore(offlineDb).LoadAsync(sessionId.Value).GetAwaiter().GetResult();
+        if (snapshot == null || CurrentSession == null)
+            return;
+
+        var outcomeResult = _localCombatService.GetCombatOutcomeAsync(sessionId.Value).GetAwaiter().GetResult();
+        if (!outcomeResult.IsSuccess || outcomeResult.Value == null)
+            return;
+
+        var replay = OfflineCombatReplay.ReplayAsync(snapshot.ReplayInitialSnapshotJson, snapshot.ReplayTurns).GetAwaiter().GetResult();
+        var actualCombatHash = OfflineCombatReplay.ComputeCombatSnapshotHash(ToApplicationCombatSessionDto(CurrentSession));
+        var replayCombatHash = OfflineCombatReplay.ComputeCombatSnapshotHash(replay.FinalSession);
+        if (!string.Equals(actualCombatHash, replayCombatHash, StringComparison.Ordinal))
+        {
+            ErrorMessage = "Offline combat replay diverged from the recorded session.";
+            return;
+        }
+
         var initialDto = ToBackendDto(CurrentOperator);
         var initialHash = OfflineMissionHashing.ComputeOperatorStateHash(initialDto);
-
-        // Run the deterministic combat engine — same engine the server will use to verify.
-        var combatResult = _deterministicEngine.Execute(initialDto, _activeOfflineMissionSeed);
-        var updatedDto = combatResult.ResultOperator;
-
+        var updatedDto = OfflineCombatReplay.ProjectOperatorResult(initialDto, outcomeResult.Value);
         var resultHash = OfflineMissionHashing.ComputeOperatorStateHash(updatedDto);
         var nextSequence = offlineStore.GetNextMissionSequence(updatedDto.Id);
 
@@ -2041,9 +2054,18 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             RandomSeed = _activeOfflineMissionSeed,
             InitialSnapshotJson = initialSnapshotJson,
             ResultSnapshotJson = resultSnapshotJson,
+            InitialCombatSnapshotJson = snapshot.ReplayInitialSnapshotJson,
+            FinalCombatSnapshotHash = replayCombatHash,
             InitialOperatorStateHash = initialHash,
             ResultOperatorStateHash = resultHash,
-            FullBattleLog = combatResult.BattleLog,
+            ReplayTurns = snapshot.ReplayTurns.ToList(),
+            FullBattleLog = CurrentSession.BattleLog.Select(entry => new GUNRPG.Application.Dtos.BattleLogEntryDto
+            {
+                EventType = entry.EventType,
+                TimeMs = entry.TimeMs,
+                Message = entry.Message,
+                ActorName = entry.ActorName
+            }).ToList(),
             ExecutedUtc = DateTime.UtcNow,
             Synced = false
         };
@@ -3051,6 +3073,12 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     {
         var json = JsonSerializer.Serialize(appDto, options);
         return JsonSerializer.Deserialize<CombatSessionDto>(json, options)!;
+    }
+
+    GUNRPG.Application.Dtos.CombatSessionDto ToApplicationCombatSessionDto(CombatSessionDto localDto)
+    {
+        var json = JsonSerializer.Serialize(localDto, options);
+        return JsonSerializer.Deserialize<GUNRPG.Application.Dtos.CombatSessionDto>(json, options)!;
     }
 }
 

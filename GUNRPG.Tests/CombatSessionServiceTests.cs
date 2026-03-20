@@ -101,6 +101,28 @@ public class CombatSessionServiceTests
     }
 
     [Fact]
+    public async Task Advance_PersistsReplayTurnForExecutedRound()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+        var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
+
+        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            Intents = new IntentDto { Primary = PrimaryAction.Fire }
+        });
+
+        var advanceResult = await service.AdvanceAsync(session.Id);
+        Assert.True(advanceResult.IsSuccess);
+
+        var persisted = await store.LoadAsync(session.Id);
+        Assert.NotNull(persisted);
+        Assert.Single(persisted!.ReplayTurns);
+        Assert.Equal(PrimaryAction.Fire, persisted.ReplayTurns[0].Primary);
+        Assert.False(string.IsNullOrEmpty(persisted.ReplayInitialSnapshotJson));
+    }
+
+    [Fact]
     public async Task Advance_WithoutIntents_IsInvalid()
     {
         var service = new CombatSessionService(new InMemoryCombatSessionStore());

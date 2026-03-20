@@ -104,6 +104,8 @@ public static class SessionMapping
             CreatedAt = session.CreatedAt,
             CompletedAt = session.CompletedAt,
             LastActionTimestamp = session.LastActionTimestamp,
+            ReplayInitialSnapshotJson = session.ReplayInitialSnapshotJson,
+            ReplayTurns = session.ReplayTurns.Select(ToSnapshot).ToList(),
             Combat = new CombatStateSnapshot
             {
                 Phase = session.Combat.Phase,
@@ -164,7 +166,9 @@ public static class SessionMapping
             snapshot.TurnNumber,
             snapshot.CreatedAt,
             snapshot.CompletedAt,
-            snapshot.LastActionTimestamp ?? snapshot.CreatedAt)  // Fallback to CreatedAt for old snapshots
+            snapshot.LastActionTimestamp ?? snapshot.CreatedAt,
+            snapshot.ReplayInitialSnapshotJson,
+            snapshot.ReplayTurns)  // Fallback to CreatedAt for old snapshots
         {
             PostCombatResolved = snapshot.PostCombatResolved
         };
@@ -314,6 +318,20 @@ public static class SessionMapping
             Cover = intents.Cover,
             CancelMovement = intents.CancelMovement,
             SubmittedAtMs = intents.SubmittedAtMs
+        };
+    }
+
+    private static IntentSnapshot ToSnapshot(IntentSnapshot snapshot)
+    {
+        return new IntentSnapshot
+        {
+            OperatorId = snapshot.OperatorId,
+            Primary = snapshot.Primary,
+            Movement = snapshot.Movement,
+            Stance = snapshot.Stance,
+            Cover = snapshot.Cover,
+            CancelMovement = snapshot.CancelMovement,
+            SubmittedAtMs = snapshot.SubmittedAtMs
         };
     }
 
