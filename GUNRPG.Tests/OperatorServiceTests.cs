@@ -301,6 +301,8 @@ public sealed class OperatorServiceTests : IDisposable
             LockedLoadout = state.Value.LockedLoadout,
             Pet = state.Value.Pet
         };
+        // Compute the envelope hash from the untampered authoritative state, then mutate the
+        // serialized snapshot so SyncOfflineMission must reject the snapshot-hash mismatch.
         var currentHash = OfflineMissionHashing.ComputeOperatorStateHash(state.Value);
         initialOperator.Name = "Tampered";
 
