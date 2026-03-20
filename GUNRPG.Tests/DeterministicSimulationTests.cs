@@ -96,7 +96,7 @@ public sealed class DeterministicSimulationTests
         var ex = Assert.Throws<ReplayDivergenceException>(
             () => runner.ValidateReplay(log, tamperedHashes));
 
-        Assert.Equal(1, ex.Tick); // tick 1 is the second entry (tick 0-indexed matching entry index)
+        Assert.Equal(1, ex.Tick); // tick value 1 (second entry) where the tampered hash was placed
     }
 
     [Fact]
