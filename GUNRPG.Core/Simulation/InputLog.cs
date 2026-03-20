@@ -1,5 +1,13 @@
 namespace GUNRPG.Core.Simulation;
 
+/// <summary>
+/// Canonical per-tick input frame used for live simulation, replay, and validation.
+/// </summary>
+public sealed record InputFrame(long Tick, Guid PlayerId, PlayerAction Intent);
+
+/// <summary>
+/// Backward-compatible alias for <see cref="InputFrame"/>.
+/// </summary>
 public sealed record InputLogEntry(long Tick, PlayerAction Action);
 
 public sealed class InputLog
@@ -10,12 +18,19 @@ public sealed class InputLog
         PlayerId = playerId;
         Seed = seed;
         Entries = NormalizeEntries(entries, nameof(entries));
+        Frames = Entries.Select(e => new InputFrame(e.Tick, playerId, e.Action)).ToArray();
     }
 
     public Guid RunId { get; }
     public Guid PlayerId { get; }
     public int Seed { get; }
     public IReadOnlyList<InputLogEntry> Entries { get; }
+
+    /// <summary>
+    /// Canonical input frames combining each entry with the log's <see cref="PlayerId"/>.
+    /// Used for live simulation, replay, and validation.
+    /// </summary>
+    public IReadOnlyList<InputFrame> Frames { get; }
 
     public static InputLog FromRunInput(RunInput input)
     {
@@ -44,7 +59,7 @@ public sealed class InputLog
     {
         ArgumentNullException.ThrowIfNull(entries, paramName);
 
-        return entries
+        var normalized = entries
             .Select((entry, index) =>
             {
                 if (entry is null)
@@ -65,5 +80,19 @@ public sealed class InputLog
             .ThenBy(item => item.OriginalIndex)
             .Select(item => item.Entry)
             .ToArray();
+
+        // §6: Validate no duplicate ticks (single-player simulation allows at most one input per tick)
+        var seenTicks = new HashSet<long>();
+        foreach (var entry in normalized)
+        {
+            if (!seenTicks.Add(entry.Tick))
+            {
+                throw new ArgumentException(
+                    $"Duplicate input at tick {entry.Tick}. Each tick may have at most one input per player.",
+                    paramName);
+            }
+        }
+
+        return normalized;
     }
 }
