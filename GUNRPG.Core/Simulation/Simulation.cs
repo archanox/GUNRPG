@@ -23,7 +23,7 @@ public static class Simulation
                 $"Simulation tick mismatch. Expected tick {state.Time.CurrentTimeMs}, received {tick}.");
         }
 
-        var random = new SeededRandom(state.Random.Seed, state.Random.CallCount);
+        var random = new SeededRandom(state.Random);
         var player = state.Player;
         var enemies = state.Enemies.OrderBy(enemy => enemy.Id).ToList();
         var emittedEvents = new List<SimulationEvent>();
@@ -119,7 +119,7 @@ public static class Simulation
         var allEvents = state.Events.Concat(emittedEvents).ToArray();
         return new SimulationState(
             updatedTime,
-            new RngState(state.Random.Seed, random.CallCount),
+            new RngState(state.Random.Seed, random.State, random.CallCount),
             player,
             enemies,
             allEvents,

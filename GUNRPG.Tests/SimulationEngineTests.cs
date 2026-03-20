@@ -67,6 +67,42 @@ public sealed class SimulationEngineTests
         Assert.True(replayResult.FinalHash.SequenceEqual(validationResult.FinalStateHash));
     }
 
+    [Fact]
+    public void ReplayRunner_UsesCanonicalInputLogOrderingForExecutionAndHashing()
+    {
+        var move = new MoveAction(Direction.North);
+        var attack = new AttackAction(Guid.Parse("33333333-3333-3333-3333-333333333333"));
+        var exfil = new ExfilAction();
+
+        var unsortedLog = new InputLog(
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            12345,
+            [
+                new InputLogEntry(2, exfil),
+                new InputLogEntry(0, move),
+                new InputLogEntry(1, attack)
+            ]);
+
+        var sortedLog = new InputLog(
+            unsortedLog.RunId,
+            unsortedLog.PlayerId,
+            unsortedLog.Seed,
+            [
+                new InputLogEntry(0, move),
+                new InputLogEntry(1, attack),
+                new InputLogEntry(2, exfil)
+            ]);
+
+        var runner = new ReplayRunner();
+        var unsortedReplay = runner.Replay(unsortedLog);
+        var sortedReplay = runner.Replay(sortedLog);
+
+        Assert.Equal(sortedLog.Entries, unsortedLog.Entries);
+        Assert.Equal(sortedReplay.FinalState.Events, unsortedReplay.FinalState.Events);
+        Assert.True(sortedReplay.FinalHash.SequenceEqual(unsortedReplay.FinalHash));
+    }
+
     private static RunInput CreateStandardInput() => new()
     {
         RunId = Guid.Parse("11111111-1111-1111-1111-111111111111"),

@@ -19,6 +19,7 @@ public sealed class StateHasher : IStateHasher
         WriteInt64(buffer, tick);
         WriteInt64(buffer, state.Time.CurrentTimeMs);
         WriteInt32(buffer, state.Random.Seed);
+        WriteUInt64(buffer, state.Random.State);
         WriteInt32(buffer, state.Random.CallCount);
         WriteInt32(buffer, state.Player.Health);
         WriteInt32(buffer, state.Player.MaxHealth);
@@ -136,6 +137,13 @@ public sealed class StateHasher : IStateHasher
     {
         var span = buffer.GetSpan(Int64Size);
         BinaryPrimitives.WriteInt64BigEndian(span, value);
+        buffer.Advance(Int64Size);
+    }
+
+    private static void WriteUInt64(ArrayBufferWriter<byte> buffer, ulong value)
+    {
+        var span = buffer.GetSpan(Int64Size);
+        BinaryPrimitives.WriteUInt64BigEndian(span, value);
         buffer.Advance(Int64Size);
     }
 

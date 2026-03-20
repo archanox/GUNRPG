@@ -2,7 +2,7 @@ using GUNRPG.Core.Time;
 
 namespace GUNRPG.Core.Simulation;
 
-public sealed record RngState(int Seed, int CallCount);
+public sealed record RngState(int Seed, ulong State, int CallCount);
 
 /// <summary>
 /// Full deterministic simulation state at a given tick.

@@ -32,7 +32,7 @@ public sealed class ReplayRunner
         var state = CreateInitialState(inputLog.Seed);
         var tickHashes = new List<byte[]>(inputLog.Entries.Count);
 
-        foreach (var entry in inputLog.Entries.OrderBy(e => e.Tick))
+        foreach (var entry in inputLog.Entries)
         {
             state = Simulation.Step(state, entry.Action, entry.Tick);
             tickHashes.Add(_stateHasher.HashTick(entry.Tick, state));
@@ -44,9 +44,11 @@ public sealed class ReplayRunner
 
     public static SimulationState CreateInitialState(int seed)
     {
+        var random = new SeededRandom(seed);
+
         return new SimulationState(
             new SimulationTime(),
-            new RngState(seed, 0),
+            new RngState(seed, random.State, random.CallCount),
             new SimulationPlayerState(100, 100),
             [new SimulationEnemyState(1, 100, 100)]);
     }
