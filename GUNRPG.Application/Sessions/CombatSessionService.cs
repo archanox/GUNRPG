@@ -363,7 +363,7 @@ public sealed class CombatSessionService
             opponentDifficulty = Math.Min(100f, opponentDifficulty * DefeatDifficultyModifier);
         }
 
-        var missionResolvedAt = session.CreatedAt + TimeSpan.FromMilliseconds(session.Combat.CurrentTimeMs);
+        var missionResolvedAt = session.CreatedAt + ToBoundedCombatDuration(session.Combat.CurrentTimeMs);
         session.PetState = PetRules.Apply(session.PetState, new MissionInput(hitsTaken, opponentDifficulty), missionResolvedAt);
 
         // XP gain is now handled by OperatorExfilService, not in combat sessions
@@ -382,6 +382,12 @@ public sealed class CombatSessionService
             "mission" => new MissionInput(request.HitsTaken ?? 0, request.OpponentDifficulty ?? 50f),
             _ => new RestInput(TimeSpan.FromHours(request.Hours ?? 1f))
         };
+    }
+
+    private static TimeSpan ToBoundedCombatDuration(long currentTimeMs)
+    {
+        var boundedMilliseconds = Math.Clamp(currentTimeMs, 0L, (long)TimeSpan.MaxValue.TotalMilliseconds);
+        return TimeSpan.FromMilliseconds(boundedMilliseconds);
     }
     
     /// <summary>
