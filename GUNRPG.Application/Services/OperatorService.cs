@@ -581,6 +581,8 @@ public sealed class OperatorService
             return ServiceResult.InvalidState("Offline mission envelope initial operator snapshot could not be deserialized");
         }
 
+        // Validate the operator identity separately from the snapshot hash so malformed or
+        // misrouted envelopes fail with a precise, stable error before replay/apply work begins.
         if (!Guid.TryParse(initialOperator.Id, out var initialOperatorId))
             return ServiceResult.InvalidState("Offline mission envelope initial operator ID is invalid");
 
