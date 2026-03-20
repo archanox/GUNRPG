@@ -11,7 +11,7 @@ public interface IDeterministicCombatEngine
     /// <summary>
     /// Executes a combat mission deterministically using the provided seed.
     /// Must produce identical results for the same inputs on every invocation.
-    /// Uses only <c>new Random(seed)</c> — no static Random, no DateTime, no external state.
+    /// Uses only <see cref="GUNRPG.Core.Simulation.SeededRandom"/> — no static Random, no DateTime, no external state.
     /// </summary>
     CombatResult Execute(OperatorDto snapshot, int seed);
 }

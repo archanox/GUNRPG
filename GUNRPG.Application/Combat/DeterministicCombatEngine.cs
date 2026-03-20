@@ -1,11 +1,12 @@
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Dtos;
+using GUNRPG.Core.Simulation;
 
 namespace GUNRPG.Application.Combat;
 
 /// <summary>
 /// Pure deterministic combat simulation.
-/// All randomness derives from the provided seed via <c>new Random(seed)</c>.
+/// All randomness derives from the provided seed via <see cref="SeededRandom"/>.
 /// Uses no external state, no <c>DateTime.Now</c>, and no static <c>Random</c>.
 /// Offline and server both reference this same engine to ensure replay parity.
 /// </summary>
@@ -16,10 +17,13 @@ public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
     private const int DeathXpReward = 0;
     private const int MaxRounds = 20;
 
+    private const int PlayerHitChancePct = 65;
+    private const int EnemyHitChancePct = 55;
+
     /// <inheritdoc />
     public CombatResult Execute(OperatorDto snapshot, int seed)
     {
-        var rng = new Random(seed);
+        IRandom rng = new SeededRandom(seed);
         var log = new List<BattleLogEntryDto>();
         long timeMs = 0;
 
@@ -32,7 +36,7 @@ public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
             timeMs += 1000;
 
             // Player attacks
-            if (rng.NextDouble() < 0.65)
+            if (rng.Next(0, 100) < PlayerHitChancePct)
             {
                 var dmg = 8f + rng.Next(0, 17);
                 enemyHealth -= dmg;
@@ -59,7 +63,7 @@ public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
                 break;
 
             // Enemy attacks
-            if (rng.NextDouble() < 0.55)
+            if (rng.Next(0, 100) < EnemyHitChancePct)
             {
                 var dmg = 5f + rng.Next(0, 15);
                 playerHealth -= dmg;

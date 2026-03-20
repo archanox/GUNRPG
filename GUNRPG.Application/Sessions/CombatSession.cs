@@ -5,6 +5,7 @@ using GUNRPG.Core.Combat;
 using GUNRPG.Core.Equipment;
 using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
+using GUNRPG.Core.Simulation;
 using GUNRPG.Core.VirtualPet;
 
 namespace GUNRPG.Application.Sessions;
@@ -99,7 +100,7 @@ public sealed class CombatSession
         var operatorManager = new OperatorManager();
 
         var petState = new PetState(player.Id, 100f, 0f, 0f, 0f, 100f, 0f, 100f, DateTimeOffset.UtcNow);
-        var enemyLevel = Math.Max(0, new Random(resolvedSeed).Next(-2, 3));
+        var enemyLevel = Math.Max(0, new SeededRandom(resolvedSeed).Next(-2, 3));
         var resolvedOperatorId = operatorId.HasValue
             ? OperatorId.FromGuid(operatorId.Value)
             : OperatorId.FromGuid(player.Id);
