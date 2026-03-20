@@ -15,6 +15,11 @@ namespace GUNRPG.Application.Sessions;
 /// </summary>
 public sealed class CombatSession
 {
+    /// <summary>
+    /// Schema version for FinalHash computation. Increment when the hash algorithm changes.
+    /// </summary>
+    public const int CurrentVersion = 1;
+
     private readonly List<IntentSnapshot> _replayTurns = [];
 
     public Guid Id { get; }
@@ -25,14 +30,32 @@ public sealed class CombatSession
     public PetState PetState { get; set; }
     public int EnemyLevel { get; }
     public int Seed { get; }
+
+    /// <summary>
+    /// Schema version used when computing <see cref="FinalHash"/>.
+    /// </summary>
+    public int Version { get; }
+
     public SessionPhase Phase { get; private set; }
     public int TurnNumber { get; private set; }
+
+    /// <summary>
+    /// Current simulation tick, equivalent to <see cref="TurnNumber"/>.
+    /// </summary>
+    public int CurrentTick => TurnNumber;
+
     public DateTimeOffset CreatedAt { get; }
     public DateTimeOffset? CompletedAt { get; private set; }
     public DateTimeOffset LastActionTimestamp { get; private set; }
     public bool PostCombatResolved { get; set; }
     public string ReplayInitialSnapshotJson { get; private set; }
     public IReadOnlyList<IntentSnapshot> ReplayTurns => _replayTurns;
+
+    /// <summary>
+    /// Deterministic hash computed from replay-critical session data when the session is
+    /// finalized. Null for sessions that have not yet been completed.
+    /// </summary>
+    public byte[]? FinalHash { get; private set; }
 
     public Operator Player => Combat.Player;
     public Operator Enemy => Combat.Enemy;
@@ -52,7 +75,9 @@ public sealed class CombatSession
         DateTimeOffset? completedAt = null,
         DateTimeOffset? lastActionTimestamp = null,
         string? replayInitialSnapshotJson = null,
-        IEnumerable<IntentSnapshot>? replayTurns = null)
+        IEnumerable<IntentSnapshot>? replayTurns = null,
+        int version = CurrentVersion,
+        byte[]? finalHash = null)
     {
         Id = id;
         OperatorId = operatorId;
@@ -62,6 +87,7 @@ public sealed class CombatSession
         PetState = petState;
         EnemyLevel = enemyLevel;
         Seed = seed;
+        Version = version > 0 ? version : CurrentVersion;
         Phase = phase;
         TurnNumber = turnNumber;
         CreatedAt = createdAt;
@@ -72,6 +98,9 @@ public sealed class CombatSession
         {
             _replayTurns.AddRange(replayTurns.Select(CloneIntentSnapshot));
         }
+
+        // Restore a stored FinalHash when reconstructing from a snapshot (defensive copy).
+        FinalHash = finalHash != null ? (byte[])finalHash.Clone() : null;
     }
 
     public static CombatSession CreateDefault(string? playerName = null, int? seed = null, float? startingDistance = null, string? enemyName = null, Guid? id = null, Guid? operatorId = null)
@@ -129,15 +158,21 @@ public sealed class CombatSession
         Phase = nextPhase;
         LastActionTimestamp = DateTimeOffset.UtcNow;
         
-        // Record completion time when transitioning to Completed phase
+        // Record completion time and compute FinalHash when transitioning to Completed phase.
         if (nextPhase == SessionPhase.Completed && CompletedAt == null)
         {
             CompletedAt = DateTimeOffset.UtcNow;
+            FinalHash = CombatSessionHasher.ComputeHash(Id, Seed, Version, TurnNumber, _replayTurns);
         }
     }
 
     public void AdvanceTurnCounter()
     {
+        if (Phase == SessionPhase.Completed)
+        {
+            throw new InvalidOperationException("Cannot advance turn counter: session is already completed.");
+        }
+
         TurnNumber++;
         LastActionTimestamp = DateTimeOffset.UtcNow;
     }
@@ -155,6 +190,11 @@ public sealed class CombatSession
     public void RecordReplayTurn(SimultaneousIntents intents)
     {
         ArgumentNullException.ThrowIfNull(intents);
+
+        if (Phase == SessionPhase.Completed)
+        {
+            throw new InvalidOperationException("Cannot record replay turn: session is already completed.");
+        }
 
         _replayTurns.Add(new IntentSnapshot
         {

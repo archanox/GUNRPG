@@ -106,6 +106,8 @@ public static class SessionMapping
             LastActionTimestamp = session.LastActionTimestamp,
             ReplayInitialSnapshotJson = session.ReplayInitialSnapshotJson,
             ReplayTurns = session.ReplayTurns.Select(ToSnapshot).ToList(),
+            Version = session.Version,
+            FinalHash = session.FinalHash != null ? (byte[])session.FinalHash.Clone() : null,
             Combat = new CombatStateSnapshot
             {
                 Phase = session.Combat.Phase,
@@ -168,7 +170,9 @@ public static class SessionMapping
             snapshot.CompletedAt,
             snapshot.LastActionTimestamp ?? snapshot.CreatedAt,
             snapshot.ReplayInitialSnapshotJson,
-            snapshot.ReplayTurns)  // Fallback to CreatedAt for old snapshots
+            snapshot.ReplayTurns,
+            snapshot.Version,
+            snapshot.FinalHash)  // Fallback to CreatedAt for old snapshots
         {
             PostCombatResolved = snapshot.PostCombatResolved
         };
