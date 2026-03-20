@@ -71,7 +71,7 @@ public sealed class SimulationEngineTests
     public void ReplayRunner_UsesCanonicalInputLogOrderingForExecutionAndHashing()
     {
         var move = new MoveAction(Direction.North);
-        var attack = new AttackAction(Guid.Parse("33333333-3333-3333-3333-333333333333"));
+        var useItem = new UseItemAction(Guid.Parse("44444444-4444-4444-4444-444444444444"));
         var exfil = new ExfilAction();
 
         var unsortedLog = new InputLog(
@@ -81,7 +81,7 @@ public sealed class SimulationEngineTests
             [
                 new InputLogEntry(2, exfil),
                 new InputLogEntry(0, move),
-                new InputLogEntry(1, attack)
+                new InputLogEntry(1, useItem)
             ]);
 
         var sortedLog = new InputLog(
@@ -90,17 +90,27 @@ public sealed class SimulationEngineTests
             unsortedLog.Seed,
             [
                 new InputLogEntry(0, move),
-                new InputLogEntry(1, attack),
+                new InputLogEntry(1, useItem),
                 new InputLogEntry(2, exfil)
             ]);
+
+        Assert.Equal(unsortedLog.Entries, sortedLog.Entries);
 
         var runner = new ReplayRunner();
         var unsortedReplay = runner.Replay(unsortedLog);
         var sortedReplay = runner.Replay(sortedLog);
 
-        Assert.Equal(sortedLog.Entries, unsortedLog.Entries);
         Assert.Equal(sortedReplay.FinalState.Events, unsortedReplay.FinalState.Events);
         Assert.True(sortedReplay.FinalHash.SequenceEqual(unsortedReplay.FinalHash));
+
+        var events = unsortedReplay.FinalState.Events;
+        var moveIndex = Array.FindIndex([.. events], evt => evt is InfilStateChangedSimulationEvent);
+        var itemIndex = Array.FindIndex([.. events], evt => evt is ItemAcquiredSimulationEvent);
+        var exfilIndex = Array.FindIndex([.. events], evt => evt is RunCompletedSimulationEvent);
+
+        Assert.True(moveIndex >= 0 && itemIndex >= 0 && exfilIndex >= 0);
+        Assert.True(moveIndex < itemIndex);
+        Assert.True(itemIndex < exfilIndex);
     }
 
     private static RunInput CreateStandardInput() => new()
