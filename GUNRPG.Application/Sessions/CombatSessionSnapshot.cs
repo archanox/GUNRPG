@@ -25,6 +25,18 @@ public sealed class CombatSessionSnapshot
     public DateTimeOffset? LastActionTimestamp { get; init; }
     public string ReplayInitialSnapshotJson { get; init; } = string.Empty;
     public List<IntentSnapshot> ReplayTurns { get; init; } = new();
+
+    /// <summary>
+    /// Schema version used when <see cref="FinalHash"/> was computed. Zero for legacy sessions.
+    /// </summary>
+    public int Version { get; init; }
+
+    /// <summary>
+    /// Deterministic SHA-256 hash over replay-critical session data, set when the session
+    /// transitions to <see cref="SessionPhase.Completed"/>. Null for in-progress sessions
+    /// and legacy sessions loaded before this field was introduced.
+    /// </summary>
+    public byte[]? FinalHash { get; init; }
 }
 
 public sealed class CombatStateSnapshot

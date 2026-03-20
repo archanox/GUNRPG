@@ -243,7 +243,25 @@ public sealed class CombatSessionService
     private async Task<CombatSession?> LoadAsync(Guid id)
     {
         var snapshot = await _store.LoadAsync(id);
-        return snapshot == null ? null : SessionMapping.FromSnapshot(snapshot);
+        if (snapshot == null) return null;
+
+        var session = SessionMapping.FromSnapshot(snapshot);
+
+        // Validate FinalHash for completed sessions that have one stored.
+        // Sessions without a FinalHash (legacy or in-progress) are loaded without validation.
+        if (session.Phase == SessionPhase.Completed && session.FinalHash != null)
+        {
+            var computed = CombatSessionHasher.ComputeHash(
+                session.Id, session.Seed, session.Version, session.TurnNumber, session.ReplayTurns);
+
+            if (!computed.AsSpan().SequenceEqual(session.FinalHash))
+            {
+                throw new InvalidOperationException(
+                    $"Session {id} failed replay integrity check: stored FinalHash does not match recomputed hash.");
+            }
+        }
+
+        return session;
     }
 
     private async Task SaveAsync(CombatSession session)
