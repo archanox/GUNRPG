@@ -1,7 +1,23 @@
+using GUNRPG.Core.Simulation;
+
 namespace GUNRPG.Security;
 
 public sealed class QuorumValidator
 {
+    /// <summary>
+    /// Replays the given input and returns the resulting deterministic hash.
+    /// Use this to compare hashes across nodes for quorum validation.
+    /// </summary>
+    public static byte[] ReplayHash(RunInput input, ReplayRunner? runner = null)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+
+        runner ??= new ReplayRunner();
+        var inputLog = InputLog.FromRunInput(input);
+        var result = runner.Replay(inputLog);
+        return result.FinalHash;
+    }
+
     public bool HasQuorum(
         SignedRunValidation validation,
         BootstrapAuthoritySet authorities,
