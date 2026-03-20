@@ -24,8 +24,15 @@ public sealed class StateHasher : IStateHasher
         WriteInt32(buffer, state.Player.Health);
         WriteInt32(buffer, state.Player.MaxHealth);
         // §2: Canonical ordering — sort enemies by Id for cross-machine determinism
-        var sortedEnemies = state.Enemies.OrderBy(e => e.Id);
-        WriteInt32(buffer, state.Enemies.Count);
+        var enemyCount = state.Enemies.Count;
+        var sortedEnemies = new SimulationEnemyState[enemyCount];
+        for (var i = 0; i < enemyCount; i++)
+        {
+            sortedEnemies[i] = state.Enemies[i];
+        }
+
+        Array.Sort(sortedEnemies, (a, b) => a.Id.CompareTo(b.Id));
+        WriteInt32(buffer, enemyCount);
 
         foreach (var enemy in sortedEnemies)
         {

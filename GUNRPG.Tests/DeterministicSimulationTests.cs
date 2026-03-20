@@ -14,8 +14,6 @@ namespace GUNRPG.Tests;
 /// </summary>
 public sealed class DeterministicSimulationTests
 {
-    private static readonly DateTimeOffset ReferenceNow = new(2026, 03, 15, 04, 00, 00, TimeSpan.Zero);
-
     [Fact]
     public void SameInput_ProducesSameHash_AcrossMultipleRuns()
     {

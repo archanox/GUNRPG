@@ -25,8 +25,8 @@ public sealed class ReplayDivergenceException : Exception
         : base($"Replay diverged at tick {tick}.")
     {
         Tick = tick;
-        ExpectedHash = expectedHash;
-        ActualHash = actualHash;
+        ExpectedHash = (byte[])expectedHash.Clone();
+        ActualHash = (byte[])actualHash.Clone();
     }
 
     public long Tick { get; }

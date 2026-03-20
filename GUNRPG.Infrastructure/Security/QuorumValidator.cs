@@ -15,7 +15,7 @@ public sealed class QuorumValidator
         runner ??= new ReplayRunner();
         var inputLog = InputLog.FromRunInput(input);
         var result = runner.Replay(inputLog);
-        return result.FinalHash;
+        return (byte[])result.FinalHash.Clone();
     }
 
     public bool HasQuorum(
