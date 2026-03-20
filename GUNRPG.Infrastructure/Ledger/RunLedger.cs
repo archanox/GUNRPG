@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Security.Cryptography;
+using GUNRPG.Core.Simulation;
 using GUNRPG.Gossip;
 using GUNRPG.Ledger.Indexing;
 using GUNRPG.Security;

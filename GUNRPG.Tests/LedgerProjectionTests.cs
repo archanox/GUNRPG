@@ -2,6 +2,7 @@ using GUNRPG.Application.Combat;
 using GUNRPG.Application.Gameplay;
 using GUNRPG.Application.Operators;
 using GUNRPG.Core.Operators;
+using GUNRPG.Core.Simulation;
 using GUNRPG.Gossip;
 using GUNRPG.Infrastructure.Gameplay;
 using GUNRPG.Infrastructure.Persistence;

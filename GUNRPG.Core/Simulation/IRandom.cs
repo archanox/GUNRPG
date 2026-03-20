@@ -1,0 +1,8 @@
+namespace GUNRPG.Core.Simulation;
+
+public interface IRandom
+{
+    int Seed { get; }
+    int CallCount { get; }
+    int Next(int minValue, int maxValue);
+}
