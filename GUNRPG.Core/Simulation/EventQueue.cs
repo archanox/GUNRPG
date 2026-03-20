@@ -12,7 +12,11 @@ public sealed class EventQueue<TEvent>
 
     public void Schedule(long tick, int sequence, TEvent value)
     {
-        _events.Add(new ScheduledEvent<TEvent>(tick, sequence, value));
+        if (!_events.Add(new ScheduledEvent<TEvent>(tick, sequence, value)))
+        {
+            throw new InvalidOperationException(
+                $"A simulation event is already queued for tick {tick} with sequence {sequence}.");
+        }
     }
 
     public ScheduledEvent<TEvent>? PeekNext() => _events.Count == 0 ? null : _events.Min;
