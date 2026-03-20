@@ -150,20 +150,20 @@ public static class OfflineCombatReplay
     {
         return new OperatorDto
         {
-            Id = source.Id,
-            Name = source.Name,
+            Id = source.Id ?? string.Empty,
+            Name = source.Name ?? string.Empty,
             TotalXp = source.TotalXp,
             CurrentHealth = source.CurrentHealth,
             MaxHealth = source.MaxHealth,
-            EquippedWeaponName = source.EquippedWeaponName,
-            UnlockedPerks = source.UnlockedPerks.ToList(),
+            EquippedWeaponName = source.EquippedWeaponName ?? string.Empty,
+            UnlockedPerks = (source.UnlockedPerks ?? []).ToList(),
             ExfilStreak = source.ExfilStreak,
             IsDead = source.IsDead,
-            CurrentMode = source.CurrentMode,
+            CurrentMode = source.CurrentMode ?? string.Empty,
             ActiveCombatSessionId = source.ActiveCombatSessionId,
             InfilSessionId = source.InfilSessionId,
             InfilStartTime = source.InfilStartTime,
-            LockedLoadout = source.LockedLoadout,
+            LockedLoadout = source.LockedLoadout ?? string.Empty,
             Pet = source.Pet == null
                 ? null
                 : new PetStateDto

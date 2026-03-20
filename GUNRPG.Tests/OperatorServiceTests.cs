@@ -275,6 +275,103 @@ public sealed class OperatorServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SyncOfflineMission_WithInitialSnapshotHashMismatch_ReturnsInvalidState()
+    {
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "HashOp" });
+        Assert.True(createResult.IsSuccess);
+
+        var state = await _operatorService.GetOperatorAsync(createResult.Value!.Id);
+        Assert.True(state.IsSuccess);
+
+        var initialOperator = new OperatorDto
+        {
+            Id = state.Value!.Id.ToString(),
+            Name = state.Value.Name,
+            TotalXp = state.Value.TotalXp,
+            CurrentHealth = state.Value.CurrentHealth,
+            MaxHealth = state.Value.MaxHealth,
+            EquippedWeaponName = state.Value.EquippedWeaponName,
+            UnlockedPerks = state.Value.UnlockedPerks,
+            ExfilStreak = state.Value.ExfilStreak,
+            IsDead = state.Value.IsDead,
+            CurrentMode = state.Value.CurrentMode.ToString(),
+            ActiveCombatSessionId = state.Value.ActiveCombatSessionId,
+            InfilSessionId = state.Value.InfilSessionId,
+            InfilStartTime = state.Value.InfilStartTime,
+            LockedLoadout = state.Value.LockedLoadout,
+            Pet = state.Value.Pet
+        };
+        var currentHash = OfflineMissionHashing.ComputeOperatorStateHash(state.Value);
+        initialOperator.Name = "Tampered";
+
+        var result = await _operatorService.SyncOfflineMission(new OfflineMissionEnvelope
+        {
+            OperatorId = state.Value.Id.ToString(),
+            SequenceNumber = 1,
+            RandomSeed = 7,
+            InitialSnapshotJson = System.Text.Json.JsonSerializer.Serialize(initialOperator),
+            InitialCombatSnapshotJson = "{}",
+            FinalCombatSnapshotHash = "hash-c",
+            ReplayTurns = [new IntentSnapshot()],
+            InitialOperatorStateHash = currentHash,
+            ResultOperatorStateHash = "hash-b",
+            FullBattleLog = [],
+            ExecutedUtc = DateTime.UtcNow
+        });
+
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Equal("Offline mission envelope initial snapshot hash mismatch", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task SyncOfflineMission_WhenReplayThrows_ReturnsGenericError()
+    {
+        var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "ReplayOp" });
+        Assert.True(createResult.IsSuccess);
+
+        var state = await _operatorService.GetOperatorAsync(createResult.Value!.Id);
+        Assert.True(state.IsSuccess);
+
+        var initialOperator = new OperatorDto
+        {
+            Id = state.Value!.Id.ToString(),
+            Name = state.Value.Name,
+            TotalXp = state.Value.TotalXp,
+            CurrentHealth = state.Value.CurrentHealth,
+            MaxHealth = state.Value.MaxHealth,
+            EquippedWeaponName = state.Value.EquippedWeaponName,
+            UnlockedPerks = state.Value.UnlockedPerks,
+            ExfilStreak = state.Value.ExfilStreak,
+            IsDead = state.Value.IsDead,
+            CurrentMode = state.Value.CurrentMode.ToString(),
+            ActiveCombatSessionId = state.Value.ActiveCombatSessionId,
+            InfilSessionId = state.Value.InfilSessionId,
+            InfilStartTime = state.Value.InfilStartTime,
+            LockedLoadout = state.Value.LockedLoadout,
+            Pet = state.Value.Pet
+        };
+
+        var initialSnapshotHash = OfflineMissionHashing.ComputeOperatorStateHash(initialOperator);
+        var result = await _operatorService.SyncOfflineMission(new OfflineMissionEnvelope
+        {
+            OperatorId = state.Value.Id.ToString(),
+            SequenceNumber = 1,
+            RandomSeed = 7,
+            InitialSnapshotJson = System.Text.Json.JsonSerializer.Serialize(initialOperator),
+            InitialCombatSnapshotJson = "not-json",
+            FinalCombatSnapshotHash = "hash-c",
+            ReplayTurns = [new IntentSnapshot()],
+            InitialOperatorStateHash = initialSnapshotHash,
+            ResultOperatorStateHash = "hash-b",
+            FullBattleLog = [],
+            ExecutedUtc = DateTime.UtcNow
+        });
+
+        Assert.Equal(ResultStatus.InvalidState, result.Status);
+        Assert.Equal("Offline mission replay failed", result.ErrorMessage);
+    }
+
+    [Fact]
     public async Task SyncOfflineMission_SequenceTwo_UsesStoredHeadContinuity()
     {
         var storeWithHead = new InMemoryOfflineSyncHeadStore();

@@ -2045,13 +2045,13 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         var initialSnapshotJson = JsonSerializer.Serialize(initialDto, options);
         var resultSnapshotJson = JsonSerializer.Serialize(updatedDto, options);
 
-        Console.WriteLine($"[OFFLINE] Envelope seq={nextSequence} seed={_activeOfflineMissionSeed} initialHash={initialHash} resultHash={resultHash}");
+        Console.WriteLine($"[OFFLINE] Envelope seq={nextSequence} seed={snapshot.Seed} initialHash={initialHash} resultHash={resultHash}");
 
         var envelope = new OfflineMissionEnvelope
         {
             OperatorId = updatedDto.Id,
             SequenceNumber = nextSequence,
-            RandomSeed = _activeOfflineMissionSeed,
+            RandomSeed = snapshot.Seed,
             InitialSnapshotJson = initialSnapshotJson,
             ResultSnapshotJson = resultSnapshotJson,
             InitialCombatSnapshotJson = snapshot.ReplayInitialSnapshotJson,
