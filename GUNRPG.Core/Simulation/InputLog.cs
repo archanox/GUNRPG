@@ -6,7 +6,8 @@ namespace GUNRPG.Core.Simulation;
 public sealed record InputFrame(long Tick, Guid PlayerId, PlayerAction Intent);
 
 /// <summary>
-/// Backward-compatible alias for <see cref="InputFrame"/>.
+/// Legacy per-tick input log entry format used for persistence and backward compatibility.
+/// Converted to the canonical <see cref="InputFrame"/> by combining each entry with a player identifier.
 /// </summary>
 public sealed record InputLogEntry(long Tick, PlayerAction Action);
 
