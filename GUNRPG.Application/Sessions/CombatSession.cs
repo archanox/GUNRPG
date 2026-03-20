@@ -3,6 +3,7 @@ using GUNRPG.Core;
 using GUNRPG.Core.AI;
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Equipment;
+using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
 using GUNRPG.Core.VirtualPet;
 
@@ -13,6 +14,8 @@ namespace GUNRPG.Application.Sessions;
 /// </summary>
 public sealed class CombatSession
 {
+    private readonly List<IntentSnapshot> _replayTurns = [];
+
     public Guid Id { get; }
     public OperatorId OperatorId { get; }  // Reference to the operator (does not store progression)
     public CombatSystemV2 Combat { get; }
@@ -27,6 +30,8 @@ public sealed class CombatSession
     public DateTimeOffset? CompletedAt { get; private set; }
     public DateTimeOffset LastActionTimestamp { get; private set; }
     public bool PostCombatResolved { get; set; }
+    public string ReplayInitialSnapshotJson { get; private set; }
+    public IReadOnlyList<IntentSnapshot> ReplayTurns => _replayTurns;
 
     public Operator Player => Combat.Player;
     public Operator Enemy => Combat.Enemy;
@@ -44,7 +49,9 @@ public sealed class CombatSession
         int turnNumber,
         DateTimeOffset createdAt,
         DateTimeOffset? completedAt = null,
-        DateTimeOffset? lastActionTimestamp = null)
+        DateTimeOffset? lastActionTimestamp = null,
+        string? replayInitialSnapshotJson = null,
+        IEnumerable<IntentSnapshot>? replayTurns = null)
     {
         Id = id;
         OperatorId = operatorId;
@@ -59,6 +66,11 @@ public sealed class CombatSession
         CreatedAt = createdAt;
         CompletedAt = completedAt;
         LastActionTimestamp = lastActionTimestamp ?? createdAt;
+        ReplayInitialSnapshotJson = replayInitialSnapshotJson ?? string.Empty;
+        if (replayTurns != null)
+        {
+            _replayTurns.AddRange(replayTurns.Select(CloneIntentSnapshot));
+        }
     }
 
     public static CombatSession CreateDefault(string? playerName = null, int? seed = null, float? startingDistance = null, string? enemyName = null, Guid? id = null, Guid? operatorId = null)
@@ -134,6 +146,27 @@ public sealed class CombatSession
         LastActionTimestamp = DateTimeOffset.UtcNow;
     }
 
+    public void SetReplayInitialSnapshotJson(string snapshotJson)
+    {
+        ReplayInitialSnapshotJson = snapshotJson ?? string.Empty;
+    }
+
+    public void RecordReplayTurn(SimultaneousIntents intents)
+    {
+        ArgumentNullException.ThrowIfNull(intents);
+
+        _replayTurns.Add(new IntentSnapshot
+        {
+            OperatorId = intents.OperatorId,
+            Primary = intents.Primary,
+            Movement = intents.Movement,
+            Stance = intents.Stance,
+            Cover = intents.Cover,
+            CancelMovement = intents.CancelMovement,
+            SubmittedAtMs = intents.SubmittedAtMs
+        });
+    }
+
     /// <summary>
     /// Gets the combat outcome for this session.
     /// Can only be called after the session has completed.
@@ -198,6 +231,20 @@ public sealed class CombatSession
             (SessionPhase.Planning, SessionPhase.Completed) => true,
             (SessionPhase.Resolving, SessionPhase.Completed) => true,
             _ => current == next
+        };
+    }
+
+    private static IntentSnapshot CloneIntentSnapshot(IntentSnapshot snapshot)
+    {
+        return new IntentSnapshot
+        {
+            OperatorId = snapshot.OperatorId,
+            Primary = snapshot.Primary,
+            Movement = snapshot.Movement,
+            Stance = snapshot.Stance,
+            Cover = snapshot.Cover,
+            CancelMovement = snapshot.CancelMovement,
+            SubmittedAtMs = snapshot.SubmittedAtMs
         };
     }
 }

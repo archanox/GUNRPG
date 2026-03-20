@@ -23,6 +23,8 @@ public sealed class CombatSessionSnapshot
     public DateTimeOffset CreatedAt { get; init; }
     public DateTimeOffset? CompletedAt { get; init; }
     public DateTimeOffset? LastActionTimestamp { get; init; }
+    public string ReplayInitialSnapshotJson { get; init; } = string.Empty;
+    public List<IntentSnapshot> ReplayTurns { get; init; } = new();
 }
 
 public sealed class CombatStateSnapshot

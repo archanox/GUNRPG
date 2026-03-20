@@ -2,6 +2,7 @@ using GUNRPG.Api.Dtos;
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Requests;
+using GUNRPG.Application.Sessions;
 
 namespace GUNRPG.Api.Mapping;
 
@@ -90,8 +91,23 @@ public static class ApiMapping
             SequenceNumber = apiDto.SequenceNumber,
             RandomSeed = apiDto.RandomSeed,
             InitialSnapshotJson = apiDto.InitialSnapshotJson,
+            ResultSnapshotJson = apiDto.ResultSnapshotJson,
+            InitialCombatSnapshotJson = apiDto.InitialCombatSnapshotJson,
+            FinalCombatSnapshotHash = apiDto.FinalCombatSnapshotHash,
             InitialOperatorStateHash = apiDto.InitialOperatorStateHash,
             ResultOperatorStateHash = apiDto.ResultOperatorStateHash,
+            ReplayTurns = (apiDto.ReplayTurns ?? [])
+                .Select(x => new IntentSnapshot
+                {
+                    OperatorId = x.OperatorId,
+                    Primary = x.Primary,
+                    Movement = x.Movement,
+                    Stance = x.Stance,
+                    Cover = x.Cover,
+                    CancelMovement = x.CancelMovement,
+                    SubmittedAtMs = x.SubmittedAtMs
+                })
+                .ToList(),
             FullBattleLog = (apiDto.FullBattleLog ?? [])
                 .Select(x => new BattleLogEntryDto
                 {
