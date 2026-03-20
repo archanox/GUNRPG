@@ -6,6 +6,18 @@ namespace GUNRPG.Core.Time;
 /// </summary>
 public class SimulationTime
 {
+    public SimulationTime()
+    {
+    }
+
+    public SimulationTime(long currentTimeMs)
+    {
+        if (currentTimeMs < 0)
+            throw new ArgumentOutOfRangeException(nameof(currentTimeMs));
+
+        CurrentTimeMs = currentTimeMs;
+    }
+
     /// <summary>
     /// Current time in milliseconds.
     /// </summary>

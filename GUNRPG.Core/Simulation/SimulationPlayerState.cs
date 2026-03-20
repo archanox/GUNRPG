@@ -1,10 +1,10 @@
-namespace GUNRPG.Security;
+namespace GUNRPG.Core.Simulation;
 
 /// <summary>
 /// Immutable player state within the deterministic simulation.
-/// Uses integer math exclusively — no floating-point arithmetic.
+/// Uses integer math exclusively.
 /// </summary>
-internal sealed class SimulationPlayerState
+public sealed class SimulationPlayerState
 {
     public int Health { get; }
     public int MaxHealth { get; }

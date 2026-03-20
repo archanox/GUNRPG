@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using GUNRPG.Core.Simulation;
 
 namespace GUNRPG.Security;
 

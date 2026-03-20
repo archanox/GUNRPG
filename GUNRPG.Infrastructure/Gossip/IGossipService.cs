@@ -1,4 +1,5 @@
 using GUNRPG.Ledger;
+using GUNRPG.Core.Simulation;
 using GUNRPG.Security;
 
 namespace GUNRPG.Gossip;

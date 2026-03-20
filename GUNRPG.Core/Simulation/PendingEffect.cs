@@ -1,10 +1,6 @@
-namespace GUNRPG.Security;
+namespace GUNRPG.Core.Simulation;
 
-/// <summary>
-/// Discriminates the type of a <see cref="PendingEffect"/>.
-/// Using an enum instead of a string constant gives compile-time safety and avoids typo-at-runtime bugs.
-/// </summary>
-internal enum EffectKind
+public enum EffectKind
 {
     DamagePlayer,
     HealPlayer,
@@ -12,10 +8,9 @@ internal enum EffectKind
 }
 
 /// <summary>
-/// A pending gameplay effect queued during a simulation tick and applied during <c>ApplyEffects</c>.
-/// All fields are value-typed to preserve determinism.
+/// A pending gameplay effect queued during a simulation tick and applied during deterministic event processing.
 /// </summary>
-internal sealed class PendingEffect
+public sealed class PendingEffect
 {
     public EffectKind Kind { get; }
     public int Amount { get; }

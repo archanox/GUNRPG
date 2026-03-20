@@ -1,3 +1,5 @@
+using GUNRPG.Core.Simulation;
+
 namespace GUNRPG.Security;
 
 public interface IRunReplayEngine

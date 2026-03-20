@@ -1,5 +1,5 @@
 using GUNRPG.Core.Operators;
-using GUNRPG.Security;
+using GUNRPG.Core.Simulation;
 
 namespace GUNRPG.Application.Gameplay;
 

@@ -1,10 +1,10 @@
-namespace GUNRPG.Security;
+namespace GUNRPG.Core.Simulation;
 
 /// <summary>
 /// Immutable enemy entity state within the deterministic simulation.
-/// Uses integer math exclusively — no floating-point arithmetic.
+/// Uses integer math exclusively.
 /// </summary>
-internal sealed class SimulationEnemyState
+public sealed class SimulationEnemyState
 {
     public int Id { get; }
     public int Health { get; }
