@@ -581,14 +581,24 @@ public sealed class OperatorService
             return ServiceResult.InvalidState("Offline mission envelope initial operator snapshot could not be deserialized");
         }
 
+        if (!Guid.TryParse(initialOperator.Id, out var initialOperatorId))
+            return ServiceResult.InvalidState("Offline mission envelope initial operator ID is invalid");
+
+        if (initialOperatorId != currentState.Id)
+            return ServiceResult.InvalidState("Offline mission envelope initial operator ID mismatch");
+
+        var initialSnapshotHash = OfflineMissionHashing.ComputeOperatorStateHash(initialOperator);
+        if (!string.Equals(initialSnapshotHash, envelope.InitialOperatorStateHash, StringComparison.Ordinal))
+            return ServiceResult.InvalidState("Offline mission envelope initial snapshot hash mismatch");
+
         OfflineCombatReplayResult replay;
         try
         {
             replay = await OfflineCombatReplay.ReplayAsync(envelope.InitialCombatSnapshotJson, envelope.ReplayTurns);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return ServiceResult.InvalidState($"Offline mission replay failed: {ex.Message}");
+            return ServiceResult.InvalidState("Offline mission replay failed");
         }
 
         var replayedCombatHash = OfflineCombatReplay.ComputeCombatSnapshotHash(replay.FinalSession);
