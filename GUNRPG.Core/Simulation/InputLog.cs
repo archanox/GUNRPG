@@ -42,7 +42,7 @@ public sealed class InputLog
 
     private static IReadOnlyList<InputLogEntry> NormalizeEntries(IReadOnlyList<InputLogEntry>? entries, string paramName)
     {
-        ArgumentNullException.ThrowIfNull(entries);
+        ArgumentNullException.ThrowIfNull(entries, paramName);
 
         return entries
             .Select((entry, index) =>

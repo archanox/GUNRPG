@@ -22,11 +22,16 @@ public sealed class SeededRandom : IRandom
 
         if (state.CallCount < 0)
         {
-            throw new ArgumentOutOfRangeException(nameof(state.CallCount));
+            throw new ArgumentOutOfRangeException($"{nameof(state)}.{nameof(state.CallCount)}");
+        }
+
+        if (state.State == 0)
+        {
+            throw new ArgumentException("RNG state must not be zero.", nameof(state));
         }
 
         Seed = state.Seed;
-        State = state.State == 0 ? DefaultState : state.State;
+        State = state.State;
         CallCount = state.CallCount;
     }
 
