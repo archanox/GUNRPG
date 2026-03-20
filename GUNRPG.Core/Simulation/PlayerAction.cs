@@ -19,7 +19,15 @@ public abstract record PlayerAction;
 /// <summary>
 /// Intent to move the player in the given direction.
 /// </summary>
-public sealed record MoveAction(Direction Direction) : PlayerAction;
+public sealed record MoveAction : PlayerAction
+{
+    public MoveAction(Direction direction)
+    {
+        Direction = direction;
+    }
+
+    public Direction Direction { get; }
+}
 
 /// <summary>
 /// Intent to attack the target with the given identifier.

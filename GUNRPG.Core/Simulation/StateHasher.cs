@@ -142,7 +142,7 @@ public sealed class StateHasher : IStateHasher
     private static void WriteGuid(ArrayBufferWriter<byte> buffer, Guid value)
     {
         var span = buffer.GetSpan(GuidSize);
-        if (!value.TryWriteBytes(span[..GuidSize], bigEndian: true, out var bytesWritten) || bytesWritten != GuidSize)
+        if (!value.TryWriteBytes(span, bigEndian: true, out var bytesWritten) || bytesWritten != GuidSize)
         {
             throw new InvalidOperationException("Failed to encode GUID for deterministic hashing.");
         }

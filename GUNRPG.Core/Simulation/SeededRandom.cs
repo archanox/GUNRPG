@@ -2,6 +2,8 @@ namespace GUNRPG.Core.Simulation;
 
 /// <summary>
 /// Seeded random implementation that can be reconstructed from seed + call count for replay.
+/// Rebuilding the generator fast-forwards by replaying prior calls, which is acceptable for the
+/// small deterministic combat traces used here and keeps the persisted RNG state minimal.
 /// </summary>
 public sealed class SeededRandom : IRandom
 {
