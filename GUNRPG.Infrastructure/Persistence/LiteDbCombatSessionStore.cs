@@ -1,5 +1,7 @@
+using GUNRPG.Application.Combat;
 using GUNRPG.Application.Sessions;
 using LiteDB;
+using Microsoft.Extensions.Logging;
 
 namespace GUNRPG.Infrastructure.Persistence;
 
@@ -11,11 +13,13 @@ namespace GUNRPG.Infrastructure.Persistence;
 public sealed class LiteDbCombatSessionStore : ICombatSessionStore
 {
     private readonly ILiteCollection<CombatSessionSnapshot> _sessions;
+    private readonly ILogger<LiteDbCombatSessionStore>? _logger;
 
-    public LiteDbCombatSessionStore(LiteDatabase database)
+    public LiteDbCombatSessionStore(LiteDatabase database, ILogger<LiteDbCombatSessionStore>? logger = null)
     {
         _sessions = (database ?? throw new ArgumentNullException(nameof(database)))
             .GetCollection<CombatSessionSnapshot>("combat_sessions");
+        _logger = logger;
         
         // Ensure index on Id for fast lookups
         _sessions.EnsureIndex(x => x.Id);
@@ -30,39 +34,89 @@ public sealed class LiteDbCombatSessionStore : ICombatSessionStore
         return Task.CompletedTask;
     }
 
-    public Task<CombatSessionSnapshot?> LoadAsync(Guid id)
+    public async Task<CombatSessionSnapshot?> LoadAsync(Guid id)
     {
         var snapshot = _sessions.FindById(id);
 
-        // Reject completed sessions whose FinalHash does not match recomputed replay data.
-        if (snapshot != null && !IsHashValid(snapshot))
+        // Reject completed sessions whose FinalHash does not match the recomputed replay hash.
+        if (snapshot != null && !await IsHashValidAsync(snapshot))
         {
-            return Task.FromResult<CombatSessionSnapshot?>(null);
+            return null;
         }
 
-        return Task.FromResult<CombatSessionSnapshot?>(snapshot);
+        return snapshot;
     }
 
     /// <summary>
-    /// Returns <c>false</c> if the snapshot is a completed session whose stored
-    /// <see cref="CombatSessionSnapshot.FinalHash"/> does not match the hash recomputed from
-    /// its replay-critical fields; <c>true</c> in all other cases (in-progress, no hash, or valid).
+    /// Validates the <see cref="CombatSessionSnapshot.FinalHash"/> of a completed session.
+    /// <para>
+    /// For sessions with a <see cref="CombatSessionSnapshot.ReplayInitialSnapshotJson"/>, the full
+    /// replay is executed and the resulting simulation state is hashed via
+    /// <see cref="CombatSessionHasher.ComputeStateHash"/>. This confirms that the simulation is
+    /// deterministic and the stored state was not tampered with.
+    /// </para>
+    /// <para>
+    /// Falls back to input-based <see cref="CombatSessionHasher.ComputeHash"/> for legacy sessions
+    /// without a recorded initial snapshot.
+    /// </para>
     /// </summary>
-    private static bool IsHashValid(CombatSessionSnapshot snapshot)
+    private async Task<bool> IsHashValidAsync(CombatSessionSnapshot snapshot)
     {
         if (snapshot.Phase != SessionPhase.Completed || snapshot.FinalHash == null)
         {
             return true;
         }
 
-        var computed = CombatSessionHasher.ComputeHash(
+        if (!string.IsNullOrEmpty(snapshot.ReplayInitialSnapshotJson))
+        {
+            // State-based validation: replay the session and hash the resulting simulation output.
+            try
+            {
+                var result = await OfflineCombatReplay.ReplayAsync(
+                    snapshot.ReplayInitialSnapshotJson, snapshot.ReplayTurns);
+                var computed = CombatSessionHasher.ComputeStateHash(result.FinalSnapshot);
+
+                if (!computed.AsSpan().SequenceEqual(snapshot.FinalHash))
+                {
+                    _logger?.LogError(
+                        "Session {SessionId} failed state-based FinalHash validation. " +
+                        "Stored: {Stored}, Computed: {Computed}. Session rejected.",
+                        snapshot.Id,
+                        Convert.ToHexString(snapshot.FinalHash),
+                        Convert.ToHexString(computed));
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(
+                    ex,
+                    "Session {SessionId} replay failed during FinalHash validation. Session rejected.",
+                    snapshot.Id);
+                return false;
+            }
+        }
+
+        // Input-based fallback for sessions without a recorded initial snapshot (legacy/test sessions).
+        // No version fallback: use the stored version directly to avoid silent upgrades.
+        var fallback = CombatSessionHasher.ComputeHash(
             snapshot.Id,
             snapshot.Seed,
-            snapshot.Version > 0 ? snapshot.Version : CombatSession.CurrentVersion,
+            snapshot.Version,
             snapshot.TurnNumber,
             snapshot.ReplayTurns);
 
-        return computed.AsSpan().SequenceEqual(snapshot.FinalHash);
+        if (!fallback.AsSpan().SequenceEqual(snapshot.FinalHash))
+        {
+            _logger?.LogError(
+                "Session {SessionId} failed input-based FinalHash validation. Session rejected.",
+                snapshot.Id);
+            return false;
+        }
+
+        return true;
     }
 
     public Task DeleteAsync(Guid id)

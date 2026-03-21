@@ -108,13 +108,13 @@ public sealed class CombatSessionReplayIntegrityTests
         Assert.Equal(SessionPhase.Completed, snapshot!.Phase);
         Assert.NotNull(snapshot.FinalHash);
 
-        // Recompute hash from the snapshot data and verify it matches.
-        var recomputed = CombatSessionHasher.ComputeHash(
-            snapshot.Id,
-            snapshot.Seed,
-            snapshot.Version > 0 ? snapshot.Version : CombatSession.CurrentVersion,
-            snapshot.TurnNumber,
-            snapshot.ReplayTurns);
+        // Recompute the state-based hash from replay output and verify it matches.
+        // The stored FinalHash is now hash(replay(ReplayTurns, Seed)), not hash(inputs).
+        var session = SessionMapping.FromSnapshot(snapshot);
+        var rebuilt = await session.RebuildStateAsync();
+        Assert.NotNull(rebuilt);
+
+        var recomputed = CombatSessionHasher.ComputeStateHash(rebuilt!);
 
         Assert.True(
             recomputed.AsSpan().SequenceEqual(snapshot.FinalHash),
@@ -277,9 +277,12 @@ public sealed class CombatSessionReplayIntegrityTests
         var rebuiltSnapshot = await session.RebuildStateAsync();
 
         Assert.NotNull(rebuiltSnapshot);
-        Assert.NotNull(rebuiltSnapshot!.FinalHash);
+
+        // The stored FinalHash is hash(replay(ReplayTurns, Seed)).
+        // Verify by computing ComputeStateHash on the rebuilt snapshot and comparing.
+        var replayStateHash = CombatSessionHasher.ComputeStateHash(rebuiltSnapshot!);
         Assert.True(
-            rebuiltSnapshot.FinalHash!.AsSpan().SequenceEqual(snapshot.FinalHash),
+            replayStateHash.AsSpan().SequenceEqual(snapshot.FinalHash),
             "Replay-rebuilt state must produce an identical FinalHash to the original.");
     }
 

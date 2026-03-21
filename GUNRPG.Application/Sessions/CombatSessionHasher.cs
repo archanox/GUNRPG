@@ -13,10 +13,46 @@ public static class CombatSessionHasher
     private const int GuidSize = 16;
     private const int Int32Size = 4;
     private const int Int64Size = 8;
+    private const int SingleSize = 4;
+
+    /// <summary>
+    /// Computes a state-based FinalHash from the key deterministic simulation-output fields
+    /// of a completed session snapshot. Unlike <see cref="ComputeHash"/> which hashes replay
+    /// inputs, this method hashes the simulation <em>outcome</em>, ensuring that the simulation
+    /// is deterministic: the same inputs must produce the same final state, and therefore the
+    /// same hash.
+    /// </summary>
+    /// <param name="finalSnapshot">
+    /// The snapshot produced by running the full replay to completion.
+    /// </param>
+    public static byte[] ComputeStateHash(CombatSessionSnapshot finalSnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(finalSnapshot);
+
+        var buffer = new ArrayBufferWriter<byte>();
+        // Session identity anchors the hash to this specific session.
+        WriteGuid(buffer, finalSnapshot.Id);
+        WriteInt32(buffer, finalSnapshot.Seed);
+        // Simulation outcome: how many turns were played and how the session ended.
+        WriteInt32(buffer, finalSnapshot.TurnNumber);
+        WriteInt32(buffer, (int)finalSnapshot.Phase);
+        // Player final state.
+        WriteSingle(buffer, finalSnapshot.Player?.Health ?? 0f);
+        WriteSingle(buffer, finalSnapshot.Player?.MaxHealth ?? 0f);
+        WriteInt32(buffer, finalSnapshot.Player?.CurrentAmmo ?? 0);
+        // Enemy final state.
+        WriteSingle(buffer, finalSnapshot.Enemy?.Health ?? 0f);
+        WriteSingle(buffer, finalSnapshot.Enemy?.MaxHealth ?? 0f);
+        WriteInt32(buffer, finalSnapshot.Enemy?.CurrentAmmo ?? 0);
+
+        return SHA256.HashData(buffer.WrittenSpan);
+    }
 
     /// <summary>
     /// Computes the canonical FinalHash for a session given its replay-critical data.
     /// The result is fully deterministic: same inputs always produce the same hash.
+    /// Used as a fallback for legacy sessions that do not have a
+    /// <see cref="CombatSessionSnapshot.ReplayInitialSnapshotJson"/> recorded.
     /// </summary>
     public static byte[] ComputeHash(
         Guid sessionId,
@@ -78,5 +114,12 @@ public static class CombatSessionHasher
         var span = buffer.GetSpan(1);
         span[0] = value ? (byte)1 : (byte)0;
         buffer.Advance(1);
+    }
+
+    private static void WriteSingle(ArrayBufferWriter<byte> buffer, float value)
+    {
+        var span = buffer.GetSpan(SingleSize);
+        BinaryPrimitives.WriteSingleBigEndian(span, value);
+        buffer.Advance(SingleSize);
     }
 }
