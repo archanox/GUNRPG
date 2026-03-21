@@ -33,7 +33,36 @@ public sealed class LiteDbCombatSessionStore : ICombatSessionStore
     public Task<CombatSessionSnapshot?> LoadAsync(Guid id)
     {
         var snapshot = _sessions.FindById(id);
+
+        // Reject completed sessions whose FinalHash does not match recomputed replay data.
+        if (snapshot != null && !IsHashValid(snapshot))
+        {
+            return Task.FromResult<CombatSessionSnapshot?>(null);
+        }
+
         return Task.FromResult<CombatSessionSnapshot?>(snapshot);
+    }
+
+    /// <summary>
+    /// Returns <c>false</c> if the snapshot is a completed session whose stored
+    /// <see cref="CombatSessionSnapshot.FinalHash"/> does not match the hash recomputed from
+    /// its replay-critical fields; <c>true</c> in all other cases (in-progress, no hash, or valid).
+    /// </summary>
+    private static bool IsHashValid(CombatSessionSnapshot snapshot)
+    {
+        if (snapshot.Phase != SessionPhase.Completed || snapshot.FinalHash == null)
+        {
+            return true;
+        }
+
+        var computed = CombatSessionHasher.ComputeHash(
+            snapshot.Id,
+            snapshot.Seed,
+            snapshot.Version > 0 ? snapshot.Version : CombatSession.CurrentVersion,
+            snapshot.TurnNumber,
+            snapshot.ReplayTurns);
+
+        return computed.AsSpan().SequenceEqual(snapshot.FinalHash);
     }
 
     public Task DeleteAsync(Guid id)

@@ -16,8 +16,17 @@ public sealed class InMemoryCombatSessionStore : ICombatSessionStore
 
     public Task<CombatSessionSnapshot?> LoadAsync(Guid id)
     {
-        // Return a defensive copy to prevent callers from mutating the stored snapshot.
         _sessions.TryGetValue(id, out var snapshot);
+
+        // Validate before copying: we check the stored data directly so any in-flight
+        // mutation of the stored reference would be caught. This is intentional; the
+        // defensive copy returned to the caller is produced only after the check passes.
+        if (snapshot != null && !IsHashValid(snapshot))
+        {
+            return Task.FromResult<CombatSessionSnapshot?>(null);
+        }
+
+        // Return a defensive copy to prevent callers from mutating the stored snapshot.
         return Task.FromResult(snapshot == null ? null : CopySnapshot(snapshot));
     }
 
@@ -60,4 +69,26 @@ public sealed class InMemoryCombatSessionStore : ICombatSessionStore
             Version = snapshot.Version,
             FinalHash = snapshot.FinalHash != null ? (byte[])snapshot.FinalHash.Clone() : null,
         };
+
+    /// <summary>
+    /// Returns <c>false</c> if the snapshot is a completed session whose stored
+    /// <see cref="CombatSessionSnapshot.FinalHash"/> does not match the hash recomputed from
+    /// its replay-critical fields; <c>true</c> in all other cases (in-progress, no hash, or valid).
+    /// </summary>
+    private static bool IsHashValid(CombatSessionSnapshot snapshot)
+    {
+        if (snapshot.Phase != SessionPhase.Completed || snapshot.FinalHash == null)
+        {
+            return true;
+        }
+
+        var computed = CombatSessionHasher.ComputeHash(
+            snapshot.Id,
+            snapshot.Seed,
+            snapshot.Version > 0 ? snapshot.Version : CombatSession.CurrentVersion,
+            snapshot.TurnNumber,
+            snapshot.ReplayTurns);
+
+        return computed.AsSpan().SequenceEqual(snapshot.FinalHash);
+    }
 }
