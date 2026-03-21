@@ -29,21 +29,28 @@ public static class CombatSessionHasher
     {
         ArgumentNullException.ThrowIfNull(finalSnapshot);
 
+        if (finalSnapshot.Player == null)
+            throw new ArgumentException("Cannot compute state hash: Player is null.", nameof(finalSnapshot));
+        if (finalSnapshot.Enemy == null)
+            throw new ArgumentException("Cannot compute state hash: Enemy is null.", nameof(finalSnapshot));
+
         var buffer = new ArrayBufferWriter<byte>();
         // Session identity anchors the hash to this specific session.
         WriteGuid(buffer, finalSnapshot.Id);
         WriteInt32(buffer, finalSnapshot.Seed);
+        // Version is included so future algorithm changes can be distinguished.
+        WriteInt32(buffer, finalSnapshot.Version);
         // Simulation outcome: how many turns were played and how the session ended.
         WriteInt32(buffer, finalSnapshot.TurnNumber);
         WriteInt32(buffer, (int)finalSnapshot.Phase);
         // Player final state.
-        WriteSingle(buffer, finalSnapshot.Player?.Health ?? 0f);
-        WriteSingle(buffer, finalSnapshot.Player?.MaxHealth ?? 0f);
-        WriteInt32(buffer, finalSnapshot.Player?.CurrentAmmo ?? 0);
+        WriteSingle(buffer, finalSnapshot.Player.Health);
+        WriteSingle(buffer, finalSnapshot.Player.MaxHealth);
+        WriteInt32(buffer, finalSnapshot.Player.CurrentAmmo);
         // Enemy final state.
-        WriteSingle(buffer, finalSnapshot.Enemy?.Health ?? 0f);
-        WriteSingle(buffer, finalSnapshot.Enemy?.MaxHealth ?? 0f);
-        WriteInt32(buffer, finalSnapshot.Enemy?.CurrentAmmo ?? 0);
+        WriteSingle(buffer, finalSnapshot.Enemy.Health);
+        WriteSingle(buffer, finalSnapshot.Enemy.MaxHealth);
+        WriteInt32(buffer, finalSnapshot.Enemy.CurrentAmmo);
 
         return SHA256.HashData(buffer.WrittenSpan);
     }

@@ -174,7 +174,14 @@ public sealed class CombatSessionService
         {
             ApplyPostCombat(session);
             session.TransitionTo(SessionPhase.Completed);
-            await session.FinalizeAsync();
+            try
+            {
+                await session.FinalizeAsync();
+            }
+            catch (Exception ex)
+            {
+                return ServiceResult<CombatSessionDto>.InvalidState("Session finalization failed: " + ex.Message);
+            }
             await SaveAsync(session);
             return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
         }
@@ -207,7 +214,14 @@ public sealed class CombatSessionService
         {
             ApplyPostCombat(session);
             session.TransitionTo(SessionPhase.Completed);
-            await session.FinalizeAsync();
+            try
+            {
+                await session.FinalizeAsync();
+            }
+            catch (Exception ex)
+            {
+                return ServiceResult<CombatSessionDto>.InvalidState("Session finalization failed: " + ex.Message);
+            }
         }
         else
         {
