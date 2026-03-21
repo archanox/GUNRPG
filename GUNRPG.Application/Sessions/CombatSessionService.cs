@@ -174,6 +174,7 @@ public sealed class CombatSessionService
         {
             ApplyPostCombat(session);
             session.TransitionTo(SessionPhase.Completed);
+            await session.FinalizeAsync();
             await SaveAsync(session);
             return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
         }
@@ -206,6 +207,7 @@ public sealed class CombatSessionService
         {
             ApplyPostCombat(session);
             session.TransitionTo(SessionPhase.Completed);
+            await session.FinalizeAsync();
         }
         else
         {
@@ -245,24 +247,7 @@ public sealed class CombatSessionService
         var snapshot = await _store.LoadAsync(id);
         if (snapshot == null) return null;
 
-        var session = SessionMapping.FromSnapshot(snapshot);
-
-        // Validate FinalHash for completed sessions that have one stored.
-        // Sessions without a FinalHash (legacy or in-progress) are loaded without validation.
-        if (session.Phase == SessionPhase.Completed && session.FinalHash != null)
-        {
-            var computed = CombatSessionHasher.ComputeHash(
-                session.Id, session.Seed, session.Version, session.TurnNumber, session.ReplayTurns);
-
-            // Treat sessions with invalid hashes as unloadable instead of throwing an
-            // exception that would surface as an unhandled 500 at higher layers.
-            if (!computed.AsSpan().SequenceEqual(session.FinalHash))
-            {
-                return null;
-            }
-        }
-
-        return session;
+        return SessionMapping.FromSnapshot(snapshot);
     }
 
     private async Task SaveAsync(CombatSession session)

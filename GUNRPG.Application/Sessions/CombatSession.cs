@@ -214,9 +214,9 @@ public sealed class CombatSession
     /// is recorded (e.g. legacy sessions created before the replay system was introduced).
     /// </summary>
     /// <remarks>
-    /// The <see cref="CombatSessionSnapshot.FinalHash"/> of the returned snapshot should equal
-    /// <see cref="FinalHash"/> for any completed session, confirming that the stored state is
-    /// consistent with the replay log.
+    /// Call <see cref="CombatSessionHasher.ComputeStateHash"/> on the returned snapshot and compare
+    /// it with <see cref="FinalHash"/> to verify that the stored state is consistent with the
+    /// replay log.
     /// </remarks>
     public async Task<CombatSessionSnapshot?> RebuildStateAsync()
     {
@@ -227,6 +227,34 @@ public sealed class CombatSession
 
         var result = await OfflineCombatReplay.ReplayAsync(ReplayInitialSnapshotJson, _replayTurns);
         return result.FinalSnapshot;
+    }
+
+    /// <summary>
+    /// Computes and sets <see cref="FinalHash"/> from the authoritative replayed final state.
+    /// For sessions with a recorded <see cref="ReplayInitialSnapshotJson"/>, the full replay is
+    /// executed and the resulting simulation output is hashed via
+    /// <see cref="CombatSessionHasher.ComputeStateHash"/>, guaranteeing that
+    /// <c>FinalHash == hash(replay(ReplayTurns, Seed))</c>.
+    /// Falls back to the input-based <see cref="CombatSessionHasher.ComputeHash"/> for legacy
+    /// or test sessions that were created without an initial snapshot.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown if the session is not completed.</exception>
+    public async Task FinalizeAsync()
+    {
+        if (Phase != SessionPhase.Completed)
+        {
+            throw new InvalidOperationException(
+                $"Cannot finalize session: not yet completed (current phase: {Phase}).");
+        }
+
+        if (!string.IsNullOrEmpty(ReplayInitialSnapshotJson))
+        {
+            var result = await OfflineCombatReplay.ReplayAsync(ReplayInitialSnapshotJson, _replayTurns);
+            FinalHash = CombatSessionHasher.ComputeStateHash(result.FinalSnapshot);
+        }
+        // else: keep the input-based hash already set by TransitionTo(SessionPhase.Completed)
+        // via CombatSessionHasher.ComputeHash. This covers legacy and test sessions that were
+        // created via CreateDefault() without a ReplayInitialSnapshotJson.
     }
 
     /// <summary>

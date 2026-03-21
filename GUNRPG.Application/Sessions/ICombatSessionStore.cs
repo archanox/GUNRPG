@@ -13,9 +13,10 @@ public interface ICombatSessionStore
     Task SaveAsync(CombatSessionSnapshot snapshot);
 
     /// <summary>
-    /// Loads a session snapshot by ID. Returns null if not found, or if the session is
-    /// completed and its stored <see cref="CombatSessionSnapshot.FinalHash"/> is inconsistent
-    /// with the recomputed replay hash (integrity violation).
+    /// Loads a session snapshot by ID. Returns null if not found, if the session is
+    /// completed and its stored <see cref="CombatSessionSnapshot.FinalHash"/> does not match
+    /// the hash recomputed from the replayed simulation state (integrity violation), or if
+    /// replay fails during validation.
     /// </summary>
     Task<CombatSessionSnapshot?> LoadAsync(Guid id);
 
