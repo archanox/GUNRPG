@@ -314,6 +314,114 @@ public class LiteDbCombatSessionStoreTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task LoadAsync_WithTamperedFinalHash_ReturnsNull()
+    {
+        // Create a session with a valid FinalHash.
+        var session = CombatSession.CreateDefault(seed: 55, id: Guid.NewGuid());
+        var intentsA = new SimultaneousIntents(session.Player.Id) { Primary = PrimaryAction.Fire };
+        var intentsB = new SimultaneousIntents(session.Player.Id) { Primary = PrimaryAction.None };
+        session.RecordReplayTurn(intentsA);
+        session.RecordReplayTurn(intentsB);
+        session.TransitionTo(SessionPhase.Completed);
+
+        var snapshot = CreateCompletedSnapshot(session);
+
+        // Save a copy with a single flipped hash byte.
+        await _store.SaveAsync(CloneWithTamperedHash(snapshot, session.FinalHash!));
+
+        // The store must reject the tampered session.
+        var loaded = await _store.LoadAsync(session.Id);
+        Assert.Null(loaded);
+    }
+
+    [Fact]
+    public async Task LoadAsync_WithValidFinalHash_ReturnsSnapshot()
+    {
+        // Ensure that a completed session with a legitimate FinalHash loads correctly.
+        var session = CombatSession.CreateDefault(seed: 99, id: Guid.NewGuid());
+        var intentsA = new SimultaneousIntents(session.Player.Id) { Primary = PrimaryAction.Fire };
+        session.RecordReplayTurn(intentsA);
+        session.TransitionTo(SessionPhase.Completed);
+
+        var snapshot = CreateCompletedSnapshot(session);
+        await _store.SaveAsync(snapshot);
+
+        var loaded = await _store.LoadAsync(session.Id);
+        Assert.NotNull(loaded);
+        Assert.Equal(session.Id, loaded!.Id);
+        Assert.Equal(SessionPhase.Completed, loaded.Phase);
+    }
+
+    /// <summary>
+    /// Builds a <see cref="CombatSessionSnapshot"/> with the hash-critical fields taken from a
+    /// completed <see cref="CombatSession"/> so that <see cref="CombatSessionHasher"/> validates it.
+    /// </summary>
+    private static CombatSessionSnapshot CreateCompletedSnapshot(CombatSession session) =>
+        new()
+        {
+            Id = session.Id,
+            OperatorId = session.OperatorId.Value,
+            Phase = SessionPhase.Completed,
+            TurnNumber = session.TurnNumber,
+            Combat = new CombatStateSnapshot
+            {
+                Phase = CombatPhase.Planning,
+                CurrentTimeMs = 0,
+                RandomState = new RandomStateSnapshot { Seed = session.Seed, CallCount = 0 }
+            },
+            Player = CreateTestOperator("Player"),
+            Enemy = CreateTestOperator("Enemy"),
+            Pet = CreateTestPet(),
+            EnemyLevel = session.EnemyLevel,
+            Seed = session.Seed,
+            PostCombatResolved = false,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ReplayTurns = session.ReplayTurns.Select(t => new IntentSnapshot
+            {
+                OperatorId = t.OperatorId,
+                Primary = t.Primary,
+                Movement = t.Movement,
+                Stance = t.Stance,
+                Cover = t.Cover,
+                CancelMovement = t.CancelMovement,
+                SubmittedAtMs = t.SubmittedAtMs
+            }).ToList(),
+            Version = session.Version,
+            FinalHash = (byte[])session.FinalHash!.Clone(),
+        };
+
+    /// <summary>
+    /// Returns a copy of <paramref name="snapshot"/> with a single flipped byte in the FinalHash,
+    /// simulating tampering while keeping all other fields identical.
+    /// </summary>
+    private static CombatSessionSnapshot CloneWithTamperedHash(CombatSessionSnapshot snapshot, byte[] originalHash)
+    {
+        var tamperedHash = (byte[])originalHash.Clone();
+        tamperedHash[0] ^= 0xFF;
+        return new CombatSessionSnapshot
+        {
+            Id = snapshot.Id,
+            OperatorId = snapshot.OperatorId,
+            Phase = snapshot.Phase,
+            TurnNumber = snapshot.TurnNumber,
+            Combat = snapshot.Combat,
+            Player = snapshot.Player,
+            Enemy = snapshot.Enemy,
+            Pet = snapshot.Pet,
+            EnemyLevel = snapshot.EnemyLevel,
+            Seed = snapshot.Seed,
+            PostCombatResolved = snapshot.PostCombatResolved,
+            CreatedAt = snapshot.CreatedAt,
+            CompletedAt = snapshot.CompletedAt,
+            ReplayInitialSnapshotJson = snapshot.ReplayInitialSnapshotJson,
+            ReplayTurns = snapshot.ReplayTurns,
+            Version = snapshot.Version,
+            FinalHash = tamperedHash,
+        };
+    }
+
     private static CombatSessionSnapshot CreateTestSnapshot()
     {
         var id = Guid.NewGuid();

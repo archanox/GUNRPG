@@ -209,6 +209,27 @@ public sealed class CombatSession
     }
 
     /// <summary>
+    /// Rebuilds the session state by replaying all recorded turns from the initial snapshot.
+    /// Returns the replay-derived final snapshot, or <c>null</c> if no initial snapshot JSON
+    /// is recorded (e.g. legacy sessions created before the replay system was introduced).
+    /// </summary>
+    /// <remarks>
+    /// The <see cref="CombatSessionSnapshot.FinalHash"/> of the returned snapshot should equal
+    /// <see cref="FinalHash"/> for any completed session, confirming that the stored state is
+    /// consistent with the replay log.
+    /// </remarks>
+    public async Task<CombatSessionSnapshot?> RebuildStateAsync()
+    {
+        if (string.IsNullOrEmpty(ReplayInitialSnapshotJson))
+        {
+            return null;
+        }
+
+        var result = await OfflineCombatReplay.ReplayAsync(ReplayInitialSnapshotJson, _replayTurns);
+        return result.FinalSnapshot;
+    }
+
+    /// <summary>
     /// Gets the combat outcome for this session.
     /// Can only be called after the session has completed.
     /// </summary>
