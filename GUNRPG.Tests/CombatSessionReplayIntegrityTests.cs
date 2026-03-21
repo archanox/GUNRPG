@@ -105,22 +105,20 @@ public sealed class CombatSessionReplayIntegrityTests
         var snapshot = await store.LoadAsync(sessionId);
         Assert.NotNull(snapshot);
 
-        if (snapshot!.Phase == SessionPhase.Completed)
-        {
-            Assert.NotNull(snapshot.FinalHash);
+        Assert.Equal(SessionPhase.Completed, snapshot!.Phase);
+        Assert.NotNull(snapshot.FinalHash);
 
-            // Recompute hash from the snapshot data and verify it matches.
-            var recomputed = CombatSessionHasher.ComputeHash(
-                snapshot.Id,
-                snapshot.Seed,
-                snapshot.Version > 0 ? snapshot.Version : CombatSession.CurrentVersion,
-                snapshot.TurnNumber,
-                snapshot.ReplayTurns);
+        // Recompute hash from the snapshot data and verify it matches.
+        var recomputed = CombatSessionHasher.ComputeHash(
+            snapshot.Id,
+            snapshot.Seed,
+            snapshot.Version > 0 ? snapshot.Version : CombatSession.CurrentVersion,
+            snapshot.TurnNumber,
+            snapshot.ReplayTurns);
 
-            Assert.True(
-                recomputed.AsSpan().SequenceEqual(snapshot.FinalHash),
-                "Recomputed hash must equal the stored FinalHash.");
-        }
+        Assert.True(
+            recomputed.AsSpan().SequenceEqual(snapshot.FinalHash),
+            "Recomputed hash must equal the stored FinalHash.");
     }
 
     [Fact]
@@ -145,11 +143,11 @@ public sealed class CombatSessionReplayIntegrityTests
     }
 
     // ──────────────────────────────────────────────────────────────────────
-    // 4. Tampered FinalHash → exception on load
+    // 4. Tampered FinalHash → service returns NotFound on load
     // ──────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public async Task LoadAsync_WithTamperedFinalHash_ThrowsInvalidOperationException()
+    public async Task LoadAsync_WithTamperedFinalHash_ReturnsNotFound()
     {
         var store = new InMemoryCombatSessionStore();
 
@@ -187,9 +185,10 @@ public sealed class CombatSessionReplayIntegrityTests
 
         await store.SaveAsync(tamperedSnapshot);
 
+        // Sessions with an invalid FinalHash are treated as not found.
         var service = new CombatSessionService(store);
-        await Assert.ThrowsAsync<InvalidOperationException>(
-            async () => await service.GetStateAsync(session.Id));
+        var result = await service.GetStateAsync(session.Id);
+        Assert.False(result.IsSuccess);
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -291,8 +290,7 @@ public sealed class CombatSessionReplayIntegrityTests
     }
 
     /// <summary>
-    /// Drives a session forward via the service until it either completes or exceeds a turn limit.
-    /// Returns the session ID for further inspection.
+    /// Drives an existing session forward via the service until it either completes or exceeds a turn limit.
     /// </summary>
     private static async Task RunSessionToCompletion(CombatSessionService service, Guid sessionId, int maxTurns = 30)
     {

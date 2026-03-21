@@ -254,10 +254,11 @@ public sealed class CombatSessionService
             var computed = CombatSessionHasher.ComputeHash(
                 session.Id, session.Seed, session.Version, session.TurnNumber, session.ReplayTurns);
 
+            // Treat sessions with invalid hashes as unloadable instead of throwing an
+            // exception that would surface as an unhandled 500 at higher layers.
             if (!computed.AsSpan().SequenceEqual(session.FinalHash))
             {
-                throw new InvalidOperationException(
-                    $"Session {id} failed replay integrity check: stored FinalHash does not match recomputed hash.");
+                return null;
             }
         }
 
