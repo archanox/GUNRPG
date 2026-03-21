@@ -13,11 +13,17 @@ public interface ICombatSessionStore
     Task SaveAsync(CombatSessionSnapshot snapshot);
 
     /// <summary>
-    /// Loads a session snapshot by ID. Returns null if not found, if the session is
-    /// completed and its stored <see cref="CombatSessionSnapshot.FinalHash"/> does not match
-    /// the hash recomputed from the replayed simulation state (integrity violation), or if
-    /// replay fails during validation.
+    /// Loads a session snapshot by ID.
     /// </summary>
+    /// <remarks>
+    /// All implementations must return <c>null</c> when a session with the given <paramref name="id"/> is not found.
+    /// Implementations that perform integrity or replay validation (typically server-side or persistent stores)
+    /// should additionally return <c>null</c> when a completed session's stored
+    /// <see cref="CombatSessionSnapshot.FinalHash"/> does not match the hash recomputed from the replayed
+    /// simulation state (integrity violation), or when replay fails during validation.
+    /// Lightweight or client-side implementations that do not perform such validation may only return <c>null</c>
+    /// to indicate that the session does not exist.
+    /// </remarks>
     Task<CombatSessionSnapshot?> LoadAsync(Guid id);
 
     /// <summary>

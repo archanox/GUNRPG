@@ -87,6 +87,22 @@ public sealed class LiteDbCombatSessionStore : ICombatSessionStore
                     return false;
                 }
 
+                // Additional safeguard: ensure the cached snapshot state also matches FinalHash.
+                // This catches tampering where someone modifies Player/Enemy fields in the stored
+                // snapshot while leaving ReplayTurns+FinalHash unchanged.
+                var storedStateHash = CombatSessionHasher.ComputeStateHash(snapshot);
+                if (!storedStateHash.AsSpan().SequenceEqual(snapshot.FinalHash))
+                {
+                    _logger?.LogError(
+                        "Session {SessionId} failed cached-state FinalHash validation. " +
+                        "Stored snapshot state does not match replay-derived state. " +
+                        "Stored: {Stored}, ComputedFromSnapshot: {ComputedFromSnapshot}. Session rejected.",
+                        snapshot.Id,
+                        Convert.ToHexString(snapshot.FinalHash),
+                        Convert.ToHexString(storedStateHash));
+                    return false;
+                }
+
                 return true;
             }
             catch (Exception ex)

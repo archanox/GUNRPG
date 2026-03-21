@@ -1,3 +1,5 @@
+using GUNRPG.Application.Mapping;
+using GUNRPG.Application.Requests;
 using GUNRPG.Application.Sessions;
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Intents;
@@ -420,6 +422,125 @@ public class LiteDbCombatSessionStoreTests : IDisposable
             Version = snapshot.Version,
             FinalHash = tamperedHash,
         };
+    }
+
+    [Fact]
+    public async Task LoadAsync_ServiceCreatedSession_WithStateBasedFinalHash_ReturnsSnapshot()
+    {
+        // Create and complete a session via the service so that:
+        // - ReplayInitialSnapshotJson is recorded (service sets it in CreateSessionAsync)
+        // - FinalHash is computed from replayed state via FinalizeAsync (state-based)
+        // This test exercises the state-based replay validation branch of IsHashValidAsync,
+        // ensuring that both the replay hash AND the cached snapshot state pass.
+        var store2 = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store2);
+
+        var createResult = await service.CreateSessionAsync(new SessionCreateRequest { Seed = 77 });
+        Assert.True(createResult.IsSuccess);
+        var sessionId = createResult.Value!.Id;
+
+        await RunSessionToCompletion(service, sessionId);
+
+        // Fetch from the InMemory store (which uses the state-based path too) to get the snapshot
+        var inMemorySnapshot = await store2.LoadAsync(sessionId);
+        Assert.NotNull(inMemorySnapshot);
+        Assert.Equal(SessionPhase.Completed, inMemorySnapshot!.Phase);
+        Assert.NotNull(inMemorySnapshot.FinalHash);
+        Assert.False(string.IsNullOrEmpty(inMemorySnapshot.ReplayInitialSnapshotJson),
+            "ReplayInitialSnapshotJson must be set for the state-based branch to execute");
+
+        // Persist it to the LiteDB store.
+        await _store.SaveAsync(inMemorySnapshot);
+
+        // LiteDB LoadAsync must validate it through the state-based replay branch and accept it.
+        var loaded = await _store.LoadAsync(sessionId);
+        Assert.NotNull(loaded);
+        Assert.Equal(sessionId, loaded!.Id);
+        Assert.Equal(SessionPhase.Completed, loaded.Phase);
+        Assert.NotNull(loaded.FinalHash);
+    }
+
+    [Fact]
+    public async Task LoadAsync_ServiceCreatedSession_WithTamperedCachedState_ReturnsNull()
+    {
+        // Persist a service-created (state-based FinalHash) completed session with
+        // Player.Health tampered. Even though ReplayTurns and FinalHash are unchanged,
+        // the cached-state check (ComputeStateHash(snapshot) vs FinalHash) must reject it.
+        var store2 = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store2);
+
+        var createResult = await service.CreateSessionAsync(new SessionCreateRequest { Seed = 43 });
+        Assert.True(createResult.IsSuccess);
+        var sessionId = createResult.Value!.Id;
+        await RunSessionToCompletion(service, sessionId);
+
+        var inMemorySnapshot = await store2.LoadAsync(sessionId);
+        Assert.NotNull(inMemorySnapshot);
+        Assert.NotNull(inMemorySnapshot!.FinalHash);
+
+        // Tamper with the cached Player.Health while leaving FinalHash intact.
+        var tamperedSnapshot = new CombatSessionSnapshot
+        {
+            Id = inMemorySnapshot.Id,
+            OperatorId = inMemorySnapshot.OperatorId,
+            Phase = inMemorySnapshot.Phase,
+            TurnNumber = inMemorySnapshot.TurnNumber,
+            Combat = inMemorySnapshot.Combat,
+            Player = inMemorySnapshot.Player == null ? null : new OperatorSnapshot
+            {
+                Id = inMemorySnapshot.Player.Id,
+                Name = inMemorySnapshot.Player.Name,
+                Health = inMemorySnapshot.Player.Health + 9999f,   // tampered
+                MaxHealth = inMemorySnapshot.Player.MaxHealth,
+                Stamina = inMemorySnapshot.Player.Stamina,
+                MaxStamina = inMemorySnapshot.Player.MaxStamina,
+                MovementState = inMemorySnapshot.Player.MovementState,
+                AimState = inMemorySnapshot.Player.AimState,
+                WeaponState = inMemorySnapshot.Player.WeaponState,
+                CurrentMovement = inMemorySnapshot.Player.CurrentMovement,
+                CurrentCover = inMemorySnapshot.Player.CurrentCover,
+                CurrentDirection = inMemorySnapshot.Player.CurrentDirection,
+                CurrentAmmo = inMemorySnapshot.Player.CurrentAmmo,
+                DistanceToOpponent = inMemorySnapshot.Player.DistanceToOpponent,
+            },
+            Enemy = inMemorySnapshot.Enemy,
+            Pet = inMemorySnapshot.Pet,
+            EnemyLevel = inMemorySnapshot.EnemyLevel,
+            Seed = inMemorySnapshot.Seed,
+            PostCombatResolved = inMemorySnapshot.PostCombatResolved,
+            CreatedAt = inMemorySnapshot.CreatedAt,
+            CompletedAt = inMemorySnapshot.CompletedAt,
+            LastActionTimestamp = inMemorySnapshot.LastActionTimestamp,
+            ReplayInitialSnapshotJson = inMemorySnapshot.ReplayInitialSnapshotJson,
+            ReplayTurns = inMemorySnapshot.ReplayTurns,
+            Version = inMemorySnapshot.Version,
+            FinalHash = (byte[])inMemorySnapshot.FinalHash!.Clone(),
+        };
+
+        await _store.SaveAsync(tamperedSnapshot);
+
+        // The store must reject the tampered cached state.
+        var loaded = await _store.LoadAsync(sessionId);
+        Assert.Null(loaded);
+    }
+
+    private static async Task RunSessionToCompletion(CombatSessionService service, Guid sessionId, int maxTurns = 30)
+    {
+        for (var i = 0; i < maxTurns; i++)
+        {
+            var stateResult = await service.GetStateAsync(sessionId);
+            if (!stateResult.IsSuccess) break;
+            if (stateResult.Value!.Phase == SessionPhase.Completed) return;
+
+            await service.SubmitPlayerIntentsAsync(sessionId, new SubmitIntentsRequest
+            {
+                Intents = new GUNRPG.Application.Dtos.IntentDto { Primary = PrimaryAction.Fire }
+            });
+
+            var advResult = await service.AdvanceAsync(sessionId);
+            if (!advResult.IsSuccess) break;
+            if (advResult.Value!.Phase == SessionPhase.Completed) return;
+        }
     }
 
     private static CombatSessionSnapshot CreateTestSnapshot()
