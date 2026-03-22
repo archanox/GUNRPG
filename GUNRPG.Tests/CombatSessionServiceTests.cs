@@ -57,11 +57,12 @@ public class CombatSessionServiceTests
     }
 
     [Fact]
-    public async Task SubmitIntents_RecordsWithoutAdvancing()
+    public async Task SubmitIntents_ImmediatelyResolvesTurn()
     {
         var store = new InMemoryCombatSessionStore();
         var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
+        Assert.Equal(1, session.TurnNumber);
 
         var result = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
         {
@@ -73,18 +74,27 @@ public class CombatSessionServiceTests
 
         Assert.True(result.IsSuccess);
         Assert.NotNull(result.Value);
-        Assert.Equal(SessionPhase.Planning, result.Value!.Phase);
+        // The turn is resolved immediately — session is now on turn 2 or combat has completed
+        Assert.Contains(result.Value!.Phase, new[] { SessionPhase.Planning, SessionPhase.Completed });
+        Assert.True(result.Value!.TurnNumber > 1 || result.Value!.Phase == SessionPhase.Completed,
+            "Turn counter must advance or session must complete after submitting intents");
+
+        // Replay turn must be persisted without requiring a separate Advance call
+        var persisted = await store.LoadAsync(session.Id);
+        Assert.NotNull(persisted);
+        Assert.Single(persisted!.ReplayTurns);
+        Assert.Equal(PrimaryAction.Fire, persisted.ReplayTurns[0].Primary);
     }
 
     [Fact]
-    public async Task Advance_ProgressesCombatTurn()
+    public async Task SubmitIntents_ProgressesCombatTurn()
     {
         var store = new InMemoryCombatSessionStore();
         var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
 
-        // Submit intents first
-        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        // Submit intents — turn resolves immediately, no separate Advance required
+        var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
         {
             Intents = new IntentDto
             {
@@ -92,28 +102,24 @@ public class CombatSessionServiceTests
             }
         });
 
-        // Now advance the turn
-        var advanceResult = await service.AdvanceAsync(session.Id);
-
-        Assert.True(advanceResult.IsSuccess);
-        Assert.NotNull(advanceResult.Value);
-        Assert.Contains(advanceResult.Value!.Phase, new[] { SessionPhase.Planning, SessionPhase.Completed });
+        Assert.True(submitResult.IsSuccess);
+        Assert.NotNull(submitResult.Value);
+        Assert.Contains(submitResult.Value!.Phase, new[] { SessionPhase.Planning, SessionPhase.Completed });
     }
 
     [Fact]
-    public async Task Advance_PersistsReplayTurnForExecutedRound()
+    public async Task SubmitIntents_PersistsReplayTurnAfterExecution()
     {
         var store = new InMemoryCombatSessionStore();
         var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
 
-        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        // A single submit is all that's needed — replay turn is appended and turn executed
+        var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
         {
             Intents = new IntentDto { Primary = PrimaryAction.Fire }
         });
-
-        var advanceResult = await service.AdvanceAsync(session.Id);
-        Assert.True(advanceResult.IsSuccess);
+        Assert.True(submitResult.IsSuccess);
 
         var persisted = await store.LoadAsync(session.Id);
         Assert.NotNull(persisted);
@@ -123,15 +129,16 @@ public class CombatSessionServiceTests
     }
 
     [Fact]
-    public async Task Advance_WithoutIntents_IsInvalid()
+    public async Task AdvanceAsync_IsNoOp_ReturnsCurrentState()
     {
+        // AdvanceAsync is now a thin wrapper; it returns the current state without mutating it.
         var service = new CombatSessionService(new InMemoryCombatSessionStore());
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 5 })).Value!;
 
         var result = await service.AdvanceAsync(session.Id);
 
-        Assert.False(result.IsSuccess);
-        Assert.Equal("Advance requires recorded intents for both sides", result.ErrorMessage);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(SessionPhase.Planning, result.Value!.Phase);
     }
 
     [Fact]
@@ -182,7 +189,7 @@ public class CombatSessionServiceTests
             StartingDistance = 20 
         })).Value!;
 
-        // Submit intents to add complexity
+        // Submit intents — turn is immediately executed (replay-driven), intents are consumed
         await service.SubmitPlayerIntentsAsync(created.Id, new SubmitIntentsRequest
         {
             Intents = new IntentDto { Primary = PrimaryAction.Fire }
@@ -214,10 +221,9 @@ public class CombatSessionServiceTests
         Assert.Equal(snapshot1.Combat.RandomState.Seed, snapshot2.Combat.RandomState.Seed);
         Assert.Equal(snapshot1.Combat.RandomState.CallCount, snapshot2.Combat.RandomState.CallCount);
         
-        // Verify pending intents are preserved
-        Assert.NotNull(snapshot1.Combat.PlayerIntents);
-        Assert.NotNull(snapshot2.Combat.PlayerIntents);
-        Assert.Equal(snapshot1.Combat.PlayerIntents.Primary, snapshot2.Combat.PlayerIntents.Primary);
+        // After a turn has been executed, pending intents are consumed (null); verify both snapshots agree
+        Assert.Equal(snapshot1.Combat.PlayerIntents != null, snapshot2.Combat.PlayerIntents != null);
+        Assert.Equal(snapshot1.Combat.EnemyIntents != null, snapshot2.Combat.EnemyIntents != null);
         
         // Verify operator state
         Assert.Equal(snapshot1.Player.Id, snapshot2.Player.Id);
@@ -227,13 +233,14 @@ public class CombatSessionServiceTests
     }
 
     [Fact]
-    public async Task Snapshot_RehydrationWithPendingIntents_PreservesIntentData()
+    public async Task Snapshot_AfterSubmit_ReplayTurnIsRecordedAndIntentsConsumed()
     {
+        // Validates the replay-driven model: after SubmitPlayerIntentsAsync,
+        // the intent is in ReplayTurns (source of truth) and pending intents are cleared.
         var store = new InMemoryCombatSessionStore();
         var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 123 })).Value!;
 
-        // Submit player intents
         var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
         {
             Intents = new IntentDto 
@@ -246,33 +253,25 @@ public class CombatSessionServiceTests
             }
         });
 
-        // Verify submission was accepted
         if (!submitResult.IsSuccess)
         {
-            // If submission failed for a valid reason (e.g., combat ended), skip this test
+            // If submission failed for a valid reason (e.g., combat already ended), skip
             return;
         }
 
         var snapshot = await store.LoadAsync(session.Id);
-        if (snapshot == null)
-        {
-            return; // Should not happen but handle gracefully
-        }
+        Assert.NotNull(snapshot);
 
-        // Verify at least one side has intents in snapshot
-        // The service submits both player and enemy intents
-        bool hasIntents = snapshot.Combat.PlayerIntents != null || snapshot.Combat.EnemyIntents != null;
-        Assert.True(hasIntents, "At least one side should have intents after successful submission");
+        // The intent must be in ReplayTurns — this is the authoritative record
+        Assert.Single(snapshot!.ReplayTurns);
+        Assert.Equal(PrimaryAction.Reload, snapshot.ReplayTurns[0].Primary);
 
-        // Rehydrate
+        // Pending intents are consumed after the turn executes
+        Assert.Null(snapshot.Combat.PlayerIntents);
+        Assert.Null(snapshot.Combat.EnemyIntents);
+
+        // Verify roundtrip consistency: both snapshots agree on the consumed-intents state
         var rehydrated = SessionMapping.FromSnapshot(snapshot);
-        var (playerIntents, enemyIntents) = rehydrated.Combat.GetPendingIntents();
-
-        // At least one side should have intents after rehydration
-        Assert.True(playerIntents != null || enemyIntents != null, 
-            "Pending intents should be preserved after rehydration");
-
-        // Verify roundtrip consistency
         var snapshot2 = SessionMapping.ToSnapshot(rehydrated);
         Assert.Equal(snapshot.Combat.PlayerIntents != null, snapshot2.Combat.PlayerIntents != null);
         Assert.Equal(snapshot.Combat.EnemyIntents != null, snapshot2.Combat.EnemyIntents != null);
@@ -318,78 +317,57 @@ public class CombatSessionServiceTests
 
         Assert.Equal(SessionPhase.Planning, session.Phase);
 
-        // Submit intents and advance
-        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        // Submit intents — turn resolves immediately, no separate Advance required
+        var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
         {
             Intents = new IntentDto { Primary = PrimaryAction.Fire }
         });
 
-        var advanceResult = await service.AdvanceAsync(session.Id);
-        Assert.True(advanceResult.IsSuccess);
+        Assert.True(submitResult.IsSuccess);
         
         // Should transition to Planning (next turn) or Completed
-        Assert.Contains(advanceResult.Value!.Phase, new[] { SessionPhase.Planning, SessionPhase.Completed });
+        Assert.Contains(submitResult.Value!.Phase, new[] { SessionPhase.Planning, SessionPhase.Completed });
     }
 
     [Fact]
-    public async Task PhaseTransition_Completed_CannotAdvance()
+    public async Task SubmitIntents_OnCompletedSession_IsRejected()
     {
         var store = new InMemoryCombatSessionStore();
         var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 100 })).Value!;
 
-        // Advance combat until it completes (simulate multiple rounds)
+        // Drive combat to completion using only SubmitPlayerIntentsAsync
         for (int i = 0; i < 50; i++)
         {
             var state = await service.GetStateAsync(session.Id);
             Assert.True(state.IsSuccess, "GetStateAsync should succeed");
-            
+
             if (state.Value!.Phase == SessionPhase.Completed)
             {
-                // Try to advance a completed session
-                var result = await service.AdvanceAsync(session.Id);
-                Assert.False(result.IsSuccess);
-                Assert.Equal(ResultStatus.InvalidState, result.Status);
+                // Verify that submitting intents on a completed session is rejected
+                var rejectResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+                {
+                    Intents = new IntentDto { Primary = PrimaryAction.Fire }
+                });
+                Assert.False(rejectResult.IsSuccess);
+                Assert.Equal(ResultStatus.InvalidState, rejectResult.Status);
                 return;
             }
 
-            await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+            var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
             {
                 Intents = new IntentDto { Primary = PrimaryAction.Fire }
             });
 
-            var advanceResult = await service.AdvanceAsync(session.Id);
-            
-            if (!advanceResult.IsSuccess)
+            if (!submitResult.IsSuccess)
             {
-                Assert.Fail("AdvanceAsync failed before the session reached the Completed phase.");
-            }
-
-            if (advanceResult.Value!.Phase == SessionPhase.Completed)
-            {
-                // On the next loop iteration, the Completed phase will be detected
-                // by GetStateAsync and the negative-advance assertion will run.
-                continue;
+                Assert.Fail("SubmitPlayerIntentsAsync failed before the session reached the Completed phase.");
             }
         }
 
         // If we exit the loop without ever reaching the Completed phase,
-        // the test has not actually verified that a completed session cannot advance.
-        Assert.Fail("Session did not reach the Completed phase within 50 iterations; test did not verify that a completed session cannot advance.");
-    }
-
-    [Fact]
-    public async Task Advance_WithoutIntents_ReturnsInvalidState()
-    {
-        var store = new InMemoryCombatSessionStore();
-        var service = new CombatSessionService(store);
-        var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 200 })).Value!;
-
-        var result = await service.AdvanceAsync(session.Id);
-
-        Assert.False(result.IsSuccess);
-        Assert.Equal(ResultStatus.InvalidState, result.Status);
-        Assert.Contains("intents", result.ErrorMessage ?? "", StringComparison.OrdinalIgnoreCase);
+        // the test has not actually verified that a completed session rejects further inputs.
+        Assert.Fail("Session did not reach the Completed phase within 50 iterations; test did not verify rejection of inputs after completion.");
     }
 
     [Fact]
@@ -399,18 +377,15 @@ public class CombatSessionServiceTests
         var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 300 })).Value!;
 
-        // Submit initial intents and advance
-        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        // Submit intents — turn resolves immediately
+        var firstSubmit = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
         {
             Intents = new IntentDto { Primary = PrimaryAction.Fire }
         });
+        Assert.True(firstSubmit.IsSuccess, "First submit should succeed");
 
-        // Advance completes the turn and transitions to either Planning (next turn) or Completed
-        var advanceResult = await service.AdvanceAsync(session.Id);
-        Assert.True(advanceResult.IsSuccess, "AdvanceAsync should succeed");
-        
-        var phase = advanceResult.Value!.Phase;
-        
+        var phase = firstSubmit.Value!.Phase;
+
         // If we're in Completed phase, submitting intents should fail
         if (phase == SessionPhase.Completed)
         {
@@ -535,46 +510,9 @@ public class CombatSessionServiceTests
         Assert.True(result.IsSuccess);
     }
 
-    [Fact]
-    public async Task Advance_WithOperatorInBaseMode_ReturnsInvalidStateError()
-    {
-        // Arrange
-        var store = new InMemoryCombatSessionStore();
-        var operatorEventStore = new StubOperatorEventStore();
-        var operatorId = Guid.NewGuid();
-        
-        // Setup operator in Base mode
-        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Base);
-        
-        var service = new CombatSessionService(store, operatorEventStore);
-        
-        // Create a session and submit intents without validation (simulate session created while in Infil, then operator died)
-        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
-        { 
-            OperatorId = operatorId,
-            Seed = 123 
-        });
-        Assert.True(sessionResult.IsSuccess);
-        var session = sessionResult.Value!;
-
-        // Change operator to Infil temporarily to submit intents, with matching session ID
-        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: session.Id);
-        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
-        {
-            Intents = new IntentDto { Primary = PrimaryAction.Fire, Movement = MovementAction.WalkToward }
-        });
-
-        // Change operator back to Base mode (simulating death)
-        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Base);
-
-        // Act - try to advance while operator is in Base mode
-        var result = await service.AdvanceAsync(session.Id);
-
-        // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Equal(ResultStatus.InvalidState, result.Status);
-        Assert.Contains("Combat actions are only allowed when operator is in Infil mode", result.ErrorMessage);
-    }
+    // NOTE: Advance_WithOperatorInBaseMode_ReturnsInvalidStateError is removed because AdvanceAsync
+    // is now a thin wrapper that returns the current state without performing simulation or validation.
+    // The operator-in-Base-mode security property is covered by SubmitIntents_WithOperatorInBaseMode_ReturnsInvalidStateError.
 
     [Fact]
     public async Task SubmitIntents_WithNonExistentOperator_ReturnsNotFoundError()
@@ -706,83 +644,11 @@ public class CombatSessionServiceTests
         Assert.Contains("active combat session", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public async Task Advance_WithMismatchedSessionId_ReturnsInvalidStateError()
-    {
-        // Arrange
-        var store = new InMemoryCombatSessionStore();
-        var operatorEventStore = new StubOperatorEventStore();
-        var operatorId = Guid.NewGuid();
-
-        var service = new CombatSessionService(store, operatorEventStore);
-
-        // Create a session and submit intents with the matching session ID
-        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
-        { 
-            OperatorId = operatorId,
-            Seed = 123 
-        });
-        Assert.True(sessionResult.IsSuccess);
-        var session = sessionResult.Value!;
-
-        // Set up operator in Infil mode with matching session ID for intent submission
-        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: session.Id);
-        var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
-        {
-            Intents = new IntentDto { Primary = PrimaryAction.Fire }
-        });
-        Assert.True(submitResult.IsSuccess);
-
-        // Now set up operator with a DIFFERENT active session ID (tamper scenario for advance)
-        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: Guid.NewGuid());
-
-        // Act - try to advance using a session ID that doesn't match the operator's active session
-        var result = await service.AdvanceAsync(session.Id);
-
-        // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Equal(ResultStatus.InvalidState, result.Status);
-        Assert.Contains("active combat session", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public async Task Advance_WithNoActiveSessionId_ReturnsInvalidStateError()
-    {
-        // Arrange
-        var store = new InMemoryCombatSessionStore();
-        var operatorEventStore = new StubOperatorEventStore();
-        var operatorId = Guid.NewGuid();
-
-        var service = new CombatSessionService(store, operatorEventStore);
-
-        // Create a session and submit intents with the matching session ID
-        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest 
-        { 
-            OperatorId = operatorId,
-            Seed = 123 
-        });
-        Assert.True(sessionResult.IsSuccess);
-        var session = sessionResult.Value!;
-
-        // Set up operator in Infil mode with matching session ID for intent submission
-        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, activeCombatSessionId: session.Id);
-        var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
-        {
-            Intents = new IntentDto { Primary = PrimaryAction.Fire }
-        });
-        Assert.True(submitResult.IsSuccess);
-
-        // Now set up operator in Infil mode with NO active session ID (e.g., after victory cleared it)
-        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil);
-
-        // Act - try to advance when operator has no active combat session
-        var result = await service.AdvanceAsync(session.Id);
-
-        // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Equal(ResultStatus.InvalidState, result.Status);
-        Assert.Contains("active combat session", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
-    }
+    // NOTE: Advance_WithMismatchedSessionId_ReturnsInvalidStateError,
+    //       Advance_WithNoActiveSessionId_ReturnsInvalidStateError, and
+    //       Advance_WithWrongCallerOperatorId_ReturnsInvalidStateError are removed because
+    //       AdvanceAsync is now a thin wrapper with no validation.
+    // The corresponding security properties are already covered by the SubmitIntents_With* tests above.
 
     [Fact]
     public async Task SubmitIntents_WithWrongCallerOperatorId_ReturnsInvalidStateError()
@@ -819,42 +685,12 @@ public class CombatSessionServiceTests
         Assert.Contains("belong to the specified operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
     }
 
-    [Fact]
-    public async Task Advance_WithWrongCallerOperatorId_ReturnsInvalidStateError()
-    {
-        // Arrange
-        var store = new InMemoryCombatSessionStore();
-        var operatorEventStore = new StubOperatorEventStore();
-        var ownerOperatorId = Guid.NewGuid();
-        var attackerOperatorId = Guid.NewGuid(); // different operator trying to tamper
+    // NOTE: Advance_WithWrongCallerOperatorId_ReturnsInvalidStateError is removed because AdvanceAsync
+    // is now a thin wrapper with no validation. The caller-operator-id tamper scenario is already
+    // covered by SubmitIntents_WithWrongCallerOperatorId_ReturnsInvalidStateError.
 
-        var service = new CombatSessionService(store, operatorEventStore);
-
-        var sessionResult = await service.CreateSessionAsync(new SessionCreateRequest
-        {
-            OperatorId = ownerOperatorId,
-            Seed = 123
-        });
-        Assert.True(sessionResult.IsSuccess);
-        var session = sessionResult.Value!;
-
-        // Owner operator is set up in Infil mode with the correct active session
-        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(ownerOperatorId), OperatorMode.Infil, activeCombatSessionId: session.Id);
-        var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
-        {
-            Intents = new IntentDto { Primary = PrimaryAction.Fire },
-            OperatorId = ownerOperatorId
-        });
-        Assert.True(submitResult.IsSuccess);
-
-        // Act - attacker provides their own operatorId but tries to advance owner's session
-        var result = await service.AdvanceAsync(session.Id, callerOperatorId: attackerOperatorId);
-
-        // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Equal(ResultStatus.InvalidState, result.Status);
-        Assert.Contains("belong to the specified operator", result.ErrorMessage, StringComparison.OrdinalIgnoreCase);
-    }
+    // NOTE: Advance_WithUpdateHub_PublishesNotification is removed because AdvanceAsync no longer
+    // saves state and therefore does not publish hub notifications.
 
     [Fact]
     public async Task SubmitIntents_WithUpdateHub_PublishesNotification()
@@ -892,51 +728,6 @@ public class CombatSessionServiceTests
         {
             Intents = new IntentDto { Primary = PrimaryAction.Fire }
         });
-
-        await subscribeTask.WaitAsync(TimeSpan.FromSeconds(2));
-
-        Assert.Single(received);
-        Assert.Equal(session.Id, received[0]);
-    }
-
-    [Fact]
-    public async Task Advance_WithUpdateHub_PublishesNotification()
-    {
-        var store = new InMemoryCombatSessionStore();
-        var hub = new CombatSessionUpdateHub();
-        var service = new CombatSessionService(store, updateHub: hub);
-        var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42 })).Value!;
-
-        await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
-        {
-            Intents = new IntentDto { Primary = PrimaryAction.Fire }
-        });
-
-        using var cts = new CancellationTokenSource();
-        var received = new List<Guid>();
-        var ready = new TaskCompletionSource();
-
-        var subscribeTask = Task.Run(async () =>
-        {
-            try
-            {
-                await using var enumerator = hub.SubscribeAsync(session.Id, cts.Token)
-                    .GetAsyncEnumerator(cts.Token);
-                var pending = enumerator.MoveNextAsync();
-                ready.TrySetResult();
-                while (await pending)
-                {
-                    received.Add(enumerator.Current);
-                    cts.Cancel();
-                    pending = enumerator.MoveNextAsync();
-                }
-            }
-            catch (OperationCanceledException) { }
-        });
-
-        await ready.Task.WaitAsync(TimeSpan.FromSeconds(2));
-
-        await service.AdvanceAsync(session.Id);
 
         await subscribeTask.WaitAsync(TimeSpan.FromSeconds(2));
 

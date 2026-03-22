@@ -83,8 +83,8 @@ public sealed class CombatSessionService
     }
 
     /// <summary>
-    /// Submits player intents without advancing the turn. This only records the intent.
-    /// Call Advance() separately to resolve the turn.
+    /// Submits player intents and immediately resolves the turn via replay.
+    /// This is the sole entry point for combat input — no separate Advance step is required.
     /// </summary>
     public async Task<ServiceResult<CombatSessionDto>> SubmitPlayerIntentsAsync(Guid sessionId, SubmitIntentsRequest request)
     {
@@ -125,6 +125,33 @@ public sealed class CombatSessionService
             session.Combat.SubmitIntents(session.Enemy, SimultaneousIntents.CreateStop(session.Enemy.Id));
         }
 
+        // Append player intents to ReplayTurns before execution so every state change is logged
+        session.RecordReplayTurn(playerIntents);
+
+        // Immediately execute the turn — replay-driven: no separate Advance step required
+        session.TransitionTo(SessionPhase.Resolving);
+        session.Combat.BeginExecution();
+        ResolveUntilPlanningOrEnd(session);
+
+        if (session.Combat.Phase == CombatPhase.Ended)
+        {
+            ApplyPostCombat(session);
+            session.TransitionTo(SessionPhase.Completed);
+            try
+            {
+                await session.FinalizeAsync();
+            }
+            catch (Exception ex)
+            {
+                return ServiceResult<CombatSessionDto>.InvalidState("Session finalization failed: " + ex.Message);
+            }
+        }
+        else
+        {
+            session.TransitionTo(SessionPhase.Planning);
+            session.AdvanceTurnCounter();
+        }
+
         session.RecordAction();
         await SaveAsync(session);
 
@@ -148,90 +175,13 @@ public sealed class CombatSessionService
     }
 
     /// <summary>
-    /// Advances the combat turn until the next planning phase or end of combat.
+    /// Returns the current session state.
+    /// The advance step is now handled automatically by <see cref="SubmitPlayerIntentsAsync"/>;
+    /// this method is kept for backwards compatibility and performs no simulation.
     /// </summary>
     public async Task<ServiceResult<CombatSessionDto>> AdvanceAsync(Guid sessionId, Guid? callerOperatorId = null)
     {
-        var session = await LoadAsync(sessionId);
-        if (session == null)
-        {
-            return ServiceResult<CombatSessionDto>.NotFound("Session not found");
-        }
-
-        // Validate operator is in Infil mode and session matches the active session before allowing combat actions
-        var modeValidation = await ValidateOperatorInInfilModeAsync(session, callerOperatorId);
-        if (modeValidation != null)
-        {
-            return ServiceResult<CombatSessionDto>.FromResult(modeValidation);
-        }
-
-        if (session.Phase != SessionPhase.Planning && session.Phase != SessionPhase.Resolving)
-        {
-            return ServiceResult<CombatSessionDto>.InvalidState("Advance is only allowed during Planning or Resolving phases");
-        }
-
-        if (session.Combat.Phase == CombatPhase.Ended)
-        {
-            ApplyPostCombat(session);
-            session.TransitionTo(SessionPhase.Completed);
-            try
-            {
-                await session.FinalizeAsync();
-            }
-            catch (Exception ex)
-            {
-                return ServiceResult<CombatSessionDto>.InvalidState("Session finalization failed: " + ex.Message);
-            }
-            await SaveAsync(session);
-            return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
-        }
-
-        var pendingIntents = session.Combat.GetPendingIntents();
-        var hasPlayerIntents = pendingIntents.player != null;
-        var hasEnemyIntents = pendingIntents.enemy != null;
-        if (!hasPlayerIntents || !hasEnemyIntents)
-        {
-            return ServiceResult<CombatSessionDto>.InvalidState("Advance requires recorded intents for both sides");
-        }
-
-        if (session.Combat.Phase == CombatPhase.Planning)
-        {
-            if (pendingIntents.player != null)
-            {
-                session.RecordReplayTurn(pendingIntents.player);
-            }
-
-            session.TransitionTo(SessionPhase.Resolving);
-            session.Combat.BeginExecution();
-        }
-
-        if (session.Combat.Phase == CombatPhase.Executing)
-        {
-            ResolveUntilPlanningOrEnd(session);
-        }
-
-        if (session.Combat.Phase == CombatPhase.Ended)
-        {
-            ApplyPostCombat(session);
-            session.TransitionTo(SessionPhase.Completed);
-            try
-            {
-                await session.FinalizeAsync();
-            }
-            catch (Exception ex)
-            {
-                return ServiceResult<CombatSessionDto>.InvalidState("Session finalization failed: " + ex.Message);
-            }
-        }
-        else
-        {
-            session.TransitionTo(SessionPhase.Planning);
-            session.AdvanceTurnCounter();
-        }
-
-        session.RecordAction();
-        await SaveAsync(session);
-        return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
+        return await GetStateAsync(sessionId);
     }
 
     public async Task<ServiceResult<PetStateDto>> ApplyPetInputAsync(Guid sessionId, PetInput input, DateTimeOffset now)
