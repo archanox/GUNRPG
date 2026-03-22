@@ -16,6 +16,10 @@ public sealed class CombatSessionSnapshot
     public CombatStateSnapshot Combat { get; init; } = default!;
     public OperatorSnapshot Player { get; init; } = default!;
     public OperatorSnapshot Enemy { get; init; } = default!;
+    /// <summary>
+    /// Persisted side-channel pet state. Replay carries this through snapshots but does not mutate
+    /// or validate it; pet updates are applied after pure combat replay completes.
+    /// </summary>
     public PetStateSnapshot Pet { get; init; } = default!;
     public int EnemyLevel { get; init; }
     public int Seed { get; init; }

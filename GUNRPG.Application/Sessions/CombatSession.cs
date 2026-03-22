@@ -148,25 +148,26 @@ public sealed class CombatSession
             DateTimeOffset.UtcNow);
     }
 
-    public void TransitionTo(SessionPhase nextPhase)
+    public void TransitionTo(SessionPhase nextPhase, DateTimeOffset? timestamp = null)
     {
         if (!IsValidTransition(Phase, nextPhase))
         {
             throw new InvalidOperationException($"Invalid session phase transition: {Phase} -> {nextPhase}");
         }
 
+        var resolvedTimestamp = timestamp ?? DateTimeOffset.UtcNow;
         Phase = nextPhase;
-        LastActionTimestamp = DateTimeOffset.UtcNow;
+        LastActionTimestamp = resolvedTimestamp;
         
         // Record completion time and compute FinalHash when transitioning to Completed phase.
         if (nextPhase == SessionPhase.Completed && CompletedAt == null)
         {
-            CompletedAt = DateTimeOffset.UtcNow;
+            CompletedAt = resolvedTimestamp;
             FinalHash = CombatSessionHasher.ComputeHash(Id, Seed, Version, TurnNumber, _replayTurns);
         }
     }
 
-    public void AdvanceTurnCounter()
+    public void AdvanceTurnCounter(DateTimeOffset? timestamp = null)
     {
         if (Phase == SessionPhase.Completed)
         {
@@ -174,12 +175,12 @@ public sealed class CombatSession
         }
 
         TurnNumber++;
-        LastActionTimestamp = DateTimeOffset.UtcNow;
+        LastActionTimestamp = timestamp ?? DateTimeOffset.UtcNow;
     }
 
-    public void RecordAction()
+    public void RecordAction(DateTimeOffset? timestamp = null)
     {
-        LastActionTimestamp = DateTimeOffset.UtcNow;
+        LastActionTimestamp = timestamp ?? DateTimeOffset.UtcNow;
     }
 
     public void SetReplayInitialSnapshotJson(string snapshotJson)
@@ -308,7 +309,7 @@ public sealed class CombatSession
             isVictory: isVictory,
             turnsSurvived: TurnNumber,
             damageTaken: damageTaken,
-            completedAt: CompletedAt ?? DateTimeOffset.UtcNow);
+            completedAt: CompletedAt ?? (CreatedAt + CombatSessionService.ToBoundedCombatDuration(Combat.CurrentTimeMs)));
     }
 
     private static bool IsValidTransition(SessionPhase current, SessionPhase next)

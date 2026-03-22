@@ -1,3 +1,4 @@
+using GUNRPG.Application.Combat;
 using GUNRPG.Application.Mapping;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Sessions;
@@ -287,6 +288,166 @@ public sealed class CombatSessionReplayIntegrityTests
     }
 
     [Fact]
+    public void ReplayRunner_Run_GivenSameInitialStateAndTurns_ProducesIdenticalSimulationState()
+    {
+        var session = CombatSession.CreateDefault(seed: 4242, id: Guid.NewGuid());
+        var initialSnapshot = SessionMapping.ToSnapshot(session);
+        var initialJson = OfflineCombatReplay.SerializeCombatSnapshot(initialSnapshot);
+        var turns = new[]
+        {
+            new IntentSnapshot { OperatorId = session.Player.Id, Primary = PrimaryAction.Fire },
+            new IntentSnapshot { OperatorId = session.Player.Id, Primary = PrimaryAction.Reload }
+        };
+
+        var simulationA = ReplayRunner.Run(initialJson, turns);
+        var simulationB = ReplayRunner.Run(initialJson, turns);
+
+        AssertSnapshotsEqual(simulationA.Snapshot, simulationB.Snapshot);
+        Assert.Equal(simulationA.Outcome?.CompletedAt, simulationB.Outcome?.CompletedAt);
+        Assert.Equal(simulationA.SideEffects, simulationB.SideEffects);
+    }
+
+    [Fact]
+    public async Task ReplayRunner_Run_DoesNotDriftWithWallClockTime()
+    {
+        var session = CombatSession.CreateDefault(seed: 5150, id: Guid.NewGuid());
+        var initialSnapshot = SessionMapping.ToSnapshot(session);
+        var initialJson = OfflineCombatReplay.SerializeCombatSnapshot(initialSnapshot);
+        var turns = new[]
+        {
+            new IntentSnapshot { OperatorId = session.Player.Id, Primary = PrimaryAction.Fire }
+        };
+
+        var firstRun = ReplayRunner.Run(initialJson, turns);
+        await Task.Delay(50);
+        var secondRun = ReplayRunner.Run(initialJson, turns);
+
+        Assert.Equal(firstRun.Snapshot.CompletedAt, secondRun.Snapshot.CompletedAt);
+        Assert.Equal(firstRun.Snapshot.LastActionTimestamp, secondRun.Snapshot.LastActionTimestamp);
+        AssertSnapshotsEqual(firstRun.Snapshot, secondRun.Snapshot);
+    }
+
+    [Fact]
+    public async Task ReplayRunner_Run_LeavesPetSideEffectsOutsidePureReplay()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+
+        var createResult = await service.CreateSessionAsync(new SessionCreateRequest { Seed = 77 });
+        Assert.True(createResult.IsSuccess);
+        var sessionId = createResult.Value!.Id;
+
+        await RunSessionToCompletion(service, sessionId);
+
+        var completedSnapshot = await store.LoadAsync(sessionId);
+        Assert.NotNull(completedSnapshot);
+        Assert.True(completedSnapshot!.PostCombatResolved);
+
+        var initialSnapshot = OfflineCombatReplay.DeserializeCombatSnapshot(completedSnapshot.ReplayInitialSnapshotJson);
+        var pureReplay = ReplayRunner.Run(completedSnapshot.ReplayInitialSnapshotJson, completedSnapshot.ReplayTurns);
+
+        Assert.False(pureReplay.Snapshot.PostCombatResolved);
+        Assert.Equal(initialSnapshot.Pet.Health, pureReplay.Snapshot.Pet.Health);
+        Assert.Equal(initialSnapshot.Pet.Fatigue, pureReplay.Snapshot.Pet.Fatigue);
+        Assert.Equal(initialSnapshot.Pet.Stress, pureReplay.Snapshot.Pet.Stress);
+        Assert.Equal(initialSnapshot.Pet.LastUpdated, pureReplay.Snapshot.Pet.LastUpdated);
+
+        Assert.NotEqual(completedSnapshot.Pet.Fatigue, pureReplay.Snapshot.Pet.Fatigue);
+        Assert.NotEqual(completedSnapshot.Pet.LastUpdated, pureReplay.Snapshot.Pet.LastUpdated);
+    }
+
+    [Fact]
+    public void ComputeCombatSnapshotHash_IgnoresPetAndBattleLogSideEffects()
+    {
+        var baseline = new GUNRPG.Application.Dtos.CombatSessionDto
+        {
+            Id = Guid.NewGuid(),
+            Phase = SessionPhase.Completed,
+            CurrentTimeMs = 1200,
+            EnemyLevel = 3,
+            TurnNumber = 4,
+            Player = new GUNRPG.Application.Dtos.PlayerStateDto
+            {
+                Id = Guid.NewGuid(),
+                Name = "Player",
+                Health = 80,
+                MaxHealth = 100,
+                CurrentAmmo = 12,
+                DistanceToOpponent = 10,
+                AimState = GUNRPG.Core.Operators.AimState.Hip,
+                MovementState = GUNRPG.Core.Operators.MovementState.Idle,
+                CurrentMovement = GUNRPG.Core.Operators.MovementState.Idle,
+                CurrentDirection = GUNRPG.Core.Operators.MovementDirection.Holding,
+                CurrentCover = GUNRPG.Core.Operators.CoverState.None,
+                IsAlive = true
+            },
+            Enemy = new GUNRPG.Application.Dtos.PlayerStateDto
+            {
+                Id = Guid.NewGuid(),
+                Name = "Enemy",
+                Health = 0,
+                MaxHealth = 100,
+                CurrentAmmo = 3,
+                DistanceToOpponent = 10,
+                AimState = GUNRPG.Core.Operators.AimState.Hip,
+                MovementState = GUNRPG.Core.Operators.MovementState.Idle,
+                CurrentMovement = GUNRPG.Core.Operators.MovementState.Idle,
+                CurrentDirection = GUNRPG.Core.Operators.MovementDirection.Holding,
+                CurrentCover = GUNRPG.Core.Operators.CoverState.None,
+                IsAlive = false
+            },
+            Pet = new GUNRPG.Application.Dtos.PetStateDto
+            {
+                Health = 100,
+                Fatigue = 0,
+                Injury = 0,
+                Stress = 0,
+                Morale = 100,
+                Hunger = 0,
+                Hydration = 100,
+                LastUpdated = DateTimeOffset.Parse("2026-01-01T00:00:00+00:00")
+            },
+            BattleLog = []
+        };
+
+        var mutated = new GUNRPG.Application.Dtos.CombatSessionDto
+        {
+            Id = baseline.Id,
+            Phase = baseline.Phase,
+            CurrentTimeMs = baseline.CurrentTimeMs,
+            EnemyLevel = baseline.EnemyLevel,
+            TurnNumber = baseline.TurnNumber,
+            Player = baseline.Player,
+            Enemy = baseline.Enemy,
+            Pet = new GUNRPG.Application.Dtos.PetStateDto
+            {
+                Health = 50,
+                Fatigue = 40,
+                Injury = 10,
+                Stress = 30,
+                Morale = 75,
+                Hunger = 20,
+                Hydration = 60,
+                LastUpdated = DateTimeOffset.Parse("2026-01-02T00:00:00+00:00")
+            },
+            BattleLog =
+            [
+                new GUNRPG.Application.Dtos.BattleLogEntryDto
+                {
+                    EventType = "Damage",
+                    TimeMs = 10,
+                    Message = "Side effect only",
+                    ActorName = "Player"
+                }
+            ]
+        };
+
+        Assert.Equal(
+            OfflineCombatReplay.ComputeCombatSnapshotHash(baseline),
+            OfflineCombatReplay.ComputeCombatSnapshotHash(mutated));
+    }
+
+    [Fact]
     public async Task RebuildStateAsync_WithNoInitialSnapshotJson_ReturnsNull()
     {
         // A session without a recorded initial snapshot cannot be rebuilt.
@@ -398,5 +559,22 @@ public sealed class CombatSessionReplayIntegrityTests
             if (!submitResult.IsSuccess) break;
             if (submitResult.Value!.Phase == SessionPhase.Completed) return;
         }
+    }
+
+    private static void AssertSnapshotsEqual(CombatSessionSnapshot expected, CombatSessionSnapshot actual)
+    {
+        Assert.Equal(expected.Id, actual.Id);
+        Assert.Equal(expected.Phase, actual.Phase);
+        Assert.Equal(expected.TurnNumber, actual.TurnNumber);
+        Assert.Equal(expected.Combat.Phase, actual.Combat.Phase);
+        Assert.Equal(expected.Combat.CurrentTimeMs, actual.Combat.CurrentTimeMs);
+        Assert.Equal(expected.Combat.RandomState.Seed, actual.Combat.RandomState.Seed);
+        Assert.Equal(expected.Combat.RandomState.CallCount, actual.Combat.RandomState.CallCount);
+        Assert.Equal(expected.Player.Health, actual.Player.Health);
+        Assert.Equal(expected.Player.CurrentAmmo, actual.Player.CurrentAmmo);
+        Assert.Equal(expected.Enemy.Health, actual.Enemy.Health);
+        Assert.Equal(expected.Enemy.CurrentAmmo, actual.Enemy.CurrentAmmo);
+        Assert.Equal(expected.CompletedAt, actual.CompletedAt);
+        Assert.Equal(expected.LastActionTimestamp, actual.LastActionTimestamp);
     }
 }

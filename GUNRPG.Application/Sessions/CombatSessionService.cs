@@ -142,20 +142,14 @@ public sealed class CombatSessionService
         //    prior turns + the new turn.  State is never mutated directly; the snapshot cached
         //    in the store is always the deterministic result of replay(ReplayTurns, Seed).
         CombatSession replaySession;
+        CombatReplaySideEffectPlan sideEffectPlan = CombatReplaySideEffectPlan.None;
         if (!string.IsNullOrEmpty(snapshot.ReplayInitialSnapshotJson))
         {
-            // Reconstruct from the immutable initial snapshot.
-            replaySession = SessionMapping.FromSnapshot(
-                OfflineCombatReplay.DeserializeCombatSnapshot(snapshot.ReplayInitialSnapshotJson));
-            // Preserve the initial snapshot JSON so FinalizeAsync can compute the replay-based hash.
-            replaySession.SetReplayInitialSnapshotJson(snapshot.ReplayInitialSnapshotJson);
-
-            // Apply every turn: prior turns restore history; the new turn advances state.
-            foreach (var turn in snapshot.ReplayTurns.Append(newTurn))
-            {
-                ExecuteReplayTurn(replaySession, turn);
-                if (replaySession.Phase == SessionPhase.Completed) break;
-            }
+            var simulationState = ReplayRunner.Run(
+                snapshot.ReplayInitialSnapshotJson,
+                snapshot.ReplayTurns.Append(newTurn).ToArray());
+            replaySession = simulationState.Session;
+            sideEffectPlan = simulationState.SideEffects;
 
             if (replaySession.Phase == SessionPhase.Completed)
             {
@@ -182,13 +176,14 @@ public sealed class CombatSessionService
                 replaySession.Combat.SubmitIntents(replaySession.Enemy, SimultaneousIntents.CreateStop(replaySession.Enemy.Id));
 
             replaySession.RecordReplayTurn(playerIntents);
-            replaySession.TransitionTo(SessionPhase.Resolving);
+            replaySession.TransitionTo(SessionPhase.Resolving, GetReplayTimestamp(replaySession));
             replaySession.Combat.BeginExecution();
             ResolveUntilPlanningOrEnd(replaySession);
+            sideEffectPlan = BuildSideEffectPlan(replaySession);
 
             if (replaySession.Combat.Phase == CombatPhase.Ended)
             {
-                replaySession.TransitionTo(SessionPhase.Completed);
+                replaySession.TransitionTo(SessionPhase.Completed, GetReplayTimestamp(replaySession));
                 try
                 {
                     await replaySession.FinalizeAsync();
@@ -200,16 +195,24 @@ public sealed class CombatSessionService
             }
             else
             {
-                replaySession.TransitionTo(SessionPhase.Planning);
-                replaySession.AdvanceTurnCounter();
+                var replayTimestamp = GetReplayTimestamp(replaySession);
+                replaySession.TransitionTo(SessionPhase.Planning, replayTimestamp);
+                replaySession.AdvanceTurnCounter(replayTimestamp);
             }
         }
 
         // 8. Persist the replay-derived state.
-        replaySession.RecordAction();
+        replaySession.RecordAction(GetReplayTimestamp(replaySession));
         await SaveAsync(replaySession);
 
-        // 9. Notify the distributed authority for P2P state verification.
+        // 9. Apply side effects only after the replay-derived snapshot has been persisted.
+        if (sideEffectPlan.RequiresApplication)
+        {
+            ApplySideEffects(replaySession, sideEffectPlan);
+            await SaveAsync(replaySession);
+        }
+
+        // 10. Notify the distributed authority for P2P state verification.
         if (_gameAuthority != null && !replaySession.OperatorId.IsEmpty)
         {
             await _gameAuthority.SubmitActionAsync(new PlayerActionDto
@@ -388,21 +391,22 @@ public sealed class CombatSessionService
         session.RecordReplayTurn(playerIntents);
         session.TransitionTo(SessionPhase.Resolving);
         session.Combat.BeginExecution();
-        ResolveUntilPlanningOrEnd(session); // ApplyPostCombat is called here when CombatPhase.Ended
+        ResolveUntilPlanningOrEnd(session);
 
+        var replayTimestamp = GetReplayTimestamp(session);
         if (session.Combat.Phase == CombatPhase.Ended)
         {
             // Sets the interim input-based FinalHash; caller must invoke FinalizeAsync to upgrade
             // it to the replay-based hash.
-            session.TransitionTo(SessionPhase.Completed);
+            session.TransitionTo(SessionPhase.Completed, replayTimestamp);
         }
         else
         {
-            session.TransitionTo(SessionPhase.Planning);
-            session.AdvanceTurnCounter();
+            session.TransitionTo(SessionPhase.Planning, replayTimestamp);
+            session.AdvanceTurnCounter(replayTimestamp);
         }
 
-        session.RecordAction();
+        session.RecordAction(replayTimestamp);
     }
 
     private static void ResolveUntilPlanningOrEnd(CombatSession session)
@@ -420,21 +424,14 @@ public sealed class CombatSessionService
                 break;
             }
         }
-
-        if (session.Combat.Phase == CombatPhase.Ended)
-        {
-            ApplyPostCombat(session);
-        }
     }
 
-    private static void ApplyPostCombat(CombatSession session)
+    internal static CombatReplaySideEffectPlan BuildSideEffectPlan(CombatSession session)
     {
-        if (session.PostCombatResolved)
+        if (session.PostCombatResolved || session.Combat.Phase != CombatPhase.Ended)
         {
-            return;
+            return CombatReplaySideEffectPlan.None;
         }
-
-        session.OperatorManager.CompleteCombat(session.Player, session.Player.IsAlive);
 
         float healthLost = session.Player.MaxHealth - session.Player.Health;
         int hitsTaken = (int)Math.Ceiling(healthLost / 10f);
@@ -458,12 +455,30 @@ public sealed class CombatSessionService
             opponentDifficulty = Math.Min(100f, opponentDifficulty * DefeatDifficultyModifier);
         }
 
-        var missionResolvedAt = session.CreatedAt + ToBoundedCombatDuration(session.Combat.CurrentTimeMs);
-        session.PetState = PetRules.Apply(session.PetState, new MissionInput(hitsTaken, opponentDifficulty), missionResolvedAt);
+        var missionResolvedAt = GetReplayTimestamp(session);
+
+        return new CombatReplaySideEffectPlan(
+            RequiresApplication: true,
+            PlayerSurvived: session.Player.IsAlive,
+            PetMissionInput: new MissionInput(hitsTaken, opponentDifficulty),
+            MissionResolvedAt: missionResolvedAt);
+    }
+
+    private static void ApplySideEffects(CombatSession session, CombatReplaySideEffectPlan plan)
+    {
+        if (!plan.RequiresApplication || session.PostCombatResolved)
+        {
+            return;
+        }
+
+        session.OperatorManager.CompleteCombat(session.Player, plan.PlayerSurvived);
+        if (plan.PetMissionInput != null && plan.MissionResolvedAt.HasValue)
+        {
+            session.PetState = PetRules.Apply(session.PetState, plan.PetMissionInput, plan.MissionResolvedAt.Value);
+            session.Player.Fatigue = session.PetState.Fatigue;
+        }
 
         // XP gain is now handled by OperatorExfilService, not in combat sessions
-
-        session.Player.Fatigue = session.PetState.Fatigue;
         session.PostCombatResolved = true;
     }
 
@@ -479,10 +494,16 @@ public sealed class CombatSessionService
         };
     }
 
-    private static TimeSpan ToBoundedCombatDuration(long currentTimeMs)
+    internal static TimeSpan ToBoundedCombatDuration(long currentTimeMs)
     {
         var boundedMilliseconds = Math.Clamp(currentTimeMs, 0L, (long)TimeSpan.MaxValue.TotalMilliseconds);
         return TimeSpan.FromMilliseconds(boundedMilliseconds);
+    }
+
+    internal static DateTimeOffset GetReplayTimestamp(CombatSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return session.CreatedAt + ToBoundedCombatDuration(session.Combat.CurrentTimeMs);
     }
     
     /// <summary>
