@@ -309,7 +309,13 @@ public sealed class CombatSession
             isVictory: isVictory,
             turnsSurvived: TurnNumber,
             damageTaken: damageTaken,
-            completedAt: CompletedAt ?? (CreatedAt + CombatSessionService.ToBoundedCombatDuration(Combat.CurrentTimeMs)));
+            completedAt: CompletedAt ?? (CreatedAt + ToBoundedCombatDuration(Combat.CurrentTimeMs)));
+    }
+
+    internal static TimeSpan ToBoundedCombatDuration(long currentTimeMs)
+    {
+        var boundedMilliseconds = Math.Clamp(currentTimeMs, 0L, (long)TimeSpan.MaxValue.TotalMilliseconds);
+        return TimeSpan.FromMilliseconds(boundedMilliseconds);
     }
 
     private static bool IsValidTransition(SessionPhase current, SessionPhase next)

@@ -389,7 +389,8 @@ public sealed class CombatSessionService
         // Append the player intent to ReplayTurns before transitioning (RecordReplayTurn throws
         // when Phase == Completed).
         session.RecordReplayTurn(playerIntents);
-        session.TransitionTo(SessionPhase.Resolving);
+        var resolveTransitionTimestamp = GetReplayTimestamp(session);
+        session.TransitionTo(SessionPhase.Resolving, resolveTransitionTimestamp);
         session.Combat.BeginExecution();
         ResolveUntilPlanningOrEnd(session);
 
@@ -494,16 +495,10 @@ public sealed class CombatSessionService
         };
     }
 
-    internal static TimeSpan ToBoundedCombatDuration(long currentTimeMs)
-    {
-        var boundedMilliseconds = Math.Clamp(currentTimeMs, 0L, (long)TimeSpan.MaxValue.TotalMilliseconds);
-        return TimeSpan.FromMilliseconds(boundedMilliseconds);
-    }
-
     internal static DateTimeOffset GetReplayTimestamp(CombatSession session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        return session.CreatedAt + ToBoundedCombatDuration(session.Combat.CurrentTimeMs);
+        return session.CreatedAt + CombatSession.ToBoundedCombatDuration(session.Combat.CurrentTimeMs);
     }
     
     /// <summary>
