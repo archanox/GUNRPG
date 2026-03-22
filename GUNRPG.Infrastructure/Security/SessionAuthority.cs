@@ -40,6 +40,12 @@ public sealed class SessionAuthority
     /// </param>
     public SignedRunResult Sign(Guid sessionId, Guid playerId, byte[] finalHashBytes)
     {
+        ArgumentNullException.ThrowIfNull(finalHashBytes);
+        if (finalHashBytes.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
+            throw new ArgumentException(
+                $"finalHashBytes must be exactly {System.Security.Cryptography.SHA256.HashSizeInBytes} bytes (SHA-256).",
+                nameof(finalHashBytes));
+
         var payloadHash = AuthorityCrypto.ComputeRunValidationPayloadHash(sessionId, playerId, finalHashBytes);
         var signature = AuthorityCrypto.SignHashedPayload(_privateKey, payloadHash);
         var finalHashHex = Convert.ToHexString(finalHashBytes);
@@ -48,7 +54,8 @@ public sealed class SessionAuthority
 
     /// <summary>
     /// Verifies that a <see cref="SignedRunResult"/> was produced by the given <paramref name="authority"/>.
-    /// Returns <see langword="false"/> if the authority ID does not match or the signature is invalid.
+    /// Returns <see langword="false"/> if the authority ID does not match, the signature is invalid,
+    /// or <see cref="SignedRunResult.FinalHash"/> cannot be decoded as a valid 32-byte hex value.
     /// </summary>
     public static bool VerifySignedRun(SignedRunResult result, Authority authority)
     {
@@ -58,7 +65,19 @@ public sealed class SessionAuthority
         if (!string.Equals(result.AuthorityId, authority.Id, StringComparison.Ordinal))
             return false;
 
-        var finalHashBytes = Convert.FromHexString(result.FinalHash);
+        byte[] finalHashBytes;
+        try
+        {
+            finalHashBytes = Convert.FromHexString(result.FinalHash);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        if (finalHashBytes.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
+            return false;
+
         var payloadHash = AuthorityCrypto.ComputeRunValidationPayloadHash(
             result.SessionId,
             result.PlayerId,

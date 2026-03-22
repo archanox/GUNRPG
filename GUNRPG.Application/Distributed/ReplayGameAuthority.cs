@@ -49,9 +49,12 @@ public sealed class ReplayGameAuthority : IGameAuthority
     public Task SubmitActionAsync(PlayerActionDto action, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(action);
+        ct.ThrowIfCancellationRequested();
 
         lock (_lock)
         {
+            ct.ThrowIfCancellationRequested();
+
             // Step 1: Apply the action to the running state.
             _currentState = _engine.Step(_currentState, action);
             var forwardHash = ComputeHash(_currentState);
@@ -65,6 +68,7 @@ public sealed class ReplayGameAuthority : IGameAuthority
             });
 
             // Step 2: Replay the entire action log from scratch.
+            ct.ThrowIfCancellationRequested();
             var replayedState = ReplayAllActions(_actionLog);
             var replayHash = ComputeHash(replayedState);
 
@@ -88,7 +92,7 @@ public sealed class ReplayGameAuthority : IGameAuthority
     {
         lock (_lock)
         {
-            return _currentState;
+            return CopyState(_currentState);
         }
     }
 
@@ -127,6 +131,13 @@ public sealed class ReplayGameAuthority : IGameAuthority
 
     private static GameStateDto CreateInitialState() =>
         new() { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
+
+    /// <summary>
+    /// Returns a shallow copy of <paramref name="state"/> with a new <see cref="GameStateDto.Operators"/>
+    /// list so callers cannot corrupt internal state by mutating the returned object.
+    /// </summary>
+    private static GameStateDto CopyState(GameStateDto state) =>
+        new() { ActionCount = state.ActionCount, Operators = state.Operators.ToList() };
 
     private static string ComputeHash(GameStateDto state)
     {

@@ -9,6 +9,9 @@ public sealed class SignedRunResult
 {
     private readonly byte[] _signature;
 
+    /// <summary>Expected length of <see cref="FinalHash"/>: 64 hex chars for SHA-256.</summary>
+    public const int FinalHashHexLength = 64;
+
     public SignedRunResult(
         Guid sessionId,
         Guid playerId,
@@ -18,6 +21,10 @@ public sealed class SignedRunResult
     {
         if (string.IsNullOrWhiteSpace(finalHash))
             throw new ArgumentException("FinalHash must not be empty.", nameof(finalHash));
+        if (finalHash.Length != FinalHashHexLength)
+            throw new ArgumentException(
+                $"FinalHash must be a {FinalHashHexLength}-character uppercase hex string (SHA-256).",
+                nameof(finalHash));
         if (string.IsNullOrWhiteSpace(authorityId))
             throw new ArgumentException("AuthorityId must not be empty.", nameof(authorityId));
 
