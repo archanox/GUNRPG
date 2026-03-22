@@ -54,6 +54,8 @@ public static class OfflineCombatReplay
         var sessionService = new CombatSessionService(store);
         foreach (var turn in replayTurns)
         {
+            // SubmitPlayerIntentsAsync is replay-driven: it records the intent and immediately
+            // executes the turn, so no separate Advance call is needed.
             var submitResult = await sessionService.SubmitPlayerIntentsAsync(initialSnapshot.Id, new SubmitIntentsRequest
             {
                 OperatorId = turn.OperatorId == Guid.Empty ? null : turn.OperatorId,
@@ -70,12 +72,6 @@ public static class OfflineCombatReplay
             if (submitResult.Status != ResultStatus.Success)
             {
                 throw new InvalidOperationException($"Offline combat replay intent submission failed: {submitResult.ErrorMessage}");
-            }
-
-            var advanceResult = await sessionService.AdvanceAsync(initialSnapshot.Id, turn.OperatorId == Guid.Empty ? null : turn.OperatorId);
-            if (advanceResult.Status != ResultStatus.Success)
-            {
-                throw new InvalidOperationException($"Offline combat replay advance failed: {advanceResult.ErrorMessage}");
             }
         }
 

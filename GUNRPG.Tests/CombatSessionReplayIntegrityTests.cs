@@ -381,6 +381,7 @@ public sealed class CombatSessionReplayIntegrityTests
 
     /// <summary>
     /// Drives an existing session forward via the service until it either completes or exceeds a turn limit.
+    /// Uses only SubmitPlayerIntentsAsync — no separate Advance step is required.
     /// </summary>
     private static async Task RunSessionToCompletion(CombatSessionService service, Guid sessionId, int maxTurns = 30)
     {
@@ -390,14 +391,12 @@ public sealed class CombatSessionReplayIntegrityTests
             if (!stateResult.IsSuccess) break;
             if (stateResult.Value!.Phase == SessionPhase.Completed) return;
 
-            await service.SubmitPlayerIntentsAsync(sessionId, new SubmitIntentsRequest
+            var submitResult = await service.SubmitPlayerIntentsAsync(sessionId, new SubmitIntentsRequest
             {
                 Intents = new Application.Dtos.IntentDto { Primary = PrimaryAction.Fire }
             });
-
-            var advResult = await service.AdvanceAsync(sessionId);
-            if (!advResult.IsSuccess) break;
-            if (advResult.Value!.Phase == SessionPhase.Completed) return;
+            if (!submitResult.IsSuccess) break;
+            if (submitResult.Value!.Phase == SessionPhase.Completed) return;
         }
     }
 }
