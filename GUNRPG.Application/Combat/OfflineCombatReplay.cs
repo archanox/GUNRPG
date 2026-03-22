@@ -1,8 +1,7 @@
 using System.Text.Json;
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Dtos;
-using GUNRPG.Application.Requests;
-using GUNRPG.Application.Results;
+using GUNRPG.Application.Mapping;
 using GUNRPG.Application.Sessions;
 
 namespace GUNRPG.Application.Combat;
@@ -41,61 +40,50 @@ public static class OfflineCombatReplay
         return snapshot ?? throw new InvalidOperationException("Offline combat replay snapshot is invalid.");
     }
 
-    public static async Task<OfflineCombatReplayResult> ReplayAsync(
+    public static Task<OfflineCombatReplayResult> ReplayAsync(
         string initialCombatSnapshotJson,
         IReadOnlyList<IntentSnapshot> replayTurns)
     {
         ArgumentNullException.ThrowIfNull(replayTurns);
 
         var initialSnapshot = DeserializeCombatSnapshot(initialCombatSnapshotJson);
-        var store = new InMemoryCombatSessionStore();
-        await store.SaveAsync(initialSnapshot);
 
-        var sessionService = new CombatSessionService(store);
+        // Reconstruct the session directly from the initial snapshot and replay every turn using
+        // the service's shared helper.  This avoids the circular call chain that would arise if
+        // ReplayAsync used CombatSessionService.SubmitPlayerIntentsAsync, because SubmitPlayerIntentsAsync
+        // calls ReplayAsync (via FinalizeAsync) for completed sessions.  ExecuteReplayTurn never
+        // calls FinalizeAsync, so no recursion occurs.
+        var session = SessionMapping.FromSnapshot(initialSnapshot);
+        // Set the initial snapshot JSON so the replayed session carries replay integrity metadata.
+        session.SetReplayInitialSnapshotJson(initialCombatSnapshotJson);
+
         foreach (var turn in replayTurns)
         {
-            // SubmitPlayerIntentsAsync is replay-driven: it records the intent and immediately
-            // executes the turn, so no separate Advance call is needed.
-            var submitResult = await sessionService.SubmitPlayerIntentsAsync(initialSnapshot.Id, new SubmitIntentsRequest
-            {
-                OperatorId = turn.OperatorId == Guid.Empty ? null : turn.OperatorId,
-                Intents = new IntentDto
-                {
-                    Primary = turn.Primary,
-                    Movement = turn.Movement,
-                    Stance = turn.Stance,
-                    Cover = turn.Cover,
-                    CancelMovement = turn.CancelMovement
-                }
-            });
-
-            if (submitResult.Status != ResultStatus.Success)
-            {
-                throw new InvalidOperationException($"Offline combat replay intent submission failed: {submitResult.ErrorMessage}");
-            }
+            CombatSessionService.ExecuteReplayTurn(session, turn);
+            if (session.Phase == SessionPhase.Completed) break;
         }
 
-        var finalSession = await sessionService.GetStateAsync(initialSnapshot.Id);
-        if (finalSession.Status != ResultStatus.Success || finalSession.Value == null)
+        if (session.Phase != SessionPhase.Completed)
         {
-            throw new InvalidOperationException(finalSession.ErrorMessage ?? "Offline combat replay did not produce a final session.");
+            throw new InvalidOperationException(
+                $"Offline combat replay did not complete " +
+                $"({replayTurns.Count} turns replayed, final phase: {session.Phase}).");
         }
 
-        var finalSnapshot = await store.LoadAsync(initialSnapshot.Id)
-            ?? throw new InvalidOperationException("Offline combat replay snapshot was not persisted.");
+        var finalSnapshot = SessionMapping.ToSnapshot(session);
+        // Both outcome and FinalSession are derived from the same authoritative post-replay state.
+        // The DTO is produced from the snapshot (not the live session) so that BattleLog is empty,
+        // consistent with GetStateAsync which reconstructs from a snapshot where ExecutedEvents
+        // is ephemeral and not persisted.
+        var finalSession = SessionMapping.ToDtoFromSnapshot(finalSnapshot);
+        var outcome = session.GetOutcome();
 
-        var outcome = await sessionService.GetCombatOutcomeAsync(initialSnapshot.Id);
-        if (outcome.Status != ResultStatus.Success || outcome.Value == null)
+        return Task.FromResult(new OfflineCombatReplayResult
         {
-            throw new InvalidOperationException(outcome.ErrorMessage ?? "Offline combat replay did not produce a combat outcome.");
-        }
-
-        return new OfflineCombatReplayResult
-        {
-            FinalSession = finalSession.Value,
+            FinalSession = finalSession,
             FinalSnapshot = finalSnapshot,
-            Outcome = outcome.Value
-        };
+            Outcome = outcome
+        });
     }
 
     public static OperatorDto ProjectOperatorResult(OperatorDto initialOperator, CombatOutcome outcome)

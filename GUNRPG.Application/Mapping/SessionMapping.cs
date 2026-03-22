@@ -35,6 +35,31 @@ public static class SessionMapping
         };
     }
 
+    /// <summary>
+    /// Creates a <see cref="CombatSessionDto"/> directly from a persisted snapshot.
+    /// The resulting DTO has an empty <c>BattleLog</c> because <c>ExecutedEvents</c> is
+    /// ephemeral state that is not persisted in the snapshot — this is consistent with
+    /// <see cref="CombatSessionService.GetStateAsync"/>, which also reconstructs from a snapshot.
+    /// Use this overload instead of <c>ToDto(session)</c> when you want the DTO to represent
+    /// the stored (persisted) view of a session rather than an in-flight simulation view.
+    /// </summary>
+    public static CombatSessionDto ToDtoFromSnapshot(CombatSessionSnapshot snapshot)
+    {
+        return new CombatSessionDto
+        {
+            Id = snapshot.Id,
+            OperatorId = snapshot.OperatorId,
+            Phase = snapshot.Phase,
+            CurrentTimeMs = snapshot.Combat.CurrentTimeMs,
+            Player = ToDtoFromSnapshot(snapshot.Player),
+            Enemy = ToDtoFromSnapshot(snapshot.Enemy),
+            Pet = ToDtoFromSnapshot(snapshot.Pet),
+            EnemyLevel = snapshot.EnemyLevel,
+            TurnNumber = snapshot.TurnNumber,
+            BattleLog = []
+        };
+    }
+
     public static PlayerStateDto ToDto(Operator op)
     {
         return new PlayerStateDto
@@ -360,6 +385,47 @@ public static class SessionMapping
         return new PetStateSnapshot
         {
             OperatorId = pet.OperatorId,
+            Health = pet.Health,
+            Fatigue = pet.Fatigue,
+            Injury = pet.Injury,
+            Stress = pet.Stress,
+            Morale = pet.Morale,
+            Hunger = pet.Hunger,
+            Hydration = pet.Hydration,
+            LastUpdated = pet.LastUpdated
+        };
+    }
+
+    private static PlayerStateDto ToDtoFromSnapshot(OperatorSnapshot op)
+    {
+        var weapon = CreateWeapon(op.EquippedWeaponName);
+        return new PlayerStateDto
+        {
+            Id = op.Id,
+            Name = op.Name,
+            Health = op.Health,
+            MaxHealth = op.MaxHealth,
+            Stamina = op.Stamina,
+            Fatigue = op.Fatigue,
+            SuppressionLevel = op.SuppressionLevel,
+            IsSuppressed = op.SuppressionLevel >= GUNRPG.Core.Combat.SuppressionModel.SuppressionThreshold,
+            DistanceToOpponent = op.DistanceToOpponent,
+            CurrentAmmo = op.CurrentAmmo,
+            MagazineSize = weapon?.MagazineSize,
+            AimState = op.AimState,
+            MovementState = op.MovementState,
+            CurrentMovement = op.CurrentMovement,
+            CurrentDirection = op.CurrentDirection,
+            CurrentCover = op.CurrentCover,
+            IsMoving = op.MovementEndTimeMs.HasValue,
+            IsAlive = op.Health > 0
+        };
+    }
+
+    private static PetStateDto ToDtoFromSnapshot(PetStateSnapshot pet)
+    {
+        return new PetStateDto
+        {
             Health = pet.Health,
             Fatigue = pet.Fatigue,
             Injury = pet.Injury,
