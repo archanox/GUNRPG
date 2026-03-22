@@ -34,19 +34,26 @@ public sealed class AuthorityValidationPipelineTests
     }
 
     [Fact]
-    public void ValidRun_SignedFromSession_VerifiesWithReplayHash()
+    public void ValidRun_SignedFromSession_VerifiesWithReplayPipeline()
     {
-        // Create a completed session and get the input-based final hash.
+        // Create a session, capture its initial snapshot, then sign the replay-derived hash.
         var session = CombatSession.CreateDefault(seed: 42);
-        session.TransitionTo(SessionPhase.Completed);
-        var finalHashBytes = session.FinalHash!;
+        var initialJson = OfflineCombatReplay.SerializeCombatSnapshot(SessionMapping.ToSnapshot(session));
+
+        // Replay with no turns to get the authoritative final hash.
+        var replayResult = ReplayRunner.Run(initialJson, Array.Empty<IntentSnapshot>());
+        var finalHashBytes = CombatSessionHasher.ComputeStateHash(replayResult.Snapshot);
 
         var sessionAuthority = CreateSessionAuthority();
         var playerId = session.OperatorId.Value;
-
         var signed = sessionAuthority.Sign(session.Id, playerId, finalHashBytes);
 
-        Assert.True(SessionAuthority.VerifySignedRun(signed, sessionAuthority.ToAuthority()));
+        // Full pipeline: replay → hash → compare → verify signature.
+        Assert.True(SessionAuthority.VerifySignedRunWithReplay(
+            signed,
+            sessionAuthority.ToAuthority(),
+            initialJson,
+            Array.Empty<IntentSnapshot>()));
     }
 
     // ──────────────────────────────────────────────────────────────────────
@@ -153,7 +160,7 @@ public sealed class AuthorityValidationPipelineTests
         // Inject a fake turn so the replayed hash differs from the signed hash.
         var fakeTurn = new IntentSnapshot
         {
-            OperatorId = session.Player.Id,
+            OperatorId = session.OperatorId.Value,
             Primary = PrimaryAction.Fire,
             Movement = MovementAction.Stand,
             Stance = StanceAction.None,
@@ -303,9 +310,43 @@ public sealed class AuthorityValidationPipelineTests
             new SignedRunResult(Guid.NewGuid(), Guid.NewGuid(), hash, "auth-1", new byte[32]));
     }
 
-    // ──────────────────────────────────────────────────────────────────────
-    // Helpers
-    // ──────────────────────────────────────────────────────────────────────
+    [Fact]
+    public void SignedRunResult_ThrowsOnWrongHashLength()
+    {
+        // 63-char string — not a valid 32-byte SHA-256 hex representation
+        var shortHex = new string('A', 63);
+        var sig = new byte[64];
+        Assert.Throws<ArgumentException>(() =>
+            new SignedRunResult(Guid.NewGuid(), Guid.NewGuid(), shortHex, "auth-1", sig));
+    }
+
+    [Fact]
+    public void VerifySignedRun_ReturnsFalse_WhenFinalHashIsInvalidHex()
+    {
+        var sessionAuthority = CreateSessionAuthority();
+        var sig = new byte[64];
+        // 64 'Z' characters: valid length but non-hex characters.
+        // The constructor accepts any 64-char string; VerifySignedRun must return false
+        // rather than throw when Convert.FromHexString fails.
+        var nonHexHash = new string('Z', 64);
+        var result = new SignedRunResult(Guid.NewGuid(), Guid.NewGuid(), nonHexHash, sessionAuthority.Id, sig);
+        Assert.False(SessionAuthority.VerifySignedRun(result, sessionAuthority.ToAuthority()));
+    }
+
+    [Fact]
+    public void GetCurrentState_ReturnsIndependentCopy()
+    {
+        var authority = new ReplayGameAuthority(Guid.NewGuid(), new DefaultGameEngine());
+
+        var state1 = authority.GetCurrentState();
+        state1.Operators.Add(new GameStateDto.OperatorSnapshot { OperatorId = Guid.NewGuid(), Name = "injected" });
+
+        // The authority's internal state must not be affected by mutation of the returned copy.
+        var state2 = authority.GetCurrentState();
+        Assert.Empty(state2.Operators);
+    }
+
+
 
     private static SessionAuthority CreateSessionAuthority(string id = "test-authority")
     {
