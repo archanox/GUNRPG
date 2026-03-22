@@ -83,87 +83,138 @@ public sealed class CombatSessionService
     }
 
     /// <summary>
-    /// Submits player intents and immediately resolves the turn via replay.
-    /// This is the sole entry point for combat input — no separate Advance step is required.
+    /// Submits player intents and derives the new session state via full replay of the authoritative
+    /// replay log: <c>state = replay(ReplayTurns + [newIntent], Seed)</c>.
+    /// The stored snapshot is a cache of the replay result — no state is mutated outside this path.
+    /// For sessions without a recorded initial snapshot (legacy), the turn is applied incrementally
+    /// as a fallback.
     /// </summary>
     public async Task<ServiceResult<CombatSessionDto>> SubmitPlayerIntentsAsync(Guid sessionId, SubmitIntentsRequest request)
     {
-        var session = await LoadAsync(sessionId);
-        if (session == null)
+        // 1. Load the current snapshot for validation and replay data.
+        var snapshot = await _store.LoadAsync(sessionId);
+        if (snapshot == null)
         {
             return ServiceResult<CombatSessionDto>.NotFound("Session not found");
         }
 
-        // Validate operator is in Infil mode and session matches the active session before allowing combat actions
-        var modeValidation = await ValidateOperatorInInfilModeAsync(session, request.OperatorId);
+        // 2. Reconstruct session from snapshot for validation only.
+        var validationSession = SessionMapping.FromSnapshot(snapshot);
+
+        // 3. Validate operator is in Infil mode and session matches the active session.
+        var modeValidation = await ValidateOperatorInInfilModeAsync(validationSession, request.OperatorId);
         if (modeValidation != null)
         {
             return ServiceResult<CombatSessionDto>.FromResult(modeValidation);
         }
 
-        if (session.Phase != SessionPhase.Planning)
+        // 4. Validate session phase and combat state.
+        if (validationSession.Phase != SessionPhase.Planning)
         {
             return ServiceResult<CombatSessionDto>.InvalidState("Intents can only be submitted during the Planning phase");
         }
 
-        if (session.Combat.Phase == CombatPhase.Ended)
+        if (validationSession.Combat.Phase == CombatPhase.Ended)
         {
             return ServiceResult<CombatSessionDto>.InvalidState("Combat has already ended");
         }
 
-        var playerIntents = SessionMapping.ToDomainIntent(session.Player.Id, request.Intents);
-        var submission = session.Combat.SubmitIntents(session.Player, playerIntents);
+        // 5. Validate the intent against the current cached state.
+        var playerIntents = SessionMapping.ToDomainIntent(validationSession.Player.Id, request.Intents);
+        var submission = validationSession.Combat.SubmitIntents(validationSession.Player, playerIntents);
         if (!submission.success)
         {
             return ServiceResult<CombatSessionDto>.ValidationError(submission.errorMessage ?? "Intent submission failed");
         }
 
-        var enemyIntents = session.Ai.DecideIntents(session.Enemy, session.Player, session.Combat);
-        var enemySubmission = session.Combat.SubmitIntents(session.Enemy, enemyIntents);
-        if (!enemySubmission.success)
+        // 6. Build the IntentSnapshot that represents this new turn in the replay log.
+        var newTurn = new IntentSnapshot
         {
-            session.Combat.SubmitIntents(session.Enemy, SimultaneousIntents.CreateStop(session.Enemy.Id));
-        }
+            OperatorId = validationSession.Player.Id,
+            Primary = playerIntents.Primary,
+            Movement = playerIntents.Movement,
+            Stance = playerIntents.Stance,
+            Cover = playerIntents.Cover,
+            CancelMovement = playerIntents.CancelMovement
+        };
 
-        // Append player intents to ReplayTurns before execution.
-        // Enemy intents are generated internally by the AI and are not part of the replay record.
-        session.RecordReplayTurn(playerIntents);
-
-        // Immediately execute the turn — replay-driven: no separate Advance step required
-        session.TransitionTo(SessionPhase.Resolving);
-        session.Combat.BeginExecution();
-        ResolveUntilPlanningOrEnd(session);
-
-        if (session.Combat.Phase == CombatPhase.Ended)
+        // 7. Full replay: rebuild session state from the immutable initial snapshot + all
+        //    prior turns + the new turn.  State is never mutated directly; the snapshot cached
+        //    in the store is always the deterministic result of replay(ReplayTurns, Seed).
+        CombatSession replaySession;
+        if (!string.IsNullOrEmpty(snapshot.ReplayInitialSnapshotJson))
         {
-            ApplyPostCombat(session);
-            session.TransitionTo(SessionPhase.Completed);
-            try
+            // Reconstruct from the immutable initial snapshot.
+            replaySession = SessionMapping.FromSnapshot(
+                OfflineCombatReplay.DeserializeCombatSnapshot(snapshot.ReplayInitialSnapshotJson));
+            // Preserve the initial snapshot JSON so FinalizeAsync can compute the replay-based hash.
+            replaySession.SetReplayInitialSnapshotJson(snapshot.ReplayInitialSnapshotJson);
+
+            // Apply every turn: prior turns restore history; the new turn advances state.
+            foreach (var turn in snapshot.ReplayTurns.Append(newTurn))
             {
-                await session.FinalizeAsync();
+                ExecuteReplayTurn(replaySession, turn);
+                if (replaySession.Phase == SessionPhase.Completed) break;
             }
-            catch (Exception ex)
+
+            if (replaySession.Phase == SessionPhase.Completed)
             {
-                return ServiceResult<CombatSessionDto>.InvalidState("Session finalization failed: " + ex.Message);
+                try
+                {
+                    await replaySession.FinalizeAsync();
+                }
+                catch (Exception ex)
+                {
+                    return ServiceResult<CombatSessionDto>.InvalidState("Session finalization failed: " + ex.Message);
+                }
             }
         }
         else
         {
-            session.TransitionTo(SessionPhase.Planning);
-            session.AdvanceTurnCounter();
+            // Legacy fallback for sessions that pre-date the replay system and have no initial snapshot.
+            // All sessions created via CreateSessionAsync carry a ReplayInitialSnapshotJson, so this
+            // path is only exercised for test fixtures that use CombatSession.CreateDefault() directly.
+            replaySession = validationSession;
+            // Player intents were already submitted on validationSession in step 5; submit enemy now.
+            var enemyIntents = replaySession.Ai.DecideIntents(replaySession.Enemy, replaySession.Player, replaySession.Combat);
+            var enemySub = replaySession.Combat.SubmitIntents(replaySession.Enemy, enemyIntents);
+            if (!enemySub.success)
+                replaySession.Combat.SubmitIntents(replaySession.Enemy, SimultaneousIntents.CreateStop(replaySession.Enemy.Id));
+
+            replaySession.RecordReplayTurn(playerIntents);
+            replaySession.TransitionTo(SessionPhase.Resolving);
+            replaySession.Combat.BeginExecution();
+            ResolveUntilPlanningOrEnd(replaySession);
+
+            if (replaySession.Combat.Phase == CombatPhase.Ended)
+            {
+                replaySession.TransitionTo(SessionPhase.Completed);
+                try
+                {
+                    await replaySession.FinalizeAsync();
+                }
+                catch (Exception ex)
+                {
+                    return ServiceResult<CombatSessionDto>.InvalidState("Session finalization failed: " + ex.Message);
+                }
+            }
+            else
+            {
+                replaySession.TransitionTo(SessionPhase.Planning);
+                replaySession.AdvanceTurnCounter();
+            }
         }
 
-        session.RecordAction();
-        await SaveAsync(session);
+        // 8. Persist the replay-derived state.
+        replaySession.RecordAction();
+        await SaveAsync(replaySession);
 
-        // Replicate the action through the distributed authority for P2P state verification.
-        // Sessions without an operator (legacy/test data created without OperatorId) are skipped
-        // because the distributed ledger tracks actions per operator.
-        if (_gameAuthority != null && !session.OperatorId.IsEmpty)
+        // 9. Notify the distributed authority for P2P state verification.
+        if (_gameAuthority != null && !replaySession.OperatorId.IsEmpty)
         {
             await _gameAuthority.SubmitActionAsync(new PlayerActionDto
             {
-                OperatorId = session.OperatorId.Value,
+                OperatorId = replaySession.OperatorId.Value,
                 Primary = request.Intents.Primary,
                 Movement = request.Intents.Movement,
                 Stance = request.Intents.Stance,
@@ -172,19 +223,26 @@ public sealed class CombatSessionService
             });
         }
 
-        return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(session));
+        return ServiceResult<CombatSessionDto>.Success(SessionMapping.ToDto(replaySession));
     }
 
     /// <summary>
     /// Returns the current session state.
-    /// The advance step is now handled automatically by <see cref="SubmitPlayerIntentsAsync"/>;
-    /// this method is kept for backwards compatibility and performs no simulation.
+    /// Combat resolution is now handled atomically by <see cref="SubmitPlayerIntentsAsync"/>.
+    /// This method is kept for backwards compatibility only; the <c>callerOperatorId</c> parameter
+    /// is accepted but intentionally ignored — no simulation or validation is performed.
     /// </summary>
     public async Task<ServiceResult<CombatSessionDto>> AdvanceAsync(Guid sessionId, Guid? callerOperatorId = null)
     {
         return await GetStateAsync(sessionId);
     }
 
+    /// <summary>
+    /// Applies a pet input to the session. Pet state updates are side-channel mutations tracked
+    /// independently of the combat replay log. They do not affect <see cref="CombatSession.FinalHash"/>
+    /// or the deterministic simulation output; they represent companion welfare over real time
+    /// and are not required for combat replay integrity.
+    /// </summary>
     public async Task<ServiceResult<PetStateDto>> ApplyPetInputAsync(Guid sessionId, PetInput input, DateTimeOffset now)
     {
         var session = await LoadAsync(sessionId);
@@ -277,6 +335,74 @@ public sealed class CombatSessionService
             // For any other unexpected error, fail closed (reject action) to ensure security
             return ServiceResult.InvalidState($"Failed to validate operator mode: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// Executes one combat turn directly on a <see cref="CombatSession"/> domain object, without
+    /// any service-layer concerns. Used by both the replay loop inside
+    /// <see cref="SubmitPlayerIntentsAsync"/> and by <see cref="OfflineCombatReplay.ReplayAsync"/>.
+    /// <para>
+    /// <b>Accessibility:</b> <c>internal</c> (not <c>private</c>) so that
+    /// <see cref="OfflineCombatReplay"/>, which lives in a sibling namespace within the same
+    /// assembly, can call it directly without going through the public service API.
+    /// Callers outside <c>GUNRPG.Application</c> must use <see cref="SubmitPlayerIntentsAsync"/>
+    /// or <see cref="OfflineCombatReplay.ReplayAsync"/> instead.
+    /// </para>
+    /// <para>
+    /// <b>FinalizeAsync is intentionally NOT called here.</b>  The caller is responsible for
+    /// invoking <see cref="CombatSession.FinalizeAsync"/> after the full replay loop completes,
+    /// which upgrades the interim input-based <c>FinalHash</c> to the canonical
+    /// <c>hash(replay(ReplayTurns, Seed))</c>.  Calling it here would create a recursive chain:
+    /// <c>FinalizeAsync → OfflineCombatReplay.ReplayAsync → ExecuteReplayTurn → FinalizeAsync</c>.
+    /// </para>
+    /// </summary>
+    internal static void ExecuteReplayTurn(CombatSession session, IntentSnapshot turn)
+    {
+        if (session.Phase == SessionPhase.Completed)
+            return;
+
+        // Player intents are keyed to the session player; enemy intents are AI-generated and
+        // are not part of the replay record.
+        var playerIntents = new SimultaneousIntents(session.Player.Id)
+        {
+            Primary = turn.Primary,
+            Movement = turn.Movement,
+            Stance = turn.Stance,
+            Cover = turn.Cover,
+            CancelMovement = turn.CancelMovement,
+            SubmittedAtMs = turn.SubmittedAtMs
+        };
+
+        var submission = session.Combat.SubmitIntents(session.Player, playerIntents);
+        if (!submission.success)
+            throw new InvalidOperationException(
+                $"Replay turn ({turn.Primary}) intent submission failed: {submission.errorMessage}");
+
+        var enemyIntents = session.Ai.DecideIntents(session.Enemy, session.Player, session.Combat);
+        var enemySubmission = session.Combat.SubmitIntents(session.Enemy, enemyIntents);
+        if (!enemySubmission.success)
+            session.Combat.SubmitIntents(session.Enemy, SimultaneousIntents.CreateStop(session.Enemy.Id));
+
+        // Append the player intent to ReplayTurns before transitioning (RecordReplayTurn throws
+        // when Phase == Completed).
+        session.RecordReplayTurn(playerIntents);
+        session.TransitionTo(SessionPhase.Resolving);
+        session.Combat.BeginExecution();
+        ResolveUntilPlanningOrEnd(session); // ApplyPostCombat is called here when CombatPhase.Ended
+
+        if (session.Combat.Phase == CombatPhase.Ended)
+        {
+            // Sets the interim input-based FinalHash; caller must invoke FinalizeAsync to upgrade
+            // it to the replay-based hash.
+            session.TransitionTo(SessionPhase.Completed);
+        }
+        else
+        {
+            session.TransitionTo(SessionPhase.Planning);
+            session.AdvanceTurnCounter();
+        }
+
+        session.RecordAction();
     }
 
     private static void ResolveUntilPlanningOrEnd(CombatSession session)
