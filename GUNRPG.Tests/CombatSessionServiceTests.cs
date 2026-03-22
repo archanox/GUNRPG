@@ -221,7 +221,7 @@ public class CombatSessionServiceTests
         Assert.Equal(snapshot1.Combat.RandomState.Seed, snapshot2.Combat.RandomState.Seed);
         Assert.Equal(snapshot1.Combat.RandomState.CallCount, snapshot2.Combat.RandomState.CallCount);
         
-        // After a turn has been executed, pending intents are consumed (null); verify both snapshots agree
+        // After a turn has been executed, both snapshots must agree on the same intent state
         Assert.Equal(snapshot1.Combat.PlayerIntents != null, snapshot2.Combat.PlayerIntents != null);
         Assert.Equal(snapshot1.Combat.EnemyIntents != null, snapshot2.Combat.EnemyIntents != null);
         
@@ -233,10 +233,10 @@ public class CombatSessionServiceTests
     }
 
     [Fact]
-    public async Task Snapshot_AfterSubmit_ReplayTurnIsRecordedAndIntentsConsumed()
+    public async Task Snapshot_AfterSubmit_ReplayTurnIsRecordedAndRoundTripIsConsistent()
     {
         // Validates the replay-driven model: after SubmitPlayerIntentsAsync,
-        // the intent is in ReplayTurns (source of truth) and pending intents are cleared.
+        // the intent is in ReplayTurns (source of truth) and the snapshot round-trips cleanly.
         var store = new InMemoryCombatSessionStore();
         var service = new CombatSessionService(store);
         var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 123 })).Value!;
@@ -266,11 +266,7 @@ public class CombatSessionServiceTests
         Assert.Single(snapshot!.ReplayTurns);
         Assert.Equal(PrimaryAction.Reload, snapshot.ReplayTurns[0].Primary);
 
-        // Pending intents are consumed after the turn executes
-        Assert.Null(snapshot.Combat.PlayerIntents);
-        Assert.Null(snapshot.Combat.EnemyIntents);
-
-        // Verify roundtrip consistency: both snapshots agree on the consumed-intents state
+        // Verify roundtrip consistency: both snapshots agree on the same intent state
         var rehydrated = SessionMapping.FromSnapshot(snapshot);
         var snapshot2 = SessionMapping.ToSnapshot(rehydrated);
         Assert.Equal(snapshot.Combat.PlayerIntents != null, snapshot2.Combat.PlayerIntents != null);

@@ -125,7 +125,8 @@ public sealed class CombatSessionService
             session.Combat.SubmitIntents(session.Enemy, SimultaneousIntents.CreateStop(session.Enemy.Id));
         }
 
-        // Append player intents to ReplayTurns before execution so every state change is logged
+        // Append player intents to ReplayTurns before execution.
+        // Enemy intents are generated internally by the AI and are not part of the replay record.
         session.RecordReplayTurn(playerIntents);
 
         // Immediately execute the turn — replay-driven: no separate Advance step required
