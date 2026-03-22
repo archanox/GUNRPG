@@ -26,7 +26,44 @@ public static class OfflineCombatReplay
     public static string ComputeCombatSnapshotHash(CombatSessionDto session)
     {
         ArgumentNullException.ThrowIfNull(session);
-        return OfflineMissionHashing.ComputeSnapshotHash(JsonSerializer.Serialize(session, JsonOptions));
+        var pureCombatState = new
+        {
+            session.Id,
+            session.Phase,
+            session.CurrentTimeMs,
+            session.EnemyLevel,
+            session.TurnNumber,
+            Player = new
+            {
+                session.Player.Id,
+                session.Player.Health,
+                session.Player.MaxHealth,
+                session.Player.CurrentAmmo,
+                session.Player.DistanceToOpponent,
+                session.Player.AimState,
+                session.Player.MovementState,
+                session.Player.CurrentMovement,
+                session.Player.CurrentDirection,
+                session.Player.CurrentCover,
+                session.Player.IsAlive
+            },
+            Enemy = new
+            {
+                session.Enemy.Id,
+                session.Enemy.Health,
+                session.Enemy.MaxHealth,
+                session.Enemy.CurrentAmmo,
+                session.Enemy.DistanceToOpponent,
+                session.Enemy.AimState,
+                session.Enemy.MovementState,
+                session.Enemy.CurrentMovement,
+                session.Enemy.CurrentDirection,
+                session.Enemy.CurrentCover,
+                session.Enemy.IsAlive
+            }
+        };
+
+        return OfflineMissionHashing.ComputeSnapshotHash(JsonSerializer.Serialize(pureCombatState, JsonOptions));
     }
 
     public static CombatSessionSnapshot DeserializeCombatSnapshot(string snapshotJson)
@@ -46,22 +83,8 @@ public static class OfflineCombatReplay
     {
         ArgumentNullException.ThrowIfNull(replayTurns);
 
-        var initialSnapshot = DeserializeCombatSnapshot(initialCombatSnapshotJson);
-
-        // Reconstruct the session directly from the initial snapshot and replay every turn using
-        // the service's shared helper.  This avoids the circular call chain that would arise if
-        // ReplayAsync used CombatSessionService.SubmitPlayerIntentsAsync, because SubmitPlayerIntentsAsync
-        // calls ReplayAsync (via FinalizeAsync) for completed sessions.  ExecuteReplayTurn never
-        // calls FinalizeAsync, so no recursion occurs.
-        var session = SessionMapping.FromSnapshot(initialSnapshot);
-        // Set the initial snapshot JSON so the replayed session carries replay integrity metadata.
-        session.SetReplayInitialSnapshotJson(initialCombatSnapshotJson);
-
-        foreach (var turn in replayTurns)
-        {
-            CombatSessionService.ExecuteReplayTurn(session, turn);
-            if (session.Phase == SessionPhase.Completed) break;
-        }
+        var simulationState = ReplayRunner.Run(initialCombatSnapshotJson, replayTurns);
+        var session = simulationState.Session;
 
         if (session.Phase != SessionPhase.Completed)
         {
@@ -70,13 +93,13 @@ public static class OfflineCombatReplay
                 $"({replayTurns.Count} turns replayed, final phase: {session.Phase}).");
         }
 
-        var finalSnapshot = SessionMapping.ToSnapshot(session);
+        var finalSnapshot = simulationState.Snapshot;
         // Both outcome and FinalSession are derived from the same authoritative post-replay state.
         // The DTO is produced from the snapshot (not the live session) so that BattleLog is empty,
         // consistent with GetStateAsync which reconstructs from a snapshot where ExecutedEvents
         // is ephemeral and not persisted.
         var finalSession = SessionMapping.ToDtoFromSnapshot(finalSnapshot);
-        var outcome = session.GetOutcome();
+        var outcome = simulationState.Outcome!;
 
         return Task.FromResult(new OfflineCombatReplayResult
         {
