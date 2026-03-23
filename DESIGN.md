@@ -1,4 +1,4 @@
-# Design Document Summary
+# Design Document
 
 ## System Overview
 
@@ -85,6 +85,27 @@ GUNRPG implements a discrete event simulation combat system where actions are re
 - Reduces complexity without losing depth
 - Easier to visualize in text interface
 
+### 9. Event-Sourced Operator Progression
+
+**Decision**: Operator state is derived by replaying an append-only event log with SHA-256 hash chaining.
+
+**Rationale**:
+- Complete audit trail — every progression change is recorded
+- Tamper detection — hash chaining breaks on corruption, allowing safe rollback
+- Time-travel debugging — rebuild state at any historical point
+- Clear transactional boundary — only exfil path may commit events; combat uses snapshots
+
+### 10. Infil/Exfil Boundary
+
+**Decision**: Combat (infil) uses a snapshot of operator stats; the exfil path is the only place progression events can be committed.
+
+**Rationale**:
+- Prevents combat logic from corrupting operator progression
+- Combat outcomes flow as a value object (CombatOutcome) to the exfil service
+- Enables safe server-authoritative outcome processing
+
+See [INFIL_EXFIL_BOUNDARY.md](INFIL_EXFIL_BOUNDARY.md) for detailed documentation.
+
 ## System Architecture
 
 ### Module Structure
@@ -118,10 +139,11 @@ Each module has single responsibility:
 
 - **Time System**: Clock advancement, reset
 - **Event Queue**: Ordering, removal, determinism
-- **Operators**: State management, regeneration, damage
-- **Weapons**: Damage calculation, falloff, headshots
-- **Combat**: Intent submission, phase transitions
+- **Operators**: State management, regeneration, damage, event sourcing, exfil service
+- **Weapons**: Damage calculation, falloff, body-part overrides
+- **Combat**: Intent submission, phase transitions, replay integrity
 - **Rest System**: Fatigue, recovery, readiness
+- **Session Replay**: Deterministic hash verification, desync detection
 
 ### Integration Tests
 
@@ -144,14 +166,6 @@ Each module has single responsibility:
 - Minimal overhead
 
 ## Future Extensions
-
-### Cover System
-
-Would add:
-- Cover positions at specific distances
-- Line-of-sight checks
-- Intent visibility rules
-- Flanking mechanics
 
 ### Multiple Opponents
 
@@ -192,6 +206,6 @@ The foundation successfully implements:
 - ✅ Raw weapon stats with no abstraction
 - ✅ Tactical decision-making through reaction windows
 - ✅ Clean separation of concerns
-- ✅ Comprehensive test coverage (38 tests passing)
-
-Ready for expansion into full game loop with campaign, multiple weapons, and advanced features.
+- ✅ Event-sourced operator progression with tamper detection
+- ✅ Cover and suppression mechanics
+- ✅ Comprehensive test coverage (1000+ tests passing)

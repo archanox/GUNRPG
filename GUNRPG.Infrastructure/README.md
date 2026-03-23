@@ -1,6 +1,6 @@
 # GUNRPG.Infrastructure
 
-Infrastructure layer for GUNRPG, providing concrete implementations of persistence and external service abstractions.
+Infrastructure layer for GUNRPG, providing concrete implementations of persistence, identity, security, and distributed transport abstractions.
 
 ## Overview
 
@@ -21,6 +21,17 @@ Embedded document database implementation of `ICombatSessionStore` using LiteDB.
 - Automatic enum serialization to strings for readability
 - No annotations required on domain objects
 - Schema migration support via LiteDB.Migration
+- Hash validation of completed sessions on load
+
+#### LiteDbOperatorEventStore
+
+Embedded document database implementation of `IOperatorEventStore` for operator event sourcing.
+
+**Features:**
+- Append-only event log per operator
+- SHA-256 hash chain verification on every load
+- Automatic rollback to last valid event on corruption
+- Indexes on OperatorId and SequenceNumber for performance
 
 #### LiteDbMigrations
 
@@ -89,11 +100,66 @@ To switch to in-memory storage for testing:
 }
 ```
 
+### Identity
+
+Self-hosted WebAuthn + JWT authentication using LiteDB for all state. No external identity provider required.
+
+| Class | Description |
+|---|---|
+| `ApplicationUser` | User account model |
+| `LiteDbUserStore` | Persists user accounts to LiteDB |
+| `LiteDbWebAuthnStore` | Persists WebAuthn credentials to LiteDB |
+| `JwtTokenService` | Issues and validates Ed25519 JWT access tokens and refresh tokens |
+| `WebAuthnService` | Handles FIDO2 registration and authentication ceremonies |
+| `DeviceCodeService` | Implements RFC 8628 device authorization grant for console clients |
+
+See [docs/IDENTITY.md](../docs/IDENTITY.md) for configuration and API reference.
+
+### Security
+
+Authority and session signing infrastructure for tamper-evident game run validation.
+
+| Class | Description |
+|---|---|
+| `SessionAuthority` | Signs completed sessions with Ed25519 via `AuthorityCrypto` |
+| `SignedRunResult` | Holds SessionId/PlayerId/FinalHash/AuthorityId/Signature |
+| `RunReplayEngine` | Verifies signed runs via replay → hash → signature check |
+| `QuorumPolicy` / `QuorumValidator` | Multi-authority quorum validation |
+| `AuthorityRoot` / `AuthorityState` | Authority key management and state |
+| `ServerIdentity` / `ServerCertificate` | Node identity and certificate issuance |
+
+### Distributed / Backend
+
+Infrastructure for offline and online play modes and P2P transport.
+
+| Class | Description |
+|---|---|
+| `OfflineGameBackend` | Runs sessions locally without an API server |
+| `OnlineGameBackend` | Delegates to a remote GUNRPG.Api instance |
+| `GameBackendResolver` | Selects the appropriate backend based on configuration |
+| `ExfilSyncService` | Syncs offline mission results to an online node |
+| `LibP2pPeerService` | libp2p-based peer discovery and transport |
+| `Libp2pLockstepTransport` | Lockstep combat transport over libp2p |
+| `InMemoryLockstepTransport` | In-process lockstep transport for testing |
+
+### Ledger
+
+Append-only game event ledger for audit and gossip.
+
+| Class | Description |
+|---|---|
+| `RunLedger` | Ordered ledger of signed run results |
+| `RunLedgerEntry` / `RunLedgerMutation` | Ledger entries and mutations |
+| `LedgerGameStateProjector` | Projects ledger into current game state |
+| `MerkleSkipIndex` | Fast skip-list index for Merkle proofs |
+| `LedgerGossipService` | Gossips new ledger entries to peers |
+| `LedgerSyncEngine` | Synchronizes ledger with peers |
+
 ## Design Principles
 
 1. **Separation of Concerns**: LiteDB types never leak into Core or Application layers
 2. **Configuration-Driven**: Store selection via appsettings.json
-3. **Dependency Injection**: Singleton lifetime for database connection
+3. **Dependency Injection**: Singleton lifetime for database connections
 4. **Clean Architecture**: Infrastructure depends on Application, never the reverse
 5. **Thread Safety**: All operations are safe for concurrent use
 
@@ -101,24 +167,14 @@ To switch to in-memory storage for testing:
 
 - `LiteDB` (5.0.21): Embedded NoSQL document database
 - `LiteDB.Migration` (0.0.10): Schema migration framework for LiteDB
-- `Microsoft.Extensions.Configuration.Abstractions`: Configuration support
-- `Microsoft.Extensions.DependencyInjection.Abstractions`: DI support
-- `Microsoft.Extensions.Options.ConfigurationExtensions`: Options pattern support
+- `Fido2.Net` / `Fido2.AspNet`: WebAuthn/FIDO2 library
+- `BouncyCastle.Cryptography`: Ed25519 key generation and signing
+- `Microsoft.Extensions.*`: Configuration, DI, options pattern support
 
 ## Testing
 
-Tests are located in `GUNRPG.Tests/LiteDbCombatSessionStoreTests.cs` and verify:
-- Basic CRUD operations
-- Nested object serialization
-- Enum handling
-- Concurrent access
-- Update semantics
-
-## Future Enhancements
-
-Potential future additions to this project:
-- Database migration utilities
-- Backup and restore tools
-- Session replay functionality
-- Export/import capabilities
-- Alternative storage providers (SQL, cloud storage)
+Tests are located in `GUNRPG.Tests/` and verify:
+- `LiteDbCombatSessionStoreTests` — Basic CRUD, nested object serialization, enum handling, concurrent access
+- `LiteDbOperatorEventStoreTests` — Event append, hash chain verification, rollback on corruption
+- `RunReplayEngineTests` — Session signing and replay verification
+- `QuorumValidatorTests` — Multi-authority quorum rules

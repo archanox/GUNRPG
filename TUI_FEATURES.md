@@ -1,10 +1,10 @@
-# GUNRPG Console TUI - New Features Documentation
+# GUNRPG Console TUI - Features
 
-This document showcases the new features added to the GUNRPG console TUI.
+This document describes the features available in the GUNRPG console TUI.
 
 ## Overview
 
-The following features have been added to complete the infil/exfil flow:
+The following features are available in the console client to support the full infil/exfil flow:
 
 1. **Change Loadout** - Switch weapons at base
 2. **Treat Wounds** - Heal operator at base
@@ -253,46 +253,18 @@ All new features properly enforce the operator state machine:
 - "Cannot treat wounds while in Infil mode"
 - "Cannot unlock perk while in Infil mode"
 
-## Testing
-
-All features have been tested:
-- ✓ Build succeeds with 0 errors
-- ✓ All 167 tests pass
-- ✓ CodeQL security scan: 0 vulnerabilities
-- ✓ Manual API endpoint testing
-- ✓ Code review completed and feedback addressed
-
 ## Implementation Details
 
-**Files Modified:**
-- `GUNRPG.ConsoleClient/Program.cs` - Added 4 new screens and helper methods
+### Screens
 
-**New Screens Added:**
-1. `BuildChangeLoadout()` - Weapon selection screen
-2. `BuildTreatWounds()` - Healing selection screen
-3. `BuildUnlockPerk()` - Perk selection screen
-4. `BuildAbortMission()` - Mission abort confirmation screen
+- `BuildChangeLoadout()` — Weapon selection screen
+- `BuildTreatWounds()` — Healing selection screen
+- `BuildUnlockPerk()` — Perk selection screen
+- `BuildAbortMission()` — Mission abort confirmation screen
 
-**Helper Methods Added:**
-1. `ChangeLoadout(string weaponName)` - API call to change loadout
-2. `TreatWounds(float healthAmount)` - API call to heal operator
-3. `UnlockPerk(string perkName)` - API call to unlock perk
-4. `AbortMission()` - API call to abort mission and trigger exfil failure
+### API Endpoints
 
-**Code Quality:**
-- Proper error handling with user-friendly messages
-- Consistent UI patterns with existing screens
-- Smart option filtering (e.g., heal amounts based on remaining health)
-- Clear confirmation dialogs for destructive actions
-- Explanatory comments for non-obvious API usage
-
-## Conclusion
-
-The GUNRPG console TUI now has complete support for:
-- ✓ Full infil/exfil flow
-- ✓ Mission sessions with combat
-- ✓ All Base mode operator management features
-- ✓ Mission abort capability
-- ✓ State machine enforcement at UI level
-
-All requirements from the problem statement are met!
+- `POST /operators/{id}/loadout` — Change loadout
+- `POST /operators/{id}/wounds/treat` — Treat wounds
+- `POST /operators/{id}/perks` — Unlock perk
+- `POST /operators/{id}/infil/outcome` — Abort mission (triggers exfil failure)

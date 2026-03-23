@@ -250,17 +250,14 @@ When appending events:
 ## Future Enhancements
 
 ### Planned Features
-- **Multi-player sync** - Events can be synced across clients
-- **Replay system** - Rebuild operator state at any point in time
-- **Digital signatures** - Add cryptographic signing for authentication
+- **Multi-player sync** - Events can be synced across clients (lockstep P2P transport foundation exists)
 - **Conflict resolution** - Handle concurrent modifications gracefully
 - **Event migrations** - Versioning and schema evolution
 
-### Not Included Yet
-- ❌ Cryptographic keys (hash-only for now)
-- ❌ Authentication/authorization
-- ❌ Network sync
-- ❌ Conflict resolution for concurrent edits
+### Already Implemented
+- ✅ **Replay system** - `ReplayRunner` rebuilds operator-combat state from stored replay turns
+- ✅ **Cryptographic signing** - `SessionAuthority` signs completed sessions with Ed25519; `SignedRunResult` carries the signature for cross-node verification
+- ✅ **Authentication/authorization** - Self-hosted WebAuthn + Ed25519 JWT (see [docs/IDENTITY.md](docs/IDENTITY.md))
 
 ## Testing
 
@@ -269,8 +266,10 @@ The implementation includes comprehensive tests:
 - `OperatorAggregateTests` - Event replay, state derivation, streak tracking, death handling, rollback
 - `LiteDbOperatorEventStoreTests` - Persistence, integrity checks, rollback behavior
 - `OperatorExfilServiceTests` - Service operations, validation, dead operator constraints
+- `OperatorServiceTests` - Application service, mode transitions, infil flow
+- `InfilVictoryFlowTests` - Post-victory exfil, multi-combat infil scenarios
 
-All 77 operator tests pass, ensuring the boundary is maintained correctly.
+These tests ensure the boundary is maintained correctly.
 
 ## Summary
 
