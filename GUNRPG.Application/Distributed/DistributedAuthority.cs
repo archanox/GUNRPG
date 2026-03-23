@@ -94,7 +94,7 @@ public sealed class DistributedAuthority : IGameAuthority
         }
 
         // Register pending action
-        var pending = new PendingAction(action, proposedSeq, connectedPeers);
+        var pending = new PendingAction(clonedAction, proposedSeq, connectedPeers);
         lock (_lock)
         {
             _pendingActions[clonedAction.ActionId] = pending;

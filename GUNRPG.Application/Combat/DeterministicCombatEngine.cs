@@ -135,8 +135,7 @@ public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
     private static IEnumerable<PrimaryAction> GetPreferredPrimaryActions(Operator player)
     {
         if (player.EquippedWeapon != null &&
-            player.CurrentAmmo <= 0 &&
-            player.CurrentAmmo < player.EquippedWeapon.MagazineSize)
+            player.CurrentAmmo <= 0)
         {
             yield return PrimaryAction.Reload;
         }
