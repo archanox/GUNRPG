@@ -41,7 +41,8 @@ public sealed class DefaultGameEngine : IDeterministicGameEngine
         GameStateDto.CombatSessionState? existingSession,
         PlayerActionDto action)
     {
-        var snapshot = ReplayAuthoritativeSnapshot(existingSession, action);
+        var replayState = ReplayAuthoritativeState(existingSession, action);
+        var snapshot = replayState.Snapshot;
         var snapshotHash = Convert.ToHexString(CombatSessionHasher.ComputeStateHash(snapshot));
 
         return new GameStateDto.CombatSessionState
@@ -49,11 +50,12 @@ public sealed class DefaultGameEngine : IDeterministicGameEngine
             SessionId = snapshot.Id,
             OperatorId = snapshot.OperatorId,
             Snapshot = snapshot,
-            SnapshotHash = snapshotHash
+            SnapshotHash = snapshotHash,
+            Outcome = replayState.Outcome
         };
     }
 
-    private static CombatSessionSnapshot ReplayAuthoritativeSnapshot(
+    private static ReplaySimulationState ReplayAuthoritativeState(
         GameStateDto.CombatSessionState? existingSession,
         PlayerActionDto action)
     {
@@ -80,7 +82,22 @@ public sealed class DefaultGameEngine : IDeterministicGameEngine
             replayTurns = [ToReplayTurn(action)];
         }
 
-        return ReplayRunner.Run(initialSnapshotJson, replayTurns).Snapshot;
+        var replayState = ReplayRunner.Run(initialSnapshotJson, replayTurns);
+        var snapshot = replayState.Snapshot;
+
+        if (snapshot.OperatorId != action.OperatorId)
+        {
+            throw new InvalidOperationException(
+                $"Replay snapshot operator mismatch. Expected '{action.OperatorId}', got '{snapshot.OperatorId}'.");
+        }
+
+        if (action.SessionId.HasValue && snapshot.Id != action.SessionId.Value)
+        {
+            throw new InvalidOperationException(
+                $"Replay snapshot session mismatch. Expected '{action.SessionId}', got '{snapshot.Id}'.");
+        }
+
+        return replayState;
     }
 
     private static CombatSessionSnapshot CreateInitialSnapshot(PlayerActionDto action)
@@ -307,9 +324,7 @@ public sealed class DefaultGameEngine : IDeterministicGameEngine
     {
         var snapshot = sessionState.Snapshot;
         var player = snapshot.Player;
-        var outcome = snapshot.Phase == SessionPhase.Completed
-            ? ReplayRunner.Run(snapshot.ReplayInitialSnapshotJson, snapshot.ReplayTurns).Outcome
-            : null;
+        var outcome = sessionState.Outcome;
 
         return new GameStateDto.OperatorSnapshot
         {

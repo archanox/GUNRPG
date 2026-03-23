@@ -132,6 +132,20 @@ public sealed class DeterministicCombatEngineTests
     }
 
     [Fact]
+    public void Execute_WithEmptyMagazine_ReloadsInsteadOfThrowing()
+    {
+        var snapshot = CreateTestOperator();
+        snapshot.EquippedWeaponName = "STURMWOLF 45";
+        snapshot.LockedLoadout = "STURMWOLF 45";
+        snapshot.CurrentHealth = 100f;
+
+        var result = _engine.Execute(snapshot, 42);
+
+        Assert.NotNull(result);
+        Assert.NotEmpty(result.BattleLog);
+    }
+
+    [Fact]
     public void Execute_DifferentWeapons_ProduceDifferentReplayBackedResults()
     {
         var rifleSnapshot = CreateTestOperator();
