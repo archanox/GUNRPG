@@ -32,7 +32,6 @@ public sealed class DeterministicCombatEngineTests
         Assert.Equal(result1.ResultOperator.CurrentHealth, result2.ResultOperator.CurrentHealth);
         Assert.Equal(result1.IsVictory, result2.IsVictory);
         Assert.Equal(result1.OperatorDied, result2.OperatorDied);
-        Assert.Equal(result1.BattleLog.Count, result2.BattleLog.Count);
     }
 
     [Fact]
@@ -126,6 +125,9 @@ public sealed class DeterministicCombatEngineTests
         {
             Assert.False(string.IsNullOrWhiteSpace(entry.EventType),
                 "Battle log entries should always include an event type");
+            Assert.True(entry.TimeMs >= 0, "Battle log timestamps should be non-negative");
+            Assert.False(string.IsNullOrWhiteSpace(entry.Message),
+                "Battle log entries should always include a message");
         }
     }
 

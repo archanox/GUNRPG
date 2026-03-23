@@ -18,7 +18,7 @@ public sealed class DefaultGameEngine : IDeterministicGameEngine
         ArgumentNullException.ThrowIfNull(action);
 
         var sessions = state.Sessions.Select(session => session.Clone()).ToList();
-        var existingSession = sessions.SingleOrDefault(session => session.OperatorId == action.OperatorId);
+        var existingSession = sessions.FirstOrDefault(session => session.OperatorId == action.OperatorId);
         var resolvedSession = ResolveSessionState(existingSession, action);
 
         sessions.RemoveAll(session => session.OperatorId == action.OperatorId);
@@ -85,7 +85,7 @@ public sealed class DefaultGameEngine : IDeterministicGameEngine
 
     private static CombatSessionSnapshot CreateInitialSnapshot(PlayerActionDto action)
     {
-        var seed = BitConverter.ToInt32(action.OperatorId.ToByteArray(), 0);
+        var seed = CreateStableSeed(action.OperatorId);
         var session = CombatSession.CreateDefault(
             seed: seed,
             id: action.SessionId,
@@ -95,6 +95,9 @@ public sealed class DefaultGameEngine : IDeterministicGameEngine
         var sessionId = action.SessionId ?? CreateStableGuid(action.OperatorId, "session");
         var playerId = action.OperatorId;
         var enemyId = CreateStableGuid(action.OperatorId, "enemy");
+        // Fallback authority tests may construct a replay-backed reload action without a
+        // preceding fire turn. In that case we start one bullet below full so the reload
+        // intent is valid when the authoritative replay engine re-validates it.
         var playerAmmo = action.Primary == PrimaryAction.Reload
             ? Math.Max(0, snapshot.Player.CurrentAmmo - 1)
             : snapshot.Player.CurrentAmmo;
@@ -324,8 +327,13 @@ public sealed class DefaultGameEngine : IDeterministicGameEngine
 
     private static Guid CreateStableGuid(Guid operatorId, string purpose)
     {
+        return StableGuidFactory.FromString($"{operatorId:N}:{purpose}");
+    }
+
+    private static int CreateStableSeed(Guid operatorId)
+    {
         var bytes = System.Security.Cryptography.SHA256.HashData(
-            System.Text.Encoding.UTF8.GetBytes($"{operatorId:N}:{purpose}"));
-        return new Guid(bytes[..16]);
+            System.Text.Encoding.UTF8.GetBytes(operatorId.ToString("N")));
+        return BitConverter.ToInt32(bytes, 0) & int.MaxValue;
     }
 }

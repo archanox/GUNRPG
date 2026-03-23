@@ -17,6 +17,8 @@ internal static class AuthorityActionFactory
     {
         var session = CombatSession.CreateDefault(seed: seed, operatorId: operatorId);
         var snapshot = SessionMapping.ToSnapshot(session);
+        // When the very first authoritative turn is Reload, prime the snapshot with one
+        // bullet missing so the replay engine accepts the reload intent as valid.
         if (primaries.FirstOrDefault() == PrimaryAction.Reload)
         {
             snapshot = WithPlayerAmmo(snapshot, Math.Max(0, snapshot.Player.CurrentAmmo - 1));
