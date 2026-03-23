@@ -18,11 +18,7 @@ public class DistributedAuthorityTests
         var transport = new InMemoryLockstepTransport(nodeId);
         var authority = new DistributedAuthority(nodeId, transport, Engine);
 
-        var action = new PlayerActionDto
-        {
-            OperatorId = OperatorA,
-            Primary = PrimaryAction.Fire
-        };
+        var action = AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire);
 
         await authority.SubmitActionAsync(action);
 
@@ -41,17 +37,15 @@ public class DistributedAuthorityTests
         var transport = new InMemoryLockstepTransport(nodeId);
         var authority = new DistributedAuthority(nodeId, transport, Engine);
 
-        await authority.SubmitActionAsync(new PlayerActionDto
-        {
-            OperatorId = OperatorA,
-            Primary = PrimaryAction.Fire
-        });
+        await authority.SubmitActionAsync(AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire));
 
         var state = authority.GetCurrentState();
         Assert.Equal(1, state.ActionCount);
         Assert.Single(state.Operators);
         Assert.Equal(OperatorA, state.Operators[0].OperatorId);
-        Assert.Equal(10, state.Operators[0].TotalXp); // Fire = 10 XP
+        Assert.Single(state.Sessions);
+        Assert.False(string.IsNullOrEmpty(state.Sessions[0].SnapshotHash));
+        Assert.Equal(1, state.Sessions[0].Snapshot.ReplayTurns.Count);
     }
 
     [Fact]
@@ -61,8 +55,9 @@ public class DistributedAuthorityTests
         var transport = new InMemoryLockstepTransport(nodeId);
         var authority = new DistributedAuthority(nodeId, transport, Engine);
 
-        await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
-        await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload });
+        var actions = AuthorityActionFactory.CreateReplayBackedActions(OperatorA, 42, PrimaryAction.Fire, PrimaryAction.Fire);
+        await authority.SubmitActionAsync(actions[0]);
+        await authority.SubmitActionAsync(actions[1]);
 
         var log = authority.GetActionLog();
         Assert.Equal(2, log.Count);
@@ -79,7 +74,7 @@ public class DistributedAuthorityTests
         var transport = new InMemoryLockstepTransport(nodeId);
         var authority = new DistributedAuthority(nodeId, transport, Engine);
 
-        await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+        await authority.SubmitActionAsync(AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire));
 
         var hash = authority.GetCurrentStateHash();
         Assert.NotNull(hash);
@@ -98,8 +93,9 @@ public class DistributedAuthorityTests
         var authorityA = new DistributedAuthority(nodeA, transportA, Engine);
         var authorityB = new DistributedAuthority(nodeB, transportB, Engine);
 
-        var action1 = new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire };
-        var action2 = new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload };
+        var actions = AuthorityActionFactory.CreateReplayBackedActions(OperatorA, 42, PrimaryAction.Fire, PrimaryAction.Fire);
+        var action1 = actions[0];
+        var action2 = actions[1];
 
         await authorityA.SubmitActionAsync(action1);
         await authorityA.SubmitActionAsync(action2);
@@ -120,8 +116,8 @@ public class DistributedAuthorityTests
         var authorityA = new DistributedAuthority(nodeA, transportA, Engine);
         var authorityB = new DistributedAuthority(nodeB, transportB, Engine);
 
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
-        await authorityB.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload });
+        await authorityA.SubmitActionAsync(AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire));
+        await authorityB.SubmitActionAsync(AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Reload));
 
         Assert.NotEqual(authorityA.GetCurrentStateHash(), authorityB.GetCurrentStateHash());
     }
@@ -133,7 +129,7 @@ public class DistributedAuthorityTests
         var transport = new InMemoryLockstepTransport(nodeId);
         var authority = new DistributedAuthority(nodeId, transport, Engine);
 
-        await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+        await authority.SubmitActionAsync(AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire));
 
         var entry = authority.GetActionLog()[0];
         Assert.NotNull(entry.StateHashAfterApply);
@@ -148,7 +144,7 @@ public class DistributedAuthorityTests
     {
         var (authorityA, authorityB, _, _) = CreateConnectedPair();
 
-        var action = new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire };
+        var action = AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire);
         await authorityA.SubmitActionAsync(action);
 
         // Both nodes should have the same state hash after action is applied
@@ -160,7 +156,7 @@ public class DistributedAuthorityTests
     {
         var (authorityA, authorityB, _, _) = CreateConnectedPair();
 
-        var action = new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire };
+        var action = AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire);
         await authorityA.SubmitActionAsync(action);
 
         var logA = authorityA.GetActionLog();
@@ -180,9 +176,10 @@ public class DistributedAuthorityTests
     {
         var (authorityA, authorityB, _, _) = CreateConnectedPair();
 
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload });
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+        var actions = AuthorityActionFactory.CreateReplayBackedActions(OperatorA, 42, PrimaryAction.Fire, PrimaryAction.Fire, PrimaryAction.Fire);
+        await authorityA.SubmitActionAsync(actions[0]);
+        await authorityA.SubmitActionAsync(actions[1]);
+        await authorityA.SubmitActionAsync(actions[2]);
 
         Assert.Equal(authorityA.GetCurrentStateHash(), authorityB.GetCurrentStateHash());
         Assert.Equal(3, authorityA.GetActionLog().Count);
@@ -209,7 +206,7 @@ public class DistributedAuthorityTests
         var authority = new DistributedAuthority(nodeId, transport, Engine);
 
         // Submit an action first
-        await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+        await authority.SubmitActionAsync(AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire));
 
         // Simulate desync by sending a hash mismatch
         transport.SimulateIncomingHash(new HashBroadcastMessage
@@ -222,7 +219,7 @@ public class DistributedAuthorityTests
         Assert.True(authority.IsDesynced);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            authority.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire }));
+            authority.SubmitActionAsync(AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire)));
     }
 
     // --- Reconnect Sync ---
@@ -238,9 +235,10 @@ public class DistributedAuthorityTests
         var authorityB = new DistributedAuthority(nodeIdB, transportB, Engine);
 
         // Node A submits actions while solo
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload });
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+        var actions = AuthorityActionFactory.CreateReplayBackedActions(OperatorA, 42, PrimaryAction.Fire, PrimaryAction.Fire, PrimaryAction.Fire);
+        await authorityA.SubmitActionAsync(actions[0]);
+        await authorityA.SubmitActionAsync(actions[1]);
+        await authorityA.SubmitActionAsync(actions[2]);
 
         Assert.Equal(3, authorityA.GetActionLog().Count);
         Assert.Empty(authorityB.GetActionLog());
@@ -266,15 +264,16 @@ public class DistributedAuthorityTests
 
         // Connect and submit initial action
         transportA.ConnectTo(transportB);
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+        var actions = AuthorityActionFactory.CreateReplayBackedActions(OperatorA, 42, PrimaryAction.Fire, PrimaryAction.Fire, PrimaryAction.Fire);
+        await authorityA.SubmitActionAsync(actions[0]);
         Assert.Equal(authorityA.GetCurrentStateHash(), authorityB.GetCurrentStateHash());
 
         // Disconnect
         transportA.DisconnectFrom(transportB);
 
         // Node A submits more actions while disconnected
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload });
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+        await authorityA.SubmitActionAsync(actions[1]);
+        await authorityA.SubmitActionAsync(actions[2]);
 
         Assert.Equal(3, authorityA.GetActionLog().Count);
         Assert.Single(authorityB.GetActionLog());
@@ -399,8 +398,8 @@ public class DistributedAuthorityTests
         var opA = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
         // Submit action for opB first, then opA
-        await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = opB, Primary = PrimaryAction.Fire });
-        await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = opA, Primary = PrimaryAction.Reload });
+        await authority.SubmitActionAsync(AuthorityActionFactory.CreateReplayBackedAction(opB, PrimaryAction.Fire));
+        await authority.SubmitActionAsync(AuthorityActionFactory.CreateReplayBackedAction(opA, PrimaryAction.Reload));
 
         var state = authority.GetCurrentState();
         Assert.Equal(2, state.Operators.Count);
@@ -433,7 +432,7 @@ public class DistributedAuthorityTests
         transportA.DisconnectFrom(transportB);
 
         // Solo mode now: should apply immediately without blocking
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+        await authorityA.SubmitActionAsync(AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire));
 
         Assert.Single(authorityA.GetActionLog());
     }
@@ -448,12 +447,7 @@ public class DistributedAuthorityTests
         var distributed = new DistributedAuthority(nodeId, transport, Engine);
         var local = new LocalGameAuthority(nodeId, Engine);
 
-        var actions = new[]
-        {
-            new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire },
-            new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload },
-            new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire },
-        };
+        var actions = AuthorityActionFactory.CreateReplayBackedActions(OperatorA, 42, PrimaryAction.Fire, PrimaryAction.Fire, PrimaryAction.Fire);
 
         foreach (var action in actions)
         {
@@ -484,10 +478,10 @@ public class DistributedAuthorityTests
 
         var actions = new[]
         {
-            new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire },
-            new PlayerActionDto { OperatorId = opB, Primary = PrimaryAction.Reload },
-            new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload },
-            new PlayerActionDto { OperatorId = opB, Primary = PrimaryAction.Fire },
+            AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire),
+            AuthorityActionFactory.CreateReplayBackedAction(opB, PrimaryAction.Reload),
+            AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Reload),
+            AuthorityActionFactory.CreateReplayBackedAction(opB, PrimaryAction.Fire),
         };
 
         foreach (var action in actions)
@@ -518,9 +512,10 @@ public class DistributedAuthorityTests
         var transport = new InMemoryLockstepTransport(nodeId);
         var authorityA = new DistributedAuthority(nodeId, transport, Engine);
 
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload });
-        await authorityA.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+        var actions = AuthorityActionFactory.CreateReplayBackedActions(OperatorA, 42, PrimaryAction.Fire, PrimaryAction.Fire, PrimaryAction.Fire);
+        await authorityA.SubmitActionAsync(actions[0]);
+        await authorityA.SubmitActionAsync(actions[1]);
+        await authorityA.SubmitActionAsync(actions[2]);
 
         var logA = authorityA.GetActionLog();
         var hashA = authorityA.GetCurrentStateHash();
@@ -543,40 +538,43 @@ public class DistributedAuthorityTests
     public void DefaultGameEngine_Step_AppliesFireAction()
     {
         var engine = new DefaultGameEngine();
-        var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
+        var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>(), Sessions = new List<GameStateDto.CombatSessionState>() };
 
-        var result = engine.Step(state, new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+        var result = engine.Step(state, AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire));
 
         Assert.Equal(1, result.ActionCount);
         Assert.Single(result.Operators);
-        Assert.Equal(10, result.Operators[0].TotalXp);
+        Assert.Equal(OperatorA, result.Operators[0].OperatorId);
+        Assert.Single(result.Sessions);
+        Assert.Equal(PrimaryAction.Fire, result.Sessions[0].Snapshot.ReplayTurns[0].Primary);
     }
 
     [Fact]
     public void DefaultGameEngine_Step_AppliesReloadAction()
     {
         var engine = new DefaultGameEngine();
-        var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
+        var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>(), Sessions = new List<GameStateDto.CombatSessionState>() };
 
-        var result = engine.Step(state, new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Reload });
+        var result = engine.Step(state, AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Reload));
 
         Assert.Equal(1, result.ActionCount);
         Assert.Single(result.Operators);
-        Assert.Equal(1, result.Operators[0].TotalXp);
+        Assert.Single(result.Sessions);
+        Assert.Equal(PrimaryAction.Reload, result.Sessions[0].Snapshot.ReplayTurns[0].Primary);
     }
 
     [Fact]
     public void DefaultGameEngine_Step_IsPure()
     {
         var engine = new DefaultGameEngine();
-        var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
-        var action = new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire };
+        var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>(), Sessions = new List<GameStateDto.CombatSessionState>() };
+        var action = AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire);
 
         var result1 = engine.Step(state, action);
         var result2 = engine.Step(state, action);
 
         Assert.Equal(result1.ActionCount, result2.ActionCount);
-        Assert.Equal(result1.Operators[0].TotalXp, result2.Operators[0].TotalXp);
+        Assert.Equal(result1.Sessions[0].SnapshotHash, result2.Sessions[0].SnapshotHash);
         Assert.Equal(0, state.ActionCount); // Original state unchanged
     }
 
@@ -588,7 +586,7 @@ public class DistributedAuthorityTests
         var nodeId = Guid.NewGuid();
         var local = new LocalGameAuthority(nodeId, Engine);
 
-        await local.SubmitActionAsync(new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire });
+        await local.SubmitActionAsync(AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire));
 
         Assert.Single(local.GetActionLog());
         Assert.Equal(1, local.GetCurrentState().ActionCount);
@@ -603,7 +601,7 @@ public class DistributedAuthorityTests
         var transport = new InMemoryLockstepTransport(nodeId);
         var distributed = new DistributedAuthority(nodeId, transport, Engine);
 
-        var action = new PlayerActionDto { OperatorId = OperatorA, Primary = PrimaryAction.Fire };
+        var action = AuthorityActionFactory.CreateReplayBackedAction(OperatorA, PrimaryAction.Fire);
 
         await local.SubmitActionAsync(action);
         await distributed.SubmitActionAsync(action);

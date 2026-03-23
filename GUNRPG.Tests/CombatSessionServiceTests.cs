@@ -1,4 +1,5 @@
 using GUNRPG.Application.Dtos;
+using GUNRPG.Application.Distributed;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Mapping;
 using GUNRPG.Application.Results;
@@ -126,6 +127,30 @@ public class CombatSessionServiceTests
         Assert.Single(persisted!.ReplayTurns);
         Assert.Equal(PrimaryAction.Fire, persisted.ReplayTurns[0].Primary);
         Assert.False(string.IsNullOrEmpty(persisted.ReplayInitialSnapshotJson));
+    }
+
+    [Fact]
+    public async Task SubmitIntents_WhenAuthorityIsConfigured_ForwardsReplayState()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var authority = new RecordingGameAuthority();
+        var service = new CombatSessionService(store, gameAuthority: authority);
+        var operatorId = Guid.NewGuid();
+        var session = (await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42, OperatorId = operatorId })).Value!;
+
+        var submitResult = await service.SubmitPlayerIntentsAsync(session.Id, new SubmitIntentsRequest
+        {
+            OperatorId = operatorId,
+            Intents = new IntentDto { Primary = PrimaryAction.Fire }
+        });
+
+        Assert.True(submitResult.IsSuccess);
+        Assert.NotNull(authority.LastAction);
+        Assert.Equal(session.Id, authority.LastAction!.SessionId);
+        Assert.Equal(operatorId, authority.LastAction.OperatorId);
+        Assert.False(string.IsNullOrEmpty(authority.LastAction.ReplayInitialSnapshotJson));
+        Assert.Single(authority.LastAction.ReplayTurns!);
+        Assert.Equal(PrimaryAction.Fire, authority.LastAction.ReplayTurns![0].Primary);
     }
 
     [Fact]
@@ -730,4 +755,21 @@ public class CombatSessionServiceTests
         Assert.Single(received);
         Assert.Equal(session.Id, received[0]);
     }
+}
+
+internal sealed class RecordingGameAuthority : IGameAuthority
+{
+    public Guid NodeId { get; } = Guid.NewGuid();
+    public bool IsDesynced => false;
+    public PlayerActionDto? LastAction { get; private set; }
+
+    public Task SubmitActionAsync(PlayerActionDto action, CancellationToken ct = default)
+    {
+        LastAction = action;
+        return Task.CompletedTask;
+    }
+
+    public GameStateDto GetCurrentState() => new();
+    public string GetCurrentStateHash() => string.Empty;
+    public IReadOnlyList<DistributedActionEntry> GetActionLog() => Array.Empty<DistributedActionEntry>();
 }

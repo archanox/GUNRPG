@@ -1,6 +1,12 @@
 using GUNRPG.Application.Backend;
 using GUNRPG.Application.Dtos;
-using GUNRPG.Core.Simulation;
+using GUNRPG.Application.Mapping;
+using GUNRPG.Application.Sessions;
+using GUNRPG.Core;
+using GUNRPG.Core.Combat;
+using GUNRPG.Core.Intents;
+using GUNRPG.Core.Operators;
+using GUNRPG.Core.Weapons;
 
 namespace GUNRPG.Application.Combat;
 
@@ -12,91 +18,40 @@ namespace GUNRPG.Application.Combat;
 /// </summary>
 public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
 {
-    private const int VictoryXpReward = 100;
-    private const int SurvivalXpReward = 50;
-    private const int DeathXpReward = 0;
-    private const int MaxRounds = 20;
-
-    private const int PlayerHitChancePct = 65;
-    private const int EnemyHitChancePct = 55;
+    private const int MaxReplayTurns = 64;
 
     /// <inheritdoc />
     public CombatResult Execute(OperatorDto snapshot, int seed)
     {
-        IRandom rng = new SeededRandom(seed);
-        var log = new List<BattleLogEntryDto>();
-        long timeMs = 0;
+        ArgumentNullException.ThrowIfNull(snapshot);
 
-        // Enemy stats derived deterministically from seed
-        var enemyHealth = 80f + rng.Next(0, 60);
-        var playerHealth = snapshot.CurrentHealth;
+        var session = CreateSession(snapshot, seed);
+        var initialSnapshot = SessionMapping.ToSnapshot(session);
+        session.SetReplayInitialSnapshotJson(OfflineCombatReplay.SerializeCombatSnapshot(initialSnapshot));
 
-        for (int round = 1; round <= MaxRounds && playerHealth > 0 && enemyHealth > 0; round++)
+        for (var turn = 0; turn < MaxReplayTurns && session.Phase != SessionPhase.Completed; turn++)
         {
-            timeMs += 1000;
-
-            // Player attacks
-            if (rng.Next(0, 100) < PlayerHitChancePct)
+            CombatSessionService.ExecuteReplayTurn(session, new IntentSnapshot
             {
-                var dmg = 8f + rng.Next(0, 17);
-                enemyHealth -= dmg;
-                log.Add(new BattleLogEntryDto
-                {
-                    EventType = "Damage",
-                    TimeMs = timeMs,
-                    Message = $"Enemy took {dmg:F1} damage",
-                    ActorName = snapshot.Name
-                });
-            }
-            else
-            {
-                log.Add(new BattleLogEntryDto
-                {
-                    EventType = "Miss",
-                    TimeMs = timeMs,
-                    Message = $"{snapshot.Name} missed",
-                    ActorName = snapshot.Name
-                });
-            }
-
-            if (enemyHealth <= 0)
-                break;
-
-            // Enemy attacks
-            if (rng.Next(0, 100) < EnemyHitChancePct)
-            {
-                var dmg = 5f + rng.Next(0, 15);
-                playerHealth -= dmg;
-                log.Add(new BattleLogEntryDto
-                {
-                    EventType = "Damage",
-                    TimeMs = timeMs,
-                    Message = $"{snapshot.Name} took {dmg:F1} damage",
-                    ActorName = "Enemy"
-                });
-            }
-            else
-            {
-                log.Add(new BattleLogEntryDto
-                {
-                    EventType = "Miss",
-                    TimeMs = timeMs,
-                    Message = "Enemy missed",
-                    ActorName = "Enemy"
-                });
-            }
+                OperatorId = session.Player.Id,
+                Primary = PrimaryAction.Fire,
+                Movement = MovementAction.Stand,
+                Stance = StanceAction.None,
+                Cover = CoverAction.None
+            });
         }
 
-        var operatorDied = playerHealth <= 0;
-        var isVictory = !operatorDied && enemyHealth <= 0;
-        var xpGained = isVictory ? VictoryXpReward : operatorDied ? DeathXpReward : SurvivalXpReward;
+        var isVictory = session.Player.IsAlive && !session.Enemy.IsAlive;
+        var operatorDied = !session.Player.IsAlive;
+        var xpGained = isVictory ? 100 : operatorDied ? 0 : 50;
+        var battleLog = SessionMapping.ToDto(session).BattleLog;
 
         var resultOperator = new OperatorDto
         {
             Id = snapshot.Id,
             Name = snapshot.Name,
             TotalXp = snapshot.TotalXp + xpGained,
-            CurrentHealth = operatorDied ? snapshot.MaxHealth : Math.Max(1f, playerHealth),
+            CurrentHealth = operatorDied ? snapshot.MaxHealth : Math.Max(1f, session.Player.Health),
             MaxHealth = snapshot.MaxHealth,
             EquippedWeaponName = snapshot.EquippedWeaponName,
             UnlockedPerks = snapshot.UnlockedPerks,
@@ -115,7 +70,45 @@ public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
             ResultOperator = resultOperator,
             IsVictory = isVictory,
             OperatorDied = operatorDied,
-            BattleLog = log
+            BattleLog = battleLog
+        };
+    }
+
+    private static CombatSession CreateSession(OperatorDto snapshot, int seed)
+    {
+        var session = CombatSession.CreateDefault(
+            playerName: snapshot.Name,
+            seed: seed,
+            operatorId: ResolveOperatorGuid(snapshot.Id));
+
+        var player = session.Player;
+        player.MaxHealth = snapshot.MaxHealth > 0f ? snapshot.MaxHealth : player.MaxHealth;
+        player.Health = Math.Clamp(snapshot.CurrentHealth, 0f, player.MaxHealth);
+        player.EquippedWeapon = ResolveWeapon(snapshot.EquippedWeaponName, snapshot.LockedLoadout);
+        player.CurrentAmmo = player.EquippedWeapon?.MagazineSize ?? 0;
+        player.AimState = AimState.ADS;
+
+        return session;
+    }
+
+    private static Guid ResolveOperatorGuid(string operatorId)
+    {
+        if (Guid.TryParse(operatorId, out var parsed))
+            return parsed;
+
+        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(operatorId ?? string.Empty));
+        return new Guid(bytes[..16]);
+    }
+
+    private static Weapon ResolveWeapon(string? equippedWeaponName, string? lockedLoadout)
+    {
+        var normalized = (equippedWeaponName ?? lockedLoadout ?? string.Empty).Trim();
+        return normalized switch
+        {
+            "SOKOL 545" or "LMG" => WeaponFactory.CreateSokol545(),
+            "STURMWOLF 45" or "SMG" => WeaponFactory.CreateSturmwolf45(),
+            "M15 MOD 0" or "Rifle" => WeaponFactory.CreateM15Mod0(),
+            _ => WeaponFactory.CreateM15Mod0()
         };
     }
 }
