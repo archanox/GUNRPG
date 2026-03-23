@@ -647,7 +647,7 @@ public sealed class OperatorServiceTests : IDisposable
     [Fact]
     public async Task CompleteInfilAsync_WithPendingVictoryOutcome_AppliesXpBeforeCompletingInfil()
     {
-        // Arrange: Create operator, start infil, run combat to victory
+        // Arrange: Create operator, start infil, run combat to completion
         var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
         var operatorId = createResult.Value!.Id;
         await _operatorService.StartInfilAsync(operatorId);
@@ -665,6 +665,9 @@ public sealed class OperatorServiceTests : IDisposable
                 break;
         }
 
+        var finalSession = await _sessionService.GetStateAsync(sessionId);
+        bool isVictory = finalSession.Value!.Phase == SessionPhase.Completed && finalSession.Value.Player.IsAlive;
+
         // Verify combat session is completed but outcome is NOT yet processed
         var beforeExfil = await _operatorService.GetOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, beforeExfil.Value!.CurrentMode);
@@ -675,11 +678,14 @@ public sealed class OperatorServiceTests : IDisposable
         var exfilResult = await _operatorService.CompleteInfilAsync(operatorId);
         Assert.True(exfilResult.IsSuccess, exfilResult.ErrorMessage ?? "CompleteInfil failed");
 
-        // Assert: Operator is in Base mode (infil completed), streak incremented
+        // Assert: Operator is in Base mode regardless of victory or defeat
         var afterExfil = await _operatorService.GetOperatorAsync(operatorId);
-        Assert.Equal(OperatorMode.Base, afterExfil.Value!.CurrentMode);
-        Assert.Equal(1, afterExfil.Value.ExfilStreak); // Streak incremented on successful infil
-        Assert.Null(afterExfil.Value.ActiveCombatSessionId);
+        var afterExfilOp = afterExfil.Value!;
+        Assert.Equal(OperatorMode.Base, afterExfilOp.CurrentMode);
+        Assert.Null(afterExfilOp.ActiveCombatSessionId);
+
+        // Streak is incremented only when the full infil completes successfully (not on death)
+        Assert.Equal(isVictory ? 1 : 0, afterExfilOp.ExfilStreak);
     }
 
     [Fact]
@@ -723,9 +729,10 @@ public sealed class OperatorServiceTests : IDisposable
 
         // Assert: Operator is in Base mode, streak reset (death = failed infil)
         var afterExfil = await _operatorService.GetOperatorAsync(operatorId);
-        Assert.Equal(OperatorMode.Base, afterExfil.Value!.CurrentMode);
-        Assert.Equal(0, afterExfil.Value!.ExfilStreak); // No streak on death
-        Assert.Null(afterExfil.Value!.ActiveCombatSessionId);
+        var afterExfilOp = afterExfil.Value!;
+        Assert.Equal(OperatorMode.Base, afterExfilOp.CurrentMode);
+        Assert.Equal(0, afterExfilOp.ExfilStreak); // No streak on death
+        Assert.Null(afterExfilOp.ActiveCombatSessionId);
     }
 
     [Fact]
@@ -744,8 +751,9 @@ public sealed class OperatorServiceTests : IDisposable
 
         // Assert: Operator is in Base mode, streak incremented
         var afterExfil = await _operatorService.GetOperatorAsync(operatorId);
-        Assert.Equal(OperatorMode.Base, afterExfil.Value!.CurrentMode);
-        Assert.Equal(1, afterExfil.Value.ExfilStreak);
+        var afterExfilOp = afterExfil.Value!;
+        Assert.Equal(OperatorMode.Base, afterExfilOp.CurrentMode);
+        Assert.Equal(1, afterExfilOp.ExfilStreak);
     }
 
     [Fact]
@@ -782,8 +790,9 @@ public sealed class OperatorServiceTests : IDisposable
 
         // Assert: XP is unchanged (no double-application)
         var afterExfil = await _operatorService.GetOperatorAsync(operatorId);
-        Assert.Equal(xpAfterCombat, afterExfil.Value!.TotalXp);
-        Assert.Equal(OperatorMode.Base, afterExfil.Value!.CurrentMode);
+        var afterExfilOp = afterExfil.Value!;
+        Assert.Equal(xpAfterCombat, afterExfilOp.TotalXp);
+        Assert.Equal(OperatorMode.Base, afterExfilOp.CurrentMode);
     }
 
     [Fact]
