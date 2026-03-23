@@ -270,7 +270,7 @@ dotnet publish GUNRPG.WebClient -c Release
 - **Testing**: xUnit
 - **Platform**: Cross-platform (Windows, Linux, macOS)
 - **Persistence**: LiteDB (embedded, no external DB required)
-- **TUI**: hex1b 0.79.0
+- **TUI**: hex1b
 - **Web client**: Blazor WebAssembly
 
 ## License

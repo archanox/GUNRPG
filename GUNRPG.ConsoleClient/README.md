@@ -50,7 +50,7 @@ The GUNRPG console client has been redesigned with a retro Pokemon-style interfa
     - View Stats
   - **Infil Mode Actions:**
     - Continue Mission (goes to combat session)
-    - Abort Mission (returns to base, resets streak)
+    - Abort Mission (initiate exfil and return to base)
     - View Stats
 
 #### 4. Mission Briefing
@@ -85,7 +85,7 @@ The GUNRPG console client has been redesigned with a retro Pokemon-style interfa
 
 #### 9. Abort Mission
 - Available in Infil mode only
-- Confirmation dialog; resets exfil streak, no XP awarded
+- Confirmation dialog; initiates exfil via `POST /operators/{id}/infil/complete` (abandons any in-progress combat session). If a completed combat session exists, processes the outcome instead via `POST /operators/{id}/infil/outcome`.
 
 #### 10. Mission Complete
 - Shows combat outcome

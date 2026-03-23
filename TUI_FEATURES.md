@@ -123,12 +123,9 @@ All features respect the Base/Infil state machine:
 ## Feature 4: Abort Mission
 
 **When:** Available in Infil mode only  
-**Purpose:** Explicitly abort mission and return to base  
-**Consequences:**
-- Mission is marked as failed
-- Exfil streak is reset to 0
-- No XP is awarded
-- Operator returns to Base mode
+**Purpose:** Initiate exfil and return to base  
+
+The abort flow uses `POST /operators/{id}/infil/complete` to exfil, abandoning any in-progress combat session. If a completed combat session already exists, it processes the outcome via `POST /operators/{id}/infil/outcome` instead (preserving XP and streak earned in that combat).
 
 ### UI Flow:
 ```
@@ -153,9 +150,9 @@ All features respect the Base/Infil state machine:
   Confirm mission abort
 ```
 
-**API Endpoint:** `POST /operators/{id}/infil/outcome`  
-**Request Body:** `{ "sessionId": "{current-session-id}" }`  
-**Note:** Posts current session ID to trigger exfil failure, returning operator to Base mode
+**API Endpoints:**
+- `POST /operators/{id}/infil/complete` — Exfil when there is no completed combat session (abandons any in-progress session)
+- `POST /operators/{id}/infil/outcome` — Submit outcome when a completed combat session exists
 
 ## Updated Base Camp Menu
 

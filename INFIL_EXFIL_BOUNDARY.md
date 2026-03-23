@@ -255,7 +255,7 @@ When appending events:
 - **Event migrations** - Versioning and schema evolution
 
 ### Already Implemented
-- ✅ **Replay system** - `ReplayRunner` rebuilds operator-combat state from stored replay turns
+- ✅ **Replay system** - `ReplayRunner` rebuilds combat session state from stored replay turns
 - ✅ **Cryptographic signing** - `SessionAuthority` signs completed sessions with Ed25519; `SignedRunResult` carries the signature for cross-node verification
 - ✅ **Authentication/authorization** - Self-hosted WebAuthn + Ed25519 JWT (see [docs/IDENTITY.md](docs/IDENTITY.md))
 
