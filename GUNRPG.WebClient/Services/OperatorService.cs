@@ -259,6 +259,32 @@ public sealed class OperatorService
     public async Task<bool> HasQueuedExfilAsync(Guid operatorId) => await _offlineStore.HasPendingExfilAsync(operatorId);
 
     /// <summary>
+    /// Processes the combat outcome for the given operator's completed session.
+    /// This applies the replay-derived combat result (XP, mode transitions, death) to the operator
+    /// and mirrors the explicit /infil/outcome call the console client makes after each combat.
+    /// Errors are non-fatal for the UI — the server also auto-processes pending outcomes on exfil.
+    /// </summary>
+    public async Task<string?> ProcessCombatOutcomeAsync(Guid operatorId, Guid sessionId)
+    {
+        try
+        {
+            var response = await _api.PostAsync($"/operators/{operatorId}/infil/outcome",
+                new { SessionId = sessionId });
+            if (!response.IsSuccessStatusCode)
+            {
+                var err = await ApiHelpers.TryReadErrorAsync(response);
+                return err ?? $"Failed to process combat outcome: {response.StatusCode}";
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex.Message;
+        }
+    }
+
+    /// <summary>
     /// Clears the active combat session ID from the local offline snapshot when a server-side session
     /// concludes. This prevents the stale snapshot from causing MissionInfil to redirect to an
     /// unreachable concluded session after the user goes offline.

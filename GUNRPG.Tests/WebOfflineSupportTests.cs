@@ -487,6 +487,63 @@ public sealed class WebOfflineSupportTests
         Assert.False(OperatorNavigationHelper.HasActiveCombat(after));
     }
 
+    [Fact]
+    public async Task OperatorService_ProcessCombatOutcomeAsync_WhenOnline_PostsToInfilOutcomeEndpoint()
+    {
+        // Verifies that the WebClient's ProcessCombatOutcomeAsync sends the combat outcome to the
+        // server's /infil/outcome endpoint, ensuring the replay-derived result (XP, mode changes)
+        // is applied. This mirrors what the ConsoleClient does after every online combat.
+        var operatorId = Guid.Parse("d4d4d4d4-d4d4-d4d4-d4d4-d4d4d4d4d4d4");
+        var sessionId  = Guid.Parse("e5e5e5e5-e5e5-e5e5-e5e5-e5e5e5e5e5e5");
+
+        var js = new FakeBrowserJsRuntime();
+        var handler = new OutcomeTrackingHandler(operatorId);
+        using var http = new HttpClient(handler);
+        var nodeService = new NodeConnectionService(js);
+        await nodeService.SetBaseUrlAsync("https://node.example.com");
+        var auth = new AuthService(js, http, nodeService);
+        var api = new ApiClient(http, nodeService, auth);
+        var offlineStore = new BrowserOfflineStore(js);
+        var combatStore = new BrowserCombatSessionStore(js);
+        var offlineGameplay = new OfflineGameplayService(combatStore, offlineStore);
+        var offlineSync = new OfflineSyncService(api, offlineStore);
+        var connection = new ConnectionStateService(js);
+        var service = new OperatorService(api, offlineStore, offlineGameplay, offlineSync, connection);
+
+        var error = await service.ProcessCombatOutcomeAsync(operatorId, sessionId);
+
+        Assert.Null(error);
+        Assert.Equal(1, handler.OutcomePostCount);
+        Assert.Equal(sessionId, handler.LastPostedSessionId);
+    }
+
+    [Fact]
+    public async Task OperatorService_ProcessCombatOutcomeAsync_WhenServerReturnsError_ReturnsErrorString()
+    {
+        // Verifies that errors from the /infil/outcome endpoint are surfaced as non-fatal strings
+        // so that the UI can continue without blocking the user.
+        var operatorId = Guid.Parse("f6f6f6f6-f6f6-f6f6-f6f6-f6f6f6f6f6f6");
+        var sessionId  = Guid.Parse("a7a7a7a7-a7a7-a7a7-a7a7-a7a7a7a7a7a7");
+
+        var js = new FakeBrowserJsRuntime();
+        var handler = new OutcomeErrorHandler();
+        using var http = new HttpClient(handler);
+        var nodeService = new NodeConnectionService(js);
+        await nodeService.SetBaseUrlAsync("https://node.example.com");
+        var auth = new AuthService(js, http, nodeService);
+        var api = new ApiClient(http, nodeService, auth);
+        var offlineStore = new BrowserOfflineStore(js);
+        var combatStore = new BrowserCombatSessionStore(js);
+        var offlineGameplay = new OfflineGameplayService(combatStore, offlineStore);
+        var offlineSync = new OfflineSyncService(api, offlineStore);
+        var connection = new ConnectionStateService(js);
+        var service = new OperatorService(api, offlineStore, offlineGameplay, offlineSync, connection);
+
+        var error = await service.ProcessCombatOutcomeAsync(operatorId, sessionId);
+
+        Assert.NotNull(error);
+    }
+
     private static OperatorState CreateOperator(Guid id, string name, DateTimeOffset? infilStartTime = null) => new()
     {
         Id = id,
@@ -700,6 +757,63 @@ public sealed class WebOfflineSupportTests
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
+                });
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    private sealed class OutcomeTrackingHandler : HttpMessageHandler
+    {
+        private readonly Guid _expectedOperatorId;
+
+        public OutcomeTrackingHandler(Guid operatorId) => _expectedOperatorId = operatorId;
+
+        public int OutcomePostCount { get; private set; }
+        public Guid? LastPostedSessionId { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var expectedPath = $"/operators/{_expectedOperatorId}/infil/outcome";
+            if (request.Method == HttpMethod.Post &&
+                request.RequestUri?.AbsolutePath.Equals(expectedPath, StringComparison.Ordinal) == true)
+            {
+                OutcomePostCount++;
+                if (request.Content is not null)
+                {
+                    var body = await request.Content.ReadAsStringAsync(cancellationToken);
+                    using var doc = System.Text.Json.JsonDocument.Parse(body);
+                    if (doc.RootElement.TryGetProperty("sessionId", out var sid))
+                        LastPostedSessionId = sid.GetGuid();
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("{}", Encoding.UTF8, "application/json")
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(string.Empty, Encoding.UTF8, "application/json")
+            };
+        }
+    }
+
+    private sealed class OutcomeErrorHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (request.Method == HttpMethod.Post &&
+                request.RequestUri?.AbsolutePath.EndsWith("/infil/outcome", StringComparison.Ordinal) == true)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent("{\"error\":\"No active combat session found\"}", Encoding.UTF8, "application/json")
                 });
             }
 

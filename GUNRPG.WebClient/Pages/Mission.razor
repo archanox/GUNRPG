@@ -421,11 +421,14 @@
             _session = data;
             _error = null;
 
-            // When a server-side session concludes, clear the stale ActiveCombatSessionId from
-            // the local offline snapshot. This prevents MissionInfil from redirecting back to an
-            // unreachable concluded session if the user goes offline after the victory screen.
+            // When a server-side session concludes (e.g. notified via SSE while another client
+            // advances the final turn), process the replay-derived combat outcome so XP and mode
+            // transitions are applied on the server, then clear the stale local snapshot reference.
             if (data.IsConcluded && !_usingLocalSession)
+            {
+                await OperatorSvc.ProcessCombatOutcomeAsync(data.OperatorId, data.Id);
                 await OperatorSvc.ClearActiveCombatSessionAsync(data.OperatorId);
+            }
         }
         else if (error is not null)
         {
@@ -493,11 +496,15 @@
 
         _session = advanceResult ?? _session;
 
-        // When a server-side session concludes via a turn advance, clear the stale
-        // ActiveCombatSessionId from the local offline snapshot so MissionInfil won't
-        // redirect to this concluded session if the user goes offline after victory.
+        // When a server-side session concludes via a turn advance, process the replay-derived
+        // combat outcome on the server (awards XP, updates operator mode, handles death).
+        // Then clear the stale ActiveCombatSessionId from the local offline snapshot so
+        // MissionInfil won't redirect to this concluded session if the user goes offline after victory.
         if (_session?.IsConcluded == true && !_usingLocalSession)
+        {
+            await OperatorSvc.ProcessCombatOutcomeAsync(_session.OperatorId, _session.Id);
             await OperatorSvc.ClearActiveCombatSessionAsync(_session.OperatorId);
+        }
 
         StateHasChanged();
     }

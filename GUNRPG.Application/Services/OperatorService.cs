@@ -419,6 +419,30 @@ public sealed class OperatorService
 
     public async Task<ServiceResult> CompleteInfilAsync(Guid operatorId)
     {
+        // Auto-process any pending completed combat session outcome before completing the infil.
+        // This ensures the replay-derived combat outcome (XP, death, mode transitions) is always
+        // applied even when the client does not explicitly call ProcessCombatOutcomeAsync first.
+        var cleanupResult = await CleanupCompletedSessionAsync(operatorId);
+        if (!cleanupResult.IsSuccess)
+            return cleanupResult;
+
+        // Reload the operator after cleanup — the outcome may have transitioned them to Base mode
+        // (e.g. operator died, causing OperatorDiedEvent + InfilEndedEvent to be emitted).
+        var reloadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
+        if (!reloadResult.IsSuccess)
+        {
+            return reloadResult.Status switch
+            {
+                ResultStatus.NotFound => ServiceResult.NotFound(reloadResult.ErrorMessage),
+                _ => ServiceResult.InvalidState(reloadResult.ErrorMessage!)
+            };
+        }
+
+        // If the operator is no longer in Infil mode (e.g. they died and cleanup emitted InfilEndedEvent),
+        // the infil has already been ended — return success without emitting a duplicate InfilEndedEvent.
+        if (reloadResult.Value!.CurrentMode != OperatorMode.Infil)
+            return ServiceResult.Success();
+
         return await _exfilService.CompleteInfilSuccessfullyAsync(new OperatorId(operatorId));
     }
 
