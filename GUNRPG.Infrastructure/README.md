@@ -167,7 +167,7 @@ Append-only game event ledger for audit and gossip.
 
 - `LiteDB` (5.0.21): Embedded NoSQL document database
 - `LiteDB.Migration` (0.0.10): Schema migration framework for LiteDB
-- `Fido2.Net` / `Fido2.AspNet`: WebAuthn/FIDO2 library
+- `Fido2` (4.0.0): WebAuthn/FIDO2 library
 - `BouncyCastle.Cryptography`: Ed25519 key generation and signing
 - `Microsoft.Extensions.*`: Configuration, DI, options pattern support
 
