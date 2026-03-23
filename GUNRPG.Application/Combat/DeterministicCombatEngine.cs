@@ -31,14 +31,7 @@ public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
 
         for (var turn = 0; turn < MaxCombatTurns && session.Phase != SessionPhase.Completed; turn++)
         {
-            CombatSessionService.ExecuteReplayTurn(session, new IntentSnapshot
-            {
-                OperatorId = session.Player.Id,
-                Primary = PrimaryAction.Fire,
-                Movement = MovementAction.Stand,
-                Stance = StanceAction.None,
-                Cover = CoverAction.None
-            });
+            CombatSessionService.ExecuteReplayTurn(session, SelectNextTurn(session));
         }
 
         var isVictory = session.Player.IsAlive && !session.Enemy.IsAlive;
@@ -99,6 +92,58 @@ public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
         // Offline envelopes use string IDs. When they are not GUID-formatted, map them
         // to a stable synthetic GUID so combat sessions still have deterministic identities.
         return StableGuidFactory.FromString(operatorId ?? string.Empty);
+    }
+
+    private static IntentSnapshot SelectNextTurn(CombatSession session)
+    {
+        foreach (var primary in GetPreferredPrimaryActions(session.Player))
+        {
+            var turn = new IntentSnapshot
+            {
+                OperatorId = session.Player.Id,
+                Primary = primary,
+                Movement = MovementAction.Stand,
+                Stance = StanceAction.None,
+                Cover = CoverAction.None
+            };
+
+            var validation = new SimultaneousIntents(session.Player.Id)
+            {
+                Primary = turn.Primary,
+                Movement = turn.Movement,
+                Stance = turn.Stance,
+                Cover = turn.Cover,
+                CancelMovement = turn.CancelMovement
+            }.Validate(session.Player);
+
+            if (validation.isValid)
+            {
+                return turn;
+            }
+        }
+
+        return new IntentSnapshot
+        {
+            OperatorId = session.Player.Id,
+            Primary = PrimaryAction.None,
+            Movement = MovementAction.Stand,
+            Stance = StanceAction.None,
+            Cover = CoverAction.None
+        };
+    }
+
+    private static IEnumerable<PrimaryAction> GetPreferredPrimaryActions(Operator player)
+    {
+        if (player.EquippedWeapon != null &&
+            player.CurrentAmmo <= 0 &&
+            player.CurrentAmmo < player.EquippedWeapon.MagazineSize)
+        {
+            yield return PrimaryAction.Reload;
+        }
+
+        yield return PrimaryAction.Fire;
+        yield return PrimaryAction.Reload;
+        yield return PrimaryAction.None;
     }
 
     private static Weapon ResolveWeapon(string? equippedWeaponName, string? lockedLoadout)

@@ -54,16 +54,17 @@ public sealed class ReplayGameAuthority : IGameAuthority
         lock (_lock)
         {
             ct.ThrowIfCancellationRequested();
+            var clonedAction = action.Clone();
 
             // Step 1: Apply the action to the running state.
-            _currentState = _engine.Step(_currentState, action);
+            _currentState = _engine.Step(_currentState, clonedAction);
             var forwardHash = ComputeHash(_currentState);
 
             _actionLog.Add(new DistributedActionEntry
             {
                 SequenceNumber = _nextSequenceNumber++,
                 NodeId = NodeId,
-                Action = action,
+                Action = clonedAction,
                 StateHashAfterApply = forwardHash
             });
 

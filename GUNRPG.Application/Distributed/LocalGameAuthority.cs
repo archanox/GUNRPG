@@ -39,9 +39,12 @@ public sealed class LocalGameAuthority : IGameAuthority
 
     public Task SubmitActionAsync(PlayerActionDto action, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(action);
+
         lock (_lock)
         {
-            _currentState = _engine.Step(_currentState, action);
+            var clonedAction = action.Clone();
+            _currentState = _engine.Step(_currentState, clonedAction);
             var hash = ComputeHash(_currentState);
             _currentStateHash = hash;
 
@@ -49,7 +52,7 @@ public sealed class LocalGameAuthority : IGameAuthority
             {
                 SequenceNumber = _nextSequenceNumber++,
                 NodeId = NodeId,
-                Action = action,
+                Action = clonedAction,
                 StateHashAfterApply = hash
             });
         }

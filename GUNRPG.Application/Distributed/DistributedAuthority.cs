@@ -63,9 +63,12 @@ public sealed class DistributedAuthority : IGameAuthority
 
     public async Task SubmitActionAsync(PlayerActionDto action, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(action);
+
         if (_isDesynced)
             throw new InvalidOperationException("Node is in desync state. Cannot submit actions.");
 
+        var clonedAction = action.Clone();
         long proposedSeq;
         lock (_lock)
         {
@@ -76,7 +79,7 @@ public sealed class DistributedAuthority : IGameAuthority
         {
             SenderId = NodeId,
             ProposedSequenceNumber = proposedSeq,
-            Action = action
+            Action = clonedAction
         };
 
         var connectedPeers = _transport.ConnectedPeers;
@@ -94,7 +97,7 @@ public sealed class DistributedAuthority : IGameAuthority
         var pending = new PendingAction(action, proposedSeq, connectedPeers);
         lock (_lock)
         {
-            _pendingActions[action.ActionId] = pending;
+            _pendingActions[clonedAction.ActionId] = pending;
         }
 
         await _transport.BroadcastActionAsync(broadcast, ct);
@@ -104,8 +107,8 @@ public sealed class DistributedAuthority : IGameAuthority
 
         lock (_lock)
         {
-            _pendingActions.Remove(action.ActionId);
-            ApplyActionInternal(action, NodeId);
+            _pendingActions.Remove(clonedAction.ActionId);
+            ApplyActionInternal(clonedAction, NodeId);
         }
 
         // Broadcast resulting hash

@@ -1,3 +1,4 @@
+using GUNRPG.Application.Combat;
 using GUNRPG.Application.Sessions;
 
 namespace GUNRPG.Application.Distributed;
@@ -63,6 +64,7 @@ public sealed class GameStateDto
         public Guid OperatorId { get; init; }
         public CombatSessionSnapshot Snapshot { get; init; } = default!;
         public string SnapshotHash { get; init; } = string.Empty;
+        public CombatOutcome? Outcome { get; init; }
 
         public CombatSessionState Clone()
         {
@@ -71,7 +73,8 @@ public sealed class GameStateDto
                 SessionId = SessionId,
                 OperatorId = OperatorId,
                 Snapshot = CopySnapshot(Snapshot),
-                SnapshotHash = SnapshotHash
+                SnapshotHash = SnapshotHash,
+                Outcome = Outcome
             };
         }
     }

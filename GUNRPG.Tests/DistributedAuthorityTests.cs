@@ -1,4 +1,5 @@
 using GUNRPG.Application.Distributed;
+using GUNRPG.Application.Sessions;
 using GUNRPG.Core.Intents;
 using GUNRPG.Infrastructure.Distributed;
 
@@ -576,6 +577,64 @@ public class DistributedAuthorityTests
         Assert.Equal(result1.ActionCount, result2.ActionCount);
         Assert.Equal(result1.Sessions[0].SnapshotHash, result2.Sessions[0].SnapshotHash);
         Assert.Equal(0, state.ActionCount); // Original state unchanged
+    }
+
+    [Fact]
+    public void DefaultGameEngine_Step_RejectsReplayMetadataOperatorMismatch()
+    {
+        var engine = new DefaultGameEngine();
+        var state = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>(), Sessions = new List<GameStateDto.CombatSessionState>() };
+        var mismatchedOperatorId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        var action = AuthorityActionFactory.CreateReplayBackedAction(mismatchedOperatorId, PrimaryAction.Fire);
+        action = new PlayerActionDto
+        {
+            ActionId = action.ActionId,
+            OperatorId = OperatorA,
+            SessionId = action.SessionId,
+            Primary = action.Primary,
+            Movement = action.Movement,
+            Stance = action.Stance,
+            Cover = action.Cover,
+            CancelMovement = action.CancelMovement,
+            ReplayInitialSnapshotJson = action.ReplayInitialSnapshotJson,
+            ReplayTurns = action.ReplayTurns
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => engine.Step(state, action));
+        Assert.Contains("operator mismatch", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PlayerActionDto_ReplayTurns_AreDefensivelyCopied()
+    {
+        var originalTurns = new List<IntentSnapshot>
+        {
+            new()
+            {
+                OperatorId = OperatorA,
+                Primary = PrimaryAction.Fire,
+                Movement = MovementAction.Stand,
+                Stance = StanceAction.None,
+                Cover = CoverAction.None
+            }
+        };
+
+        var action = new PlayerActionDto
+        {
+            OperatorId = OperatorA,
+            ReplayTurns = originalTurns
+        };
+
+        originalTurns.Add(new IntentSnapshot
+        {
+            OperatorId = OperatorA,
+            Primary = PrimaryAction.Reload,
+            Movement = MovementAction.Stand,
+            Stance = StanceAction.None,
+            Cover = CoverAction.None
+        });
+
+        Assert.Single(action.ReplayTurns!);
     }
 
     // --- LocalGameAuthority ---
