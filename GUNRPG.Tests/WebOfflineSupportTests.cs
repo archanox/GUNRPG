@@ -786,9 +786,18 @@ public sealed class WebOfflineSupportTests
                 if (request.Content is not null)
                 {
                     var body = await request.Content.ReadAsStringAsync(cancellationToken);
+                    // Body is camelCase JSON: {"sessionId":"..."}; parse using JsonDocument with
+                    // case-insensitive property matching to be robust against future naming changes.
                     using var doc = System.Text.Json.JsonDocument.Parse(body);
-                    if (doc.RootElement.TryGetProperty("sessionId", out var sid))
-                        LastPostedSessionId = sid.GetGuid();
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        if (prop.Name.Equals("sessionId", StringComparison.OrdinalIgnoreCase) &&
+                            prop.Value.TryGetGuid(out var parsedGuid))
+                        {
+                            LastPostedSessionId = parsedGuid;
+                            break;
+                        }
+                    }
                 }
 
                 return new HttpResponseMessage(HttpStatusCode.OK)
