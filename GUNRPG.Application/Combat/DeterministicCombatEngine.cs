@@ -18,7 +18,7 @@ namespace GUNRPG.Application.Combat;
 /// </summary>
 public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
 {
-    private const int MaxReplayTurns = 64;
+    private const int MaxCombatTurns = 64;
 
     /// <inheritdoc />
     public CombatResult Execute(OperatorDto snapshot, int seed)
@@ -29,7 +29,7 @@ public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
         var initialSnapshot = SessionMapping.ToSnapshot(session);
         session.SetReplayInitialSnapshotJson(OfflineCombatReplay.SerializeCombatSnapshot(initialSnapshot));
 
-        for (var turn = 0; turn < MaxReplayTurns && session.Phase != SessionPhase.Completed; turn++)
+        for (var turn = 0; turn < MaxCombatTurns && session.Phase != SessionPhase.Completed; turn++)
         {
             CombatSessionService.ExecuteReplayTurn(session, new IntentSnapshot
             {
@@ -96,8 +96,9 @@ public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
         if (Guid.TryParse(operatorId, out var parsed))
             return parsed;
 
-        var bytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(operatorId ?? string.Empty));
-        return new Guid(bytes[..16]);
+        // Offline envelopes use string IDs. When they are not GUID-formatted, map them
+        // to a stable synthetic GUID so combat sessions still have deterministic identities.
+        return StableGuidFactory.FromString(operatorId ?? string.Empty);
     }
 
     private static Weapon ResolveWeapon(string? equippedWeaponName, string? lockedLoadout)
