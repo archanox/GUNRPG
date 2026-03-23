@@ -130,14 +130,19 @@ public sealed class ReplayGameAuthority : IGameAuthority
     }
 
     private static GameStateDto CreateInitialState() =>
-        new() { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
+        new()
+        {
+            ActionCount = 0,
+            Operators = new List<GameStateDto.OperatorSnapshot>(),
+            Sessions = new List<GameStateDto.CombatSessionState>()
+        };
 
     /// <summary>
     /// Returns a shallow copy of <paramref name="state"/> with a new <see cref="GameStateDto.Operators"/>
     /// list so callers cannot corrupt internal state by mutating the returned object.
     /// </summary>
     private static GameStateDto CopyState(GameStateDto state) =>
-        new() { ActionCount = state.ActionCount, Operators = state.Operators.ToList() };
+        state.Clone();
 
     private static string ComputeHash(GameStateDto state)
     {

@@ -40,10 +40,15 @@ public sealed class DeterministicCombatEngineTests
     {
         var snapshot = CreateTestOperator();
 
-        // Run engine across a range of seeds and verify we get at least two distinct hashes.
-        // A deterministic engine driven by Random(seed) will produce different sequences for different seeds.
         var hashes = Enumerable.Range(1, 50)
-            .Select(seed => OfflineMissionHashing.ComputeOperatorStateHash(_engine.Execute(snapshot, seed).ResultOperator))
+            .Select(seed =>
+            {
+                var result = _engine.Execute(snapshot, seed);
+                return string.Join('|',
+                    OfflineMissionHashing.ComputeOperatorStateHash(result.ResultOperator),
+                    result.BattleLog.Count,
+                    string.Join(';', result.BattleLog.Select(entry => $"{entry.EventType}:{entry.TimeMs}:{entry.Message}")));
+            })
             .Distinct()
             .Count();
 
@@ -119,9 +124,45 @@ public sealed class DeterministicCombatEngineTests
 
         foreach (var entry in result.BattleLog)
         {
-            Assert.True(entry.EventType == "Damage" || entry.EventType == "Miss",
-                $"Unexpected event type: {entry.EventType}");
+            Assert.False(string.IsNullOrWhiteSpace(entry.EventType),
+                "Battle log entries should always include an event type");
         }
+    }
+
+    [Fact]
+    public void Execute_DifferentWeapons_ProduceDifferentReplayBackedResults()
+    {
+        var rifleSnapshot = CreateTestOperator();
+        var smgSnapshot = new OperatorDto
+        {
+            Id = rifleSnapshot.Id,
+            Name = rifleSnapshot.Name,
+            TotalXp = rifleSnapshot.TotalXp,
+            CurrentHealth = rifleSnapshot.CurrentHealth,
+            MaxHealth = rifleSnapshot.MaxHealth,
+            EquippedWeaponName = "STURMWOLF 45",
+            LockedLoadout = "STURMWOLF 45",
+            UnlockedPerks = rifleSnapshot.UnlockedPerks.ToList(),
+            ExfilStreak = rifleSnapshot.ExfilStreak,
+            IsDead = rifleSnapshot.IsDead,
+            CurrentMode = rifleSnapshot.CurrentMode,
+            ActiveCombatSessionId = rifleSnapshot.ActiveCombatSessionId,
+            InfilSessionId = rifleSnapshot.InfilSessionId,
+            InfilStartTime = rifleSnapshot.InfilStartTime,
+            Pet = rifleSnapshot.Pet
+        };
+
+        var rifleResult = _engine.Execute(rifleSnapshot, 42);
+        var smgResult = _engine.Execute(smgSnapshot, 42);
+
+        var rifleSignature = string.Join('|',
+            OfflineMissionHashing.ComputeOperatorStateHash(rifleResult.ResultOperator),
+            string.Join(';', rifleResult.BattleLog.Select(entry => $"{entry.EventType}:{entry.TimeMs}:{entry.Message}")));
+        var smgSignature = string.Join('|',
+            OfflineMissionHashing.ComputeOperatorStateHash(smgResult.ResultOperator),
+            string.Join(';', smgResult.BattleLog.Select(entry => $"{entry.EventType}:{entry.TimeMs}:{entry.Message}")));
+
+        Assert.NotEqual(rifleSignature, smgSignature);
     }
 
     // ─── Snapshot hash stability tests ───

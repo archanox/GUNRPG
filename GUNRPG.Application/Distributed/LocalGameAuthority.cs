@@ -61,7 +61,7 @@ public sealed class LocalGameAuthority : IGameAuthority
     {
         lock (_lock)
         {
-            return _currentState;
+            return _currentState.Clone();
         }
     }
 

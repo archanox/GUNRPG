@@ -41,7 +41,12 @@ public sealed class DistributedAuthority : IGameAuthority
         NodeId = nodeId;
         _transport = transport;
         _engine = engine;
-        _currentState = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
+        _currentState = new GameStateDto
+        {
+            ActionCount = 0,
+            Operators = new List<GameStateDto.OperatorSnapshot>(),
+            Sessions = new List<GameStateDto.CombatSessionState>()
+        };
         _currentStateHash = ComputeHash(_currentState);
 
         _transport.OnActionReceived += HandleActionReceived;
@@ -124,7 +129,7 @@ public sealed class DistributedAuthority : IGameAuthority
     {
         lock (_lock)
         {
-            return _currentState;
+            return _currentState.Clone();
         }
     }
 
@@ -286,7 +291,12 @@ public sealed class DistributedAuthority : IGameAuthority
                 // Full replay from genesis
                 _actionLog.Clear();
                 _appliedActionIds.Clear();
-                _currentState = new GameStateDto { ActionCount = 0, Operators = new List<GameStateDto.OperatorSnapshot>() };
+                _currentState = new GameStateDto
+                {
+                    ActionCount = 0,
+                    Operators = new List<GameStateDto.OperatorSnapshot>(),
+                    Sessions = new List<GameStateDto.CombatSessionState>()
+                };
                 _nextSequenceNumber = 0;
                 _currentStateHash = ComputeHash(_currentState);
             }

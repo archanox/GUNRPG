@@ -217,12 +217,15 @@ public sealed class CombatSessionService
         {
             await _gameAuthority.SubmitActionAsync(new PlayerActionDto
             {
+                SessionId = replaySession.Id,
                 OperatorId = replaySession.OperatorId.Value,
                 Primary = request.Intents.Primary,
                 Movement = request.Intents.Movement,
                 Stance = request.Intents.Stance,
                 Cover = request.Intents.Cover,
-                CancelMovement = request.Intents.CancelMovement
+                CancelMovement = request.Intents.CancelMovement,
+                ReplayInitialSnapshotJson = replaySession.ReplayInitialSnapshotJson,
+                ReplayTurns = replaySession.ReplayTurns.ToList()
             });
         }
 

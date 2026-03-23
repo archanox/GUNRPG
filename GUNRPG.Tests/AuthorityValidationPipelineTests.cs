@@ -189,10 +189,12 @@ public sealed class AuthorityValidationPipelineTests
         var authority1 = new ReplayGameAuthority(nodeId1, engine);
         var authority2 = new ReplayGameAuthority(nodeId2, engine);
 
+        var operatorA = Guid.NewGuid();
+        var operatorB = Guid.NewGuid();
         var actions = new[]
         {
-            new PlayerActionDto { OperatorId = Guid.NewGuid(), Primary = PrimaryAction.Fire },
-            new PlayerActionDto { OperatorId = Guid.NewGuid(), Primary = PrimaryAction.Reload },
+            AuthorityActionFactory.CreateReplayBackedAction(operatorA, PrimaryAction.Fire),
+            AuthorityActionFactory.CreateReplayBackedAction(operatorB, PrimaryAction.Reload),
         };
 
         foreach (var action in actions)
@@ -213,7 +215,7 @@ public sealed class AuthorityValidationPipelineTests
         var authorityNode1 = new ReplayGameAuthority(Guid.NewGuid(), engine);
         var authorityNode2 = new ReplayGameAuthority(Guid.NewGuid(), engine);
 
-        var action = new PlayerActionDto { OperatorId = Guid.NewGuid(), Primary = PrimaryAction.Fire };
+        var action = AuthorityActionFactory.CreateReplayBackedAction(Guid.NewGuid(), PrimaryAction.Fire);
         await authorityNode1.SubmitActionAsync(action);
         await authorityNode2.SubmitActionAsync(action);
 
@@ -244,8 +246,14 @@ public sealed class AuthorityValidationPipelineTests
     {
         var authority = new ReplayGameAuthority(Guid.NewGuid(), new DefaultGameEngine());
 
-        await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = Guid.NewGuid(), Primary = PrimaryAction.Fire });
-        await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = Guid.NewGuid(), Primary = PrimaryAction.Reload });
+        var actions = new[]
+        {
+            AuthorityActionFactory.CreateReplayBackedAction(Guid.NewGuid(), PrimaryAction.Fire),
+            AuthorityActionFactory.CreateReplayBackedAction(Guid.NewGuid(), PrimaryAction.Reload)
+        };
+
+        await authority.SubmitActionAsync(actions[0]);
+        await authority.SubmitActionAsync(actions[1]);
 
         Assert.False(authority.IsDesynced);
     }
@@ -256,8 +264,9 @@ public sealed class AuthorityValidationPipelineTests
         var authority = new ReplayGameAuthority(Guid.NewGuid(), new DefaultGameEngine());
         var operatorId = Guid.NewGuid();
 
-        await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = operatorId, Primary = PrimaryAction.Fire });
-        await authority.SubmitActionAsync(new PlayerActionDto { OperatorId = operatorId, Primary = PrimaryAction.Reload });
+        var actions = AuthorityActionFactory.CreateReplayBackedActions(operatorId, 42, PrimaryAction.Fire, PrimaryAction.Fire);
+        await authority.SubmitActionAsync(actions[0]);
+        await authority.SubmitActionAsync(actions[1]);
 
         var log = authority.GetActionLog();
         Assert.Equal(2, log.Count);
@@ -274,7 +283,7 @@ public sealed class AuthorityValidationPipelineTests
         var authA = new ReplayGameAuthority(Guid.NewGuid(), engine);
         var authB = new ReplayGameAuthority(Guid.NewGuid(), engine);
 
-        var action = new PlayerActionDto { OperatorId = operatorId, Primary = PrimaryAction.Fire };
+        var action = AuthorityActionFactory.CreateReplayBackedAction(operatorId, PrimaryAction.Fire);
         await authA.SubmitActionAsync(action);
         await authB.SubmitActionAsync(action);
 
