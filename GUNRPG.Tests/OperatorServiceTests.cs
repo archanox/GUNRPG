@@ -7,6 +7,7 @@ using GUNRPG.Application.Requests;
 using GUNRPG.Application.Results;
 using GUNRPG.Application.Services;
 using GUNRPG.Application.Sessions;
+using GUNRPG.Core.Combat;
 using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
 using GUNRPG.Infrastructure.Persistence;
@@ -666,11 +667,19 @@ public sealed class OperatorServiceTests : IDisposable
         }
 
         var finalSession = await _sessionService.GetStateAsync(sessionId);
-        bool isVictory = finalSession.Value!.Phase == SessionPhase.Completed && finalSession.Value.Player.IsAlive;
+        bool playerAlive = finalSession.Value!.Player.IsAlive;
+        bool enemyAlive = finalSession.Value!.Enemy.IsAlive;
+        bool isVictory = playerAlive && !enemyAlive;
 
-        // Verify combat session is completed but outcome is NOT yet processed
+        // Compute the expected XP that ProcessCombatOutcomeAsync will award based on the outcome.
+        // This mirrors the XP logic in CombatSession.GetOutcome(): 100 for victory, 50 for
+        // surviving without winning, 0 for death.
+        int expectedXp = isVictory ? 100 : (playerAlive ? 50 : 0);
+
+        // Verify combat session is completed but outcome is NOT yet processed (XP still 0)
         var beforeExfil = await _operatorService.GetOperatorAsync(operatorId);
         Assert.Equal(OperatorMode.Infil, beforeExfil.Value!.CurrentMode);
+        Assert.Equal(0, beforeExfil.Value.TotalXp);
         Assert.NotNull(beforeExfil.Value.ActiveCombatSessionId); // Still has reference
 
         // Act: Directly call CompleteInfilAsync WITHOUT explicitly calling ProcessCombatOutcomeAsync.
@@ -684,6 +693,9 @@ public sealed class OperatorServiceTests : IDisposable
         Assert.Equal(OperatorMode.Base, afterExfilOp.CurrentMode);
         Assert.Null(afterExfilOp.ActiveCombatSessionId);
 
+        // XP from the replay-derived outcome was applied before infil completed
+        Assert.Equal(expectedXp, afterExfilOp.TotalXp);
+
         // Streak is incremented only when the full infil completes successfully (not on death)
         Assert.Equal(isVictory ? 1 : 0, afterExfilOp.ExfilStreak);
     }
@@ -691,47 +703,85 @@ public sealed class OperatorServiceTests : IDisposable
     [Fact]
     public async Task CompleteInfilAsync_WithPendingDeathOutcome_TransitionsToBaseWithoutStreakIncrement()
     {
-        // Arrange: Create operator, start infil, then run combat until the player dies.
-        // We simulate death by constructing a CombatOutcome directly.
+        // Arrange: Create a deterministic "player died" scenario by saving a crafted completed
+        // snapshot directly to the store with Player.Health = 0 and FinalHash = null (which skips
+        // hash validation). This avoids relying on combat RNG to produce a death outcome.
         var createResult = await _operatorService.CreateOperatorAsync(new OperatorCreateRequest { Name = "TestOp" });
         var operatorId = createResult.Value!.Id;
         await _operatorService.StartInfilAsync(operatorId);
-        var sessionId = await StartAndCreateCombatSessionAsync(operatorId);
 
-        // Run combat to completion (may be victory or defeat depending on RNG)
-        SessionPhase finalPhase = SessionPhase.Planning;
-        for (int i = 0; i < 50; i++)
+        // Reserve a fixed session ID and register it on the operator aggregate
+        var sessionId = Guid.NewGuid();
+        var startResult = await _exfilService.StartCombatSessionAsync(new OperatorId(operatorId), sessionId);
+        Assert.True(startResult.IsSuccess, "Failed to register combat session on operator aggregate");
+
+        // Save a completed snapshot where the player is dead (Health = 0) and the enemy is alive.
+        // FinalHash = null and ReplayInitialSnapshotJson = "" instruct the store's validation to
+        // skip hash checks, keeping the test focused on the operator-level behavior under test
+        // (auto-processing of a death outcome in CompleteInfilAsync). Session-store hash
+        // validation is independently tested in LiteDbCombatSessionStoreTests and
+        // CombatSessionReplayIntegrityTests.
+        var deadPlayerSnapshot = new CombatSessionSnapshot
         {
-            await _sessionService.SubmitPlayerIntentsAsync(sessionId, new SubmitIntentsRequest
+            Id = sessionId,
+            OperatorId = operatorId,
+            Phase = SessionPhase.Completed,
+            TurnNumber = 1,
+            Seed = 42,
+            CreatedAt = DateTimeOffset.UtcNow,
+            CompletedAt = DateTimeOffset.UtcNow,
+            ReplayInitialSnapshotJson = string.Empty, // empty → skip replay hash check
+            FinalHash = null,                          // null → skip state-based hash check
+            Player = new OperatorSnapshot
             {
-                Intents = new IntentDto { Primary = PrimaryAction.Fire }
-            });
-            var state = await _sessionService.AdvanceAsync(sessionId);
-            finalPhase = state.Value!.Phase;
-            if (finalPhase == SessionPhase.Completed)
-                break;
-        }
+                Id = Guid.NewGuid(),
+                Name = "TestOp",
+                Health = 0f,       // dead
+                MaxHealth = 100f,
+                Accuracy = 0.5f
+            },
+            Enemy = new OperatorSnapshot
+            {
+                Id = Guid.NewGuid(),
+                Name = "Enemy",
+                Health = 100f,     // alive
+                MaxHealth = 100f,
+                Accuracy = 0.5f
+            },
+            Combat = new CombatStateSnapshot
+            {
+                Phase = CombatPhase.Ended,
+                RandomState = new RandomStateSnapshot { Seed = 42 }
+            },
+            Pet = new PetStateSnapshot
+            {
+                OperatorId = operatorId,
+                Health = 100f,
+                Morale = 100f,
+                Hydration = 100f,
+                LastUpdated = DateTimeOffset.UtcNow
+            }
+        };
+        await _sessionStore.SaveAsync(deadPlayerSnapshot);
 
-        if (finalPhase != SessionPhase.Completed)
-            return; // Test is inconclusive if combat didn't end in time
+        // Verify the setup: operator is in Infil with an active session pointing to our snapshot.
+        var beforeExfil = await _operatorService.GetOperatorAsync(operatorId);
+        Assert.Equal(OperatorMode.Infil, beforeExfil.Value!.CurrentMode);
+        Assert.Equal(sessionId, beforeExfil.Value.ActiveCombatSessionId);
 
-        // Find out whether operator died
-        var sessionState = await _sessionService.GetStateAsync(sessionId);
-        var operatorDied = sessionState.Value!.Phase == SessionPhase.Completed
-                           && !sessionState.Value.Player.IsAlive;
-
-        if (!operatorDied)
-            return; // Test only covers death path; skip if operator survived
-
-        // Act: Exfil without explicit outcome processing — server should auto-process death
+        // Act: Exfil without explicit outcome processing — CompleteInfilAsync should auto-process
+        // the pending death outcome via CleanupCompletedSessionAsync, emit OperatorDied +
+        // InfilEnded events, and then return early (operator is already in Base mode).
         var exfilResult = await _operatorService.CompleteInfilAsync(operatorId);
         Assert.True(exfilResult.IsSuccess, exfilResult.ErrorMessage ?? "CompleteInfil failed");
 
-        // Assert: Operator is in Base mode, streak reset (death = failed infil)
+        // Assert: Operator is in Base mode (death → InfilEnded was already emitted by cleanup),
+        // no XP (death awards 0 XP), streak reset to 0.
         var afterExfil = await _operatorService.GetOperatorAsync(operatorId);
         var afterExfilOp = afterExfil.Value!;
         Assert.Equal(OperatorMode.Base, afterExfilOp.CurrentMode);
-        Assert.Equal(0, afterExfilOp.ExfilStreak); // No streak on death
+        Assert.Equal(0, afterExfilOp.TotalXp);         // no XP for death
+        Assert.Equal(0, afterExfilOp.ExfilStreak);      // streak reset on death/failed infil
         Assert.Null(afterExfilOp.ActiveCombatSessionId);
     }
 
