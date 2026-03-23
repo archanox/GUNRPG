@@ -423,11 +423,19 @@
 
             // When a server-side session concludes (e.g. notified via SSE while another client
             // advances the final turn), process the replay-derived combat outcome so XP and mode
-            // transitions are applied on the server, then clear the stale local snapshot reference.
+            // transitions are applied on the server. Only clear the stale local snapshot reference
+            // on success; on failure, surface the error so the user is aware.
             if (data.IsConcluded && !_usingLocalSession)
             {
-                await OperatorSvc.ProcessCombatOutcomeAsync(data.OperatorId, data.Id);
-                await OperatorSvc.ClearActiveCombatSessionAsync(data.OperatorId);
+                var outcomeError = await OperatorSvc.ProcessCombatOutcomeAsync(data.OperatorId, data.Id);
+                if (outcomeError is null)
+                {
+                    await OperatorSvc.ClearActiveCombatSessionAsync(data.OperatorId);
+                }
+                else
+                {
+                    _error = outcomeError;
+                }
             }
         }
         else if (error is not null)
@@ -498,11 +506,18 @@
 
         // When a server-side session concludes via a turn advance, process the replay-derived
         // combat outcome on the server (awards XP, updates operator mode, handles death).
-        // Then clear the stale ActiveCombatSessionId from the local offline snapshot so
-        // MissionInfil won't redirect to this concluded session if the user goes offline after victory.
+        // Only clear the stale local ActiveCombatSessionId snapshot on success — if processing
+        // fails, preserve the reference so a retry is possible.
         if (_session?.IsConcluded == true && !_usingLocalSession)
         {
-            await OperatorSvc.ProcessCombatOutcomeAsync(_session.OperatorId, _session.Id);
+            var outcomeError = await OperatorSvc.ProcessCombatOutcomeAsync(_session.OperatorId, _session.Id);
+            if (outcomeError is not null)
+            {
+                _error = outcomeError;
+                StateHasChanged();
+                return;
+            }
+
             await OperatorSvc.ClearActiveCombatSessionAsync(_session.OperatorId);
         }
 
