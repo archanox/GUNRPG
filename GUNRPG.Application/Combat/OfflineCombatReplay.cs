@@ -163,7 +163,6 @@ public static class OfflineCombatReplay
             CurrentHealth = source.CurrentHealth,
             MaxHealth = source.MaxHealth,
             EquippedWeaponName = source.EquippedWeaponName ?? string.Empty,
-            UnlockedPerks = (source.UnlockedPerks ?? []).ToList(),
             ExfilStreak = source.ExfilStreak,
             IsDead = source.IsDead,
             CurrentMode = source.CurrentMode ?? string.Empty,

@@ -34,7 +34,6 @@ public sealed class GameStateDto
         public float CurrentHealth { get; init; }
         public float MaxHealth { get; init; }
         public string EquippedWeaponName { get; init; } = string.Empty;
-        public List<string> UnlockedPerks { get; init; } = new();
         public int ExfilStreak { get; init; }
         public bool IsDead { get; init; }
 
@@ -48,7 +47,6 @@ public sealed class GameStateDto
                 CurrentHealth = CurrentHealth,
                 MaxHealth = MaxHealth,
                 EquippedWeaponName = EquippedWeaponName,
-                UnlockedPerks = UnlockedPerks.ToList(),
                 ExfilStreak = ExfilStreak,
                 IsDead = IsDead
             };

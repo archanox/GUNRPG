@@ -16,8 +16,6 @@ public sealed record PlayerHealedLedgerEvent(float Amount, string Reason) : Game
 
 public sealed record XpAwardedLedgerEvent(long Amount, string Reason) : GameplayLedgerEvent("XpAwarded");
 
-public sealed record PerkUnlockedLedgerEvent(string PerkName) : GameplayLedgerEvent("PerkUnlocked");
-
 public sealed record InfilStateChangedLedgerEvent(string State, string Reason) : GameplayLedgerEvent("InfilStateChanged");
 
 public sealed record CombatSessionLedgerEvent(Guid SessionId, string State) : GameplayLedgerEvent("CombatSession");

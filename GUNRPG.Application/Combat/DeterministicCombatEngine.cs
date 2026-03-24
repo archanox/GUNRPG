@@ -47,7 +47,6 @@ public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
             CurrentHealth = operatorDied ? snapshot.MaxHealth : Math.Max(1f, session.Player.Health),
             MaxHealth = snapshot.MaxHealth,
             EquippedWeaponName = snapshot.EquippedWeaponName,
-            UnlockedPerks = snapshot.UnlockedPerks,
             ExfilStreak = snapshot.ExfilStreak,
             IsDead = false,
             CurrentMode = operatorDied ? "Base" : "Infil",

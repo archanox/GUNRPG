@@ -23,12 +23,6 @@ public sealed class TreatWoundsRequest
     public float HealthAmount { get; set; }
 }
 
-/// <summary>Request body for POST /operators/{id}/perks.</summary>
-public sealed class UnlockPerkRequest
-{
-    public string PerkName { get; set; } = string.Empty;
-}
-
 /// <summary>Request body for POST /operators/{id}/pet.</summary>
 public sealed class PetActionRequest
 {

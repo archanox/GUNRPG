@@ -361,26 +361,6 @@ public sealed class OperatorService
         }
     }
 
-    public async Task<(OperatorState? Data, string? Error)> UnlockPerkAsync(Guid operatorId, string perkName)
-    {
-        try
-        {
-            var response = await _api.PostAsync($"/operators/{operatorId}/perks", new UnlockPerkRequest { PerkName = perkName });
-            if (!response.IsSuccessStatusCode)
-            {
-                var err = await ApiHelpers.TryReadErrorAsync(response);
-                return (null, err ?? $"Failed to unlock perk: {response.StatusCode}");
-            }
-
-            var data = await response.Content.ReadFromJsonAsync<OperatorState>();
-            return (data, null);
-        }
-        catch (Exception ex)
-        {
-            return (null, ex.Message);
-        }
-    }
-
     public async Task<(OperatorState? Data, string? Error)> ApplyPetActionAsync(Guid operatorId, string action, float? hours = null, float? nutrition = null, float? hydration = null)
     {
         try

@@ -334,7 +334,6 @@ public sealed class DefaultGameEngine : IDeterministicGameEngine
             CurrentHealth = player.Health,
             MaxHealth = player.MaxHealth,
             EquippedWeaponName = player.EquippedWeaponName ?? string.Empty,
-            UnlockedPerks = new List<string>(),
             ExfilStreak = 0,
             IsDead = player.Health <= 0f
         };

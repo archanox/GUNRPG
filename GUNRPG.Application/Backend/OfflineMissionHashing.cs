@@ -17,7 +17,6 @@ public static class OfflineMissionHashing
             dto.CurrentHealth,
             dto.MaxHealth,
             dto.EquippedWeaponName,
-            dto.UnlockedPerks.OrderBy(x => x, StringComparer.Ordinal).ToArray(),
             dto.ExfilStreak,
             dto.IsDead,
             dto.CurrentMode,
@@ -40,14 +39,6 @@ public static class OfflineMissionHashing
         writer.Write(BitConverter.SingleToInt32Bits(aggregate.CurrentHealth));
         writer.Write(BitConverter.SingleToInt32Bits(aggregate.MaxHealth));
         WriteString(writer, aggregate.EquippedWeaponName);
-
-        var orderedPerks = aggregate.UnlockedPerks.ToArray();
-        Array.Sort(orderedPerks, StringComparer.Ordinal);
-        writer.Write(orderedPerks.Length);
-        foreach (var perk in orderedPerks)
-        {
-            WriteString(writer, perk);
-        }
 
         writer.Write(aggregate.ExfilStreak);
         writer.Write(aggregate.IsDead);
@@ -83,7 +74,6 @@ public static class OfflineMissionHashing
             dto.CurrentHealth,
             dto.MaxHealth,
             dto.EquippedWeaponName,
-            dto.UnlockedPerks.OrderBy(x => x, StringComparer.Ordinal).ToArray(),
             dto.ExfilStreak,
             dto.IsDead,
             dto.CurrentMode.ToString(),
@@ -117,7 +107,6 @@ public static class OfflineMissionHashing
         float CurrentHealth,
         float MaxHealth,
         string EquippedWeaponName,
-        string[] UnlockedPerks,
         int ExfilStreak,
         bool IsDead,
         string CurrentMode,

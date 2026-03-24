@@ -153,20 +153,6 @@ public class OperatorEventTests
     }
 
     [Fact]
-    public void PerkUnlockedEvent_ShouldSerializePayloadCorrectly()
-    {
-        // Arrange
-        var operatorId = OperatorId.NewId();
-        var evt = new PerkUnlockedEvent(operatorId, 1, "Fast Reload", string.Empty);
-
-        // Act
-        var perkName = evt.GetPerkName();
-
-        // Assert
-        Assert.Equal("Fast Reload", perkName);
-    }
-
-    [Fact]
     public void OperatorEvent_HashChain_ShouldPreventTampering()
     {
         // Arrange

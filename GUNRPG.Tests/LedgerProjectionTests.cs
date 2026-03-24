@@ -89,7 +89,6 @@ public sealed class LedgerProjectionTests : IDisposable
         var operatorId = create.Value!;
 
         await _service.ChangeLoadoutAsync(operatorId, "AK-47");
-        await _service.UnlockPerkAsync(operatorId, "Fast Reload");
         var infil = await _service.StartInfilAsync(operatorId);
         await _service.StartCombatSessionAsync(operatorId, infil.Value);
         await _service.ProcessCombatOutcomeAsync(new CombatOutcome(
@@ -112,7 +111,6 @@ public sealed class LedgerProjectionTests : IDisposable
         Assert.Equal(legacy.TotalXp, projected.TotalXp);
         Assert.Equal(legacy.CurrentHealth, projected.CurrentHealth);
         Assert.Equal(legacy.EquippedWeaponName, projected.EquippedWeaponName);
-        Assert.Equal(legacy.UnlockedPerks, projected.UnlockedPerks);
         Assert.Equal(legacy.ExfilStreak, projected.ExfilStreak);
         Assert.Equal(legacy.CurrentMode, projected.CurrentMode);
         Assert.Equal(legacy.InfilSessionId, projected.InfilSessionId);
@@ -192,7 +190,6 @@ public sealed class LedgerProjectionTests : IDisposable
         var operatorId = create.Value!;
 
         await _service.ChangeLoadoutAsync(operatorId, "M4");
-        await _service.UnlockPerkAsync(operatorId, "Marksman");
         var infil = await _service.StartInfilAsync(operatorId);
         await _service.StartCombatSessionAsync(operatorId, infil.Value);
         await _service.ProcessCombatOutcomeAsync(new CombatOutcome(
@@ -225,7 +222,6 @@ public sealed class LedgerProjectionTests : IDisposable
         var projected = await _bridge.LoadProjectedOperatorAsync(operatorId);
         Assert.NotNull(projected);
         Assert.Equal("M4", projected!.EquippedWeaponName);
-        Assert.Contains("Marksman", projected.UnlockedPerks);
     }
 
     [Fact]

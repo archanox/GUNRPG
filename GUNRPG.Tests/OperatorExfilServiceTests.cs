@@ -193,57 +193,6 @@ public class OperatorExfilServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task UnlockPerkAsync_ShouldSucceed()
-    {
-        // Arrange
-        var createResult = await _service.CreateOperatorAsync("TestOperator");
-        var operatorId = createResult.Value!;
-
-        // Act
-        var result = await _service.UnlockPerkAsync(operatorId, "Fast Reload");
-
-        // Assert
-        Assert.True(result.IsSuccess);
-
-        // Verify by loading
-        var loadResult = await _service.LoadOperatorAsync(operatorId);
-        Assert.Contains("Fast Reload", loadResult.Value!.UnlockedPerks);
-    }
-
-    [Fact]
-    public async Task UnlockPerkAsync_ShouldRejectDuplicatePerk()
-    {
-        // Arrange
-        var createResult = await _service.CreateOperatorAsync("TestOperator");
-        var operatorId = createResult.Value!;
-        await _service.UnlockPerkAsync(operatorId, "Fast Reload");
-
-        // Act
-        var result = await _service.UnlockPerkAsync(operatorId, "Fast Reload");
-
-        // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Equal(ResultStatus.ValidationError, result.Status);
-    }
-
-    [Fact]
-    public async Task UnlockPerkAsync_ShouldAllowMultiplePerks()
-    {
-        // Arrange
-        var createResult = await _service.CreateOperatorAsync("TestOperator");
-        var operatorId = createResult.Value!;
-
-        // Act
-        await _service.UnlockPerkAsync(operatorId, "Fast Reload");
-        await _service.UnlockPerkAsync(operatorId, "Double Tap");
-        await _service.UnlockPerkAsync(operatorId, "Steady Aim");
-
-        // Assert
-        var loadResult = await _service.LoadOperatorAsync(operatorId);
-        Assert.Equal(3, loadResult.Value!.UnlockedPerks.Count);
-    }
-
-    [Fact]
     public async Task ListOperatorsAsync_ShouldReturnAllOperators()
     {
         // Arrange
@@ -297,7 +246,6 @@ public class OperatorExfilServiceTests : IDisposable
         await _service.ApplyXpAsync(operatorId, 100, "First");
         await _service.ChangeLoadoutAsync(operatorId, "AK-47");
         await _service.ApplyXpAsync(operatorId, 50, "Second");
-        await _service.UnlockPerkAsync(operatorId, "Fast Reload");
         await _service.TreatWoundsAsync(operatorId, 20f);
 
         // Assert - Verify final state
@@ -306,8 +254,7 @@ public class OperatorExfilServiceTests : IDisposable
 
         Assert.Equal(150, aggregate.TotalXp);
         Assert.Equal("AK-47", aggregate.EquippedWeaponName);
-        Assert.Single(aggregate.UnlockedPerks);
-        Assert.Equal(6, aggregate.Events.Count); // 1 create + 5 operations (2xp + loadout + perk + wounds)
+        Assert.Equal(5, aggregate.Events.Count); // 1 create + 4 operations (2xp + loadout + wounds)
     }
 
     [Fact]
@@ -421,23 +368,6 @@ public class OperatorExfilServiceTests : IDisposable
         Assert.True(result.IsSuccess);
         var loadResult = await _service.LoadOperatorAsync(operatorId);
         Assert.Equal("AK-47", loadResult.Value!.EquippedWeaponName);
-    }
-
-    [Fact]
-    public async Task RespawnedOperator_CanUnlockPerks()
-    {
-        // Arrange - operator dies and respawns
-        var createResult = await _service.CreateOperatorAsync("TestOperator");
-        var operatorId = createResult.Value!;
-        await _service.KillOperatorAsync(operatorId, "Combat casualty");
-
-        // Act - respawned operator can unlock perks
-        var result = await _service.UnlockPerkAsync(operatorId, "Fast Reload");
-
-        // Assert
-        Assert.True(result.IsSuccess);
-        var loadResult = await _service.LoadOperatorAsync(operatorId);
-        Assert.Contains("Fast Reload", loadResult.Value!.UnlockedPerks);
     }
 
     [Fact]

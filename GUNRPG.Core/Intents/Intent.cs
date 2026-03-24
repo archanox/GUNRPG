@@ -70,9 +70,6 @@ public class FireWeaponIntent : Intent
         if (op.WeaponState == Operators.WeaponState.Reloading)
             return (false, "Cannot fire: weapon is reloading");
         
-        if (op.WeaponState == Operators.WeaponState.Jammed)
-            return (false, "Cannot fire: weapon is jammed");
-        
         if (op.CurrentAmmo <= 0)
             return (false, "Cannot fire: no ammo");
         

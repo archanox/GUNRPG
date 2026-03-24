@@ -479,41 +479,6 @@ public class OperatorsController : ControllerBase
     }
 
     /// <summary>
-    /// Unlocks a perk for the operator.
-    /// </summary>
-    /// <param name="id">The operator's unique identifier.</param>
-    /// <param name="request">The perk unlock request containing the perk name.</param>
-    /// <returns>The updated operator state.</returns>
-    /// <response code="200">Perk unlocked successfully.</response>
-    /// <response code="400">Invalid request or operator is in an invalid state.</response>
-    /// <response code="404">Operator not found.</response>
-    /// <response code="500">An unexpected error occurred.</response>
-    [HttpPost("{id:guid}/perks")]
-    [ProducesResponseType(typeof(ApiOperatorStateDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult<ApiOperatorStateDto>> UnlockPerk(Guid id, [FromBody] ApiUnlockPerkRequest? request)
-    {
-        var ownershipError = await VerifyOwnershipAsync(id);
-        if (ownershipError != null) return ownershipError;
-
-        var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiUnlockPerkRequest());
-        var result = await _service.UnlockPerkAsync(id, appRequest);
-        
-        return result.Status switch
-        {
-            ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
-            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
-            ResultStatus.InvalidState => BadRequest(new { error = result.ErrorMessage }),
-            ResultStatus.ValidationError => BadRequest(new { error = result.ErrorMessage }),
-            _ => StatusCode(500, new { error = result.ErrorMessage ?? "Unexpected error" })
-        };
-    }
-
-    /// <summary>
     /// Applies a pet action for the operator's companion.
     /// </summary>
     /// <param name="id">The operator's unique identifier.</param>

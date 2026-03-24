@@ -24,8 +24,6 @@ public sealed class GameState
 
         public IReadOnlyList<string> Inventory { get; init; } = [];
 
-        public IReadOnlyList<string> UnlockedPerks { get; init; } = [];
-
         public int ExfilStreak { get; init; }
 
         public bool IsDead { get; init; }

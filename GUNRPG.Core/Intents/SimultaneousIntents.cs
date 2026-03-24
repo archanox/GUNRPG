@@ -108,8 +108,6 @@ public class SimultaneousIntents
             case PrimaryAction.Fire:
                 if (op.WeaponState == WeaponState.Reloading)
                     return (false, "Cannot fire: weapon is reloading");
-                if (op.WeaponState == WeaponState.Jammed)
-                    return (false, "Cannot fire: weapon is jammed");
                 if (op.CurrentAmmo <= 0)
                     return (false, "Cannot fire: no ammo");
                 if (op.EquippedWeapon == null)

@@ -14,7 +14,6 @@ public sealed class OperatorDto
     public float CurrentHealth { get; set; }
     public float MaxHealth { get; set; }
     public string EquippedWeaponName { get; set; } = string.Empty;
-    public List<string> UnlockedPerks { get; set; } = new();
     public int ExfilStreak { get; set; }
     public bool IsDead { get; set; }
     public string CurrentMode { get; set; } = string.Empty;
