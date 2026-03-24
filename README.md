@@ -134,7 +134,7 @@ Weapons use **real stats** from tactical shooters:
 Operators are **event-sourced aggregates** that persist through an append-only event log with SHA-256 hash chaining for tamper detection.
 
 - **Infil/Exfil boundary**: combat uses a snapshot of operator stats; only the exfil path can commit progression events
-- **XP and perks**: gained on successful exfil
+- **XP**: gained on successful exfil
 - **Virtual pet / fatigue**: readiness mechanics between missions
 - **Complete audit trail**: all state changes are recorded and verifiable
 
@@ -207,10 +207,10 @@ dotnet publish GUNRPG.WebClient -c Release
 - **Infrastructure (`GUNRPG.Infrastructure`)**: LiteDB persistence, identity (WebAuthn, JWT, device code), ledger, gossip/P2P transport, session authority signing.
 - **Web API (`GUNRPG.Api`)**: Stateless controllers. Key endpoint groups:
   - **Sessions** (`/sessions`): create, get state, submit intents, advance, pet actions.
-  - **Operators** (`/operators`): create, get state, start/complete infil, process outcome, loadout, wounds, XP, perks.
+  - **Operators** (`/operators`): create, get state, start/complete infil, process outcome, loadout, wounds, XP.
   - **Auth** (`/auth`): WebAuthn register/login, token refresh, device code flow, public key.
   - **Weapons** (`/weapons`): list available weapons.
-- **Console client (`GUNRPG.ConsoleClient`)**: Pokemon Red-style TUI using [hex1b](https://hex1b.dev). Full operator lifecycle including combat, loadout management, healing, perks, and mission abort.
+- **Console client (`GUNRPG.ConsoleClient`)**: Pokemon Red-style TUI using [hex1b](https://hex1b.dev). Full operator lifecycle including combat, loadout management, healing, and mission abort.
 - **Web client (`GUNRPG.WebClient`)**: Blazor WASM SPA for browser-based play, including offline mode and SSE-based live updates.
 
 ## Design Philosophy

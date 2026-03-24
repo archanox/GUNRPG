@@ -36,7 +36,7 @@ public sealed class CombatOutcome
     /// <summary>
     /// Experience points gained during combat.
     /// </summary>
-    public int XpGained { get; }
+    public long XpGained { get; }
 
     /// <summary>
     /// Gear lost during combat (empty if none lost).
@@ -71,7 +71,7 @@ public sealed class CombatOutcome
         Guid sessionId,
         OperatorId operatorId,
         bool operatorDied,
-        int xpGained,
+        long xpGained,
         IReadOnlyCollection<GearId> gearLost,
         bool isVictory = false,
         int turnsSurvived = 0,

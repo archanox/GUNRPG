@@ -8,11 +8,10 @@ The following features are available in the console client to support the full i
 
 1. **Change Loadout** - Switch weapons at base
 2. **Treat Wounds** - Heal operator at base
-3. **Unlock Perk** - Unlock new perks at base
-4. **Abort Mission** - Explicitly abort mission while on infil
+3. **Abort Mission** - Explicitly abort mission while on infil
 
 All features respect the Base/Infil state machine:
-- Base mode: Full access to loadout, healing, and perk management
+- Base mode: Full access to loadout and healing
 - Infil mode: Only mission continuation or abort options
 
 ## Feature 1: Change Loadout
@@ -83,44 +82,7 @@ All features respect the Base/Infil state machine:
 - If at full health, shows "ALREADY AT FULL HEALTH" message
 - "HEAL ALL" option dynamically shows exact amount needed
 
-## Feature 3: Unlock Perk
-
-**When:** Available in Base mode only  
-**Purpose:** Unlock new operator perks  
-**Perks Available:**
-- Iron Lungs
-- Quick Draw
-- Toughness
-- Fast Reload
-- Steady Aim
-
-### UI Flow:
-```
-┌─ UNLOCK PERK ────────────────────────────┐
-│                                           │
-└───────────────────────────────────────────┘
-
-┌─ AVAILABLE PERKS ────────────────────────┐
-│  Select a perk to unlock:                 │
-│                                            │
-│  Unlocked: Iron Lungs, Fast Reload        │
-│                                            │
-│  ► Iron Lungs                              │
-│    Quick Draw                              │
-│    Toughness                               │
-│    Fast Reload                             │
-│    Steady Aim                              │
-│    --- CANCEL ---                          │
-└────────────────────────────────────────────┘
-
-  Choose a perk
-```
-
-**API Endpoint:** `POST /operators/{id}/perks`  
-**Request Body:** `{ "perkName": "Iron Lungs" }`  
-**Validation:** Only allowed in Base mode, perk must not already be unlocked
-
-## Feature 4: Abort Mission
+## Feature 3: Abort Mission
 
 **When:** Available in Infil mode only  
 **Purpose:** Initiate exfil and return to base  
@@ -162,7 +124,6 @@ The abort flow uses `POST /operators/{id}/infil/complete` to exfil, abandoning a
 │  ► START MISSION                          │
 │    CHANGE LOADOUT                          │
 │    TREAT WOUNDS                            │
-│    UNLOCK PERK                             │
 │    VIEW STATS                              │
 │    MAIN MENU                               │
 └────────────────────────────────────────────┘
@@ -189,8 +150,6 @@ Base Camp
 Change Loadout (optional)
   ↓
 Treat Wounds (optional)
-  ↓
-Unlock Perk (optional)
   ↓
 START MISSION
 ```
@@ -242,13 +201,11 @@ All new features properly enforce the operator state machine:
 | Abort Mission | ✗ | ✓ |
 | Change Loadout | ✓ | ✗ |
 | Treat Wounds | ✓ | ✗ |
-| Unlock Perk | ✓ | ✗ |
 | View Stats | ✓ | ✓ |
 
 **API Validation:** Server rejects invalid operations with appropriate error messages:
 - "Cannot change loadout while in Infil mode"
 - "Cannot treat wounds while in Infil mode"
-- "Cannot unlock perk while in Infil mode"
 
 ## Implementation Details
 
@@ -256,12 +213,10 @@ All new features properly enforce the operator state machine:
 
 - `BuildChangeLoadout()` — Weapon selection screen
 - `BuildTreatWounds()` — Healing selection screen
-- `BuildUnlockPerk()` — Perk selection screen
 - `BuildAbortMission()` — Mission abort confirmation screen
 
 ### API Endpoints
 
 - `POST /operators/{id}/loadout` — Change loadout
 - `POST /operators/{id}/wounds/treat` — Treat wounds
-- `POST /operators/{id}/perks` — Unlock perk
 - `POST /operators/{id}/infil/outcome` — Abort mission (triggers exfil failure)

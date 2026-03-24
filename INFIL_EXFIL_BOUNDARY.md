@@ -54,8 +54,7 @@ GUNRPG implements a strict architectural boundary between **combat (infil)** and
 │  └─ Exfil-Only Actions                                          │
 │     ├─ ApplyXp()                                                │
 │     ├─ TreatWounds()                                            │
-│     ├─ ChangeLoadout()                                          │
-│     └─ UnlockPerk()                                             │
+│     └─ ChangeLoadout()                                          │
 │                                                                 │
 │  OperatorAggregate (Event-Sourced)                              │
 │  ├─ State derived from events                                   │
@@ -87,10 +86,9 @@ All operator events inherit from `OperatorEvent` and include:
 - **XpGainedEvent** - Experience points awarded
 - **WoundsTreatedEvent** - Health restoration
 - **LoadoutChangedEvent** - Equipment changes
-- **PerkUnlockedEvent** - Skill/perk unlocks
 - **CombatVictoryEvent** - Combat victory (clears ActiveCombatSessionId, does not affect streak)
 - **ExfilFailedEvent** - Failed exfil (resets streak)
-- **OperatorDiedEvent** - Operator death (marks IsDead=true, resets streak)
+- **OperatorDiedEvent** - Operator death (respawns at base with full health, resets streak)
 
 ### Hash Chaining
 
@@ -126,7 +124,7 @@ This ensures deterministic recovery - operators always roll back to their last k
 - ❌ Directly mutate operator aggregate state
 - ❌ Append events to the operator event store
 - ❌ Persist operator changes
-- ❌ Grant XP, unlock perks, or modify loadout
+- ❌ Grant XP or modify loadout
 
 ### Combat MUST:
 - ✅ Use a **snapshot** of operator stats
@@ -212,9 +210,6 @@ await exfilService.TreatWoundsAsync(operatorId, 50f);
 
 // Only in exfil - change loadout
 await exfilService.ChangeLoadoutAsync(operatorId, "AK-47");
-
-// Only in exfil - unlock perk
-await exfilService.UnlockPerkAsync(operatorId, "Fast Reload");
 
 // Only in exfil - complete successful exfil (increments streak)
 await exfilService.CompleteExfilAsync(operatorId);

@@ -1,6 +1,8 @@
 using GUNRPG.Application.Operators;
 using GUNRPG.Core.Operators;
 using LiteDB;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace GUNRPG.Infrastructure.Persistence;
 
@@ -13,10 +15,12 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
 {
     private readonly ILiteCollection<OperatorEventDocument> _events;
     private readonly LiteDatabase _database;
+    private readonly ILogger<LiteDbOperatorEventStore> _logger;
 
-    public LiteDbOperatorEventStore(LiteDatabase database)
+    public LiteDbOperatorEventStore(LiteDatabase database, ILogger<LiteDbOperatorEventStore>? logger = null)
     {
         _database = database ?? throw new ArgumentNullException(nameof(database));
+        _logger = logger ?? NullLogger<LiteDbOperatorEventStore>.Instance;
         _events = _database.GetCollection<OperatorEventDocument>("operator_events");
 
         // Create indexes for efficient queries
@@ -195,7 +199,11 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             if (evt.Hash != doc.Hash)
             {
                 // Corruption detected - rollback to last valid event
-                // TODO: Add logging/metrics to track rollback incidents for diagnostics
+                var rolledBackCount = documents.Count(d => d.SequenceNumber >= doc.SequenceNumber);
+                _logger.LogError(
+                    "Hash mismatch detected for operator {OperatorId} at sequence {SequenceNumber}. " +
+                    "Rolling back {RolledBackCount} event(s). Stored hash: {StoredHash}, Rehydrated hash: {RehydratedHash}",
+                    operatorId, doc.SequenceNumber, rolledBackCount, doc.Hash, evt.Hash);
                 RollbackInvalidEvents(operatorId, doc.SequenceNumber);
                 break;
             }
@@ -204,7 +212,11 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             if (!evt.VerifyHash())
             {
                 // Corruption detected - rollback to last valid event
-                // TODO: Add logging/metrics to track rollback incidents for diagnostics
+                var rolledBackCount = documents.Count(d => d.SequenceNumber >= doc.SequenceNumber);
+                _logger.LogError(
+                    "Hash verification failed for operator {OperatorId} at sequence {SequenceNumber}. " +
+                    "Rolling back {RolledBackCount} event(s).",
+                    operatorId, doc.SequenceNumber, rolledBackCount);
                 RollbackInvalidEvents(operatorId, doc.SequenceNumber);
                 break;
             }
@@ -213,7 +225,11 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             if (!evt.VerifyChain(previousEvent))
             {
                 // Chain broken - rollback to last valid event
-                // TODO: Add logging/metrics to track rollback incidents for diagnostics
+                var rolledBackCount = documents.Count(d => d.SequenceNumber >= doc.SequenceNumber);
+                _logger.LogError(
+                    "Hash chain broken for operator {OperatorId} at sequence {SequenceNumber}. " +
+                    "Rolling back {RolledBackCount} event(s).",
+                    operatorId, doc.SequenceNumber, rolledBackCount);
                 RollbackInvalidEvents(operatorId, doc.SequenceNumber);
                 break;
             }
