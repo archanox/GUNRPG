@@ -63,7 +63,8 @@ public sealed class CombatSessionService
             startingDistance: request.StartingDistance,
             enemyName: request.EnemyName,
             id: request.Id,
-            operatorId: request.OperatorId);
+            operatorId: request.OperatorId,
+            playerTotalXp: request.PlayerTotalXp);
 
         if (string.IsNullOrEmpty(session.ReplayInitialSnapshotJson))
         {
@@ -445,10 +446,10 @@ public sealed class CombatSessionService
         // 1. Load operator aggregate via session.OperatorId to get actual level (adds dependency)
         // 2. Pass level from caller (requires API change)
         // 3. Refactor OpponentDifficulty.Compute to not require player level
-        // For now, using 0 as a placeholder - this will treat all operators as level 0 for pet/mission calculations
+        // PlayerLevel is now stored in the session at creation time via SessionCreateRequest.PlayerTotalXp
         float opponentDifficulty = OpponentDifficulty.Compute(
             opponentLevel: session.EnemyLevel,
-            playerLevel: 0);  // Placeholder - see TODO above
+            playerLevel: session.PlayerLevel);
 
         if (session.Player.IsAlive && !session.Enemy.IsAlive)
         {

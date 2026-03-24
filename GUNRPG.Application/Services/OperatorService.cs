@@ -396,7 +396,8 @@ public sealed class OperatorService
         {
             Id = sessionId,
             OperatorId = operatorId,
-            PlayerName = aggregate.Name
+            PlayerName = aggregate.Name,
+            PlayerTotalXp = aggregate.TotalXp
         };
         var sessionResult = await _sessionService.CreateSessionAsync(sessionRequest);
         if (!sessionResult.IsSuccess)
