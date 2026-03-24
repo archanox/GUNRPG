@@ -1,5 +1,6 @@
 using GUNRPG.Api.Dtos;
 using GUNRPG.Api.Mapping;
+using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Results;
 using GUNRPG.Application.Services;
 using GUNRPG.Application.Sessions;
@@ -44,20 +45,18 @@ public class SessionsController : ControllerBase
 
     /// <summary>
     /// Verifies that the authenticated account owns the session identified by <paramref name="sessionId"/>.
-    /// Returns a 401 when the JWT lacks the account_id claim, a 404 when the session is not found,
-    /// a 403 when the session belongs to a different account, or null when ownership is confirmed.
+    /// Returns an error result (401/403/404) on failure, or a null error with the loaded session DTO on success.
+    /// The cached DTO avoids a second store round-trip in callers that need the session state.
     /// </summary>
-    private async Task<ActionResult?> VerifySessionOwnershipAsync(Guid sessionId)
+    private async Task<(ActionResult? Error, CombatSessionDto? Session)> VerifySessionOwnershipAsync(Guid sessionId)
     {
         var accountId = GetAccountId();
         if (accountId == Guid.Empty)
-            return Unauthorized(new { error = "Token is missing the required account_id claim." });
+            return (Unauthorized(new { error = "Token is missing the required account_id claim." }), null);
 
         var sessionResult = await _service.GetStateAsync(sessionId);
         if (sessionResult.Status == ResultStatus.NotFound)
-            return NotFound(new { error = sessionResult.ErrorMessage });
-        if (sessionResult.Status != ResultStatus.Success)
-            return StatusCode(StatusCodes.Status500InternalServerError, new { error = "Unexpected error" });
+            return (NotFound(new { error = sessionResult.ErrorMessage }), null);
 
         var operatorId = sessionResult.Value!.OperatorId;
         var ownerAccountId = await _operatorService.GetOperatorAccountIdAsync(operatorId);
@@ -67,15 +66,15 @@ public class SessionsController : ControllerBase
             _logger.LogWarning(
                 "Session {SessionId} references operator {OperatorId} that has no account association.",
                 sessionId, operatorId);
-            return StatusCode(StatusCodes.Status403Forbidden,
-                new { error = "You do not have permission to access this session." });
+            return (StatusCode(StatusCodes.Status403Forbidden,
+                new { error = "You do not have permission to access this session." }), null);
         }
 
         if (ownerAccountId.Value != accountId)
-            return StatusCode(StatusCodes.Status403Forbidden,
-                new { error = "You do not have permission to access this session." });
+            return (StatusCode(StatusCodes.Status403Forbidden,
+                new { error = "You do not have permission to access this session." }), null);
 
-        return null;
+        return (null, sessionResult.Value);
     }
 
     /// <summary>
@@ -141,16 +140,10 @@ public class SessionsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiCombatSessionDto>> GetState(Guid id)
     {
-        var ownershipCheck = await VerifySessionOwnershipAsync(id);
-        if (ownershipCheck is not null) return ownershipCheck;
+        var (error, session) = await VerifySessionOwnershipAsync(id);
+        if (error is not null) return error;
 
-        var result = await _service.GetStateAsync(id);
-        return result.Status switch
-        {
-            ResultStatus.Success => Ok(ApiMapping.ToApiDto(result.Value!)),
-            ResultStatus.NotFound => NotFound(new { error = result.ErrorMessage }),
-            _ => StatusCode(500, new { error = "Unexpected error" })
-        };
+        return Ok(ApiMapping.ToApiDto(session!));
     }
 
     /// <summary>
@@ -174,8 +167,8 @@ public class SessionsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiCombatSessionDto>> SubmitIntent(Guid id, [FromBody] ApiSubmitIntentsRequest? request)
     {
-        var ownershipCheck = await VerifySessionOwnershipAsync(id);
-        if (ownershipCheck is not null) return ownershipCheck;
+        var (error, _) = await VerifySessionOwnershipAsync(id);
+        if (error is not null) return error;
 
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiSubmitIntentsRequest());
         var result = await _service.SubmitPlayerIntentsAsync(id, appRequest);
@@ -211,8 +204,8 @@ public class SessionsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiCombatSessionDto>> Advance(Guid id, [FromBody] ApiAdvanceRequest? request = null)
     {
-        var ownershipCheck = await VerifySessionOwnershipAsync(id);
-        if (ownershipCheck is not null) return ownershipCheck;
+        var (error, _) = await VerifySessionOwnershipAsync(id);
+        if (error is not null) return error;
 
         var result = await _service.AdvanceAsync(id, request?.OperatorId);
         return result.Status switch
@@ -244,8 +237,8 @@ public class SessionsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<ApiPetStateDto>> ApplyPetAction(Guid id, [FromBody] ApiPetActionRequest? request)
     {
-        var ownershipCheck = await VerifySessionOwnershipAsync(id);
-        if (ownershipCheck is not null) return ownershipCheck;
+        var (error, _) = await VerifySessionOwnershipAsync(id);
+        if (error is not null) return error;
 
         var appRequest = ApiMapping.ToApplicationRequest(request ?? new ApiPetActionRequest());
         var result = await _service.ApplyPetActionAsync(id, appRequest);
@@ -275,8 +268,8 @@ public class SessionsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult> Delete(Guid id)
     {
-        var ownershipCheck = await VerifySessionOwnershipAsync(id);
-        if (ownershipCheck is not null) return ownershipCheck;
+        var (error, _) = await VerifySessionOwnershipAsync(id);
+        if (error is not null) return error;
 
         var result = await _service.DeleteSessionAsync(id);
         return result.Status switch
@@ -302,12 +295,10 @@ public class SessionsController : ControllerBase
     [HttpGet("{id:guid}/stream")]
     public async Task StreamSessionEvents(Guid id, CancellationToken ct)
     {
-        var ownershipCheck = await VerifySessionOwnershipAsync(id);
-        if (ownershipCheck is not null)
+        var (error, _) = await VerifySessionOwnershipAsync(id);
+        if (error is not null)
         {
-            var objectResult = (ObjectResult)ownershipCheck;
-            Response.StatusCode = objectResult.StatusCode ?? StatusCodes.Status500InternalServerError;
-            await Response.WriteAsJsonAsync(objectResult.Value, ct);
+            await error.ExecuteResultAsync(ControllerContext);
             return;
         }
 
