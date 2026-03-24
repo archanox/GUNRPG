@@ -552,7 +552,6 @@ public sealed class WebOfflineSupportTests
         CurrentHealth = 100,
         MaxHealth = 100,
         EquippedWeaponName = "Rifle",
-        UnlockedPerks = [],
         InfilStartTime = infilStartTime
     };
 
@@ -587,8 +586,7 @@ public sealed class WebOfflineSupportTests
                     CurrentMode = "Infil",
                     CurrentHealth = 100,
                     MaxHealth = 100,
-                    EquippedWeaponName = "Rifle",
-                    UnlockedPerks = []
+                    EquippedWeaponName = "Rifle"
                 };
                 return new HttpResponseMessage(HttpStatusCode.OK)
                 {
@@ -650,8 +648,7 @@ public sealed class WebOfflineSupportTests
                     CurrentMode = "Base",
                     CurrentHealth = 100,
                     MaxHealth = 100,
-                    EquippedWeaponName = string.Empty,
-                    UnlockedPerks = []
+                    EquippedWeaponName = string.Empty
                 };
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {

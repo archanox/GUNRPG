@@ -345,21 +345,20 @@ public sealed class LedgerSyncTests
         var operatorId = OperatorId.NewId();
         var created = new OperatorCreatedEvent(operatorId, "Sync Tester", ReferenceNow.AddMinutes(-10));
         var loadout = new LoadoutChangedEvent(operatorId, 1, "Rifle", created.Hash, ReferenceNow.AddMinutes(-9));
-        var perk = new PerkUnlockedEvent(operatorId, 2, "Scavenger", loadout.Hash, ReferenceNow.AddMinutes(-8));
         var infil = new InfilStartedEvent(
             operatorId,
-            3,
+            2,
             Guid.NewGuid(),
             "Rifle|Medkit",
             ReferenceNow.AddMinutes(-7),
-            perk.Hash,
+            loadout.Hash,
             ReferenceNow.AddMinutes(-7));
-        var combatStart = new CombatSessionStartedEvent(operatorId, 4, Guid.NewGuid(), infil.Hash, ReferenceNow.AddMinutes(-6));
-        var xp = new XpGainedEvent(operatorId, 5, 150, "MissionComplete", combatStart.Hash, ReferenceNow.AddMinutes(-5));
-        var victory = new CombatVictoryEvent(operatorId, 6, xp.Hash, ReferenceNow.AddMinutes(-4));
-        var exfil = new InfilEndedEvent(operatorId, 7, true, "EXFIL", victory.Hash, ReferenceNow.AddMinutes(-3));
+        var combatStart = new CombatSessionStartedEvent(operatorId, 3, Guid.NewGuid(), infil.Hash, ReferenceNow.AddMinutes(-6));
+        var xp = new XpGainedEvent(operatorId, 4, 150, "MissionComplete", combatStart.Hash, ReferenceNow.AddMinutes(-5));
+        var victory = new CombatVictoryEvent(operatorId, 5, xp.Hash, ReferenceNow.AddMinutes(-4));
+        var exfil = new InfilEndedEvent(operatorId, 6, true, "EXFIL", victory.Hash, ReferenceNow.AddMinutes(-3));
 
-        return [created, loadout, perk, infil, combatStart, xp, victory, exfil];
+        return [created, loadout, infil, combatStart, xp, victory, exfil];
     }
 
     private static ServerIdentity CreateServerIdentity()

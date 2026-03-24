@@ -151,36 +151,6 @@ public class OperatorModeTests : IDisposable
     }
 
     [Fact]
-    public async Task UnlockPerk_InBaseMode_Succeeds()
-    {
-        // Arrange
-        var createResult = await _service.CreateOperatorAsync("TestOp");
-        var operatorId = createResult.Value!;
-
-        // Act
-        var result = await _service.UnlockPerkAsync(operatorId, "TestPerk");
-
-        // Assert
-        Assert.True(result.IsSuccess);
-    }
-
-    [Fact]
-    public async Task UnlockPerk_InInfilMode_Fails()
-    {
-        // Arrange
-        var createResult = await _service.CreateOperatorAsync("TestOp");
-        var operatorId = createResult.Value!;
-        await _service.StartInfilAsync(operatorId);
-
-        // Act
-        var result = await _service.UnlockPerkAsync(operatorId, "TestPerk");
-
-        // Assert
-        Assert.False(result.IsSuccess);
-        Assert.Contains("Cannot unlock perk while in Infil mode", result.ErrorMessage);
-    }
-
-    [Fact]
     public async Task ApplyXp_InBaseMode_Succeeds()
     {
         // Arrange

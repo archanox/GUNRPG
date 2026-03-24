@@ -30,8 +30,7 @@ public enum AimState
 public enum WeaponState
 {
     Ready,
-    Reloading,
-    Jammed
+    Reloading
 }
 
 /// <summary>

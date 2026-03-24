@@ -61,14 +61,6 @@
                     </div>
                 </FluentStack>
 
-                @if (_operator.UnlockedPerks.Count > 0)
-                {
-                    <div>
-                        <FluentLabel>Perks</FluentLabel>
-                        <div>@string.Join(", ", _operator.UnlockedPerks)</div>
-                    </div>
-                }
-
                 @if (_operator.InfilStartTime.HasValue)
                 {
                     <div>
@@ -96,11 +88,6 @@
                 <FluentButton Appearance="Appearance.Outline"
                               OnClick="@(() => Nav.NavigateTo($"operators/{Id}/wounds"))">
                     Treat Wounds
-                </FluentButton>
-
-                <FluentButton Appearance="Appearance.Outline"
-                              OnClick="@(() => Nav.NavigateTo($"operators/{Id}/perks"))">
-                    Unlock Perk
                 </FluentButton>
 
                 <FluentButton Appearance="Appearance.Outline"

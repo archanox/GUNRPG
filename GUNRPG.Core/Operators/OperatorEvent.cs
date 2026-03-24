@@ -305,50 +305,6 @@ public sealed class LoadoutChangedEvent : OperatorEvent
 }
 
 /// <summary>
-/// Event emitted when an operator unlocks a new perk or skill.
-/// </summary>
-public sealed class PerkUnlockedEvent : OperatorEvent
-{
-    public PerkUnlockedEvent(
-        OperatorId operatorId,
-        long sequenceNumber,
-        string perkName,
-        string previousHash,
-        DateTimeOffset? timestamp = null)
-        : base(
-            operatorId,
-            sequenceNumber,
-            eventType: "PerkUnlocked",
-            payload: JsonSerializer.Serialize(new { PerkName = perkName }),
-            previousHash: previousHash,
-            timestamp: timestamp)
-    {
-    }
-
-    public string GetPerkName()
-    {
-        var data = JsonSerializer.Deserialize<PerkPayload>(Payload)!;
-        return data.PerkName;
-    }
-
-    /// <summary>
-    /// Rehydrates a PerkUnlockedEvent from storage.
-    /// </summary>
-    public static PerkUnlockedEvent Rehydrate(
-        OperatorId operatorId,
-        long sequenceNumber,
-        string payload,
-        string previousHash,
-        DateTimeOffset timestamp)
-    {
-        var data = JsonSerializer.Deserialize<PerkPayload>(payload)!;
-        return new PerkUnlockedEvent(operatorId, sequenceNumber, data.PerkName, previousHash, timestamp);
-    }
-
-    private record PerkPayload(string PerkName);
-}
-
-/// <summary>
 /// Event emitted when an operator wins a combat encounter.
 /// Clears the active combat session ID so the operator can start a new combat within the same infil.
 /// Does NOT increment ExfilStreak — the streak is incremented only when the infil completes successfully.

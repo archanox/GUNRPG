@@ -119,25 +119,6 @@ public class OperatorAggregateTests
     }
 
     [Fact]
-    public void FromEvents_ShouldApplyPerkUnlockedCorrectly()
-    {
-        // Arrange
-        var operatorId = OperatorId.NewId();
-        var evt1 = new OperatorCreatedEvent(operatorId, "TestOperator");
-        var evt2 = new PerkUnlockedEvent(operatorId, 1, "Fast Reload", evt1.Hash);
-        var evt3 = new PerkUnlockedEvent(operatorId, 2, "Double Tap", evt2.Hash);
-        var events = new List<OperatorEvent> { evt1, evt2, evt3 };
-
-        // Act
-        var aggregate = OperatorAggregate.FromEvents(events);
-
-        // Assert
-        Assert.Equal(2, aggregate.UnlockedPerks.Count);
-        Assert.Contains("Fast Reload", aggregate.UnlockedPerks);
-        Assert.Contains("Double Tap", aggregate.UnlockedPerks);
-    }
-
-    [Fact]
     public void GetLastEventHash_ShouldReturnEmptyForNewAggregate()
     {
         // Arrange

@@ -504,7 +504,6 @@ public sealed class OfflineModeTests : IDisposable
             CurrentHealth = 100,
             MaxHealth = 100,
             EquippedWeaponName = "TestWeapon",
-            UnlockedPerks = new List<string>(),
             ExfilStreak = 0,
             IsDead = false,
             CurrentMode = "Base"

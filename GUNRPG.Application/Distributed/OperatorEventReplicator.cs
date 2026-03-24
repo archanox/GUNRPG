@@ -173,7 +173,6 @@ public sealed class OperatorEventReplicator
             "XpGained" => XpGainedEvent.Rehydrate(operatorId, msg.SequenceNumber, msg.Payload, msg.PreviousHash, msg.Timestamp),
             "WoundsTreated" => WoundsTreatedEvent.Rehydrate(operatorId, msg.SequenceNumber, msg.Payload, msg.PreviousHash, msg.Timestamp),
             "LoadoutChanged" => LoadoutChangedEvent.Rehydrate(operatorId, msg.SequenceNumber, msg.Payload, msg.PreviousHash, msg.Timestamp),
-            "PerkUnlocked" => PerkUnlockedEvent.Rehydrate(operatorId, msg.SequenceNumber, msg.Payload, msg.PreviousHash, msg.Timestamp),
             "CombatVictory" => CombatVictoryEvent.Rehydrate(operatorId, msg.SequenceNumber, msg.Payload, msg.PreviousHash, msg.Timestamp),
             "ExfilFailed" => ExfilFailedEvent.Rehydrate(operatorId, msg.SequenceNumber, msg.Payload, msg.PreviousHash, msg.Timestamp),
             "OperatorDied" => OperatorDiedEvent.Rehydrate(operatorId, msg.SequenceNumber, msg.Payload, msg.PreviousHash, msg.Timestamp),

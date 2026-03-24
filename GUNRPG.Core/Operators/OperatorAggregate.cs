@@ -45,11 +45,6 @@ public sealed class OperatorAggregate
     public string EquippedWeaponName { get; private set; } = string.Empty;
 
     /// <summary>
-    /// List of unlocked perks/skills.
-    /// </summary>
-    public IReadOnlyList<string> UnlockedPerks { get; private set; } = new List<string>();
-
-    /// <summary>
     /// Number of consecutive successful exfils.
     /// Increments on ExfilSucceeded, resets on ExfilFailed, OperatorDied, or rollback.
     /// </summary>
@@ -180,7 +175,6 @@ public sealed class OperatorAggregate
                 MaxHealth = 100f; // Default starting health
                 CurrentHealth = MaxHealth;
                 EquippedWeaponName = string.Empty;
-                UnlockedPerks = new List<string>();
                 ExfilStreak = 0;
                 IsDead = false;
                 CurrentMode = OperatorMode.Base; // Operators start in Base mode
@@ -214,12 +208,6 @@ public sealed class OperatorAggregate
 
             case LoadoutChangedEvent loadoutChanged:
                 EquippedWeaponName = loadoutChanged.GetWeaponName();
-                break;
-
-            case PerkUnlockedEvent perkUnlocked:
-                var perkName = perkUnlocked.GetPerkName();
-                var perks = new List<string>(UnlockedPerks) { perkName };
-                UnlockedPerks = perks;
                 break;
 
             case CombatVictoryEvent:

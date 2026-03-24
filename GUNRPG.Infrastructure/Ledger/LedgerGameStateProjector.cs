@@ -66,7 +66,6 @@ public sealed class LedgerGameStateProjector : IGameStateProjector
             MaxHealth = aggregate.MaxHealth,
             EquippedWeaponName = aggregate.EquippedWeaponName,
             Inventory = inventory,
-            UnlockedPerks = aggregate.UnlockedPerks.ToArray(),
             ExfilStreak = aggregate.ExfilStreak,
             IsDead = aggregate.IsDead,
             CurrentMode = aggregate.CurrentMode.ToString(),

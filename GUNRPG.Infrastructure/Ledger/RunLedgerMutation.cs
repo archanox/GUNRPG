@@ -98,7 +98,6 @@ public sealed class RunLedgerMutation
             PlayerDamagedLedgerEvent damaged => SerializeGameplayEvent(5, evt.EventType, [EncodeSingle(damaged.Amount), EncodeUtf8(damaged.Reason)]),
             PlayerHealedLedgerEvent healed => SerializeGameplayEvent(6, evt.EventType, [EncodeSingle(healed.Amount), EncodeUtf8(healed.Reason)]),
             XpAwardedLedgerEvent xp => SerializeGameplayEvent(7, evt.EventType, [EncodeInt64(xp.Amount), EncodeUtf8(xp.Reason)]),
-            PerkUnlockedLedgerEvent perk => SerializeGameplayEvent(8, evt.EventType, [EncodeUtf8(perk.PerkName)]),
             InfilStateChangedLedgerEvent infil => SerializeGameplayEvent(9, evt.EventType, [EncodeUtf8(infil.State), EncodeUtf8(infil.Reason)]),
             CombatSessionLedgerEvent combat => SerializeGameplayEvent(10, evt.EventType, [EncodeGuid(combat.SessionId), EncodeUtf8(combat.State)]),
             PetStateLedgerEvent pet => SerializeGameplayEvent(11, evt.EventType, [

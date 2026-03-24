@@ -16,7 +16,6 @@ public sealed class OperatorStateDto
     public float CurrentHealth { get; init; }
     public float MaxHealth { get; init; }
     public string EquippedWeaponName { get; init; } = string.Empty;
-    public List<string> UnlockedPerks { get; init; } = new();
     public int ExfilStreak { get; init; }
     public bool IsDead { get; init; }
     public OperatorMode CurrentMode { get; init; }

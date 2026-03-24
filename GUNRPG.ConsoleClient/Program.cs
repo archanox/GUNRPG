@@ -583,7 +583,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             Screen.Message => BuildMessage(),
             Screen.ChangeLoadout => BuildChangeLoadout(),
             Screen.TreatWounds => BuildTreatWounds(),
-            Screen.UnlockPerk => BuildUnlockPerk(),
             Screen.AbortMission => BuildAbortMission(),
             Screen.PetActions => BuildPetActions(),
             _ => new TextBlockWidget("Unknown screen")
@@ -1137,7 +1136,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             menuItems.Add(BaseActionInfil);
             menuItems.Add("CHANGE LOADOUT");
             menuItems.Add("TREAT WOUNDS");
-            menuItems.Add("UNLOCK PERK");
             menuItems.Add("PET ACTIONS");
             menuItems.Add("VIEW STATS");
         }
@@ -1168,14 +1166,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                     case "TREAT WOUNDS":
                         CurrentScreen = Screen.TreatWounds;
                         break;
-                    case "UNLOCK PERK":
-                        CurrentScreen = Screen.UnlockPerk;
-                        break;
                     case "PET ACTIONS":
                         CurrentScreen = Screen.PetActions;
                         break;
                     case "VIEW STATS":
-                        Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nPerks: {string.Join(", ", op.UnlockedPerks)}\n\nPress OK to continue.";
+                        Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\n\nPress OK to continue.";
                         CurrentScreen = Screen.Message;
                         ReturnScreen = Screen.BaseCamp;
                         break;
@@ -1262,7 +1257,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                     new TextBlockWidget($"  {xpInfo}"),
                     new TextBlockWidget($"  WEAPON: {op.EquippedWeaponName}"),
                     new TextBlockWidget($"  MODE: {op.CurrentMode}"),
-                    new TextBlockWidget($"  PERKS: {op.UnlockedPerks.Count}"),
                     op.IsDead ? new TextBlockWidget("  STATUS: KIA") : new TextBlockWidget("")
                 ])),
                 new TextBlockWidget("  "),
@@ -2085,7 +2079,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             CurrentHealth = state.CurrentHealth,
             MaxHealth = state.MaxHealth,
             EquippedWeaponName = state.EquippedWeaponName,
-            UnlockedPerks = state.UnlockedPerks,
             ExfilStreak = state.ExfilStreak,
             IsDead = state.IsDead,
             CurrentMode = state.CurrentMode,
@@ -2486,78 +2479,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         }
     }
 
-    Hex1bWidget BuildUnlockPerk()
-    {
-        var availablePerks = new[] {
-            "Iron Lungs",
-            "Quick Draw",
-            "Toughness",
-            "Fast Reload",
-            "Steady Aim",
-            "--- CANCEL ---"
-        };
-
-        var op = CurrentOperator;
-        var unlockedPerks = op?.UnlockedPerks ?? new List<string>();
-
-        return new VStackWidget([
-            UI.CreateBorder("UNLOCK PERK"),
-            new TextBlockWidget(""),
-            UI.CreateBorder("AVAILABLE PERKS", new VStackWidget([
-                new TextBlockWidget("  Select a perk to unlock:"),
-                new TextBlockWidget(""),
-                new TextBlockWidget($"  Unlocked: {string.Join(", ", unlockedPerks)}"),
-                new TextBlockWidget(""),
-                new ListWidget(availablePerks).OnItemActivated(e => {
-                    if (e.ActivatedIndex == availablePerks.Length - 1)
-                    {
-                        // Cancel
-                        CurrentScreen = Screen.BaseCamp;
-                    }
-                    else
-                    {
-                        UnlockPerk(availablePerks[e.ActivatedIndex]);
-                    }
-                })
-            ])),
-            UI.CreateStatusBar("Choose a perk")
-        ]);
-    }
-
-    void UnlockPerk(string perkName)
-    {
-        try
-        {
-            var request = new { PerkName = perkName };
-            var response = client.PostAsJsonAsync($"operators/{CurrentOperatorId}/perks", request, options)
-                .GetAwaiter().GetResult();
-            
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                ErrorMessage = $"Failed to unlock perk: {response.StatusCode} - {errorContent}";
-                Message = $"Perk unlock failed.\nError: {ErrorMessage}\n\nPress OK to continue.";
-                CurrentScreen = Screen.Message;
-                ReturnScreen = Screen.BaseCamp;
-                return;
-            }
-
-            // Refresh operator state
-            RefreshOperator();
-            
-            Message = $"Perk unlocked successfully.\nNew perk: {perkName}\n\nPress OK to continue.";
-            CurrentScreen = Screen.Message;
-            ReturnScreen = Screen.BaseCamp;
-        }
-        catch (Exception ex)
-        {
-            ErrorMessage = ex.Message;
-            Message = $"Error unlocking perk: {ex.Message}\n\nPress OK to continue.";
-            CurrentScreen = Screen.Message;
-            ReturnScreen = Screen.BaseCamp;
-        }
-    }
-
     Hex1bWidget BuildAbortMission()
     {
         var menuItems = new[] {
@@ -2831,7 +2752,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 CurrentHealth = CurrentOperator.CurrentHealth,
                 MaxHealth = CurrentOperator.MaxHealth,
                 EquippedWeaponName = CurrentOperator.EquippedWeaponName,
-                UnlockedPerks = CurrentOperator.UnlockedPerks,
                 ExfilStreak = CurrentOperator.ExfilStreak,
                 IsDead = true,
                 CurrentMode = "Base",
@@ -2988,7 +2908,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             CurrentHealth = dto.CurrentHealth,
             MaxHealth = dto.MaxHealth,
             EquippedWeaponName = dto.EquippedWeaponName,
-            UnlockedPerks = dto.UnlockedPerks,
             ExfilStreak = dto.ExfilStreak,
             IsDead = dto.IsDead,
             CurrentMode = dto.CurrentMode,
@@ -3026,7 +2945,6 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             CurrentHealth = json.GetProperty("currentHealth").GetSingle(),
             MaxHealth = json.GetProperty("maxHealth").GetSingle(),
             EquippedWeaponName = json.GetProperty("equippedWeaponName").GetString() ?? "",
-            UnlockedPerks = json.GetProperty("unlockedPerks").EnumerateArray().Select(p => p.GetString() ?? "").ToList(),
             ExfilStreak = json.GetProperty("exfilStreak").GetInt32(),
             IsDead = json.GetProperty("isDead").GetBoolean(),
             CurrentMode = json.GetProperty("currentMode").GetString() ?? "Base",
@@ -3195,7 +3113,6 @@ enum Screen
     Message,
     ChangeLoadout,
     TreatWounds,
-    UnlockPerk,
     AbortMission,
     PetActions
 }

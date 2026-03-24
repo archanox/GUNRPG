@@ -177,7 +177,6 @@ public sealed class OfflineGameplayService
         CurrentHealth = state.CurrentHealth,
         MaxHealth = state.MaxHealth,
         EquippedWeaponName = state.EquippedWeaponName,
-        UnlockedPerks = state.UnlockedPerks.ToList(),
         ExfilStreak = state.ExfilStreak,
         IsDead = state.IsDead,
         CurrentMode = state.CurrentMode,

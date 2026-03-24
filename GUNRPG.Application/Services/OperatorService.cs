@@ -116,7 +116,6 @@ public sealed class OperatorService
                     CurrentHealth = operatorDto.CurrentHealth,
                     MaxHealth = operatorDto.MaxHealth,
                     EquippedWeaponName = operatorDto.EquippedWeaponName,
-                    UnlockedPerks = operatorDto.UnlockedPerks,
                     ExfilStreak = operatorDto.ExfilStreak,
                     IsDead = operatorDto.IsDead,
                     CurrentMode = operatorDto.CurrentMode,
@@ -140,7 +139,6 @@ public sealed class OperatorService
                     CurrentHealth = operatorDto.CurrentHealth,
                     MaxHealth = operatorDto.MaxHealth,
                     EquippedWeaponName = operatorDto.EquippedWeaponName,
-                    UnlockedPerks = operatorDto.UnlockedPerks,
                     ExfilStreak = operatorDto.ExfilStreak,
                     IsDead = operatorDto.IsDead,
                     CurrentMode = operatorDto.CurrentMode,
@@ -508,23 +506,6 @@ public sealed class OperatorService
         return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
     }
 
-    public async Task<ServiceResult<OperatorStateDto>> UnlockPerkAsync(Guid operatorId, UnlockPerkRequest request)
-    {
-        var result = await _exfilService.UnlockPerkAsync(new OperatorId(operatorId), request.PerkName);
-        if (result.Status != ResultStatus.Success)
-        {
-            return ServiceResult<OperatorStateDto>.FromResult(result);
-        }
-
-        var loadResult = await _exfilService.LoadOperatorAsync(new OperatorId(operatorId));
-        if (!loadResult.IsSuccess)
-        {
-            return ServiceResult<OperatorStateDto>.FromResult(loadResult);
-        }
-
-        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
-    }
-
     public async Task<ServiceResult<OperatorStateDto>> ApplyPetActionAsync(Guid operatorId, PetActionRequest request)
     {
         var result = await _exfilService.ApplyPetActionAsync(new OperatorId(operatorId), request);
@@ -704,7 +685,6 @@ public sealed class OperatorService
             CurrentHealth = aggregate.CurrentHealth,
             MaxHealth = aggregate.MaxHealth,
             EquippedWeaponName = aggregate.EquippedWeaponName,
-            UnlockedPerks = aggregate.UnlockedPerks.ToList(),
             ExfilStreak = aggregate.ExfilStreak,
             IsDead = aggregate.IsDead,
             CurrentMode = aggregate.CurrentMode,

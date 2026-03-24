@@ -132,7 +132,6 @@ public static class ApiMapping
             CurrentHealth = appDto.CurrentHealth,
             MaxHealth = appDto.MaxHealth,
             EquippedWeaponName = appDto.EquippedWeaponName,
-            UnlockedPerks = appDto.UnlockedPerks,
             ExfilStreak = appDto.ExfilStreak,
             IsDead = appDto.IsDead,
             CurrentMode = appDto.CurrentMode.ToString(),
@@ -267,14 +266,6 @@ public static class ApiMapping
         {
             XpAmount = apiRequest.XpAmount,
             Reason = apiRequest.Reason
-        };
-    }
-
-    public static Application.Requests.UnlockPerkRequest ToApplicationRequest(ApiUnlockPerkRequest apiRequest)
-    {
-        return new Application.Requests.UnlockPerkRequest
-        {
-            PerkName = apiRequest.PerkName
         };
     }
 

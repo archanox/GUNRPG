@@ -246,52 +246,6 @@ public sealed class OperatorExfilService
     }
 
     /// <summary>
-    /// Unlocks a perk for an operator (exfil-only action).
-    /// </summary>
-    public async Task<ServiceResult> UnlockPerkAsync(OperatorId operatorId, string perkName)
-    {
-        if (string.IsNullOrWhiteSpace(perkName))
-            return ServiceResult.ValidationError("Perk name cannot be empty");
-
-        var loadResult = await LoadOperatorAsync(operatorId);
-        if (!loadResult.IsSuccess)
-            return MapLoadResultStatus(loadResult);
-
-        var aggregate = loadResult.Value!;
-
-        // Dead operators cannot have perks unlocked
-        if (aggregate.IsDead)
-            return ServiceResult.InvalidState("Cannot unlock perk for dead operator");
-
-        // Must be in Base mode
-        if (aggregate.CurrentMode != OperatorMode.Base)
-            return ServiceResult.InvalidState("Cannot unlock perk while in Infil mode");
-
-        // Check if perk already unlocked
-        if (aggregate.UnlockedPerks.Contains(perkName))
-            return ServiceResult.ValidationError($"Perk '{perkName}' already unlocked");
-
-        var previousHash = aggregate.GetLastEventHash();
-        var sequenceNumber = aggregate.CurrentSequence + 1;
-
-        var perkEvent = new PerkUnlockedEvent(
-            operatorId,
-            sequenceNumber,
-            perkName,
-            previousHash);
-
-        try
-        {
-            await AppendAsync(perkEvent);
-            return ServiceResult.Success();
-        }
-        catch (Exception ex)
-        {
-            return ServiceResult.InvalidState($"Failed to unlock perk: {ex.Message}");
-        }
-    }
-
-    /// <summary>
     /// Marks an exfil as successful, incrementing the operator's exfil streak.
     /// DEPRECATED for combat-based exfil: Use ProcessCombatOutcomeAsync instead.
     /// 
@@ -1167,7 +1121,6 @@ public sealed class OperatorExfilService
             && WithinTolerance(legacy.CurrentHealth, projected.CurrentHealth)
             && WithinTolerance(legacy.MaxHealth, projected.MaxHealth)
             && legacy.EquippedWeaponName == projected.EquippedWeaponName
-            && legacy.UnlockedPerks.SequenceEqual(projected.UnlockedPerks)
             && legacy.ExfilStreak == projected.ExfilStreak
             && legacy.IsDead == projected.IsDead
             && legacy.CurrentMode == projected.CurrentMode
