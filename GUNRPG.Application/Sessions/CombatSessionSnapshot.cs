@@ -22,6 +22,7 @@ public sealed class CombatSessionSnapshot
     /// </summary>
     public PetStateSnapshot Pet { get; init; } = default!;
     public int EnemyLevel { get; init; }
+    public int PlayerLevel { get; init; }
     public int Seed { get; init; }
     public bool PostCombatResolved { get; init; }
     public DateTimeOffset CreatedAt { get; init; }

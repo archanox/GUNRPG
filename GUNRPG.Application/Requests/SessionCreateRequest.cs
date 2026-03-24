@@ -8,4 +8,5 @@ public sealed class SessionCreateRequest
     public string? EnemyName { get; init; }
     public int? Seed { get; init; }
     public float? StartingDistance { get; init; }
+    public long? PlayerTotalXp { get; init; }
 }

@@ -29,6 +29,7 @@ public sealed class CombatSession
     public OperatorManager OperatorManager { get; }
     public PetState PetState { get; set; }
     public int EnemyLevel { get; }
+    public int PlayerLevel { get; }
     public int Seed { get; }
 
     /// <summary>
@@ -77,7 +78,8 @@ public sealed class CombatSession
         string? replayInitialSnapshotJson = null,
         IEnumerable<IntentSnapshot>? replayTurns = null,
         int version = CurrentVersion,
-        byte[]? finalHash = null)
+        byte[]? finalHash = null,
+        int playerLevel = 0)
     {
         Id = id;
         OperatorId = operatorId;
@@ -86,6 +88,7 @@ public sealed class CombatSession
         OperatorManager = operatorManager;
         PetState = petState;
         EnemyLevel = enemyLevel;
+        PlayerLevel = playerLevel;
         Seed = seed;
         Version = version > 0 ? version : CurrentVersion;
         Phase = phase;
@@ -103,7 +106,7 @@ public sealed class CombatSession
         FinalHash = finalHash != null ? (byte[])finalHash.Clone() : null;
     }
 
-    public static CombatSession CreateDefault(string? playerName = null, int? seed = null, float? startingDistance = null, string? enemyName = null, Guid? id = null, Guid? operatorId = null)
+    public static CombatSession CreateDefault(string? playerName = null, int? seed = null, float? startingDistance = null, string? enemyName = null, Guid? id = null, Guid? operatorId = null, long? playerTotalXp = null)
     {
         var resolvedSeed = seed ?? Random.Shared.Next();
         var name = string.IsNullOrWhiteSpace(playerName) ? "Player" : playerName.Trim();
@@ -130,6 +133,7 @@ public sealed class CombatSession
 
         var petState = new PetState(player.Id, 100f, 0f, 0f, 0f, 100f, 0f, 100f, DateTimeOffset.UtcNow);
         var enemyLevel = Math.Max(0, new SeededRandom(resolvedSeed).Next(-2, 3));
+        var resolvedPlayerLevel = OpponentDifficulty.ComputeLevelFromXp(playerTotalXp ?? 0L);
         var resolvedOperatorId = operatorId.HasValue
             ? OperatorId.FromGuid(operatorId.Value)
             : OperatorId.FromGuid(player.Id);
@@ -145,7 +149,8 @@ public sealed class CombatSession
             resolvedSeed,
             SessionPhase.Planning,
             1,
-            DateTimeOffset.UtcNow);
+            DateTimeOffset.UtcNow,
+            playerLevel: resolvedPlayerLevel);
     }
 
     public void TransitionTo(SessionPhase nextPhase, DateTimeOffset? timestamp = null)
