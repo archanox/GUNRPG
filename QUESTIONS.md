@@ -56,6 +56,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Current state:** `MissionResultDto` is defined but referenced nowhere in a running flow. The offline combat path uses `OfflineMissionEnvelope` (with full replay turns, snapshots, and hash chains) rather than a simple result DTO.
 - **Why this matters:** If `MissionResultDto` represents a future simpler offline flow (automated non-interactive combat), it would be architecturally distinct from the current snapshot+replay approach. It needs a home before it can be safely evolved.
 - **Question:** Is `MissionResultDto` intended as the future return type from a *non-interactive* offline simulation (e.g., auto-resolve combat), distinct from the current `OfflineMissionEnvelope` replay flow? If so, what triggers its creation and where does it feed back into the system? If it has been superseded by `OfflineMissionEnvelope`, should it be removed?
+- Answer: `approved improvement` It has likely been superseded, please confirm with the git history which is the newer implementation. Likely need to consolidate here.
 
 ---
 
@@ -66,6 +67,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Current state:** The `ExfilSyncService` implementation already exists (`ExfilSyncService.cs`) and calls `GetUnsyncedResults(operatorId)` — the per-operator variant. `GetAllUnsyncedResults()` is only used today for logging in `GameBackendResolver.LogUnsyncedResults()`.
 - **Why this matters:** The TODO implies a planned server-side reconciliation sweep that touches *all* operators' offline results, not just the actively infiled one. Without this, an operator who has offline results but is not the currently active infiled operator will never have their envelopes synced.
 - **Question:** Should `ExfilSyncService.SyncAsync` be extended to iterate over all operators with pending results (calling `GetAllUnsyncedResults()`)? Or is the current design — only syncing the active infiled operator — intentional? Are there cases where multiple operators could accumulate unsynced envelopes under the same client?
+- Answer: `approved improvement` it should be impossible to switch user contexts per client when offline. If there is multiple offline clients with different accounts, they'll handle their own sync when they come back online. Reconciliation should only happen when a player decides to exfil their operator - which is an online action, otherwise if they fail to exfil, the offline progress is abandoned.
 
 ---
 
@@ -76,6 +78,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Current state:** Rollbacks are completely silent — no log entry, no metric, no alerting. A production operator could silently lose progression events with no operator or admin awareness.
 - **Why this matters:** Silent data loss in an event-sourced system is operationally dangerous. Without logging, there is no way to detect corruption patterns, validate the rollback mechanism, or respond to potential tampering or storage issues.
 - **Question:** What logging library should be used here? `LiteDbOperatorEventStore` does not currently accept an `ILogger` dependency (unlike `LiteDbCombatSessionStore` which takes `ILogger<LiteDbCombatSessionStore>?`). Should `ILogger<LiteDbOperatorEventStore>` be injected, or should a different observability mechanism be used (metrics, structured events)? What information should be included in the log: `OperatorId`, `SequenceNumber`, corruption type, number of events rolled back?
+- Answer: `approved improvement` in the event of corruption, the player should see in the UI that they "failed exfil". Ilogger should be used for backend logging of this event, such as "who" how many events rolled back, and the corruption type.
 
 ---
 
@@ -86,6 +89,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Current state:** Any exception during the final exfil event append is silently converted to `ServiceResult.InvalidState("Failed to complete infil due to an internal error.")`. The original exception is completely discarded.
 - **Why this matters:** Transient infrastructure exceptions (LiteDB I/O, serialization errors) and permanent logic bugs are both silently absorbed. This makes diagnosing intermittent exfil failures impossible.
 - **Question:** Should the exception be logged with full stack trace (using `ILogger`), or should `OperatorExfilService` rethrow for the API layer to handle? What is the intended distinction between a "recoverable" and "unrecoverable" exception in this context? Should the operator's infil state be left in limbo, or should a compensation/retry mechanism be introduced?
+- Answer: `bug` full stack trace should be included in the server logs. The player state should not be left in limbo, a refresh of the page can suffice as a workaround if this issue occurs, but we should be displaying to the user some sort of error meesage, such as the exception message.
 
 ---
 
@@ -109,6 +113,7 @@ Review each question and mark it with one of these tags, then answer inline:
   2. Do perks have gameplay effects in `CombatSystemV2` (e.g., Fast Reload reduces reload time), or are they cosmetic/informational for now?
   3. Should XP be a prerequisite to unlock perks, or are they unlocked freely?
   4. Should `PerkUnlockedEvent` prevent re-unlocking the same perk at the aggregate replay level (idempotency guard)?
+ - Answer: `out-of-scope` This is a deprecated and removed feature that should not be referenced in documentation.
 
 ---
 
@@ -119,6 +124,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Current state:** `CombatSession.BuildCombatOutcome()` sets `gearLost = Array.Empty<GearId>()` unconditionally (line 306), so it is always empty in practice today.
 - **Why this matters:** The field exists, is documented, flows through the entire pipeline, but has no effect. If gear loss is intended (e.g., operator loses their weapon on death), the absence of implementation is a silent gap.
 - **Question:** Is gear loss intentionally deferred (i.e., `GearLost` is a placeholder for the Equipment System planned in DESIGN.md)? Should the field be suppressed/removed until the Equipment System is built, or left in place as a forward-compatible stub? If it should be implemented now, what event should be emitted (a new `GearLostEvent`, or should `OperatorDiedEvent` carry gear information)?
+- Answer: `deferred` gear will be implemented at a later date.
 
 ---
 
@@ -130,6 +136,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** These files contain 18+ `Console.WriteLine` calls for sync status, mode transitions, and error reporting. Other infrastructure classes (e.g., `LiteDbCombatSessionStore`, `RunReplayEngine`, `LibP2pPeerService`) correctly use `ILogger`.
 - **Why this matters:** Console output is not structured, not filterable, not exportable to log aggregation systems, and bypasses any log-level configuration. In a headless server context, important sync failure messages are invisible to monitoring tools.
 - **Question:** Should `GameBackendResolver`, `ExfilSyncService`, and `OnlineGameBackend` be updated to accept `ILogger<T>` dependencies? These are infrastructure-layer classes constructed inside extension methods — the plumbing for constructor injection is straightforward. Is there a reason they were intentionally left as console-only (e.g., to match the console client's UX)?
+- Answer: `bug` we should be using ILogger in the backend wherever possible. There was no intentional reason, likely using Console.WriteLine prior to the ILogger backend being set up.
 
 ---
 
@@ -143,6 +150,7 @@ Review each question and mark it with one of these tags, then answer inline:
   2. Using JSON schema migration at the `LiteDbMigrations` level
   3. Treating each event class as immutable-forever (accepting the constraint that fields can only be added, never removed or renamed)
   Which approach is preferred before the first production deployment?
+- Answer: `approved improvement` LiteDbMigrations is likely the solution here. The payload likely should be stored as strongtypes anyway and not json strings.
 
 ---
 
@@ -152,6 +160,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** The class is 965 lines and orchestrates hit resolution, movement, suppression, flinch, cover, ADS, reactions, and AI — all within a single class.
 - **Why this matters:** Adding new combat mechanics (e.g., grenades, flanking, area effects per DESIGN.md's "Multiple Opponents" future section) will increase this file's complexity further. The existing private helper methods are well-organized but not independently testable.
 - **Question:** Is there appetite to refactor `CombatSystemV2` into composable sub-systems (e.g., `HitResolutionSystem`, `MovementSystem`, `SuppressionSystem`) before implementing multi-opponent support? Or should it remain monolithic until multi-opponent is actively in scope?
+- Answer: `approved improvement` Yes we should refactor this prior to any further feature enhancements.
 
 ---
 
@@ -161,6 +170,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** When `StorageOptions.Provider = "InMemory"` is configured (the test path), `IOfflineSyncHeadStore` resolves to `InMemoryOfflineSyncHeadStore`. On the LiteDB path, it resolves to `LiteDbOfflineSyncHeadStore`. The sync head tracks the latest synced envelope hash per operator.
 - **Why this matters:** The sync head is critical to `ExfilSyncService`'s chain integrity check. If it were accidentally used in a non-test context (e.g., in the server, not just the console client), sync state would be lost on restart.
 - **Question:** Is `InMemoryOfflineSyncHeadStore` exclusively for tests and offline client DI paths? Should a guard be added to `AddCombatSessionStore` to prevent the InMemory provider from being set in production (e.g., via `IHostEnvironment.IsProduction()` assertion)?
+- Answer: Yes the InMemory storage provider is strictly for tests.
 
 ---
 
@@ -172,6 +182,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** `JwtTokenService` correctly computes and embeds a `kid` (SHA-256 thumbprint of the Ed25519 public key) in every issued JWT header, with the explicit comment *"enabling future key rotation: validators can select the correct public key by looking up the `kid` in a published JWKS-like endpoint."* The `Ed25519JwtBearerPostConfigure` validator uses the single current public key without any kid-based lookup.
 - **Why this matters:** Without key rotation, a compromised signing key requires a full server restart and invalidates all active sessions. With the `kid` infrastructure in place, rotation only requires publishing the new key alongside the old one.
 - **Question:** What is the planned timeline for key rotation? Does it require a JWKS endpoint (`GET /auth/jwks`), or will rotation only happen via manual key file replacement? Should the `GetKeyId()` method on `ITokenService` be exposed via the public key API endpoint for client-side validation?
+- Answer: `deferred` no timeline yet.
 
 ---
 
@@ -181,6 +192,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** The comment says *"In production every listed origin must be HTTPS (validated at startup by options validation)"*, but there is no actual startup validation of HTTPS origins. The fallback when no origins are configured is `["https://localhost"]`, but a misconfigured `appsettings.json` could allow HTTP origins with no warning.
 - **Why this matters:** Allowing HTTP origins in WebAuthn can downgrade the security context and expose auth tokens to network interception.
 - **Question:** Should an `IValidateOptions<WebAuthnOptions>` implementation be added that rejects HTTP (non-localhost) origins on startup in production environments? Or is this risk accepted given that Tailscale provides transport encryption?
+- Answer: CORS would need to permit local http access on the local network for the console client. The website hosted on github pages can only use https/
 
 ---
 
@@ -190,6 +202,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** The ownership check comments state: *"Deny access if the operator has no account association (created before isolation was enforced) or belongs to a different account."* Operators without an `AccountId` (created in an earlier version before account isolation) are treated as inaccessible to all accounts.
 - **Why this matters:** Any operator created before the account isolation feature was implemented is now permanently orphaned — no account can access them, and no migration path is documented.
 - **Question:** Should a one-time migration be run to assign orphaned operators to a specific administrative account? Or should these operators be treated as deleted/purged from the system? Is there a `LiteDbMigrations` migration planned to backfill `AccountId` on existing operator events?
+- Answer: The data is considered to be testing only and has been, and will be deleted. No migration neccessary.
 
 ---
 
@@ -199,7 +212,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** No rate limiting is applied to any authentication endpoints. The device code polling interval is enforced client-side (`DeviceCode.cs` describes a minimum polling interval), but there is no server-side enforcement.
 - **Why this matters:** Without server-side rate limiting, device code endpoints are vulnerable to brute-force polling, WebAuthn registration endpoints to enumeration attacks, and token refresh endpoints to token stuffing.
 - **Question:** Is ASP.NET Core's built-in rate limiting middleware (`AddRateLimiter`) planned? What policy is appropriate for each endpoint (e.g., sliding window on auth, fixed window on device code poll)?
-
+- Answer: this should probably be implemented.
 ---
 
 ### 5. Data & Persistence
@@ -210,6 +223,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** Tests verify that hash chain corruption (logical) is detected and rolled back correctly. There are no tests for LiteDB file-level corruption (e.g., truncated file, bitflip in the LiteDB B-tree, process kill during write).
 - **Why this matters:** LiteDB is an embedded database with a single file. On embedded systems (Raspberry Pi, etc.), unexpected shutdowns are common. If the LiteDB file is physically corrupted, the operator event chain verification will fail on every event, triggering a full rollback to sequence 0 — permanent progression loss.
 - **Question:** Should a backup strategy be documented (e.g., copy-on-write before each session, periodic tar of the data directory)? Should LiteDB's journaling mode be verified as enabled? Is there a tested recovery procedure for full LiteDB file corruption?
+- Answer: copy on write and/or journaling should be enabled. As we're putting these severs into a swarm, a recovery system could be put in place to recover from other trusted nodes.
 
 ---
 
@@ -219,6 +233,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** `ApplyMigrations` is called on every server startup but contains only commented-out example code and the comment *"No migrations to apply yet."* `CurrentSchemaVersion = 1` is the baseline with no upgrade path.
 - **Why this matters:** When a schema change is needed (e.g., adding a column to `CombatSessionSnapshot`), the migration infrastructure exists but is untested end-to-end. The first real migration will be written under deadline pressure against an untested framework.
 - **Question:** Should a test migration (v1 → v2 → v1 rollback) be written to validate the LiteDB.Migration pipeline before it is needed in anger? Should the migration framework cover operator event documents as well as combat session snapshots?
+- Answer: `deferred`
 
 ---
 
@@ -228,6 +243,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** Each `OfflineMissionEnvelope` stores `FullBattleLog` (a `List<BattleLogEntryDto>`) and `ReplayTurns` (a `List<IntentSnapshot>`). For a long combat session, this could be hundreds of KB per envelope stored indefinitely in the offline LiteDB until synced.
 - **Why this matters:** On offline-only devices with limited storage (e.g., Raspberry Pi), a large backlog of unsynced envelopes could exhaust disk space. There is no TTL or cleanup policy for synced envelopes.
 - **Question:** Should synced envelopes be automatically deleted after a configurable retention period (e.g., 30 days)? Or should the `FullBattleLog` be truncated from the local store once the envelope is confirmed synced (keeping the envelope header for audit purposes)?
+- Answer: The offline battle log should realistically only persist for up to 30 mins or whatever the infil timer is set to. Once expired these logs should be purged.
 
 ---
 
@@ -239,6 +255,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** `ResolveAsync()` performs a full `ExfilSyncService.SyncAsync()` — including multiple HTTP POST requests to the server — synchronously within the `ResolveAsync()` await chain. The console client calls `ResolveAsync()` as part of screen rendering decisions.
 - **Why this matters:** If the server is slow or a large batch of envelopes is pending, the UI can stall indefinitely with no progress indicator. There is a 3-second timeout on the connectivity check, but no timeout on the full sync operation.
 - **Question:** Should `ExfilSyncService.SyncAsync` have a per-request timeout (via `CancellationToken`)? Should the sync be decoupled from the `ResolveAsync` call (e.g., run sync as a background task and block UI only on the first envelope)? The `CancellationToken` parameter already exists on `SyncAsync` — is it wired up?
+- Answer: We should have a progress indicator here. Timeouts should be retried in the background, if it fails it remains in an offline state.
 
 ---
 
@@ -248,6 +265,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** `GetOperatorAsync` checks if the infil timer has expired and auto-fails the infil with a write, then re-reads the operator. This is a read-check-write sequence with no atomic transaction.
 - **Why this matters:** If two concurrent requests call `GetOperatorAsync` for the same operator simultaneously and both detect timer expiry, both will try to append an `ExfilFailedEvent` + `InfilEndedEvent`. The second append will fail the sequence constraint (sequence already taken), returning an error to the second caller.
 - **Question:** Is this a known accepted race (the second concurrent call will see the operator already in Base mode on retry, so the error is transient)? Or should an optimistic concurrency token be used? Should `OperatorExfilService.FailInfilAsync` be idempotent (return success if already in Base mode)?
+- Answer: `bug` We need to enforce the infil timer expiry on the backend, in addition to the front end. The front end should not be the arbiter or declaring a infil has ended in this scenario, not the exfil has fialed.
 
 ---
 
@@ -259,6 +277,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** `AppendEventAsync` and `AppendEventsAsync` throw `NotImplementedException("AppendEventAsync not needed for current tests")`.
 - **Why this matters:** Tests that use `StubOperatorEventStore` cannot test any path that appends events. If a new test requires the append path (e.g., testing event replication), the stub must be extended. The current error messages could confuse a developer who accidentally hits these paths.
 - **Question:** Should the stub be replaced with a proper in-memory implementation (`InMemoryOperatorEventStore` already exists in `GUNRPG.Application`)? Or is the stub intentionally minimal for specific read-only test scenarios?
+- Answer: `deferred`
 
 ---
 
@@ -267,12 +286,13 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Where:** `GUNRPG.Tests/ExfilSyncServiceTests.cs`, `GUNRPG.Tests/OfflineModeTests.cs`
 - **Context:** `ExfilSyncServiceTests` covers sequence integrity and hash chain validation using `QueueHandler` (mock HTTP). `OfflineModeTests` covers the offline play path. However, there is no end-to-end test that:
   1. Creates an operator online
-  2. Infiles to offline
+  2. Infils to offline
   3. Runs one or more offline combat sessions
   4. Reconnects and syncs back
   5. Verifies server operator state matches the projected result
 - **Why this matters:** The offline sync chain-of-trust is the most complex flow in the system. Integration-level regression tests would catch subtle bugs in hash computation, sequence ordering, or projection logic.
 - **Question:** Is an end-to-end sync integration test planned? Should it use the full `GameBackendResolver.ResolveAsync` pipeline with a real in-process `TestServer`, or continue mocking at the HTTP layer?
+- Answer: `deferred`
 
 ---
 
@@ -285,6 +305,7 @@ Review each question and mark it with one of these tags, then answer inline:
   - LiteDB write throughput under concurrent event appends
 - **Why this matters:** The hash chain verification (`VerifyHash()` + `VerifyChain()`) runs in O(n) per event on every `LoadOperatorAsync` call. For operators with many events, this could become a bottleneck.
 - **Question:** What is the expected maximum number of events per operator lifetime? Is there a plan to cache the replayed aggregate state (e.g., aggregate snapshots at periodic checkpoints), or is full replay acceptable at the anticipated scale?
+- Answer: `deferred`
 
 ---
 
@@ -296,6 +317,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** The `/health` endpoint is registered but only maps the default ASP.NET Core health check, which returns healthy if the application process is running. There is no check on LiteDB availability, file permissions, or disk space.
 - **Why this matters:** The health endpoint is used by `GameBackendResolver.IsServerReachableAsync()` — the console client uses it to determine whether to operate in online or offline mode. A server with a corrupted LiteDB will appear healthy to clients.
 - **Question:** Should a custom `IHealthCheck` be registered that performs a lightweight LiteDB read (e.g., read the schema version document)? Should disk space be checked as part of health?
+- Answer: `approved improvement` this should be implemented. Health should be checking all the things that it needs to operate succesfully. Asp.net docs outline what to do when there is reduced functionality etc (eg. database down).
 
 ---
 
@@ -305,6 +327,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** `ILogger` is used in some infrastructure classes (`LibP2pPeerService`, `LedgerGossipService`, `LiteDbCombatSessionStore`, `RunReplayEngine`) but not in the primary application service paths (`OperatorExfilService`, `CombatSessionService`, `OperatorService`). `Console.WriteLine` is used in sync/backend classes instead.
 - **Why this matters:** Diagnosing production issues requires structured, queryable logs. Without telemetry, it is impossible to track combat session durations, sync success rates, operator death rates, or exfil failure reasons.
 - **Question:** Is structured logging (e.g., Serilog with JSON sinks) or OpenTelemetry planned? What are the key business events that should always be logged (exfil success/failure, operator death, sync failure)?
+- Answer: `approved improvement` yes this needs to be done. Along with adding metrics like timers and meters.
 
 ---
 
@@ -316,6 +339,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** The documentation says *"The streak is informational only (no gameplay effects yet) but provides foundation for future features like bonus rewards or difficulty modifiers."*
 - **Why this matters:** If streak has no effect, it is pure bookkeeping overhead. Deciding when it gains gameplay effects affects how it is exposed to clients and what events need to carry it.
 - **Question:** What is the first planned gameplay use of `ExfilStreak`? (e.g., "3-streak bonus XP multiplier", "streak unlocks a special mission type"). Is it displayed in the TUI "VIEW STATS" screen today?
+- Answer: `verified` yes this is for bookkeeping at the moment until further game mechanics are designed and implemented
 
 ---
 
@@ -325,6 +349,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** The design allows an operator to fight multiple enemies during a single infil (after each `CombatVictoryEvent`, they remain in Infil mode). XP is emitted per combat via `XpGainedEvent`. The `InfilEndedEvent` (with `wasSuccessful: true`) is only emitted when the operator explicitly exfils. The `ExfilStreak` increments only on `InfilEndedEvent`.
 - **Why this matters:** Is the intended progression: fight multiple combats, accumulate XP from each, then exfil once to increment streak? Or should streak also track "combats won during this infil"?
 - **Question:** Is the current model — one streak increment per successful exfil regardless of how many enemies were defeated — intentional? Should there be a concept of "mission difficulty" that scales with the number of enemies defeated before exfil?
+- Answer: Yes it is intentional that the exfil streak is incremented upon successful exfil. Mission difficulty is deferred.
 
 ---
 
@@ -337,6 +362,7 @@ Review each question and mark it with one of these tags, then answer inline:
   2. If the TUI does use `IsDead` to gate the "operator is dead, game over" screen (a reasonable assumption), the offline path will never show it.
   3. This is a silent divergence from the documented aggregate semantics. Any future code that reads `IsDead` from the offline-projected DTO will see incorrect state.
 - **Question:** Is `IsDead = false` intentional (e.g., the TUI always checks `CombatOutcome.OperatorDied` and never `OperatorDto.IsDead` for this screen)? If so, should a comment be added to explain the design? If it is unintentional, `IsDead` should be set to `true` and `CurrentHealth` to `0` to match aggregate semantics — the offline snapshot is ephemeral and discarded after sync, so the visual representation should accurately show the operator as dead.
+- Answer: I believe that this is a `bug` relating to the resetting of the operator living status when they die, when they die in combat, they are "respawned" at base with full health.
 
 ---
 
@@ -348,7 +374,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** The documentation lists `PerkUnlockedEvent` as one of the 8 operator event types and shows `await exfilService.UnlockPerkAsync(operatorId, "Fast Reload")` as a code example. Neither exists in the codebase.
 - **Why this matters:** Stale documentation misleads developers about the system's actual capabilities.
 - **Question:** Should `INFIL_EXFIL_BOUNDARY.md` be updated to mark perks as "planned but not yet implemented"? Or should the perk implementation be completed first, then the docs are already accurate?
-
+- Answer: this should be cleaned up. This is removed behaviour.
 ---
 
 #### Q29. No OpenAPI documentation on endpoints
@@ -357,6 +383,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** `MapOpenApi()` is called and `MapScalarApiReference()` provides a Scalar UI. However, most controller actions and DTOs lack `[ProducesResponseType]` attributes and XML summary tags for the OpenAPI generator to produce useful documentation.
 - **Why this matters:** The web client and any third-party integrations rely on accurate API documentation. Without response type annotations, the generated schema will be missing status codes and error shapes.
 - **Question:** Should `[ProducesResponseType]` attributes be added to all controller actions? Is the Scalar UI (`/scalar`) intended for developer use only, or will it be publicly documented as the API reference?
+- Answer: Comprehensive documentation should be supplied to the Scalar front end. It is publicly available API documentation, not exclusively for developers.
 
 ---
 
@@ -368,6 +395,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** Private constants like `MOVEMENT_UPDATE_INTERVAL_MS = 100` and `DISABLE_MOVEMENT_REACTIONS = 10` are defined inline. Combat parameters like stamina costs, reaction window sizes, and suppression thresholds appear in `CombatSystemV2` and `SuppressionModel` without centralized configuration.
 - **Why this matters:** Balancing these values requires code changes rather than configuration changes. For community-hosted servers, there is no way to adjust difficulty without forking.
 - **Question:** Is a `CombatBalanceOptions` configuration class planned? Which parameters should be operator-configurable at the server level versus fixed by game design intent?
+- Answer: these constants should be centralised. Yes combat difficulty is planned, but not currently designed.
 
 ---
 
@@ -377,6 +405,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** This method manually projects operator state from a `CombatOutcome` by cloning a `OperatorDto` and mutating fields. It duplicates logic that exists in `OperatorAggregate.Apply()` and `ProcessCombatOutcomeAsync`. For example, on victory: sets `CurrentMode = "Infil"` and clears `ActiveCombatSessionId`. On failure: resets `ExfilStreak`, clears loadout and weapon.
 - **Why this matters:** If `ProcessCombatOutcomeAsync` logic changes (e.g., new events added for gear loss, perk unlocks), `ProjectOperatorResult` must be updated in parallel or it will silently diverge. This is a dual-maintenance problem.
 - **Question:** Could `ProjectOperatorResult` be replaced by replaying the `CombatOutcome` through a local in-memory `OperatorAggregate` (using `InMemoryOperatorEventStore`) rather than projecting fields manually? This would eliminate the divergence risk at the cost of some complexity.
+- Answer: duplicated logic is a no-no. I feel this is code that is likely needs cleaning up.
 
 ---
 
@@ -386,6 +415,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** The method sets `projected.CurrentMode = "Infil"` and `projected.CurrentMode = "Base"` using raw string literals. `OperatorDto.CurrentMode` is a `string` type (not the `OperatorMode` enum), which enables these string comparisons.
 - **Why this matters:** If the enum value name changes, or if the JSON serialization of the enum changes, these string comparisons will silently break the projection logic.
 - **Question:** Should `OperatorDto.CurrentMode` be changed to an `OperatorMode` enum type (consistent with `OperatorAggregate.CurrentMode`)? Or should string constants be extracted into a shared `OperatorModeNames` static class to at least centralize the literals?
+- Answer: we should probably be using the actual enum value here and not the string comparison.
 
 ---
 
@@ -395,6 +425,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** The lockstep transport and distributed authority are registered and started in `Program.cs` on every server startup. `DistributedAuthorityTests` and `OperatorEventReplicatorTests` cover the protocol logic. However, README.md explicitly states: *"Multiplayer networking (lockstep P2P foundation is in place but not a gameplay feature yet)"*.
 - **Why this matters:** Starting a libp2p peer on production creates a real network listener on every server instance. Any bugs in mDNS discovery, peer session handling, or the gossip protocol could affect server stability even for single-player deployments.
 - **Question:** Should the libp2p peer service be gated behind a feature flag (e.g., `Distributed:Enabled = false` by default)? Or is running the peer always acceptable given that it does not affect gameplay until peers are discovered?
+- Answer: no libp2p should not be gated, it should be on at all times.
 
 ---
 
@@ -404,6 +435,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** This method calls `_offlineStore.GetAllUnsyncedResults()` to log the count of pending envelopes. This is called both when online (no active infiled operator) and when going offline. The log is informational only.
 - **Why this matters:** If multiple operators have accumulated offline envelopes (from previous sessions), the count logged is the sum across all operators. A developer reading the log might think one operator has many envelopes when actually multiple operators each have few.
 - **Question:** Should the log message break down the count per operator (e.g., `"[SYNC] 3 unsynced envelopes: op-A(2), op-B(1)"`)? Or is the aggregate count sufficient for operational monitoring?
+- Answer: yes it should be broken down.
 
 ---
 
@@ -415,6 +447,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** `CompleteExfilAsync` emits `InfilEndedEvent(wasSuccessful: true)`, which causes `OperatorAggregate.Apply(InfilEndedEvent)` to increment `ExfilStreak`. However, in `ProcessCombatOutcomeAsync`, after a `CombatVictoryEvent`, no `InfilEndedEvent` is emitted — the operator stays in Infil mode. The streak only increments when `CompleteExfilAsync` is explicitly called later.
 - **Why this matters:** This design is intentional per the documentation: *"streak increments on each successful InfilEndedEvent."* But if the client never calls `CompleteExfilAsync` (e.g., the app crashes after the final combat victory but before exfil), the operator is stuck in Infil mode until the 30-minute timer expires, at which point `FailInfilAsync` is called — resetting the streak despite the victories.
 - **Question:** Is this timer-expiry scenario (crash between last combat victory and explicit exfil) an accepted edge case? Should `ProcessCombatOutcomeAsync` have a "auto-exfil" option that emits `InfilEndedEvent` immediately when there is no intent to continue fighting?
+- Answer: This feels like an area where a player could exploit the game via the client. This will need to be hardened.
 
 ---
 
@@ -424,6 +457,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** This is the companion question to Q27. Specifically: the offline projection sets `projected.IsDead = false` when `outcome.OperatorDied` is true. While Q27 addresses the broader divergence (health reset to max, mode transitions), the `IsDead = false` is the most impactful discrepancy — it prevents any code that checks `OperatorDto.IsDead` from detecting the death state in the offline path.
 - **Why this matters:** The review tool confirms this appears to be a logic error. Setting `IsDead = false` for a dead operator creates an inconsistent state that contradicts the aggregate's behavior (`IsDead = true` after `OperatorDiedEvent`).
 - **Question:** Should this be fixed to set `projected.IsDead = true` to match aggregate semantics? The TUI can still display the "death screen" by also checking `CombatOutcome.OperatorDied` — these are not mutually exclusive. Fixing this would make the projection consistent and eliminate a future source of bugs as new TUI screens are added.
+- Answer: They likely should be matching 
 
 ---
 
@@ -435,6 +469,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** The README lists "Campaign mode with persistent mission progression" as a planned feature. Currently, infil sessions are independent — each infil produces one or more combat outcomes, and exfil returns the operator to Base mode.
 - **Why this matters:** Campaign mode would require a new concept (a named campaign, with ordered missions, shared narrative state across multiple infils). The current event sourcing model can accommodate this but needs new event types and state fields.
 - **Question:** Is campaign mode planned for the near-to-medium term? If so, should the architecture be designed now to avoid retrofitting (e.g., adding a `CampaignId` field to `OperatorAggregate` and `InfilStartedEvent`)? Or is it premature to design this before gameplay requirements are clear?
+- Answer: `deferred` campaign is not planned for near-to-medium term
 
 ---
 
@@ -444,6 +479,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** The web client has its own offline stack using browser storage (`BrowserOfflineStore`) and an `OfflineSyncService`. The console client uses `OfflineStore` (LiteDB) and `ExfilSyncService` (server HTTP calls). Both implement the same chain-of-trust protocol but with different storage backends.
 - **Why this matters:** Any change to the offline sync protocol (envelope format, hash computation, sequence semantics) must be applied consistently to both the web client and console client offline implementations.
 - **Question:** Is there a shared integration test that runs the offline sync protocol against both storage backends? Should the offline sync logic be extracted into a shared `GUNRPG.Application` or `GUNRPG.ClientModels` component rather than duplicated?
+- Answer: offline sync logic should be consolidated, but they do have different storage engines.
 
 ---
 
@@ -453,6 +489,7 @@ Review each question and mark it with one of these tags, then answer inline:
 - **Context:** `CombatOutcome.XpGained` is `int` (validated as non-negative). `MissionResultDto.XpGained` is `long`. `OperatorAggregate.TotalXp` is `long`. `XpGainedEvent.GetPayload()` returns `(long amount, string reason)`. There is a silent widening conversion when `int` XP is applied to the `long` total.
 - **Why this matters:** A single combat can only award `int.MaxValue` (2.1 billion) XP — likely never a practical issue — but the inconsistency between `CombatOutcome` and `XpGainedEvent` is a code smell.
 - **Question:** Should `CombatOutcome.XpGained` be changed to `long` to match the event store's `long` type? Or is `int` an intentional cap on per-combat XP to prevent overflow exploits?
+- Answer: it likely should be `ulong`
 
 ---
 
