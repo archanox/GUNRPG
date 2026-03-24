@@ -64,7 +64,7 @@ public sealed class CombatSessionService
             enemyName: request.EnemyName,
             id: request.Id,
             operatorId: request.OperatorId,
-            playerTotalXp: request.PlayerTotalXp);
+            playerTotalXp: await ResolvePlayerTotalXpAsync(request));
 
         if (string.IsNullOrEmpty(session.ReplayInitialSnapshotJson))
         {
@@ -287,6 +287,29 @@ public sealed class CombatSessionService
     }
 
     /// <summary>
+    /// Resolves the player's total XP for session creation. If the request explicitly provides
+    /// <see cref="SessionCreateRequest.PlayerTotalXp"/>, that value is used. Otherwise, when an
+    /// <see cref="IOperatorEventStore"/> is available and an <c>OperatorId</c> is set, the XP is
+    /// derived from the operator's event stream so callers cannot accidentally omit it.
+    /// </summary>
+    private async Task<long?> ResolvePlayerTotalXpAsync(SessionCreateRequest request)
+    {
+        if (request.PlayerTotalXp.HasValue)
+            return request.PlayerTotalXp;
+
+        if (_operatorEventStore == null || !request.OperatorId.HasValue || request.OperatorId.Value == Guid.Empty)
+            return null;
+
+        var operatorId = OperatorId.FromGuid(request.OperatorId.Value);
+        var events = await _operatorEventStore.LoadEventsAsync(operatorId);
+        if (events.Count == 0)
+            return null;
+
+        var aggregate = OperatorAggregate.FromEvents(events);
+        return aggregate.TotalXp;
+    }
+
+    /// <summary>
     /// Validates that the operator associated with a session is in Infil mode.
     /// Returns null if validation passes, or an error result if it fails.
     /// </summary>
@@ -441,12 +464,8 @@ public sealed class CombatSessionService
         float healthLost = session.Player.MaxHealth - session.Player.Health;
         int hitsTaken = (int)Math.Ceiling(healthLost / 10f);
 
-        // TODO: Player level is no longer stored in session (removed as part of operator/combat separation).
-        // Options to fix difficulty calculation:
-        // 1. Load operator aggregate via session.OperatorId to get actual level (adds dependency)
-        // 2. Pass level from caller (requires API change)
-        // 3. Refactor OpponentDifficulty.Compute to not require player level
-        // PlayerLevel is now stored in the session at creation time via SessionCreateRequest.PlayerTotalXp
+        // PlayerLevel is stored in the session at creation time (derived from the operator's TotalXp),
+        // allowing BuildSideEffectPlan to compute accurate opponent difficulty without loading the operator.
         float opponentDifficulty = OpponentDifficulty.Compute(
             opponentLevel: session.EnemyLevel,
             playerLevel: session.PlayerLevel);

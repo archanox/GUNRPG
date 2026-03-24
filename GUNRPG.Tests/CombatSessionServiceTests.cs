@@ -7,6 +7,7 @@ using GUNRPG.Application.Sessions;
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
+using GUNRPG.Core.VirtualPet;
 using GUNRPG.Tests.Stubs;
 
 namespace GUNRPG.Tests;
@@ -754,6 +755,130 @@ public class CombatSessionServiceTests
 
         Assert.Single(received);
         Assert.Equal(session.Id, received[0]);
+    }
+    [Fact]
+    public async Task CreateSession_WithPlayerTotalXp_PersistsCorrectPlayerLevel()
+    {
+        // Arrange: 9000 XP → level 3 (floor(sqrt(9000/1000)) = floor(3) = 3)
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+
+        // Act
+        var result = await service.CreateSessionAsync(new SessionCreateRequest
+        {
+            Seed = 42,
+            PlayerTotalXp = 9000L
+        });
+
+        Assert.True(result.IsSuccess);
+
+        // Verify PlayerLevel is persisted in the snapshot
+        var snapshot = await store.LoadAsync(result.Value!.Id);
+        Assert.NotNull(snapshot);
+        Assert.Equal(3, snapshot!.PlayerLevel);
+
+        // Verify PlayerLevel survives snapshot round-trip
+        var restored = SessionMapping.FromSnapshot(snapshot);
+        Assert.Equal(3, restored.PlayerLevel);
+    }
+
+    [Fact]
+    public async Task CreateSession_WithZeroPlayerTotalXp_HasPlayerLevelZero()
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+
+        var result = await service.CreateSessionAsync(new SessionCreateRequest { Seed = 42, PlayerTotalXp = 0 });
+        Assert.True(result.IsSuccess);
+
+        var snapshot = await store.LoadAsync(result.Value!.Id);
+        Assert.NotNull(snapshot);
+        Assert.Equal(0, snapshot!.PlayerLevel);
+    }
+
+    [Fact]
+    public async Task CreateSession_WithoutPlayerTotalXp_AndOperatorEventStore_DerivesLevelFromStore()
+    {
+        // Arrange: operator with XP that produces level 2 (4000 XP → floor(sqrt(4)) = 2)
+        var store = new InMemoryCombatSessionStore();
+        var operatorEventStore = new StubOperatorEventStore();
+        var operatorId = Guid.NewGuid();
+        operatorEventStore.SetupOperatorWithMode(OperatorId.FromGuid(operatorId), OperatorMode.Infil, totalXp: 4000L);
+
+        var service = new CombatSessionService(store, operatorEventStore);
+
+        // Act: create session without explicit PlayerTotalXp
+        var result = await service.CreateSessionAsync(new SessionCreateRequest
+        {
+            OperatorId = operatorId,
+            Seed = 42
+        });
+
+        Assert.True(result.IsSuccess);
+
+        var snapshot = await store.LoadAsync(result.Value!.Id);
+        Assert.NotNull(snapshot);
+        Assert.Equal(2, snapshot!.PlayerLevel);
+    }
+
+    [Fact]
+    public async Task SideEffectPlan_WithHighPlayerLevel_ProducesLowerDifficulty()
+    {
+        // Verify that a high-level player produces a lower opponent difficulty than level 0.
+        // We run a session to completion twice (same seed) and compare PetMissionInput difficulty.
+        // Level-0 player vs whatever enemy level; high-level player vs same enemy → lower difficulty.
+
+        // Session 1: level 0 player (no XP)
+        var snapshot1 = await RunSessionToCompletionSnapshotAsync(seed: 42, playerTotalXp: 0);
+        // Session 2: high-level player (81000 XP → level 9: floor(sqrt(81)) = 9)
+        var snapshot2 = await RunSessionToCompletionSnapshotAsync(seed: 42, playerTotalXp: 81_000L);
+
+        // Both sessions use the same seed so enemy level is identical.
+        Assert.Equal(snapshot1.EnemyLevel, snapshot2.EnemyLevel);
+        Assert.Equal(0, snapshot1.PlayerLevel);
+        Assert.Equal(9, snapshot2.PlayerLevel);
+
+        // Replay both to their side-effect plan and compare difficulty
+        var state1 = ReplayRunner.Run(snapshot1.ReplayInitialSnapshotJson, snapshot1.ReplayTurns);
+        var state2 = ReplayRunner.Run(snapshot2.ReplayInitialSnapshotJson, snapshot2.ReplayTurns);
+
+        var difficulty1 = state1.SideEffects.PetMissionInput?.OpponentDifficulty;
+        var difficulty2 = state2.SideEffects.PetMissionInput?.OpponentDifficulty;
+
+        // Both plans must have been computed (combat ended)
+        Assert.NotNull(difficulty1);
+        Assert.NotNull(difficulty2);
+
+        // Higher player level → lower (or equal) difficulty
+        Assert.True(difficulty2 <= difficulty1,
+            $"Expected difficulty with level-9 player ({difficulty2}) <= level-0 player ({difficulty1})");
+    }
+
+    private static async Task<CombatSessionSnapshot> RunSessionToCompletionSnapshotAsync(int seed, long playerTotalXp)
+    {
+        var store = new InMemoryCombatSessionStore();
+        var service = new CombatSessionService(store);
+
+        var created = (await service.CreateSessionAsync(new SessionCreateRequest
+        {
+            Seed = seed,
+            PlayerTotalXp = playerTotalXp
+        })).Value!;
+
+        for (int i = 0; i < 100; i++)
+        {
+            var state = (await service.GetStateAsync(created.Id)).Value!;
+            if (state.Phase == SessionPhase.Completed) break;
+
+            await service.SubmitPlayerIntentsAsync(created.Id, new SubmitIntentsRequest
+            {
+                Intents = new IntentDto { Primary = PrimaryAction.Fire }
+            });
+        }
+
+        var snapshot = await store.LoadAsync(created.Id);
+        Assert.NotNull(snapshot);
+        return snapshot!;
     }
 }
 

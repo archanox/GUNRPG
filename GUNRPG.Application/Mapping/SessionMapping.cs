@@ -198,8 +198,8 @@ public static class SessionMapping
             snapshot.ReplayInitialSnapshotJson,
             snapshot.ReplayTurns,
             snapshot.Version,
-            snapshot.FinalHash,  // Fallback to CreatedAt for old snapshots
-            snapshot.PlayerLevel)
+            finalHash: snapshot.FinalHash,
+            playerLevel: snapshot.PlayerLevel)
         {
             PostCombatResolved = snapshot.PostCombatResolved
         };
