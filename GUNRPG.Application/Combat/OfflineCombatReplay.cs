@@ -3,6 +3,7 @@ using GUNRPG.Application.Backend;
 using GUNRPG.Application.Dtos;
 using GUNRPG.Application.Mapping;
 using GUNRPG.Application.Sessions;
+using GUNRPG.Core.Operators;
 
 namespace GUNRPG.Application.Combat;
 
@@ -118,10 +119,13 @@ public static class OfflineCombatReplay
 
         if (outcome.OperatorDied)
         {
+            // Operator died in combat but is respawned at base with full health.
+            // This matches OperatorAggregate.Apply(OperatorDiedEvent): IsDead = false, CurrentHealth = MaxHealth.
+            // IsDead is intentionally false — the operator continues gameplay after the mission failure.
             projected.CurrentHealth = projected.MaxHealth;
             projected.ExfilStreak = 0;
             projected.IsDead = false;
-            projected.CurrentMode = "Base";
+            projected.CurrentMode = OperatorMode.Base.ToString();
             projected.ActiveCombatSessionId = null;
             projected.InfilSessionId = null;
             projected.InfilStartTime = null;
@@ -140,11 +144,11 @@ public static class OfflineCombatReplay
 
         if (outcome.IsVictory)
         {
-            projected.CurrentMode = "Infil";
+            projected.CurrentMode = OperatorMode.Infil.ToString();
             return projected;
         }
 
-        projected.CurrentMode = "Base";
+        projected.CurrentMode = OperatorMode.Base.ToString();
         projected.InfilSessionId = null;
         projected.InfilStartTime = null;
         projected.ExfilStreak = 0;

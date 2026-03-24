@@ -3,6 +3,8 @@ using GUNRPG.Application.Backend;
 using GUNRPG.Infrastructure.Backend;
 using GUNRPG.Infrastructure.Persistence;
 using LiteDB;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace GUNRPG.Infrastructure;
 
@@ -15,12 +17,16 @@ public sealed class GameBackendResolver
     private readonly HttpClient _httpClient;
     private readonly OfflineStore _offlineStore;
     private readonly JsonSerializerOptions _jsonOptions;
+    private readonly ILoggerFactory? _loggerFactory;
+    private readonly ILogger<GameBackendResolver> _logger;
 
-    public GameBackendResolver(HttpClient httpClient, OfflineStore offlineStore, JsonSerializerOptions? jsonOptions = null)
+    public GameBackendResolver(HttpClient httpClient, OfflineStore offlineStore, JsonSerializerOptions? jsonOptions = null, ILoggerFactory? loggerFactory = null)
     {
         _httpClient = httpClient;
         _offlineStore = offlineStore;
         _jsonOptions = jsonOptions ?? new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        _loggerFactory = loggerFactory;
+        _logger = loggerFactory?.CreateLogger<GameBackendResolver>() ?? NullLogger<GameBackendResolver>.Instance;
     }
 
     /// <summary>
@@ -39,31 +45,33 @@ public sealed class GameBackendResolver
 
         if (serverReachable)
         {
-            var onlineBackend = new OnlineGameBackend(_httpClient, _offlineStore, _jsonOptions);
+            var onlineBackend = new OnlineGameBackend(_httpClient, _offlineStore, _jsonOptions,
+                _loggerFactory?.CreateLogger<OnlineGameBackend>());
 
             // If an operator was infiled offline, sync must succeed before allowing online play.
             var activeOp = _offlineStore.GetActiveInfiledOperator();
             if (activeOp != null)
             {
-                Console.WriteLine($"[SYNC] Infiled operator {activeOp.Id} found — synchronizing before returning online.");
-                IExfilSyncService syncService = new ExfilSyncService(_offlineStore, onlineBackend);
+                _logger.LogInformation("[SYNC] Infiled operator {OperatorId} found — synchronizing before returning online.", activeOp.Id);
+                IExfilSyncService syncService = new ExfilSyncService(_offlineStore, onlineBackend,
+                    _loggerFactory?.CreateLogger<ExfilSyncService>());
                 var syncResult = await syncService.SyncAsync(activeOp.Id);
                 if (!syncResult.Success)
                 {
-                    Console.WriteLine($"[SYNC] Sync failed: {syncResult.FailureReason}. Gameplay blocked until operator is re-infiled.");
+                    _logger.LogWarning("[SYNC] Sync failed: {FailureReason}. Gameplay blocked until operator is re-infiled.", syncResult.FailureReason);
                     if (syncResult.IsIntegrityFailure)
                     {
                         // Integrity violation is permanent — remove the snapshot so subsequent
                         // calls to ResolveAsync don't loop on the same unresolvable failure.
                         // The operator must re-infil with a clean slate.
                         _offlineStore.RemoveInfiledOperator(activeOp.Id);
-                        Console.WriteLine($"[SYNC] Infiled snapshot for operator {activeOp.Id} removed. Re-infil required.");
+                        _logger.LogWarning("[SYNC] Infiled snapshot for operator {OperatorId} removed. Re-infil required.", activeOp.Id);
                     }
                     CurrentMode = GameMode.Blocked;
                     return onlineBackend;
                 }
 
-                Console.WriteLine($"[SYNC] Sync succeeded — {syncResult.EnvelopesSynced} envelope(s) uploaded.");
+                _logger.LogInformation("[SYNC] Sync succeeded — {EnvelopesSynced} envelope(s) uploaded.", syncResult.EnvelopesSynced);
             }
             else
             {
@@ -72,7 +80,7 @@ public sealed class GameBackendResolver
             }
 
             CurrentMode = GameMode.Online;
-            Console.WriteLine("[MODE] Online mode — server is reachable.");
+            _logger.LogInformation("[MODE] Online mode — server is reachable.");
             return onlineBackend;
         }
 
@@ -80,25 +88,30 @@ public sealed class GameBackendResolver
         {
             CurrentMode = GameMode.Offline;
             var activeOp = _offlineStore.GetActiveInfiledOperator();
-            Console.WriteLine($"[MODE] Offline mode — server unreachable, using infiled operator snapshot (ID: {activeOp?.Id}).");
+            _logger.LogInformation("[MODE] Offline mode — server unreachable, using infiled operator snapshot (ID: {OperatorId}).", activeOp?.Id);
             LogUnsyncedResults();
             return new OfflineGameBackend(_offlineStore);
         }
 
         CurrentMode = GameMode.Blocked;
-        Console.WriteLine("[MODE] Blocked — server unreachable and no infiled operator available. Gameplay blocked.");
-        return new OnlineGameBackend(_httpClient, _offlineStore, _jsonOptions);
+        _logger.LogWarning("[MODE] Blocked — server unreachable and no infiled operator available. Gameplay blocked.");
+        return new OnlineGameBackend(_httpClient, _offlineStore, _jsonOptions,
+            _loggerFactory?.CreateLogger<OnlineGameBackend>());
     }
 
     /// <summary>
-    /// Logs the count of unsynced offline mission results.
+    /// Logs the count of unsynced offline mission results, broken down per operator.
     /// </summary>
     private void LogUnsyncedResults()
     {
         var unsyncedResults = _offlineStore.GetAllUnsyncedResults();
         if (unsyncedResults.Count > 0)
         {
-            Console.WriteLine($"[SYNC] {unsyncedResults.Count} unsynced offline mission result(s) pending.");
+            var perOperator = unsyncedResults
+                .GroupBy(r => r.OperatorId)
+                .Select(g => $"{g.Key}({g.Count()})");
+            _logger.LogInformation("[SYNC] {TotalCount} unsynced offline mission result(s) pending: {PerOperator}",
+                unsyncedResults.Count, string.Join(", ", perOperator));
         }
     }
 
@@ -119,7 +132,7 @@ public sealed class GameBackendResolver
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[MODE] Server connectivity check failed: {ex.Message}");
+            _logger.LogDebug("[MODE] Server connectivity check failed: {Message}", ex.Message);
             return false;
         }
     }

@@ -1,5 +1,7 @@
 using GUNRPG.Application.Backend;
 using GUNRPG.Infrastructure.Persistence;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace GUNRPG.Infrastructure.Backend;
 
@@ -7,11 +9,13 @@ public sealed class ExfilSyncService : IExfilSyncService
 {
     private readonly OfflineStore _offlineStore;
     private readonly OnlineGameBackend _onlineBackend;
+    private readonly ILogger<ExfilSyncService> _logger;
 
-    public ExfilSyncService(OfflineStore offlineStore, OnlineGameBackend onlineBackend)
+    public ExfilSyncService(OfflineStore offlineStore, OnlineGameBackend onlineBackend, ILogger<ExfilSyncService>? logger = null)
     {
         _offlineStore = offlineStore;
         _onlineBackend = onlineBackend;
+        _logger = logger ?? NullLogger<ExfilSyncService>.Instance;
     }
 
     /// <inheritdoc />
@@ -21,7 +25,7 @@ public sealed class ExfilSyncService : IExfilSyncService
             .OrderBy(x => x.SequenceNumber)
             .ToList();
 
-        Console.WriteLine($"[SYNC] Operator {operatorId}: {pending.Count} unsynced envelope(s) pending.");
+        _logger.LogInformation("[SYNC] Operator {OperatorId}: {PendingCount} unsynced envelope(s) pending.", operatorId, pending.Count);
 
         if (pending.Count == 0)
         {
@@ -44,7 +48,7 @@ public sealed class ExfilSyncService : IExfilSyncService
                 if (!string.Equals(firstEnvelope.InitialOperatorStateHash, serverHash, StringComparison.Ordinal))
                 {
                     var reason = $"Initial state hash mismatch for operator {operatorId}: server hash does not match first envelope's initial hash (seq={firstEnvelope.SequenceNumber}).";
-                    Console.WriteLine($"[SYNC] FAIL — {reason}");
+                    _logger.LogWarning("[SYNC] FAIL — {Reason}", reason);
                     return SyncResult.Fail(reason, isIntegrityFailure: true);
                 }
             }
@@ -58,25 +62,26 @@ public sealed class ExfilSyncService : IExfilSyncService
                 if (envelope.SequenceNumber != previous.SequenceNumber + 1)
                 {
                     var reason = $"Sequence gap for operator {operatorId}: expected {previous.SequenceNumber + 1}, got {envelope.SequenceNumber}.";
-                    Console.WriteLine($"[SYNC] FAIL — {reason}");
+                    _logger.LogWarning("[SYNC] FAIL — {Reason}", reason);
                     return SyncResult.Fail(reason, isIntegrityFailure: true);
                 }
 
                 if (!string.Equals(envelope.InitialOperatorStateHash, previous.ResultOperatorStateHash, StringComparison.Ordinal))
                 {
                     var reason = $"Hash chain mismatch for operator {operatorId} at sequence {envelope.SequenceNumber}.";
-                    Console.WriteLine($"[SYNC] FAIL — {reason}");
+                    _logger.LogWarning("[SYNC] FAIL — {Reason}", reason);
                     return SyncResult.Fail(reason, isIntegrityFailure: true);
                 }
             }
 
-            Console.WriteLine($"[SYNC] Sending envelope seq={envelope.SequenceNumber} seed={envelope.RandomSeed} initialHash={envelope.InitialOperatorStateHash} resultHash={envelope.ResultOperatorStateHash}");
+            _logger.LogDebug("[SYNC] Sending envelope seq={Seq} seed={Seed} initialHash={InitialHash} resultHash={ResultHash}",
+                envelope.SequenceNumber, envelope.RandomSeed, envelope.InitialOperatorStateHash, envelope.ResultOperatorStateHash);
 
             var ok = await _onlineBackend.SyncOfflineMission(envelope, cancellationToken);
             if (!ok)
             {
                 var reason = $"Server rejected envelope seq={envelope.SequenceNumber} for operator {operatorId}.";
-                Console.WriteLine($"[SYNC] FAIL — {reason}");
+                _logger.LogWarning("[SYNC] FAIL — {Reason}", reason);
                 return SyncResult.Fail(reason);
             }
 
@@ -85,7 +90,7 @@ public sealed class ExfilSyncService : IExfilSyncService
             synced++;
         }
 
-        Console.WriteLine($"[SYNC] SUCCESS — {synced} envelope(s) synced for operator {operatorId}.");
+        _logger.LogInformation("[SYNC] SUCCESS — {Synced} envelope(s) synced for operator {OperatorId}.", synced, operatorId);
         return SyncResult.Ok(synced);
     }
 }

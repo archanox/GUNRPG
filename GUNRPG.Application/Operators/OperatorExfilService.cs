@@ -565,10 +565,11 @@ public sealed class OperatorExfilService
             await AppendAsync(infilEndedEvent);
             return ServiceResult.Success();
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // TODO: Consider logging the exception details server-side for diagnostics
-            return ServiceResult.InvalidState("Failed to complete infil due to an internal error.");
+            _logger.LogError(ex, "Failed to append InfilEndedEvent for operator {OperatorId} at sequence {SequenceNumber}",
+                operatorId, sequenceNumber);
+            return ServiceResult.InvalidState($"Failed to complete infil due to an internal error: {ex.Message}");
         }
     }
 

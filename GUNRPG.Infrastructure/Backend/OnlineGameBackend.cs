@@ -2,6 +2,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using GUNRPG.Application.Backend;
 using GUNRPG.Infrastructure.Persistence;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace GUNRPG.Infrastructure.Backend;
 
@@ -16,12 +18,14 @@ public sealed class OnlineGameBackend : IGameBackend
     private readonly HttpClient _httpClient;
     private readonly OfflineStore _offlineStore;
     private readonly JsonSerializerOptions _jsonOptions;
+    private readonly ILogger<OnlineGameBackend> _logger;
 
-    public OnlineGameBackend(HttpClient httpClient, OfflineStore offlineStore, JsonSerializerOptions? jsonOptions = null)
+    public OnlineGameBackend(HttpClient httpClient, OfflineStore offlineStore, JsonSerializerOptions? jsonOptions = null, ILogger<OnlineGameBackend>? logger = null)
     {
         _httpClient = httpClient;
         _offlineStore = offlineStore;
         _jsonOptions = jsonOptions ?? new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        _logger = logger ?? NullLogger<OnlineGameBackend>.Instance;
     }
 
     /// <inheritdoc />
@@ -51,8 +55,7 @@ public sealed class OnlineGameBackend : IGameBackend
         // Persist snapshot locally for offline use
         _offlineStore.SaveInfiledOperator(operatorDto);
 
-        Console.WriteLine($"[INFIL] Operator '{operatorDto.Name}' (ID: {id}) infiled successfully.");
-        Console.WriteLine($"[INFIL] Snapshot saved — offline play now available if server becomes unreachable.");
+        _logger.LogInformation("[INFIL] Operator '{OperatorName}' (ID: {OperatorId}) infiled successfully. Snapshot saved — offline play now available if server becomes unreachable.", operatorDto.Name, id);
         return operatorDto;
     }
 

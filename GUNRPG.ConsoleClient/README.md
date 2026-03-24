@@ -37,7 +37,6 @@ The GUNRPG console client has been redesigned with a retro Pokemon-style interfa
   - Name and XP
   - Health bar
   - Equipped weapon
-  - Unlocked perks
   - Exfil streak
   - Current mode (Base/Infil)
 - Action menu (state-aware):
@@ -45,7 +44,6 @@ The GUNRPG console client has been redesigned with a retro Pokemon-style interfa
     - Start Mission (infil)
     - Change Loadout (switch weapons)
     - Treat Wounds (restore health)
-    - Unlock Perk
     - Apply XP
     - View Stats
   - **Infil Mode Actions:**
@@ -79,27 +77,23 @@ The GUNRPG console client has been redesigned with a retro Pokemon-style interfa
 - Available in Base mode only
 - Heal 25 HP, 50 HP, or full heal based on remaining health
 
-#### 8. Unlock Perk
-- Available in Base mode only
-- Select from available perks (Iron Lungs, Quick Draw, Toughness, Fast Reload, Steady Aim)
-
-#### 9. Abort Mission
+#### 8. Abort Mission
 - Available in Infil mode only
 - Confirmation dialog; initiates exfil via `POST /operators/{id}/infil/complete` (abandons any in-progress combat session). If a completed combat session exists, processes the outcome instead via `POST /operators/{id}/infil/outcome`.
 
-#### 10. Mission Complete
+#### 9. Mission Complete
 - Shows combat outcome
 - Displays debriefing message
 - **Operator automatically returned to Base mode with XP applied**
 
-#### 11. Message Dialog
+#### 10. Message Dialog
 - Generic popup for information and errors
 - Returns to previous screen
 
 ## State Machine Enforcement
 
 The UI respects the operator state machine:
-- **Base Mode**: Full access to loadout, wounds, XP, perks, and mission start
+- **Base Mode**: Full access to loadout, wounds, XP, and mission start
 - **Infil Mode**: Only mission continuation available; other actions disabled
 - **Combat Completion**: Automatically processes outcome via server-side validation
 - Invalid actions are clearly marked as unavailable
@@ -153,7 +147,6 @@ All screens follow a consistent pattern:
 - `POST /operators/{id}/loadout` — Change equipped weapon
 - `POST /operators/{id}/wounds/treat` — Heal operator
 - `POST /operators/{id}/xp` — Apply experience points
-- `POST /operators/{id}/perks` — Unlock a perk
 - `GET /sessions/{id}/state` — Get combat state
 - `POST /sessions/{id}/intent` — Submit player intents
 - `POST /sessions/{id}/advance` — Progress combat
@@ -193,7 +186,7 @@ The client defaults to connecting to `http://localhost:5209`. You can override t
 ✅ **Theme-managed selection indicators**
 ✅ **Single primary focus widget per screen (CreateOperator uses TextBox + List with Tab focus switching)**
 ✅ Intent submission UI for combat (Primary, Movement, Stance, Cover)
-✅ Change Loadout, Treat Wounds, Unlock Perk screens
+✅ Change Loadout, Treat Wounds screens
 ✅ Abort Mission with confirmation dialog
 ✅ Pokemon-style battle log (last 6 events)
 ✅ Cover visualization and ADS/HIP/TRANS stance indicators
