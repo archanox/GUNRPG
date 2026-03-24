@@ -66,6 +66,7 @@ public sealed class InMemoryCombatSessionStore : ICombatSessionStore
             Enemy = snapshot.Enemy,
             Pet = snapshot.Pet,
             EnemyLevel = snapshot.EnemyLevel,
+            PlayerLevel = snapshot.PlayerLevel,
             Seed = snapshot.Seed,
             PostCombatResolved = snapshot.PostCombatResolved,
             CreatedAt = snapshot.CreatedAt,

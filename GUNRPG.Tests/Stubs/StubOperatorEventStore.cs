@@ -75,20 +75,27 @@ public class StubOperatorEventStore : IOperatorEventStore
     /// <summary>
     /// Sets up an operator with the specified mode for testing.
     /// </summary>
-    public void SetupOperatorWithMode(OperatorId operatorId, OperatorMode mode, string operatorName = "TestOperator", Guid? activeCombatSessionId = null)
+    public void SetupOperatorWithMode(OperatorId operatorId, OperatorMode mode, string operatorName = "TestOperator", Guid? activeCombatSessionId = null, long totalXp = 0)
     {
         var events = new List<OperatorEvent>
         {
             new OperatorCreatedEvent(operatorId, operatorName)
         };
 
+        // Add XpGainedEvent if totalXp > 0
+        if (totalXp > 0)
+        {
+            var prevHash = events[^1].Hash;
+            events.Add(new XpGainedEvent(operatorId, events.Count, totalXp, "test", prevHash));
+        }
+
         // Add InfilStartedEvent if mode is Infil
         if (mode == OperatorMode.Infil)
         {
-            var createHash = events[0].Hash;
+            var createHash = events[^1].Hash;
             events.Add(new InfilStartedEvent(
                 operatorId, 
-                1, 
+                events.Count, 
                 Guid.NewGuid(), 
                 "SOKOL 545", // lockedLoadout
                 DateTimeOffset.UtcNow, // infilStartTime
@@ -100,7 +107,7 @@ public class StubOperatorEventStore : IOperatorEventStore
                 var infilHash = events[^1].Hash;
                 events.Add(new CombatSessionStartedEvent(
                     operatorId,
-                    2,
+                    events.Count,
                     activeCombatSessionId.Value,
                     infilHash));
             }

@@ -1,6 +1,7 @@
 using GUNRPG.Core.Combat;
 using GUNRPG.Core.Intents;
 using GUNRPG.Core.Operators;
+using GUNRPG.Core.VirtualPet;
 
 namespace GUNRPG.Application.Sessions;
 
@@ -22,6 +23,13 @@ public sealed class CombatSessionSnapshot
     /// </summary>
     public PetStateSnapshot Pet { get; init; } = default!;
     public int EnemyLevel { get; init; }
+    /// <summary>
+    /// Persisted level of the player operator at the time this session was created.
+    /// Derived from the operator's total XP via <see cref="OpponentDifficulty.ComputeLevelFromXp"/>.
+    /// Defaults to 0 for legacy sessions created before this field was introduced.
+    /// When creating or cloning <see cref="CombatSessionSnapshot"/> instances always explicitly
+    /// copy this field to avoid silently resetting difficulty calculations to level 0.
+    /// </summary>
     public int PlayerLevel { get; init; }
     public int Seed { get; init; }
     public bool PostCombatResolved { get; init; }
