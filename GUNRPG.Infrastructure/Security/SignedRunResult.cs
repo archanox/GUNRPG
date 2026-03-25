@@ -17,7 +17,8 @@ public sealed class SignedRunResult
         Guid playerId,
         string finalHash,
         string authorityId,
-        byte[] signature)
+        byte[] signature,
+        string? replayHash = null)
     {
         if (string.IsNullOrWhiteSpace(finalHash))
             throw new ArgumentException("FinalHash must not be empty.", nameof(finalHash));
@@ -27,11 +28,19 @@ public sealed class SignedRunResult
                 nameof(finalHash));
         if (string.IsNullOrWhiteSpace(authorityId))
             throw new ArgumentException("AuthorityId must not be empty.", nameof(authorityId));
+        if (replayHash is not null)
+        {
+            if (replayHash.Length != FinalHashHexLength)
+                throw new ArgumentException(
+                    $"ReplayHash must be a {FinalHashHexLength}-character uppercase hex string (SHA-256) when provided.",
+                    nameof(replayHash));
+        }
 
         SessionId = sessionId;
         PlayerId = playerId;
         FinalHash = finalHash;
         AuthorityId = authorityId;
+        ReplayHash = replayHash;
         _signature = AuthorityCrypto.CloneAndValidateSignature(signature);
     }
 
@@ -46,6 +55,14 @@ public sealed class SignedRunResult
 
     /// <summary>Identifier of the <see cref="Authority"/> whose private key produced this signature.</summary>
     public string AuthorityId { get; }
+
+    /// <summary>
+    /// SHA-256 hash of the full input log (replay hash), encoded as an uppercase hex string.
+    /// Present only when the result was signed with the combined-payload overload
+    /// (<see cref="SessionAuthority.Sign(Guid, Guid, byte[], byte[])"/>).
+    /// When present the signature covers both <see cref="FinalHash"/> and this value.
+    /// </summary>
+    public string? ReplayHash { get; }
 
     /// <summary>Ed25519 signature over the validation payload hash.</summary>
     public byte[] Signature => (byte[])_signature.Clone();

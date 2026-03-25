@@ -128,6 +128,53 @@ internal static class AuthorityCrypto
         return SHA256.HashData(buffer);
     }
 
+    /// <summary>
+    /// Computes the signing payload hash for a run result that includes both the final state hash
+    /// and a replay hash. The signature covers: SessionId ‖ PlayerId ‖ FinalStateHash ‖ ReplayHash.
+    /// </summary>
+    internal static byte[] ComputeRunWithReplayPayloadHash(
+        Guid sessionId,
+        Guid playerId,
+        byte[] finalStateHash,
+        byte[] replayHash)
+    {
+        var normalizedFinalStateHash = CloneAndValidateSha256Hash(finalStateHash);
+        var normalizedReplayHash = CloneAndValidateSha256Hash(replayHash);
+        var buffer = new byte[
+            GuidSize + GuidSize
+            + Int32Size + normalizedFinalStateHash.Length
+            + Int32Size + normalizedReplayHash.Length];
+        var offset = 0;
+
+        WriteGuid(sessionId, buffer, ref offset);
+        WriteGuid(playerId, buffer, ref offset);
+        WriteLengthPrefixed(normalizedFinalStateHash, buffer, ref offset);
+        WriteLengthPrefixed(normalizedReplayHash, buffer, ref offset);
+
+        return SHA256.HashData(buffer);
+    }
+
+    /// <summary>
+    /// Computes the signing payload hash for a per-tick signed tick.
+    /// The payload covers: Tick (big-endian int64) ‖ StateHash ‖ InputHash.
+    /// </summary>
+    internal static byte[] ComputeTickPayloadHash(long tick, byte[] stateHash, byte[] inputHash)
+    {
+        var normalizedStateHash = CloneAndValidateSha256Hash(stateHash);
+        var normalizedInputHash = CloneAndValidateSha256Hash(inputHash);
+        var buffer = new byte[
+            Int64Size
+            + Int32Size + normalizedStateHash.Length
+            + Int32Size + normalizedInputHash.Length];
+        var offset = 0;
+
+        WriteInt64(tick, buffer, ref offset);
+        WriteLengthPrefixed(normalizedStateHash, buffer, ref offset);
+        WriteLengthPrefixed(normalizedInputHash, buffer, ref offset);
+
+        return SHA256.HashData(buffer);
+    }
+
     internal static byte[] ComputeRunResultHash(Guid runId, Guid playerId, Guid serverId, byte[] finalStateHash)
     {
         var normalizedFinalStateHash = CloneAndValidateSha256Hash(finalStateHash);
