@@ -13,16 +13,22 @@ public interface ISessionAuthority
 
     /// <summary>
     /// Signs a simulation tick. The Ed25519 signature covers the canonical payload:
-    /// Tick (big-endian int64) ‖ StateHash ‖ InputHash.
+    /// Tick (big-endian int64) || PrevStateHash || StateHash || InputHash.
     /// </summary>
     /// <param name="tick">The simulation tick number.</param>
+    /// <param name="prevStateHash">
+    /// SHA-256 hash of the simulation state at the end of the previous signed checkpoint.
+    /// Use <see cref="TickAuthorityService.GenesisStateHash"/> for the first tick (32 zero bytes).
+    /// </param>
     /// <param name="stateHash">SHA-256 hash of the simulation state after this tick (32 bytes).</param>
-    /// <param name="inputHash">SHA-256 hash of the player input that drove this tick (32 bytes).</param>
+    /// <param name="inputHash">SHA-256 hash of the player input(s) that drove this tick (32 bytes).</param>
     /// <returns>Ed25519 signature (64 bytes).</returns>
-    byte[] SignTick(long tick, byte[] stateHash, byte[] inputHash);
+    byte[] SignTick(long tick, byte[] prevStateHash, byte[] stateHash, byte[] inputHash);
 
     /// <summary>
     /// Verifies the Ed25519 signature on a <see cref="SignedTick"/> using this authority's public key.
+    /// Does not check hash-chain continuity; use <see cref="TickAuthorityService.VerifySignedTickOrThrow"/>
+    /// which also verifies <see cref="SignedTick.PrevStateHash"/> linkage.
     /// </summary>
     /// <returns>
     /// <see langword="true"/> if the signature is valid; <see langword="false"/> otherwise.

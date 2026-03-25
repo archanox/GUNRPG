@@ -56,7 +56,7 @@ public sealed class SessionAuthority : ISessionAuthority
 
     /// <summary>
     /// Signs a finalized session run, binding both the final state hash and the full input-log
-    /// replay hash. The Ed25519 signature covers: SessionId ‖ PlayerId ‖ FinalStateHash ‖ ReplayHash.
+    /// replay hash. The Ed25519 signature covers: SessionId || PlayerId || FinalStateHash || ReplayHash.
     /// </summary>
     /// <param name="sessionId">The session's unique identifier.</param>
     /// <param name="playerId">The player/operator unique identifier.</param>
@@ -89,12 +89,12 @@ public sealed class SessionAuthority : ISessionAuthority
 
     /// <summary>
     /// Signs a simulation tick and returns the raw Ed25519 signature (64 bytes).
-    /// The signature covers: Tick (big-endian int64) ‖ StateHash ‖ InputHash.
+    /// The signature covers: Tick (big-endian int64) || PrevStateHash || StateHash || InputHash.
     /// </summary>
     /// <inheritdoc cref="ISessionAuthority.SignTick"/>
-    public byte[] SignTick(long tick, byte[] stateHash, byte[] inputHash)
+    public byte[] SignTick(long tick, byte[] prevStateHash, byte[] stateHash, byte[] inputHash)
     {
-        var payloadHash = AuthorityCrypto.ComputeTickPayloadHash(tick, stateHash, inputHash);
+        var payloadHash = AuthorityCrypto.ComputeTickPayloadHash(tick, prevStateHash, stateHash, inputHash);
         return AuthorityCrypto.SignHashedPayload(_privateKey, payloadHash);
     }
 
@@ -106,7 +106,7 @@ public sealed class SessionAuthority : ISessionAuthority
     {
         ArgumentNullException.ThrowIfNull(signedTick);
         var payloadHash = AuthorityCrypto.ComputeTickPayloadHash(
-            signedTick.Tick, signedTick.StateHash, signedTick.InputHash);
+            signedTick.Tick, signedTick.PrevStateHash, signedTick.StateHash, signedTick.InputHash);
         return AuthorityCrypto.VerifyHashedPayload(_publicKey, payloadHash, signedTick.Signature);
     }
 
@@ -115,7 +115,7 @@ public sealed class SessionAuthority : ISessionAuthority
     /// Returns <see langword="false"/> if the authority ID does not match, the signature is invalid,
     /// or <see cref="SignedRunResult.FinalHash"/> cannot be decoded as a valid 32-byte hex value.
     /// When <see cref="SignedRunResult.ReplayHash"/> is present the signature is verified against the
-    /// combined payload (SessionId ‖ PlayerId ‖ FinalStateHash ‖ ReplayHash).
+    /// combined payload (SessionId || PlayerId || FinalStateHash || ReplayHash).
     /// </summary>
     public static bool VerifySignedRun(SignedRunResult result, Authority authority)
     {

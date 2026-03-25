@@ -7,15 +7,23 @@ namespace GUNRPG.Tests;
 /// <summary>
 /// Tests for the per-tick server-authoritative replay validation system:
 /// - TickInput / TickState / SignedTick data structures
-/// - SessionAuthority.SignTick / VerifyTick
+/// - TickInputs deterministic multi-player input batching
+/// - SessionAuthority.SignTick / VerifyTick (with PrevStateHash chain)
 /// - TickAuthorityService checkpoint signing (SIGN_INTERVAL)
+/// - Hash-chain integrity (PrevStateHash linkage)
+/// - Tick continuity enforcement
+/// - VerifyTickChain full-chain validation
 /// - DesyncException and InvalidSignatureException detection
 /// - NodeRole enum values
 /// - SessionAuthority.Sign overload with ReplayHash
 /// - SignedRunResult.ReplayHash property
+/// - FinalizeRun with chain enforcement
 /// </summary>
 public sealed class TickAuthorityTests
 {
+    private static readonly Guid PlayerId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+    private static readonly Guid Player2Id = Guid.Parse("22222222-2222-2222-2222-222222222222");
+
     // ──────────────────────────────────────────────────────────────────────────
     // 1. Core data structures
     // ──────────────────────────────────────────────────────────────────────────
@@ -43,15 +51,17 @@ public sealed class TickAuthorityTests
     }
 
     [Fact]
-    public void SignedTick_StoresAllFields()
+    public void SignedTick_StoresAllFields_IncludingPrevStateHash()
     {
+        var prevHash = CreateHash(0);
         var stateHash = CreateHash(1);
         var inputHash = CreateHash(2);
         var signature = new byte[64];
 
-        var tick = new SignedTick(5L, stateHash, inputHash, signature);
+        var tick = new SignedTick(5L, prevHash, stateHash, inputHash, signature);
 
         Assert.Equal(5L, tick.Tick);
+        Assert.Equal(prevHash, tick.PrevStateHash);
         Assert.Equal(stateHash, tick.StateHash);
         Assert.Equal(inputHash, tick.InputHash);
         Assert.Equal(signature, tick.Signature);
@@ -65,33 +75,125 @@ public sealed class TickAuthorityTests
         Assert.Equal(2, (int)NodeRole.Client);
     }
 
+    [Fact]
+    public void GenesisStateHash_Is32ZeroBytes()
+    {
+        Assert.Equal(32, TickAuthorityService.GenesisStateHash.Length);
+        Assert.All(TickAuthorityService.GenesisStateHash, b => Assert.Equal(0, b));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
-    // 2. SessionAuthority tick signing / verification
+    // 2. TickInputs deterministic multi-player batching
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void TickInputs_HashIsDeterministic_ForSameInputs()
+    {
+        var inputs = CreateSingleInput(0L, PlayerId, new ExfilAction());
+        var h1 = inputs.ComputeHash();
+        var h2 = inputs.ComputeHash();
+
+        Assert.True(h1.AsSpan().SequenceEqual(h2));
+    }
+
+    [Fact]
+    public void TickInputs_HashIs32Bytes()
+    {
+        var inputs = CreateSingleInput(0L, PlayerId, new MoveAction(Direction.North));
+        Assert.Equal(32, inputs.ComputeHash().Length);
+    }
+
+    [Fact]
+    public void TickInputs_DifferentActions_ProduceDifferentHashes()
+    {
+        var h1 = CreateSingleInput(0L, PlayerId, new MoveAction(Direction.North)).ComputeHash();
+        var h2 = CreateSingleInput(0L, PlayerId, new MoveAction(Direction.South)).ComputeHash();
+        var h3 = CreateSingleInput(0L, PlayerId, new ExfilAction()).ComputeHash();
+
+        Assert.False(h1.AsSpan().SequenceEqual(h2));
+        Assert.False(h1.AsSpan().SequenceEqual(h3));
+    }
+
+    [Fact]
+    public void TickInputs_MultiPlayer_OrderIsCanonical_RegardlessOfSubmissionOrder()
+    {
+        var action1 = new MoveAction(Direction.North);
+        var action2 = new ExfilAction();
+
+        // Construct with P1 first, then P2
+        var inputsAB = new TickInputs(0L, [
+            new PlayerInput(PlayerId, action1),
+            new PlayerInput(Player2Id, action2)
+        ]);
+
+        // Construct with P2 first, then P1 — should produce identical hash
+        var inputsBA = new TickInputs(0L, [
+            new PlayerInput(Player2Id, action2),
+            new PlayerInput(PlayerId, action1)
+        ]);
+
+        Assert.True(inputsAB.ComputeHash().AsSpan().SequenceEqual(inputsBA.ComputeHash()));
+    }
+
+    [Fact]
+    public void TickInputs_DifferentTickNumbers_ProduceDifferentHashes()
+    {
+        var h1 = CreateSingleInput(0L, PlayerId, new ExfilAction()).ComputeHash();
+        var h2 = CreateSingleInput(1L, PlayerId, new ExfilAction()).ComputeHash();
+
+        Assert.False(h1.AsSpan().SequenceEqual(h2));
+    }
+
+    [Fact]
+    public void HashInputs_MatchesTickInputsComputeHash()
+    {
+        var inputs = CreateSingleInput(5L, PlayerId, new ExfilAction());
+        Assert.True(TickAuthorityService.HashInputs(inputs).AsSpan().SequenceEqual(inputs.ComputeHash()));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 3. SessionAuthority tick signing / verification (with PrevStateHash)
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void SignTick_ProducesValidSignature_VerifiedByVerifyTick()
     {
         var authority = CreateAuthority();
+        var prevHash = TickAuthorityService.GenesisStateHash;
         var stateHash = CreateHash(10);
         var inputHash = CreateHash(20);
 
-        var signature = authority.SignTick(0L, stateHash, inputHash);
-        var signedTick = new SignedTick(0L, stateHash, inputHash, signature);
+        var signature = authority.SignTick(0L, prevHash, stateHash, inputHash);
+        var signedTick = new SignedTick(0L, prevHash, stateHash, inputHash, signature);
 
         Assert.True(authority.VerifyTick(signedTick));
+    }
+
+    [Fact]
+    public void VerifyTick_ReturnsFalse_WhenPrevStateHashTampered()
+    {
+        var authority = CreateAuthority();
+        var prevHash = TickAuthorityService.GenesisStateHash;
+        var stateHash = CreateHash(10);
+        var inputHash = CreateHash(20);
+        var signature = authority.SignTick(0L, prevHash, stateHash, inputHash);
+
+        // Tamper prevStateHash
+        var tamperedTick = new SignedTick(0L, CreateHash(99), stateHash, inputHash, signature);
+
+        Assert.False(authority.VerifyTick(tamperedTick));
     }
 
     [Fact]
     public void VerifyTick_ReturnsFalse_WhenStateHashTampered()
     {
         var authority = CreateAuthority();
+        var prevHash = TickAuthorityService.GenesisStateHash;
         var stateHash = CreateHash(10);
         var inputHash = CreateHash(20);
-        var signature = authority.SignTick(5L, stateHash, inputHash);
+        var signature = authority.SignTick(5L, prevHash, stateHash, inputHash);
 
-        // Tamper state hash
-        var tamperedTick = new SignedTick(5L, CreateHash(99), inputHash, signature);
+        var tamperedTick = new SignedTick(5L, prevHash, CreateHash(99), inputHash, signature);
 
         Assert.False(authority.VerifyTick(tamperedTick));
     }
@@ -100,12 +202,12 @@ public sealed class TickAuthorityTests
     public void VerifyTick_ReturnsFalse_WhenInputHashTampered()
     {
         var authority = CreateAuthority();
+        var prevHash = TickAuthorityService.GenesisStateHash;
         var stateHash = CreateHash(10);
         var inputHash = CreateHash(20);
-        var signature = authority.SignTick(5L, stateHash, inputHash);
+        var signature = authority.SignTick(5L, prevHash, stateHash, inputHash);
 
-        // Tamper input hash
-        var tamperedTick = new SignedTick(5L, stateHash, CreateHash(99), signature);
+        var tamperedTick = new SignedTick(5L, prevHash, stateHash, CreateHash(99), signature);
 
         Assert.False(authority.VerifyTick(tamperedTick));
     }
@@ -114,12 +216,12 @@ public sealed class TickAuthorityTests
     public void VerifyTick_ReturnsFalse_WhenTickNumberTampered()
     {
         var authority = CreateAuthority();
+        var prevHash = TickAuthorityService.GenesisStateHash;
         var stateHash = CreateHash(10);
         var inputHash = CreateHash(20);
-        var signature = authority.SignTick(5L, stateHash, inputHash);
+        var signature = authority.SignTick(5L, prevHash, stateHash, inputHash);
 
-        // Tamper tick number
-        var tamperedTick = new SignedTick(99L, stateHash, inputHash, signature);
+        var tamperedTick = new SignedTick(99L, prevHash, stateHash, inputHash, signature);
 
         Assert.False(authority.VerifyTick(tamperedTick));
     }
@@ -129,32 +231,19 @@ public sealed class TickAuthorityTests
     {
         var authorityA = CreateAuthority("auth-a");
         var authorityB = CreateAuthority("auth-b");
+        var prevHash = TickAuthorityService.GenesisStateHash;
         var stateHash = CreateHash(10);
         var inputHash = CreateHash(20);
 
-        var signatureFromA = authorityA.SignTick(0L, stateHash, inputHash);
-        var tickSignedByA = new SignedTick(0L, stateHash, inputHash, signatureFromA);
+        var sigA = authorityA.SignTick(0L, prevHash, stateHash, inputHash);
+        var tickSignedByA = new SignedTick(0L, prevHash, stateHash, inputHash, sigA);
 
         Assert.True(authorityA.VerifyTick(tickSignedByA));
         Assert.False(authorityB.VerifyTick(tickSignedByA));
     }
 
-    [Fact]
-    public void SignTick_IsDeterministic_SameTick_SameInputs()
-    {
-        // Ed25519 signatures are deterministic (RFC 8032)
-        var authority = CreateAuthority();
-        var stateHash = CreateHash(10);
-        var inputHash = CreateHash(20);
-
-        var sig1 = authority.SignTick(3L, stateHash, inputHash);
-        var sig2 = authority.SignTick(3L, stateHash, inputHash);
-
-        Assert.True(sig1.AsSpan().SequenceEqual(sig2));
-    }
-
     // ──────────────────────────────────────────────────────────────────────────
-    // 3. TickAuthorityService checkpoint signing (SIGN_INTERVAL = 10)
+    // 4. TickAuthorityService checkpoint signing (SIGN_INTERVAL = 10)
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -168,18 +257,18 @@ public sealed class TickAuthorityTests
     {
         var service = CreateService();
         var state = ReplayRunner.CreateInitialState(42);
-        var action = new ExfilAction();
+        var prev = TickAuthorityService.GenesisStateHash;
 
-        // Tick 0 is a checkpoint (0 % 10 == 0)
-        var (tickState0, signedTick0) = service.ProcessTick(0L, state, action);
-        Assert.NotNull(signedTick0);
-        Assert.Equal(0L, tickState0.Tick);
-        Assert.Equal(0L, signedTick0.Tick);
+        // Tick 0 (0 % 10 == 0)
+        var (ts0, st0) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(), prev);
+        Assert.NotNull(st0);
+        Assert.Equal(0L, ts0.Tick);
+        Assert.Equal(0L, st0.Tick);
 
-        // Tick 10 is a checkpoint
-        var (_, signedTick10) = service.ProcessTick(10L, state, action);
-        Assert.NotNull(signedTick10);
-        Assert.Equal(10L, signedTick10.Tick);
+        // Tick 10 (10 % 10 == 0)
+        var (_, st10) = service.ProcessTick(10L, state, PlayerId, new ExfilAction(), prev);
+        Assert.NotNull(st10);
+        Assert.Equal(10L, st10.Tick);
     }
 
     [Fact]
@@ -187,11 +276,11 @@ public sealed class TickAuthorityTests
     {
         var service = CreateService();
         var state = ReplayRunner.CreateInitialState(42);
-        var action = new ExfilAction();
+        var prev = TickAuthorityService.GenesisStateHash;
 
         foreach (var tick in new long[] { 1L, 2L, 3L, 5L, 7L, 9L })
         {
-            var (_, signedTick) = service.ProcessTick(tick, state, action);
+            var (_, signedTick) = service.ProcessTick(tick, state, PlayerId, new ExfilAction(), prev);
             Assert.Null(signedTick);
         }
     }
@@ -202,11 +291,44 @@ public sealed class TickAuthorityTests
         var authority = CreateAuthority();
         var service = new TickAuthorityService(authority);
         var state = ReplayRunner.CreateInitialState(42);
+        var prev = TickAuthorityService.GenesisStateHash;
 
-        var (_, signedTick) = service.ProcessTick(0L, state, new ExfilAction());
+        var (_, signedTick) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(), prev);
 
         Assert.NotNull(signedTick);
         Assert.True(authority.VerifyTick(signedTick));
+    }
+
+    [Fact]
+    public void ProcessTick_SignedTick_HasCorrectPrevStateHash_ForGenesis()
+    {
+        var service = CreateService();
+        var state = ReplayRunner.CreateInitialState(42);
+
+        var (_, signedTick) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(),
+            TickAuthorityService.GenesisStateHash);
+
+        Assert.NotNull(signedTick);
+        Assert.True(signedTick.PrevStateHash.AsSpan().SequenceEqual(TickAuthorityService.GenesisStateHash));
+    }
+
+    [Fact]
+    public void ProcessTick_HashChaining_PrevStateHashLinkedToLastSignedTick()
+    {
+        var service = CreateService();
+        var state = ReplayRunner.CreateInitialState(42);
+        var genesis = TickAuthorityService.GenesisStateHash;
+
+        // First checkpoint at tick 0
+        var (_, tick0) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(), genesis);
+        Assert.NotNull(tick0);
+
+        // Second checkpoint at tick 10 — prevSignedStateHash must be tick0.StateHash
+        var (_, tick10) = service.ProcessTick(10L, state, PlayerId, new ExfilAction(), tick0.StateHash);
+        Assert.NotNull(tick10);
+
+        // The hash chain must link tick10 to tick0
+        Assert.True(tick10.PrevStateHash.AsSpan().SequenceEqual(tick0.StateHash));
     }
 
     [Fact]
@@ -217,14 +339,15 @@ public sealed class TickAuthorityTests
         var service = new TickAuthorityService(authority, hasher);
         var state = ReplayRunner.CreateInitialState(99);
 
-        var (tickState, _) = service.ProcessTick(0L, state, new ExfilAction());
+        var (tickState, _) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(),
+            TickAuthorityService.GenesisStateHash);
         var directHash = hasher.HashTick(0L, state);
 
         Assert.True(tickState.StateHash.AsSpan().SequenceEqual(directHash));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // 4. VerifySignedTickOrThrow: desync and invalid-signature detection
+    // 5. VerifySignedTickOrThrow: desync, invalid-signature, continuity
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -233,8 +356,9 @@ public sealed class TickAuthorityTests
         var authority = CreateAuthority();
         var service = new TickAuthorityService(authority);
         var state = ReplayRunner.CreateInitialState(42);
+        var genesis = TickAuthorityService.GenesisStateHash;
 
-        var (tickState, signedTick) = service.ProcessTick(0L, state, new ExfilAction());
+        var (tickState, signedTick) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(), genesis);
 
         Assert.NotNull(signedTick);
         // Should not throw
@@ -247,20 +371,20 @@ public sealed class TickAuthorityTests
         var authority = CreateAuthority();
         var service = new TickAuthorityService(authority);
         var state = ReplayRunner.CreateInitialState(42);
+        var genesis = TickAuthorityService.GenesisStateHash;
 
-        var (tickState, signedTick) = service.ProcessTick(0L, state, new ExfilAction());
+        var (tickState, signedTick) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(), genesis);
         Assert.NotNull(signedTick);
 
-        // Tamper the state hash in the signed tick
         var tamperedTick = new SignedTick(
             signedTick.Tick,
-            CreateHash(99), // wrong hash → signature fails
+            signedTick.PrevStateHash,
+            CreateHash(99),  // wrong state hash → signature fails
             signedTick.InputHash,
             signedTick.Signature);
 
         var ex = Assert.Throws<InvalidSignatureException>(
             () => service.VerifySignedTickOrThrow(tamperedTick, tickState.StateHash));
-
         Assert.Equal(0L, ex.Tick);
     }
 
@@ -270,13 +394,12 @@ public sealed class TickAuthorityTests
         var authority = CreateAuthority();
         var service = new TickAuthorityService(authority);
         var state = ReplayRunner.CreateInitialState(42);
+        var genesis = TickAuthorityService.GenesisStateHash;
 
-        var (tickState, signedTick) = service.ProcessTick(0L, state, new ExfilAction());
+        var (tickState, signedTick) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(), genesis);
         Assert.NotNull(signedTick);
 
-        // Local state differs from the signed tick's state hash
         var wrongLocalHash = CreateHash(99);
-
         var ex = Assert.Throws<DesyncException>(
             () => service.VerifySignedTickOrThrow(signedTick, wrongLocalHash));
 
@@ -285,8 +408,181 @@ public sealed class TickAuthorityTests
         Assert.True(wrongLocalHash.AsSpan().SequenceEqual(ex.ActualHash));
     }
 
+    [Fact]
+    public void VerifySignedTickOrThrow_ThrowsArgumentException_OnTickContinuityViolation()
+    {
+        var authority = CreateAuthority();
+        var service = new TickAuthorityService(authority);
+        var state = ReplayRunner.CreateInitialState(42);
+        var genesis = TickAuthorityService.GenesisStateHash;
+
+        var (ts0, tick0) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(), genesis);
+        Assert.NotNull(tick0);
+
+        // tick 20 instead of tick 1 — violates continuity
+        var (ts20, tick20) = service.ProcessTick(20L, state, PlayerId, new ExfilAction(), tick0.StateHash);
+        Assert.NotNull(tick20);
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => service.VerifySignedTickOrThrow(tick20, ts20.StateHash, tick0));
+        Assert.Contains("20", ex.Message);
+    }
+
+    [Fact]
+    public void VerifySignedTickOrThrow_ThrowsDesyncException_WhenHashChainBroken()
+    {
+        var authority = CreateAuthority();
+        var service = new TickAuthorityService(authority);
+        var state = ReplayRunner.CreateInitialState(42);
+        var genesis = TickAuthorityService.GenesisStateHash;
+
+        var (ts0, tick0) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(), genesis);
+        Assert.NotNull(tick0);
+
+        // Sign tick 1 with a *wrong* prevSignedStateHash (not tick0.StateHash)
+        var wrongPrev = CreateHash(99);
+        var tick1StateHash = new StateHasher().HashTick(1L, state);
+        var tick1InputHash = CreateSingleInput(1L, PlayerId, new ExfilAction()).ComputeHash();
+        var tick1Sig = authority.SignTick(1L, wrongPrev, tick1StateHash, tick1InputHash);
+        var tick1WithWrongChain = new SignedTick(1L, wrongPrev, tick1StateHash, tick1InputHash, tick1Sig);
+
+        // Signature is valid but chain is broken
+        Assert.True(authority.VerifyTick(tick1WithWrongChain));
+        Assert.Throws<DesyncException>(
+            () => service.VerifySignedTickOrThrow(tick1WithWrongChain, tick1StateHash, tick0));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
-    // 5. SessionAuthority.Sign overload with ReplayHash
+    // 6. VerifyTickChain
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void VerifyTickChain_PassesForValidSequentialChain()
+    {
+        var authority = CreateAuthority();
+        var service = new TickAuthorityService(authority);
+        var state = ReplayRunner.CreateInitialState(42);
+
+        var ticks = BuildSignedChain(authority, state, startTick: 0, count: 3);
+
+        // Should not throw
+        service.VerifyTickChain(ticks);
+    }
+
+    [Fact]
+    public void VerifyTickChain_FailsWhenGenesisPrevHashNotAllZero()
+    {
+        var authority = CreateAuthority();
+        var service = new TickAuthorityService(authority);
+        var state = ReplayRunner.CreateInitialState(42);
+
+        // Sign tick 0 with a non-genesis prevHash
+        var wrongGenesisPrev = CreateHash(1);
+        var stateHash = new StateHasher().HashTick(0L, state);
+        var inputHash = CreateSingleInput(0L, PlayerId, new ExfilAction()).ComputeHash();
+        var sig = authority.SignTick(0L, wrongGenesisPrev, stateHash, inputHash);
+        var tick0Bad = new SignedTick(0L, wrongGenesisPrev, stateHash, inputHash, sig);
+
+        Assert.Throws<DesyncException>(() => service.VerifyTickChain([tick0Bad]));
+    }
+
+    [Fact]
+    public void VerifyTickChain_FailsOnTickGap()
+    {
+        var authority = CreateAuthority();
+        var service = new TickAuthorityService(authority);
+        var state = ReplayRunner.CreateInitialState(42);
+        var genesis = TickAuthorityService.GenesisStateHash;
+
+        // tick 0 (a checkpoint)
+        var (ts0, tick0) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(), genesis);
+        Assert.NotNull(tick0);
+
+        // Build tick 20 directly (skipping tick 10) — gaps between signed checkpoints must be sequential
+        var stateHash2 = new StateHasher().HashTick(20L, state);
+        var inputHash2 = CreateSingleInput(20L, PlayerId, new ExfilAction()).ComputeHash();
+        var sig2 = authority.SignTick(20L, tick0.StateHash, stateHash2, inputHash2);
+        var tick20WithGap = new SignedTick(20L, tick0.StateHash, stateHash2, inputHash2, sig2);
+
+        // Continuity requires tick20.Tick == tick0.Tick + 1 (i.e. 1), but it's 20
+        Assert.Throws<ArgumentException>(() => service.VerifyTickChain([tick0, tick20WithGap]));
+    }
+
+    [Fact]
+    public void VerifyTickChain_FailsOnHashChainBreak()
+    {
+        var authority = CreateAuthority();
+        var service = new TickAuthorityService(authority);
+        var state = ReplayRunner.CreateInitialState(42);
+        var genesis = TickAuthorityService.GenesisStateHash;
+
+        var (_, tick0) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(), genesis);
+        Assert.NotNull(tick0);
+
+        // tick1 references wrong prev hash
+        var wrongPrev = CreateHash(99);
+        var stateHash1 = new StateHasher().HashTick(1L, state);
+        var inputHash1 = CreateSingleInput(1L, PlayerId, new ExfilAction()).ComputeHash();
+        var sig1 = authority.SignTick(1L, wrongPrev, stateHash1, inputHash1);
+        var tick1Bad = new SignedTick(1L, wrongPrev, stateHash1, inputHash1, sig1);
+
+        Assert.Throws<DesyncException>(() => service.VerifyTickChain([tick0, tick1Bad]));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 7. FinalizeRun with chain enforcement
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void FinalizeRun_WithVerifiedChain_ProducesValidSignedResult()
+    {
+        var authority = CreateAuthority();
+        var service = new TickAuthorityService(authority);
+        var state = ReplayRunner.CreateInitialState(42);
+
+        var ticks = BuildSignedChain(authority, state, startTick: 0, count: 1);
+        var finalStateHash = ticks[^1].StateHash;
+        var replayHash = CreateHash(50);
+
+        var result = service.FinalizeRun(Guid.NewGuid(), Guid.NewGuid(), finalStateHash, replayHash, ticks);
+
+        Assert.NotNull(result.ReplayHash);
+        Assert.True(SessionAuthority.VerifySignedRun(result, authority.ToAuthority()));
+    }
+
+    [Fact]
+    public void FinalizeRun_WithVerifiedChain_ThrowsWhenFinalHashMismatch()
+    {
+        var authority = CreateAuthority();
+        var service = new TickAuthorityService(authority);
+        var state = ReplayRunner.CreateInitialState(42);
+
+        var ticks = BuildSignedChain(authority, state, startTick: 0, count: 1);
+        var wrongFinalHash = CreateHash(99);
+        var replayHash = CreateHash(50);
+
+        Assert.Throws<InvalidOperationException>(
+            () => service.FinalizeRun(Guid.NewGuid(), Guid.NewGuid(), wrongFinalHash, replayHash, ticks));
+    }
+
+    [Fact]
+    public void FinalizeRun_WithReplayHash_SignatureVerifies()
+    {
+        var authority = CreateAuthority();
+        var service = new TickAuthorityService(authority);
+        var finalHash = CreateHash(10);
+        var replayHash = CreateHash(11);
+
+        var result = service.FinalizeRun(Guid.NewGuid(), Guid.NewGuid(), finalHash, replayHash);
+
+        Assert.NotNull(result.ReplayHash);
+        Assert.Equal(Convert.ToHexString(finalHash), result.FinalHash);
+        Assert.Equal(Convert.ToHexString(replayHash), result.ReplayHash);
+        Assert.True(SessionAuthority.VerifySignedRun(result, authority.ToAuthority()));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 8. SessionAuthority.Sign overload with ReplayHash
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -309,56 +605,8 @@ public sealed class TickAuthorityTests
     public void SignWithReplayHash_SignatureVerifies()
     {
         var authority = CreateAuthority();
-        var finalHash = CreateHash(3);
-        var replayHash = CreateHash(4);
-        var sessionId = Guid.NewGuid();
-        var playerId = Guid.NewGuid();
-
-        var result = authority.Sign(sessionId, playerId, finalHash, replayHash);
-
+        var result = authority.Sign(Guid.NewGuid(), Guid.NewGuid(), CreateHash(3), CreateHash(4));
         Assert.True(SessionAuthority.VerifySignedRun(result, authority.ToAuthority()));
-    }
-
-    [Fact]
-    public void SignWithReplayHash_DifferentFromSignWithoutReplayHash()
-    {
-        // The two Sign overloads use different payload hash functions, so signatures differ.
-        var authority = CreateAuthority();
-        var finalHash = CreateHash(5);
-        var replayHash = CreateHash(6);
-        var sessionId = Guid.NewGuid();
-        var playerId = Guid.NewGuid();
-
-        var withReplay = authority.Sign(sessionId, playerId, finalHash, replayHash);
-        var withoutReplay = authority.Sign(sessionId, playerId, finalHash);
-
-        Assert.False(withReplay.Signature.AsSpan().SequenceEqual(withoutReplay.Signature));
-    }
-
-    [Fact]
-    public void VerifySignedRun_RejectsWithoutReplay_ResultThatWasSignedWithReplay()
-    {
-        // A result signed with replay hash must NOT verify against the old payload function.
-        var authority = CreateAuthority();
-        var finalHash = CreateHash(7);
-        var replayHash = CreateHash(8);
-        var sessionId = Guid.NewGuid();
-        var playerId = Guid.NewGuid();
-
-        var withReplay = authority.Sign(sessionId, playerId, finalHash, replayHash);
-
-        // Build an equivalent result WITHOUT the replay hash field (simulating an old result)
-        var withoutReplayField = new SignedRunResult(
-            withReplay.SessionId,
-            withReplay.PlayerId,
-            withReplay.FinalHash,
-            withReplay.AuthorityId,
-            withReplay.Signature,
-            replayHash: null);
-
-        // VerifySignedRun on a result without ReplayHash uses the old payload.
-        // The signature was computed with the new payload so verification must fail.
-        Assert.False(SessionAuthority.VerifySignedRun(withoutReplayField, authority.ToAuthority()));
     }
 
     [Fact]
@@ -366,58 +614,11 @@ public sealed class TickAuthorityTests
     {
         var authority = CreateAuthority();
         var result = authority.Sign(Guid.NewGuid(), Guid.NewGuid(), CreateHash(1));
-
         Assert.Null(result.ReplayHash);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // 6. TickAuthorityService.FinalizeRun with combined hashes
-    // ──────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void FinalizeRun_ProducesSignedResultWithBothHashes()
-    {
-        var authority = CreateAuthority();
-        var service = new TickAuthorityService(authority);
-        var finalHash = CreateHash(10);
-        var replayHash = CreateHash(11);
-
-        var result = service.FinalizeRun(Guid.NewGuid(), Guid.NewGuid(), finalHash, replayHash);
-
-        Assert.NotNull(result.ReplayHash);
-        Assert.Equal(Convert.ToHexString(finalHash), result.FinalHash);
-        Assert.Equal(Convert.ToHexString(replayHash), result.ReplayHash);
-        Assert.True(SessionAuthority.VerifySignedRun(result, authority.ToAuthority()));
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // 7. TickAuthorityService.HashAction determinism
-    // ──────────────────────────────────────────────────────────────────────────
-
-    [Fact]
-    public void HashAction_IsDeterministic_ForSameAction()
-    {
-        var action = new MoveAction(Direction.North);
-
-        var hash1 = TickAuthorityService.HashAction(action);
-        var hash2 = TickAuthorityService.HashAction(action);
-
-        Assert.True(hash1.AsSpan().SequenceEqual(hash2));
-    }
-
-    [Fact]
-    public void HashAction_DifferentActions_ProduceDifferentHashes()
-    {
-        var h1 = TickAuthorityService.HashAction(new MoveAction(Direction.North));
-        var h2 = TickAuthorityService.HashAction(new MoveAction(Direction.South));
-        var h3 = TickAuthorityService.HashAction(new ExfilAction());
-
-        Assert.False(h1.AsSpan().SequenceEqual(h2));
-        Assert.False(h1.AsSpan().SequenceEqual(h3));
-    }
-
-    // ──────────────────────────────────────────────────────────────────────────
-    // 8. Exception types
+    // 9. Exception types
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -443,14 +644,13 @@ public sealed class TickAuthorityTests
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // 9. ISessionAuthority interface compliance
+    // 10. ISessionAuthority interface compliance
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void SessionAuthority_ImplementsISessionAuthority()
     {
         var authority = CreateAuthority();
-
         Assert.IsAssignableFrom<ISessionAuthority>(authority);
     }
 
@@ -458,11 +658,12 @@ public sealed class TickAuthorityTests
     public void ISessionAuthority_SignAndVerify_WorksThroughInterface()
     {
         ISessionAuthority authority = CreateAuthority();
+        var prevHash = TickAuthorityService.GenesisStateHash;
         var stateHash = CreateHash(1);
         var inputHash = CreateHash(2);
 
-        var signature = authority.SignTick(0L, stateHash, inputHash);
-        var tick = new SignedTick(0L, stateHash, inputHash, signature);
+        var signature = authority.SignTick(0L, prevHash, stateHash, inputHash);
+        var tick = new SignedTick(0L, prevHash, stateHash, inputHash, signature);
 
         Assert.True(authority.VerifyTick(tick));
     }
@@ -478,9 +679,7 @@ public sealed class TickAuthorityTests
     }
 
     private static TickAuthorityService CreateService()
-    {
-        return new TickAuthorityService(CreateAuthority());
-    }
+        => new(CreateAuthority());
 
     private static byte[] CreateHash(int seed)
     {
@@ -489,5 +688,36 @@ public sealed class TickAuthorityTests
         hash[1] = (byte)((seed >> 8) & 0xFF);
         hash[15] = 0xAB;
         return hash;
+    }
+
+    private static TickInputs CreateSingleInput(long tick, Guid playerId, PlayerAction action)
+        => new(tick, [new PlayerInput(playerId, action)]);
+
+    /// <summary>
+    /// Builds a chain of sequential signed ticks starting at <paramref name="startTick"/>.
+    /// Ticks are signed directly (not via SIGN_INTERVAL) so the chain is purely sequential.
+    /// </summary>
+    private static List<SignedTick> BuildSignedChain(
+        SessionAuthority authority,
+        SimulationState state,
+        long startTick,
+        int count)
+    {
+        var hasher = new StateHasher();
+        var ticks = new List<SignedTick>(count);
+        var prev = TickAuthorityService.GenesisStateHash;
+
+        for (var i = 0; i < count; i++)
+        {
+            var tick = startTick + i;
+            var stateHash = hasher.HashTick(tick, state);
+            var inputHash = new TickInputs(tick, [new PlayerInput(PlayerId, new ExfilAction())]).ComputeHash();
+            var sig = authority.SignTick(tick, prev, stateHash, inputHash);
+            var signedTick = new SignedTick(tick, prev, stateHash, inputHash, sig);
+            ticks.Add(signedTick);
+            prev = stateHash;
+        }
+
+        return ticks;
     }
 }

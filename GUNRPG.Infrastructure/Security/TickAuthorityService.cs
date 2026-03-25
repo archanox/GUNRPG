@@ -10,6 +10,15 @@ namespace GUNRPG.Security;
 /// <see cref="SignInterval"/> ticks. All nodes can verify received
 /// <see cref="SignedTick"/> instances and detect state desyncs.
 /// </summary>
+/// <remarks>
+/// Hash chaining: each <see cref="SignedTick"/> includes the state hash of the
+/// previous signed checkpoint (<see cref="SignedTick.PrevStateHash"/>), which is covered
+/// by the Ed25519 signature. This prevents valid ticks from being replayed or spliced from
+/// a different simulation timeline.
+/// Tick continuity: <see cref="VerifySignedTickOrThrow"/> enforces that
+/// <c>current.Tick == previous.Tick + 1</c> and that
+/// <c>current.PrevStateHash == previous.StateHash</c>.
+/// </remarks>
 public sealed class TickAuthorityService
 {
     /// <summary>
@@ -25,6 +34,12 @@ public sealed class TickAuthorityService
     /// approximately every 160 ms, with intermediate ticks validated through replay.
     /// </remarks>
     public const int SignInterval = 10;
+
+    /// <summary>
+    /// The canonical "previous state hash" used for the very first signed checkpoint (tick 0).
+    /// This is 32 zero bytes, ensuring the genesis tick is unambiguously the start of the chain.
+    /// </summary>
+    public static readonly byte[] GenesisStateHash = new byte[SHA256.HashSizeInBytes];
 
     private readonly SessionAuthority _authority;
     private readonly IStateHasher _stateHasher;
@@ -43,11 +58,19 @@ public sealed class TickAuthorityService
     /// <summary>
     /// Processes a tick on the <see cref="NodeRole.Authority"/> node:
     /// computes the state hash and, every <see cref="SignInterval"/> ticks,
-    /// signs a <see cref="SignedTick"/> checkpoint.
+    /// signs a chained <see cref="SignedTick"/> checkpoint.
     /// </summary>
     /// <param name="tick">The simulation tick number.</param>
     /// <param name="state">The simulation state produced after this tick.</param>
-    /// <param name="action">The player action that drove this tick.</param>
+    /// <param name="inputs">
+    /// The deterministically-ordered batch of player inputs for this tick.
+    /// Use <see cref="TickInputs"/> to guarantee canonical ordering across nodes.
+    /// </param>
+    /// <param name="prevSignedStateHash">
+    /// The <see cref="SignedTick.StateHash"/> of the most recent prior signed checkpoint,
+    /// or <see cref="GenesisStateHash"/> if this is the first checkpoint.
+    /// Included in the signature payload to form an unforgeable hash chain.
+    /// </param>
     /// <returns>
     /// The per-tick <see cref="TickState"/> and, when <paramref name="tick"/> is a checkpoint,
     /// the signed <see cref="SignedTick"/>. Otherwise <see cref="SignedTick"/> is <see langword="null"/>.
@@ -55,14 +78,45 @@ public sealed class TickAuthorityService
     public (TickState TickState, SignedTick? SignedTick) ProcessTick(
         long tick,
         SimulationState state,
-        PlayerAction action)
+        TickInputs inputs,
+        byte[] prevSignedStateHash)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(inputs);
+        ArgumentNullException.ThrowIfNull(prevSignedStateHash);
+
+        var stateHash = _stateHasher.HashTick(tick, state);
+        var inputHash = inputs.ComputeHash();
+        return BuildTickResult(tick, prevSignedStateHash, stateHash, inputHash);
+    }
+
+    /// <summary>
+    /// Processes a single-player tick on the <see cref="NodeRole.Authority"/> node.
+    /// Creates a single-entry <see cref="TickInputs"/> from the given player and action.
+    /// </summary>
+    /// <param name="tick">The simulation tick number.</param>
+    /// <param name="state">The simulation state produced after this tick.</param>
+    /// <param name="playerId">The player's unique identifier.</param>
+    /// <param name="action">The player's action for this tick.</param>
+    /// <param name="prevSignedStateHash">
+    /// The <see cref="SignedTick.StateHash"/> of the most recent prior signed checkpoint,
+    /// or <see cref="GenesisStateHash"/> for the first checkpoint.
+    /// </param>
+    public (TickState TickState, SignedTick? SignedTick) ProcessTick(
+        long tick,
+        SimulationState state,
+        Guid playerId,
+        PlayerAction action,
+        byte[] prevSignedStateHash)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(action);
+        ArgumentNullException.ThrowIfNull(prevSignedStateHash);
 
+        var inputs = new TickInputs(tick, [new PlayerInput(playerId, action)]);
         var stateHash = _stateHasher.HashTick(tick, state);
-        var inputHash = HashAction(action);
-        return BuildTickResult(tick, stateHash, inputHash);
+        var inputHash = inputs.ComputeHash();
+        return BuildTickResult(tick, prevSignedStateHash, stateHash, inputHash);
     }
 
     /// <summary>
@@ -72,60 +126,199 @@ public sealed class TickAuthorityService
     public (TickState TickState, SignedTick? SignedTick) ProcessTick(
         long tick,
         SimulationState state,
-        byte[] inputHash)
+        byte[] inputHash,
+        byte[] prevSignedStateHash)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(inputHash);
+        ArgumentNullException.ThrowIfNull(prevSignedStateHash);
 
         var stateHash = _stateHasher.HashTick(tick, state);
-        return BuildTickResult(tick, stateHash, inputHash);
+        return BuildTickResult(tick, prevSignedStateHash, stateHash, inputHash);
     }
 
     /// <summary>
     /// Verifies a <see cref="SignedTick"/> on a <see cref="NodeRole.Validator"/> or
-    /// <see cref="NodeRole.Client"/> node, checking both the cryptographic signature
-    /// and the local state hash for desync.
+    /// <see cref="NodeRole.Client"/> node, enforcing:
+    /// <list type="number">
+    ///   <item>The Ed25519 signature is valid.</item>
+    ///   <item>The local state hash matches <see cref="SignedTick.StateHash"/> (no desync).</item>
+    ///   <item>
+    ///     If <paramref name="previousSignedTick"/> is provided:
+    ///     <c>signedTick.Tick == previousSignedTick.Tick + 1</c> (tick continuity).
+    ///   </item>
+    ///   <item>
+    ///     If <paramref name="previousSignedTick"/> is provided:
+    ///     <c>signedTick.PrevStateHash == previousSignedTick.StateHash</c> (hash-chain integrity).
+    ///   </item>
+    /// </list>
     /// </summary>
     /// <param name="signedTick">The signed tick received from the authority.</param>
     /// <param name="localStateHash">The state hash computed locally after simulating this tick.</param>
+    /// <param name="previousSignedTick">
+    /// The immediately preceding signed checkpoint, or <see langword="null"/> for the genesis tick.
+    /// When provided, both tick continuity and hash-chain integrity are enforced.
+    /// </param>
     /// <exception cref="InvalidSignatureException">
     /// Thrown when the Ed25519 signature on <paramref name="signedTick"/> is invalid.
     /// </exception>
     /// <exception cref="DesyncException">
     /// Thrown when <paramref name="localStateHash"/> does not match
-    /// <see cref="SignedTick.StateHash"/>.
+    /// <see cref="SignedTick.StateHash"/>, or when the hash chain is broken.
     /// </exception>
-    public void VerifySignedTickOrThrow(SignedTick signedTick, byte[] localStateHash)
+    /// <exception cref="ArgumentException">
+    /// Thrown when tick continuity is violated
+    /// (<c>signedTick.Tick != previousSignedTick.Tick + 1</c>).
+    /// </exception>
+    public void VerifySignedTickOrThrow(
+        SignedTick signedTick,
+        byte[] localStateHash,
+        SignedTick? previousSignedTick = null)
     {
         ArgumentNullException.ThrowIfNull(signedTick);
         ArgumentNullException.ThrowIfNull(localStateHash);
 
+        // 1. Signature validation (covers Tick || PrevStateHash || StateHash || InputHash)
         if (!_authority.VerifyTick(signedTick))
             throw new InvalidSignatureException(signedTick.Tick);
 
+        // 2. Local state desync check
         if (!localStateHash.AsSpan().SequenceEqual(signedTick.StateHash))
             throw new DesyncException(signedTick.Tick, signedTick.StateHash, localStateHash);
+
+        if (previousSignedTick is not null)
+        {
+            // 3. Tick continuity
+            if (signedTick.Tick != previousSignedTick.Tick + 1)
+                throw new ArgumentException(
+                    $"Tick continuity violation: expected tick {previousSignedTick.Tick + 1}, " +
+                    $"but received tick {signedTick.Tick}.",
+                    nameof(signedTick));
+
+            // 4. Hash-chain integrity: PrevStateHash must equal the previous tick's StateHash
+            if (!signedTick.PrevStateHash.AsSpan().SequenceEqual(previousSignedTick.StateHash))
+                throw new DesyncException(
+                    signedTick.Tick,
+                    previousSignedTick.StateHash,
+                    signedTick.PrevStateHash);
+        }
+    }
+
+    /// <summary>
+    /// Validates a complete chain of signed ticks and throws on the first violation.
+    /// Ensures:
+    /// <list type="bullet">
+    ///   <item>Every signature is valid.</item>
+    ///   <item>Every tick is sequential (<c>ticks[i].Tick == ticks[i-1].Tick + 1</c>).</item>
+    ///   <item>Every hash-chain link is intact (<c>ticks[i].PrevStateHash == ticks[i-1].StateHash</c>).</item>
+    ///   <item>
+    ///     When <paramref name="localStateHashes"/> is provided, the local state hashes match
+    ///     (no desync occurred during simulation).
+    ///   </item>
+    /// </list>
+    /// This must pass before a run may be finalised and persisted.
+    /// </summary>
+    /// <param name="ticks">The ordered chain of signed checkpoints from genesis to the final tick.</param>
+    /// <param name="localStateHashes">
+    /// Optional array of local state hashes parallel to <paramref name="ticks"/>.
+    /// When provided, desync detection is applied at every checkpoint.
+    /// </param>
+    /// <exception cref="InvalidSignatureException">Thrown when any signature is invalid.</exception>
+    /// <exception cref="DesyncException">
+    /// Thrown when any state hash mismatch or hash-chain break is detected.
+    /// </exception>
+    /// <exception cref="ArgumentException">Thrown on tick-continuity violation.</exception>
+    public void VerifyTickChain(
+        IReadOnlyList<SignedTick> ticks,
+        IReadOnlyList<byte[]>? localStateHashes = null)
+    {
+        ArgumentNullException.ThrowIfNull(ticks);
+
+        if (localStateHashes is not null && localStateHashes.Count != ticks.Count)
+            throw new ArgumentException(
+                $"localStateHashes must have the same length as ticks ({ticks.Count}), " +
+                $"but has {localStateHashes.Count} entries.",
+                nameof(localStateHashes));
+
+        for (var i = 0; i < ticks.Count; i++)
+        {
+            var tick = ticks[i] ?? throw new ArgumentException(
+                $"Tick at index {i} must not be null.", nameof(ticks));
+
+            var localHash = localStateHashes?[i] ?? tick.StateHash;
+            var previous = i > 0 ? ticks[i - 1] : null;
+
+            // For the genesis checkpoint, PrevStateHash must be all-zero bytes.
+            if (i == 0 && !tick.PrevStateHash.AsSpan().SequenceEqual(GenesisStateHash))
+                throw new DesyncException(tick.Tick, GenesisStateHash, tick.PrevStateHash);
+
+            VerifySignedTickOrThrow(tick, localHash, previous);
+        }
+    }
+
+    /// <summary>
+    /// Finalises a run after successful chain verification, producing a
+    /// <see cref="SignedRunResult"/> that binds both the final state hash and the
+    /// full input-log replay hash.
+    /// </summary>
+    /// <remarks>
+    /// This overload accepts a pre-verified tick chain and validates that
+    /// <paramref name="finalStateHash"/> matches the last verified tick before signing.
+    /// Enforces the rule: no valid <see cref="SignedTick"/> chain → no persistence.
+    /// </remarks>
+    /// <param name="sessionId">Unique identifier of the session.</param>
+    /// <param name="playerId">Unique identifier of the player/operator.</param>
+    /// <param name="finalStateHash">
+    /// SHA-256 hash of the simulation state at the end of the run.
+    /// Must equal <see cref="SignedTick.StateHash"/> of the last tick in
+    /// <paramref name="verifiedTickChain"/>.
+    /// </param>
+    /// <param name="replayHash">
+    /// SHA-256 hash of the full input log (<see cref="ReplayResult.FinalHash"/>).
+    /// </param>
+    /// <param name="verifiedTickChain">
+    /// The fully-verified chain of signed checkpoints. The caller is responsible for
+    /// running <see cref="VerifyTickChain"/> before calling this method.
+    /// </param>
+    /// <returns>
+    /// A <see cref="SignedRunResult"/> whose signature covers both hashes.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="finalStateHash"/> does not match the last tick's
+    /// <see cref="SignedTick.StateHash"/>.
+    /// </exception>
+    public SignedRunResult FinalizeRun(
+        Guid sessionId,
+        Guid playerId,
+        byte[] finalStateHash,
+        byte[] replayHash,
+        IReadOnlyList<SignedTick> verifiedTickChain)
+    {
+        ArgumentNullException.ThrowIfNull(finalStateHash);
+        ArgumentNullException.ThrowIfNull(replayHash);
+        ArgumentNullException.ThrowIfNull(verifiedTickChain);
+
+        if (verifiedTickChain.Count > 0)
+        {
+            var lastTick = verifiedTickChain[^1]
+                ?? throw new ArgumentException(
+                    "The last entry in verifiedTickChain must not be null.",
+                    nameof(verifiedTickChain));
+
+            if (!finalStateHash.AsSpan().SequenceEqual(lastTick.StateHash))
+                throw new InvalidOperationException(
+                    "finalStateHash does not match the last verified tick's StateHash. " +
+                    "The run cannot be finalised without a complete verified tick chain.");
+        }
+
+        return _authority.Sign(sessionId, playerId, finalStateHash, replayHash);
     }
 
     /// <summary>
     /// Finalises a run by producing a <see cref="SignedRunResult"/> that binds both the
     /// final state hash (from the last verified tick) and the full input-log replay hash.
-    /// The Ed25519 signature covers: SessionId &#x2016; PlayerId &#x2016; FinalStateHash &#x2016; ReplayHash.
+    /// Use the overload with <c>verifiedTickChain</c> to enforce chain verification.
     /// </summary>
-    /// <param name="sessionId">Unique identifier of the session.</param>
-    /// <param name="playerId">Unique identifier of the player/operator.</param>
-    /// <param name="finalStateHash">
-    /// SHA-256 hash of the simulation state at the end of the run.
-    /// Must match <see cref="TickState.StateHash"/> of the last verified tick.
-    /// </param>
-    /// <param name="replayHash">
-    /// SHA-256 hash of the full input log, as computed by
-    /// <see cref="ReplayRunner.Replay(InputLog)"/> → <see cref="ReplayResult.FinalHash"/>.
-    /// </param>
-    /// <returns>
-    /// A <see cref="SignedRunResult"/> whose signature covers both hashes,
-    /// guaranteeing the run cannot be persisted without full input-log verification.
-    /// </returns>
     public SignedRunResult FinalizeRun(
         Guid sessionId,
         Guid playerId,
@@ -139,46 +332,31 @@ public sealed class TickAuthorityService
     }
 
     /// <summary>
-    /// Computes the SHA-256 hash of the canonical serialized form of a player action,
-    /// suitable for inclusion in <see cref="TickInput.InputHash"/> and <see cref="SignedTick.InputHash"/>.
+    /// Computes the SHA-256 hash of a <see cref="TickInputs"/> batch.
+    /// This is the canonical method for producing the <c>InputHash</c> field of a
+    /// <see cref="SignedTick"/>.
     /// </summary>
-    public static byte[] HashAction(PlayerAction action)
+    public static byte[] HashInputs(TickInputs inputs)
+    {
+        ArgumentNullException.ThrowIfNull(inputs);
+        return inputs.ComputeHash();
+    }
+
+    /// <summary>
+    /// Computes the SHA-256 hash of a single player action, producing a <c>TickInputs</c>
+    /// batch for a single-player tick.
+    /// For multi-player scenarios use <see cref="HashInputs(TickInputs)"/> with a
+    /// properly-constructed <see cref="TickInputs"/>.
+    /// </summary>
+    public static byte[] HashSingleAction(long tick, Guid playerId, PlayerAction action)
     {
         ArgumentNullException.ThrowIfNull(action);
-
-        // Encode: type discriminator (int32 big-endian) followed by action-specific payload.
-        // Mirrors the action encoding in StateHasher.WriteAction for cross-machine consistency.
-        const int intSize = 4;
-        return action switch
-        {
-            MoveAction move => SHA256.HashData(EncodeInt32Pair(1, (int)move.Direction)),
-            AttackAction attack => SHA256.HashData(EncodeGuidWithTag(2, attack.TargetId)),
-            UseItemAction useItem => SHA256.HashData(EncodeGuidWithTag(3, useItem.ItemId)),
-            ExfilAction => SHA256.HashData(EncodeInt32Pair(4, 0)),
-            _ => throw new InvalidOperationException(
-                $"Cannot hash unknown action type '{action.GetType().Name}'."),
-        };
-
-        static byte[] EncodeInt32Pair(int discriminator, int value)
-        {
-            var buf = new byte[intSize + intSize];
-            BinaryPrimitives.WriteInt32BigEndian(buf, discriminator);
-            BinaryPrimitives.WriteInt32BigEndian(buf.AsSpan(intSize), value);
-            return buf;
-        }
-
-        static byte[] EncodeGuidWithTag(int discriminator, Guid id)
-        {
-            var buf = new byte[intSize + 16];
-            BinaryPrimitives.WriteInt32BigEndian(buf, discriminator);
-            if (!id.TryWriteBytes(buf.AsSpan(intSize), bigEndian: true, out _))
-                throw new InvalidOperationException("Failed to encode GUID for input hashing.");
-            return buf;
-        }
+        return new TickInputs(tick, [new PlayerInput(playerId, action)]).ComputeHash();
     }
 
     private (TickState TickState, SignedTick? SignedTick) BuildTickResult(
         long tick,
+        byte[] prevSignedStateHash,
         byte[] stateHash,
         byte[] inputHash)
     {
@@ -187,8 +365,8 @@ public sealed class TickAuthorityService
         SignedTick? signedTick = null;
         if (tick % SignInterval == 0)
         {
-            var signature = _authority.SignTick(tick, stateHash, inputHash);
-            signedTick = new SignedTick(tick, stateHash, inputHash, signature);
+            var signature = _authority.SignTick(tick, prevSignedStateHash, stateHash, inputHash);
+            signedTick = new SignedTick(tick, prevSignedStateHash, stateHash, inputHash, signature);
         }
 
         return (tickState, signedTick);
