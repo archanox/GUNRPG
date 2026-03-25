@@ -17,6 +17,13 @@ public sealed class TickAuthorityService
     /// Every <c>SignInterval</c>-th tick (including tick 0) is signed by the authority.
     /// Intermediate ticks are validated via deterministic replay only.
     /// </summary>
+    /// <remarks>
+    /// The value 10 represents a trade-off between signature overhead and desync detection
+    /// granularity: signing every tick would be maximally secure but expensive; a larger
+    /// interval increases the window during which undetected divergence can accumulate.
+    /// At typical game tick rates (e.g. 60 Hz) this means one cryptographic checkpoint
+    /// approximately every 160 ms, with intermediate ticks validated through replay.
+    /// </remarks>
     public const int SignInterval = 10;
 
     private readonly SessionAuthority _authority;

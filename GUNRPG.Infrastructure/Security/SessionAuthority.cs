@@ -1,5 +1,6 @@
 using GUNRPG.Application.Sessions;
 using GUNRPG.Core.Simulation;
+using SessionsReplayRunner = GUNRPG.Application.Sessions.ReplayRunner;
 
 namespace GUNRPG.Security;
 
@@ -195,7 +196,7 @@ public sealed class SessionAuthority : ISessionAuthority
         ArgumentNullException.ThrowIfNull(replayTurns);
 
         // Step 1: Replay the session deterministically.
-        var replayState = GUNRPG.Application.Sessions.ReplayRunner.Run(replayInitialSnapshotJson, replayTurns);
+        var replayState = SessionsReplayRunner.Run(replayInitialSnapshotJson, replayTurns);
 
         // Step 2: Compute hash from the replayed final snapshot.
         var replayHashBytes = CombatSessionHasher.ComputeStateHash(replayState.Snapshot);
