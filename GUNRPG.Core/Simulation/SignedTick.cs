@@ -6,12 +6,12 @@ namespace GUNRPG.Core.Simulation;
 /// Tick (big-endian int64) || PrevStateHash || StateHash || InputHash.
 /// Including <see cref="PrevStateHash"/> in the signature prevents valid ticks from
 /// being replayed or spliced from a different timeline.
-/// Produced by the authority node every <see cref="GUNRPG.Security.TickAuthorityService.SignInterval"/> ticks.
+/// Produced by the authority node at a fixed signing interval.
 /// </summary>
 /// <param name="Tick">The simulation tick number.</param>
 /// <param name="PrevStateHash">
 /// SHA-256 hash of the simulation state at the end of the <em>previous</em> signed checkpoint tick.
-/// Use <see cref="TickAuthorityService.GenesisStateHash"/> for the very first tick.
+/// Use the genesis state-hash sentinel (32 zero bytes) for the very first checkpoint.
 /// The caller is responsible for defensive copying; the record does not clone the array.
 /// </param>
 /// <param name="StateHash">

@@ -487,25 +487,52 @@ public sealed class TickAuthorityTests
     }
 
     [Fact]
-    public void VerifyTickChain_FailsOnTickGap()
+    public void VerifyTickChain_PassesForNonSequentialCheckpoints_WithCorrectSpacing()
     {
+        // VerifyTickChain allows any strictly-increasing spacing between checkpoints
+        // (e.g. 0 → 10 → 20), not just +1, matching the SignInterval checkpoint model.
         var authority = CreateAuthority();
         var service = new TickAuthorityService(authority);
+        var hasher = new StateHasher();
         var state = ReplayRunner.CreateInitialState(42);
         var genesis = TickAuthorityService.GenesisStateHash;
 
-        // tick 0 (a checkpoint)
-        var (ts0, tick0) = service.ProcessTick(0L, state, PlayerId, new ExfilAction(), genesis);
-        Assert.NotNull(tick0);
+        // Manually build checkpoints at tick 0 and tick 20 (skip 10)
+        var stateHash0 = hasher.HashTick(0L, state);
+        var inputHash0 = CreateSingleInput(0L, PlayerId, new ExfilAction()).ComputeHash();
+        var sig0 = authority.SignTick(0L, genesis, stateHash0, inputHash0);
+        var tick0 = new SignedTick(0L, genesis, stateHash0, inputHash0, sig0);
 
-        // Build tick 20 directly (skipping tick 10) — gaps between signed checkpoints must be sequential
-        var stateHash2 = new StateHasher().HashTick(20L, state);
-        var inputHash2 = CreateSingleInput(20L, PlayerId, new ExfilAction()).ComputeHash();
-        var sig2 = authority.SignTick(20L, tick0.StateHash, stateHash2, inputHash2);
-        var tick20WithGap = new SignedTick(20L, tick0.StateHash, stateHash2, inputHash2, sig2);
+        var stateHash20 = hasher.HashTick(20L, state);
+        var inputHash20 = CreateSingleInput(20L, PlayerId, new ExfilAction()).ComputeHash();
+        var sig20 = authority.SignTick(20L, tick0.StateHash, stateHash20, inputHash20);
+        var tick20 = new SignedTick(20L, tick0.StateHash, stateHash20, inputHash20, sig20);
 
-        // Continuity requires tick20.Tick == tick0.Tick + 1 (i.e. 1), but it's 20
-        Assert.Throws<ArgumentException>(() => service.VerifyTickChain([tick0, tick20WithGap]));
+        // Should NOT throw — 20 > 0 is strictly increasing
+        service.VerifyTickChain([tick0, tick20]);
+    }
+
+    [Fact]
+    public void VerifyTickChain_FailsOnNonIncreasingTicks()
+    {
+        // VerifyTickChain must reject duplicate or decreasing tick indices.
+        var authority = CreateAuthority();
+        var service = new TickAuthorityService(authority);
+        var hasher = new StateHasher();
+        var state = ReplayRunner.CreateInitialState(42);
+        var genesis = TickAuthorityService.GenesisStateHash;
+
+        // tick 0
+        var stateHash0 = hasher.HashTick(0L, state);
+        var inputHash0 = CreateSingleInput(0L, PlayerId, new ExfilAction()).ComputeHash();
+        var sig0 = authority.SignTick(0L, genesis, stateHash0, inputHash0);
+        var tick0 = new SignedTick(0L, genesis, stateHash0, inputHash0, sig0);
+
+        // tick 0 again (non-increasing: 0 is not > 0)
+        var sig0Again = authority.SignTick(0L, stateHash0, stateHash0, inputHash0);
+        var tick0Again = new SignedTick(0L, stateHash0, stateHash0, inputHash0, sig0Again);
+
+        Assert.Throws<ArgumentException>(() => service.VerifyTickChain([tick0, tick0Again]));
     }
 
     [Fact]
@@ -644,7 +671,7 @@ public sealed class TickAuthorityTests
     }
 
     // ──────────────────────────────────────────────────────────────────────────
-    // 10. ISessionAuthority interface compliance
+    // 10. ISessionAuthority interface compliance and ITickVerifier separation
     // ──────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -652,6 +679,13 @@ public sealed class TickAuthorityTests
     {
         var authority = CreateAuthority();
         Assert.IsAssignableFrom<ISessionAuthority>(authority);
+    }
+
+    [Fact]
+    public void SessionAuthority_ImplementsITickVerifier()
+    {
+        var authority = CreateAuthority();
+        Assert.IsAssignableFrom<ITickVerifier>(authority);
     }
 
     [Fact]
@@ -666,6 +700,63 @@ public sealed class TickAuthorityTests
         var tick = new SignedTick(0L, prevHash, stateHash, inputHash, signature);
 
         Assert.True(authority.VerifyTick(tick));
+    }
+
+    [Fact]
+    public void VerifyTickChain_WorksWithITickVerifier_VerifierOnlyConstructor()
+    {
+        // Validator/client nodes should be able to verify a chain with only the public key.
+        var authority = CreateAuthority();
+        ITickVerifier verifier = authority; // only public key side
+
+        var verifierService = new TickAuthorityService(verifier);
+        var state = ReplayRunner.CreateInitialState(42);
+        var ticks = BuildSignedChain(authority, state, startTick: 0, count: 3);
+
+        // Should not throw — verifier-only service can validate a chain
+        verifierService.VerifyTickChain(ticks);
+    }
+
+    [Fact]
+    public void FinalizeRun_ThrowsInvalidOperationException_ForVerifierOnlyService()
+    {
+        var authority = CreateAuthority();
+        ITickVerifier verifier = authority;
+        var verifierService = new TickAuthorityService(verifier);
+
+        Assert.Throws<InvalidOperationException>(
+            () => verifierService.FinalizeRun(Guid.NewGuid(), Guid.NewGuid(), CreateHash(1), CreateHash(2)));
+    }
+
+    [Fact]
+    public void ProcessTick_ThrowsInvalidOperationException_ForVerifierOnlyService()
+    {
+        var authority = CreateAuthority();
+        ITickVerifier verifier = authority;
+        var verifierService = new TickAuthorityService(verifier);
+        var state = ReplayRunner.CreateInitialState(42);
+
+        // Checkpoint tick (0 % 10 == 0) triggers signing — should throw since no private key
+        Assert.Throws<InvalidOperationException>(
+            () => verifierService.ProcessTick(0L, state, PlayerId, new ExfilAction(),
+                TickAuthorityService.GenesisStateHash));
+    }
+
+    [Fact]
+    public void GenesisStateHash_ReturnsNewCopyEachCall_PreventsMutation()
+    {
+        var h1 = TickAuthorityService.GenesisStateHash;
+        var h2 = TickAuthorityService.GenesisStateHash;
+
+        // Must be equal (both all-zero, 32 bytes) but not the same reference
+        Assert.Equal(32, h1.Length);
+        Assert.True(h1.AsSpan().SequenceEqual(h2));
+        Assert.NotSame(h1, h2);
+
+        // Mutating one copy must not affect the next call
+        h1[0] = 0xFF;
+        var h3 = TickAuthorityService.GenesisStateHash;
+        Assert.Equal(0, h3[0]);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
