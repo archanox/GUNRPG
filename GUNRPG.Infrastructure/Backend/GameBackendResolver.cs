@@ -109,6 +109,7 @@ public sealed class GameBackendResolver
         {
             var perOperator = unsyncedResults
                 .GroupBy(r => r.OperatorId)
+                .OrderBy(g => g.Key)
                 .Select(g => $"{g.Key}({g.Count()})");
             _logger.LogInformation("[SYNC] {TotalCount} unsynced offline mission result(s) pending: {PerOperator}",
                 unsyncedResults.Count, string.Join(", ", perOperator));
