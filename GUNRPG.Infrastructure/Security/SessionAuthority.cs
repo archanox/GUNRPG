@@ -1,4 +1,5 @@
 using GUNRPG.Application.Sessions;
+using GUNRPG.Core.Simulation;
 
 namespace GUNRPG.Security;
 
@@ -6,7 +7,7 @@ namespace GUNRPG.Security;
 /// An authority node that can sign completed session runs and verify signed results.
 /// Bridges the session replay system with the cryptographic authority infrastructure.
 /// </summary>
-public sealed class SessionAuthority
+public sealed class SessionAuthority : ISessionAuthority
 {
     private readonly byte[] _privateKey;
     private readonly byte[] _publicKey;
@@ -53,9 +54,67 @@ public sealed class SessionAuthority
     }
 
     /// <summary>
+    /// Signs a finalized session run, binding both the final state hash and the full input-log
+    /// replay hash. The Ed25519 signature covers: SessionId ‖ PlayerId ‖ FinalStateHash ‖ ReplayHash.
+    /// </summary>
+    /// <param name="sessionId">The session's unique identifier.</param>
+    /// <param name="playerId">The player/operator unique identifier.</param>
+    /// <param name="finalHashBytes">SHA-256 hash of the replay-derived final state (32 bytes).</param>
+    /// <param name="replayHashBytes">SHA-256 hash of the full input log (32 bytes).</param>
+    public SignedRunResult Sign(
+        Guid sessionId,
+        Guid playerId,
+        byte[] finalHashBytes,
+        byte[] replayHashBytes)
+    {
+        ArgumentNullException.ThrowIfNull(finalHashBytes);
+        ArgumentNullException.ThrowIfNull(replayHashBytes);
+        if (finalHashBytes.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
+            throw new ArgumentException(
+                $"finalHashBytes must be exactly {System.Security.Cryptography.SHA256.HashSizeInBytes} bytes (SHA-256).",
+                nameof(finalHashBytes));
+        if (replayHashBytes.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
+            throw new ArgumentException(
+                $"replayHashBytes must be exactly {System.Security.Cryptography.SHA256.HashSizeInBytes} bytes (SHA-256).",
+                nameof(replayHashBytes));
+
+        var payloadHash = AuthorityCrypto.ComputeRunWithReplayPayloadHash(
+            sessionId, playerId, finalHashBytes, replayHashBytes);
+        var signature = AuthorityCrypto.SignHashedPayload(_privateKey, payloadHash);
+        var finalHashHex = Convert.ToHexString(finalHashBytes);
+        var replayHashHex = Convert.ToHexString(replayHashBytes);
+        return new SignedRunResult(sessionId, playerId, finalHashHex, Id, signature, replayHashHex);
+    }
+
+    /// <summary>
+    /// Signs a simulation tick and returns the raw Ed25519 signature (64 bytes).
+    /// The signature covers: Tick (big-endian int64) ‖ StateHash ‖ InputHash.
+    /// </summary>
+    /// <inheritdoc cref="ISessionAuthority.SignTick"/>
+    public byte[] SignTick(long tick, byte[] stateHash, byte[] inputHash)
+    {
+        var payloadHash = AuthorityCrypto.ComputeTickPayloadHash(tick, stateHash, inputHash);
+        return AuthorityCrypto.SignHashedPayload(_privateKey, payloadHash);
+    }
+
+    /// <summary>
+    /// Verifies the Ed25519 signature on a <see cref="SignedTick"/> using this authority's public key.
+    /// </summary>
+    /// <inheritdoc cref="ISessionAuthority.VerifyTick"/>
+    public bool VerifyTick(SignedTick signedTick)
+    {
+        ArgumentNullException.ThrowIfNull(signedTick);
+        var payloadHash = AuthorityCrypto.ComputeTickPayloadHash(
+            signedTick.Tick, signedTick.StateHash, signedTick.InputHash);
+        return AuthorityCrypto.VerifyHashedPayload(_publicKey, payloadHash, signedTick.Signature);
+    }
+
+    /// <summary>
     /// Verifies that a <see cref="SignedRunResult"/> was produced by the given <paramref name="authority"/>.
     /// Returns <see langword="false"/> if the authority ID does not match, the signature is invalid,
     /// or <see cref="SignedRunResult.FinalHash"/> cannot be decoded as a valid 32-byte hex value.
+    /// When <see cref="SignedRunResult.ReplayHash"/> is present the signature is verified against the
+    /// combined payload (SessionId ‖ PlayerId ‖ FinalStateHash ‖ ReplayHash).
     /// </summary>
     public static bool VerifySignedRun(SignedRunResult result, Authority authority)
     {
@@ -78,10 +137,34 @@ public sealed class SessionAuthority
         if (finalHashBytes.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
             return false;
 
-        var payloadHash = AuthorityCrypto.ComputeRunValidationPayloadHash(
-            result.SessionId,
-            result.PlayerId,
-            finalHashBytes);
+        byte[] payloadHash;
+
+        if (result.ReplayHash is not null)
+        {
+            // Result was signed with the combined payload (FinalStateHash + ReplayHash).
+            byte[] replayHashBytes;
+            try
+            {
+                replayHashBytes = Convert.FromHexString(result.ReplayHash);
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
+
+            if (replayHashBytes.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
+                return false;
+
+            payloadHash = AuthorityCrypto.ComputeRunWithReplayPayloadHash(
+                result.SessionId, result.PlayerId, finalHashBytes, replayHashBytes);
+        }
+        else
+        {
+            payloadHash = AuthorityCrypto.ComputeRunValidationPayloadHash(
+                result.SessionId,
+                result.PlayerId,
+                finalHashBytes);
+        }
 
         return AuthorityCrypto.VerifyHashedPayload(authority.PublicKeyBytes, payloadHash, result.SignatureBytes);
     }
@@ -112,7 +195,7 @@ public sealed class SessionAuthority
         ArgumentNullException.ThrowIfNull(replayTurns);
 
         // Step 1: Replay the session deterministically.
-        var replayState = ReplayRunner.Run(replayInitialSnapshotJson, replayTurns);
+        var replayState = GUNRPG.Application.Sessions.ReplayRunner.Run(replayInitialSnapshotJson, replayTurns);
 
         // Step 2: Compute hash from the replayed final snapshot.
         var replayHashBytes = CombatSessionHasher.ComputeStateHash(replayState.Snapshot);
