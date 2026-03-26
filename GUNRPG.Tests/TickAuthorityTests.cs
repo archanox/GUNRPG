@@ -760,6 +760,112 @@ public sealed class TickAuthorityTests
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // Determinism: same seed + same inputs → identical tick hashes on every run
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void TickAuthority_SameSeedAndInputs_ProduceIdenticalStateHashes_AcrossRuns()
+    {
+        // Arrange: fixed seed and a deterministic input sequence.
+        const int seed = 777;
+        PlayerAction[] actions =
+        [
+            new MoveAction(Direction.North),
+            new AttackAction(Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")),
+            new UseItemAction(Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")),
+            new ExfilAction()
+        ];
+
+        // Act: run the same simulation twice with an identical authority key and inputs.
+        var authority = CreateAuthority();
+        var serviceA = new TickAuthorityService(authority);
+        var serviceB = new TickAuthorityService(authority);
+
+        var hashesA = RunSimulationTicks(serviceA, seed, actions);
+        var hashesB = RunSimulationTicks(serviceB, seed, actions);
+
+        // Assert: every per-tick state hash must be bit-for-bit identical.
+        Assert.Equal(hashesA.Count, hashesB.Count);
+        for (var i = 0; i < hashesA.Count; i++)
+        {
+            Assert.True(
+                hashesA[i].AsSpan().SequenceEqual(hashesB[i]),
+                $"State hash diverged at tick {i}.");
+        }
+    }
+
+    [Fact]
+    public void TickAuthority_ReplayProducesSameStateHashes_AsOriginalRun()
+    {
+        // Arrange: a fixed seed and input log that exercises multiple simulation paths.
+        const int seed = 12345;
+        var input = new RunInput
+        {
+            RunId = Guid.Parse("deadbeef-dead-beef-dead-beefdeadbeef"),
+            PlayerId = PlayerId,
+            Seed = seed,
+            Actions =
+            [
+                new MoveAction(Direction.North),
+                new AttackAction(Guid.Parse("33333333-3333-3333-3333-333333333333")),
+                new UseItemAction(Guid.Parse("44444444-4444-4444-4444-444444444444")),
+                new ExfilAction()
+            ]
+        };
+
+        var log = InputLog.FromRunInput(input);
+
+        // Original run
+        var runner = new ReplayRunner();
+        var originalResult = runner.Replay(log);
+
+        // Replay validation: must reproduce the exact same per-tick hashes.
+        var replayResult = runner.ValidateReplay(log, originalResult.TickHashes);
+
+        Assert.True(
+            originalResult.FinalHash.AsSpan().SequenceEqual(replayResult.FinalHash),
+            "Replay final hash must equal the original run's final hash.");
+
+        for (var i = 0; i < originalResult.TickHashes.Count; i++)
+        {
+            Assert.True(
+                originalResult.TickHashes[i].AsSpan().SequenceEqual(replayResult.TickHashes[i]),
+                $"Per-tick hash diverged at index {i}.");
+        }
+    }
+
+    /// <summary>
+    /// Runs a sequence of simulation ticks through a <see cref="TickAuthorityService"/> and
+    /// returns the per-tick state hashes produced by <see cref="StateHasher"/>.
+    /// </summary>
+    private static List<byte[]> RunSimulationTicks(
+        TickAuthorityService service,
+        int seed,
+        PlayerAction[] actions)
+    {
+        var hasher = new StateHasher();
+        var state = ReplayRunner.CreateInitialState(seed);
+        var prevSignedHash = TickAuthorityService.GenesisStateHash;
+        var tickHashes = new List<byte[]>(actions.Length);
+
+        for (var i = 0; i < actions.Length; i++)
+        {
+            var tick = (long)i;
+            state = Simulation.Step(state, actions[i], tick);
+            var stateHash = hasher.HashTick(tick, state);
+            tickHashes.Add(stateHash);
+
+            var (_, signedTick) = service.ProcessTick(tick, state, PlayerId, actions[i], prevSignedHash);
+            if (signedTick is not null)
+            {
+                prevSignedHash = signedTick.StateHash;
+            }
+        }
+
+        return tickHashes;
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────────────────────────────────
 

@@ -106,8 +106,21 @@ public sealed class CombatSession
         FinalHash = finalHash != null ? (byte[])finalHash.Clone() : null;
     }
 
+    /// <summary>
+    /// Creates a <see cref="CombatSession"/> with default player and enemy operators.
+    /// </summary>
+    /// <param name="seed">
+    /// Explicit RNG seed. When <see langword="null"/> the session falls back to
+    /// <see cref="Random.Shared"/> which is <strong>non-deterministic</strong> and must
+    /// <em>never</em> be used for networked or authority-signed sessions.
+    /// Always supply a deterministic seed when the session must produce identical results
+    /// across nodes (see DETERMINISTIC_SIMULATION.md).
+    /// </param>
     public static CombatSession CreateDefault(string? playerName = null, int? seed = null, float? startingDistance = null, string? enemyName = null, Guid? id = null, Guid? operatorId = null, long? playerTotalXp = null)
     {
+        // §determinism: Random.Shared is intentionally used here only for UI/exploration sessions
+        // that do not participate in the signed-tick authority system.  Every code path that feeds
+        // into TickAuthorityService or DeterministicCombatEngine must pass an explicit seed.
         var resolvedSeed = seed ?? Random.Shared.Next();
         var name = string.IsNullOrWhiteSpace(playerName) ? "Player" : playerName.Trim();
         var foeName = string.IsNullOrWhiteSpace(enemyName) ? "Enemy" : enemyName.Trim();

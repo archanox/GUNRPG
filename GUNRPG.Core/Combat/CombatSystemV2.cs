@@ -67,6 +67,10 @@ public class CombatSystemV2
     {
         _time = new SimulationTime();
         _eventQueue = new EventQueue();
+        // §determinism: Random.Shared is only reached when neither randomOverride nor an explicit
+        // seed is supplied.  This path is intentional for standalone UI / exploration sessions that
+        // do not participate in the signed-tick authority system.  Networked and replay paths must
+        // always provide an explicit seed (see DETERMINISTIC_SIMULATION.md).
         var resolvedSeed = randomOverride?.Seed ?? seed ?? Random.Shared.Next();
         _random = randomOverride ?? new TrackedRandom(resolvedSeed);
         Seed = resolvedSeed;
