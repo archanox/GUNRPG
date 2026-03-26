@@ -140,8 +140,8 @@ The following tests prove the determinism guarantee:
 | `SameInput_ProducesSameHash_AcrossMultipleRuns` | `DeterministicSimulationTests.cs` | Same seed + same inputs → identical final hash across 10 independent runs |
 | `LiveRun_EqualsReplayValidation` | `DeterministicSimulationTests.cs` | Replay of a recorded run produces the same per-tick and final hashes |
 | `SeededRandom_IsConsistent_AcrossInstances` | `DeterministicSimulationTests.cs` | Two `SeededRandom` instances with the same seed produce identical output streams |
-| `TickAuthority_SameSeedAndInputs_ProduceIdenticalStateHashes_AcrossRuns` | `TickAuthorityTests.cs` | Per-tick state hashes produced by `TickAuthorityService` are identical across two independent authority services given the same seed and actions |
-| `TickAuthority_ReplayProducesSameStateHashes_AsOriginalRun` | `TickAuthorityTests.cs` | `ReplayRunner.ValidateReplay` reproduces every per-tick hash from the original run |
+| `TickAuthority_SameSeedAndInputs_ProduceIdenticalStateHashes_AcrossRuns` | `TickAuthorityTests.cs` | Per-tick state hashes produced by `TickAuthorityService.ProcessTick` are identical across two independent authority services given the same seed and actions |
+| `ReplayRunner_ProducesSameStateHashes_AsOriginalRun` | `DeterministicSimulationTests.cs` | `ReplayRunner.ValidateReplay` reproduces every per-tick hash from the original run |
 | `TickInputs_MultiPlayer_OrderIsCanonical_RegardlessOfSubmissionOrder` | `TickAuthorityTests.cs` | Multi-player input batch hash is identical regardless of submission order |
 
 ---

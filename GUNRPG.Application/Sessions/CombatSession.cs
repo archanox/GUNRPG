@@ -111,7 +111,7 @@ public sealed class CombatSession
     /// </summary>
     /// <param name="seed">
     /// Explicit RNG seed. When <see langword="null"/> the session falls back to
-    /// <see cref="Random.Shared"/> which is <strong>non-deterministic</strong> and must
+    /// <see cref="Random.Shared"/> which is <b>non-deterministic</b> and must
     /// <em>never</em> be used for networked or authority-signed sessions.
     /// Always supply a deterministic seed when the session must produce identical results
     /// across nodes (see DETERMINISTIC_SIMULATION.md).
