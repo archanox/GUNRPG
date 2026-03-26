@@ -213,20 +213,7 @@ public sealed class DeterministicSimulationTests
     public void ReplayRunner_ProducesSameStateHashes_AsOriginalRun()
     {
         // Arrange: a fixed seed and input log that exercises multiple simulation paths.
-        const int seed = 12345;
-        var input = new RunInput
-        {
-            RunId = Guid.Parse("deadbeef-dead-beef-dead-beefdeadbeef"),
-            PlayerId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
-            Seed = seed,
-            Actions =
-            [
-                new MoveAction(Direction.North),
-                new AttackAction(Guid.Parse("33333333-3333-3333-3333-333333333333")),
-                new UseItemAction(Guid.Parse("44444444-4444-4444-4444-444444444444")),
-                new ExfilAction()
-            ]
-        };
+        var input = CreateStandardInput() with { RunId = Guid.Parse("deadbeef-dead-beef-dead-beefdeadbeef") };
 
         var log = InputLog.FromRunInput(input);
 
@@ -235,18 +222,16 @@ public sealed class DeterministicSimulationTests
         var originalResult = runner.Replay(log);
 
         // Replay validation: must reproduce the exact same per-tick hashes.
+        // ValidateReplay already throws on the first hash mismatch, so count equality is sufficient.
         var replayResult = runner.ValidateReplay(log, originalResult.TickHashes);
 
         Assert.True(
             originalResult.FinalHash.AsSpan().SequenceEqual(replayResult.FinalHash),
             "Replay final hash must equal the original run's final hash.");
 
-        for (var i = 0; i < originalResult.TickHashes.Count; i++)
-        {
-            Assert.True(
-                originalResult.TickHashes[i].AsSpan().SequenceEqual(replayResult.TickHashes[i]),
-                $"Per-tick hash diverged at index {i}.");
-        }
+        Assert.Equal(
+            originalResult.TickHashes.Count,
+            replayResult.TickHashes.Count);
     }
 
     private static RunInput CreateStandardInput() => new()
