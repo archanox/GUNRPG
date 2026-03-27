@@ -187,8 +187,11 @@ internal static class AuthorityCrypto
 
     /// <summary>
     /// Computes the deterministic leaf hash for a single signed tick.
-    /// The leaf hash covers: Tick (big-endian int64) || PrevStateHash || StateHash || InputHash.
-    /// This is the same payload as <see cref="ComputeTickPayloadHash"/> and serves as the
+    /// The canonical encoding (before hashing) is:
+    /// <c>Tick (big-endian int64) || len(PrevStateHash) (big-endian int32) || PrevStateHash ||
+    /// len(StateHash) (big-endian int32) || StateHash || len(InputHash) (big-endian int32) || InputHash</c>.
+    /// The final leaf hash is <c>SHA-256</c> over that buffer.
+    /// This encoding matches <see cref="ComputeTickPayloadHash"/> exactly and serves as the
     /// canonical leaf value for each tick's position in the Merkle tree.
     /// </summary>
     internal static byte[] ComputeTickLeafHash(
@@ -200,7 +203,10 @@ internal static class AuthorityCrypto
 
     /// <summary>
     /// Computes the signing payload hash for a per-tick signed tick.
-    /// The payload covers: Tick (big-endian int64) || PrevStateHash || StateHash || InputHash.
+    /// The canonical encoding (before hashing) is:
+    /// <c>Tick (big-endian int64) || len(PrevStateHash) (big-endian int32) || PrevStateHash ||
+    /// len(StateHash) (big-endian int32) || StateHash || len(InputHash) (big-endian int32) || InputHash</c>.
+    /// The final hash is <c>SHA-256</c> over that buffer.
     /// Including <paramref name="prevStateHash"/> chains each signed tick to its predecessor,
     /// preventing valid ticks from being replayed or spliced from a different timeline.
     /// </summary>

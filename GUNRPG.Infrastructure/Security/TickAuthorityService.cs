@@ -358,6 +358,9 @@ public sealed class TickAuthorityService
     /// A <see cref="SignedRunResult"/> whose signature covers the final state hash, replay hash,
     /// and the Merkle root of all tick leaf hashes.
     /// </returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="verifiedTickChain"/> is empty.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when this service was created without a signer (verifier-only constructor),
     /// or when <paramref name="finalStateHash"/> does not match the last tick's
@@ -376,19 +379,22 @@ public sealed class TickAuthorityService
         ArgumentNullException.ThrowIfNull(replayHash);
         ArgumentNullException.ThrowIfNull(verifiedTickChain);
 
+        if (verifiedTickChain.Count == 0)
+            throw new ArgumentException(
+                "verifiedTickChain must contain at least one signed tick. " +
+                "A run cannot be finalized without a verified tick chain.",
+                nameof(verifiedTickChain));
+
         EnsureSigner();
 
         // Fully verify the chain before allowing persistence.
         VerifyTickChain(verifiedTickChain);
 
-        if (verifiedTickChain.Count > 0)
-        {
-            var lastTick = verifiedTickChain[^1]!;
-            if (!finalStateHash.AsSpan().SequenceEqual(lastTick.StateHash))
-                throw new InvalidOperationException(
-                    "finalStateHash does not match the last verified tick's StateHash. " +
-                    "The run cannot be finalised without a complete verified tick chain.");
-        }
+        var lastTick = verifiedTickChain[^1]!;
+        if (!finalStateHash.AsSpan().SequenceEqual(lastTick.StateHash))
+            throw new InvalidOperationException(
+                "finalStateHash does not match the last verified tick's StateHash. " +
+                "The run cannot be finalized without a complete verified tick chain.");
 
         // Compute the Merkle root of all tick leaf hashes and bind it to the signed result.
         var leafHashes = verifiedTickChain
@@ -424,7 +430,11 @@ public sealed class TickAuthorityService
     /// <summary>
     /// Computes the deterministic leaf hash for a single signed tick.
     /// This is the canonical value for each tick's position in the Merkle tree.
-    /// The leaf hash covers: Tick (big-endian int64) || PrevStateHash || StateHash || InputHash.
+    /// The canonical encoding (before hashing) is:
+    /// <c>Tick (big-endian int64) || len(PrevStateHash) (big-endian int32) || PrevStateHash ||
+    /// len(StateHash) (big-endian int32) || StateHash || len(InputHash) (big-endian int32) || InputHash</c>.
+    /// The final leaf hash is <c>SHA-256</c> over that buffer.
+    /// This encoding matches <see cref="ComputeTickPayloadHash"/> exactly.
     /// </summary>
     /// <param name="tick">The simulation tick number.</param>
     /// <param name="prevStateHash">
