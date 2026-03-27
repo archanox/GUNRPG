@@ -68,21 +68,25 @@ public sealed class SignedRunResult
                 throw new ArgumentException(
                     "Checkpoints can only be provided when TickMerkleRoot is also provided.",
                     nameof(checkpoints));
+            var prevTickIndex = -1L;
             for (var i = 0; i < checkpoints.Count; i++)
             {
                 var cp = checkpoints[i];
                 if (cp is null)
                     throw new ArgumentException(
                         $"Checkpoint at index {i} must not be null.", nameof(checkpoints));
-                if (cp.TickIndex < 0L)
+                if (cp.TickIndex <= prevTickIndex)
                     throw new ArgumentException(
-                        $"Checkpoint at index {i} has a negative TickIndex ({cp.TickIndex}).",
+                        $"Checkpoints must have strictly increasing TickIndex values. " +
+                        $"Checkpoint at index {i} has TickIndex {cp.TickIndex}, " +
+                        $"which is not greater than the previous TickIndex {prevTickIndex}.",
                         nameof(checkpoints));
                 if (cp.StateHash is null || cp.StateHash.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
                     throw new ArgumentException(
                         $"Checkpoint at index {i} has an invalid StateHash " +
                         $"(must be {System.Security.Cryptography.SHA256.HashSizeInBytes} bytes).",
                         nameof(checkpoints));
+                prevTickIndex = cp.TickIndex;
             }
         }
 
