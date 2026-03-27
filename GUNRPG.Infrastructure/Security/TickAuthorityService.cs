@@ -396,11 +396,11 @@ public sealed class TickAuthorityService
                 "finalStateHash does not match the last verified tick's StateHash. " +
                 "The run cannot be finalized without a complete verified tick chain.");
 
-        // Compute the Merkle root of all tick leaf hashes and bind it to the signed result.
-        var leafHashes = verifiedTickChain
-            .Select(t => ComputeTickLeafHash(t.Tick, t.PrevStateHash, t.StateHash, t.InputHash))
-            .ToList();
-        var merkleRoot = MerkleTree.ComputeRoot(leafHashes);
+        // Compute the Merkle root of all tick leaf hashes using the incremental builder.
+        var builder = new MerkleBuilder();
+        foreach (var t in verifiedTickChain)
+            builder.AddLeaf(ComputeTickLeafHash(t.Tick, t.PrevStateHash, t.StateHash, t.InputHash));
+        var merkleRoot = builder.BuildRoot();
 
         return _signer!.Sign(sessionId, playerId, finalStateHash, replayHash, merkleRoot);
     }
@@ -449,6 +449,41 @@ public sealed class TickAuthorityService
     /// <returns>A 32-byte SHA-256 leaf hash suitable for use as a Merkle tree leaf.</returns>
     public static byte[] ComputeTickLeafHash(long tick, byte[] prevStateHash, byte[] stateHash, byte[] inputHash)
         => AuthorityCrypto.ComputeTickLeafHash(tick, prevStateHash, stateHash, inputHash);
+
+    /// <summary>
+    /// Verifies that the <see cref="SignedRunResult.TickMerkleRoot"/> in <paramref name="result"/>
+    /// matches the Merkle root recomputed from the given <paramref name="tickChain"/>.
+    /// </summary>
+    /// <remarks>
+    /// This check ensures that the replay reproduces the exact same tick history that the
+    /// authority committed to when signing.  It does not verify the authority signature; pair
+    /// with <see cref="SessionAuthority.VerifySignedRun"/> for full verification.
+    /// </remarks>
+    /// <param name="result">The signed run result whose <see cref="SignedRunResult.TickMerkleRoot"/> to check.</param>
+    /// <param name="tickChain">The verified tick checkpoints to recompute the Merkle root from.</param>
+    /// <returns>
+    /// <see langword="true"/> if the recomputed Merkle root matches <see cref="SignedRunResult.TickMerkleRoot"/>;
+    /// <see langword="false"/> if it does not or if <see cref="SignedRunResult.TickMerkleRoot"/> is absent and
+    /// <paramref name="tickChain"/> is non-empty.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="result"/> or <paramref name="tickChain"/> is <see langword="null"/>.
+    /// </exception>
+    public static bool VerifyTickMerkleRoot(SignedRunResult result, IReadOnlyList<SignedTick> tickChain)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(tickChain);
+
+        if (result.TickMerkleRoot is null)
+            return tickChain.Count == 0;
+
+        var builder = new MerkleBuilder();
+        foreach (var t in tickChain)
+            builder.AddLeaf(ComputeTickLeafHash(t.Tick, t.PrevStateHash, t.StateHash, t.InputHash));
+
+        var computedRoot = Convert.ToHexString(builder.BuildRoot());
+        return string.Equals(computedRoot, result.TickMerkleRoot, StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Computes the SHA-256 hash of a <see cref="TickInputs"/> batch.

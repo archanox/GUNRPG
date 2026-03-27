@@ -43,12 +43,16 @@ public sealed class MerkleTreeTests
     }
 
     [Fact]
-    public void ComputeRoot_SingleLeaf_ReturnsLeafItself()
+    public void ComputeRoot_SingleLeaf_AppliesDomainSeparation()
     {
+        // With domain separation, the root of a single leaf is SHA256(0x00 || leaf),
+        // not the leaf value itself.
         var leaf = CreateHash(42);
         var root = MerkleTree.ComputeRoot([leaf]);
 
-        Assert.True(root.AsSpan().SequenceEqual(leaf));
+        Assert.Equal(32, root.Length);
+        // Root must differ from the raw leaf value (domain prefix changes the hash).
+        Assert.False(root.AsSpan().SequenceEqual(leaf));
     }
 
     [Fact]
@@ -299,6 +303,74 @@ public sealed class MerkleTreeTests
         Assert.Throws<ArgumentException>(() => MerkleTree.VerifyProof(badProof, root));
     }
 
+    [Fact]
+    public void VerifyProof_NegativeLeafIndex_Throws()
+    {
+        var root = CreateHash(99);
+        var proof = new MerkleProof(CreateHash(1), [], -1);
+        Assert.Throws<ArgumentException>(() => MerkleTree.VerifyProof(proof, root));
+    }
+
+    [Fact]
+    public void VerifyProof_ExceedsMaxDepth_Throws()
+    {
+        var leaf = CreateHash(1);
+        var root = CreateHash(2);
+        // Build a sibling list with one more entry than allowed.
+        var deepSiblings = Enumerable.Range(0, MerkleTree.MaxMerkleProofDepth + 1)
+            .Select(i => CreateHash(i + 100))
+            .ToArray();
+        var badProof = new MerkleProof(leaf, deepSiblings, 0);
+        Assert.Throws<ArgumentException>(() => MerkleTree.VerifyProof(badProof, root));
+    }
+
+    [Fact]
+    public void VerifyProof_AtMaxDepth_DoesNotThrow()
+    {
+        // A proof exactly at MaxMerkleProofDepth entries is accepted (does not throw for depth reason).
+        var leaf = CreateHash(1);
+        var root = CreateHash(2);
+        var siblingList = Enumerable.Range(0, MerkleTree.MaxMerkleProofDepth)
+            .Select(i => CreateHash(i + 100))
+            .ToArray();
+        var proof = new MerkleProof(leaf, siblingList, 0);
+        // Should not throw an ArgumentException about depth; may return false (root mismatch is fine).
+        var ex = Record.Exception(() => MerkleTree.VerifyProof(proof, root));
+        Assert.Null(ex);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 4b. Domain separation
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void DomainSeparation_LeafRootDiffersFromParentOfSelf()
+    {
+        // A single-leaf tree root (leaf node) must differ from the parent node
+        // computed from the same raw value, confirming domain separation prevents
+        // leaf/internal node collisions.
+        var leaf = CreateHash(7);
+        var singleLeafRoot = MerkleTree.ComputeRoot([leaf]);
+        var twoLeafRoot = MerkleTree.ComputeRoot([leaf, leaf]);
+
+        // Single-leaf root (0x00 || leaf) must differ from two-leaf root (0x01 || node || node).
+        Assert.False(singleLeafRoot.AsSpan().SequenceEqual(twoLeafRoot));
+    }
+
+    [Fact]
+    public void DomainSeparation_ProofRoundTrip_TwoLeaves()
+    {
+        // End-to-end: generate proof with domain separation and verify it correctly.
+        var leaves = BuildLeaves(2);
+        var root = MerkleTree.ComputeRoot(leaves);
+
+        var proof0 = MerkleTree.GenerateProof(leaves, 0);
+        var proof1 = MerkleTree.GenerateProof(leaves, 1);
+
+        Assert.True(MerkleTree.VerifyProof(proof0, root));
+        Assert.True(MerkleTree.VerifyProof(proof1, root));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // 5. TickAuthorityService.ComputeTickLeafHash – public static helper
     // ──────────────────────────────────────────────────────────────────────────
@@ -537,6 +609,124 @@ public sealed class MerkleTreeTests
             Assert.True(MerkleTree.VerifyProof(proof, merkleRootBytes),
                 $"Proof failed for tick at index {i}.");
         }
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 10. MerkleBuilder – streaming leaf accumulator
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void MerkleBuilder_Empty_ProducesZeroRoot()
+    {
+        var builder = new MerkleBuilder();
+        var root = builder.BuildRoot();
+
+        Assert.Equal(32, root.Length);
+        Assert.All(root, b => Assert.Equal(0, b));
+        Assert.Equal(0, builder.Count);
+    }
+
+    [Fact]
+    public void MerkleBuilder_MatchesMerkleTreeComputeRoot()
+    {
+        var leaves = BuildLeaves(5);
+
+        var builder = new MerkleBuilder();
+        foreach (var leaf in leaves)
+            builder.AddLeaf(leaf);
+
+        var builderRoot = builder.BuildRoot();
+        var directRoot = MerkleTree.ComputeRoot(leaves);
+
+        Assert.True(builderRoot.AsSpan().SequenceEqual(directRoot));
+    }
+
+    [Fact]
+    public void MerkleBuilder_Count_ReflectsAddedLeaves()
+    {
+        var builder = new MerkleBuilder();
+        Assert.Equal(0, builder.Count);
+
+        builder.AddLeaf(CreateHash(1));
+        Assert.Equal(1, builder.Count);
+
+        builder.AddLeaf(CreateHash(2)).AddLeaf(CreateHash(3));
+        Assert.Equal(3, builder.Count);
+    }
+
+    [Fact]
+    public void MerkleBuilder_AddLeaf_NullHash_Throws()
+    {
+        var builder = new MerkleBuilder();
+        Assert.Throws<ArgumentNullException>(() => builder.AddLeaf(null!));
+    }
+
+    [Fact]
+    public void MerkleBuilder_AddLeaf_WrongSize_Throws()
+    {
+        var builder = new MerkleBuilder();
+        Assert.Throws<ArgumentException>(() => builder.AddLeaf(new byte[16]));
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 11. TickAuthorityService.VerifyTickMerkleRoot – replay Merkle validation
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void VerifyTickMerkleRoot_MatchingChain_ReturnsTrue()
+    {
+        var authority = CreateAuthority();
+        var service = new TickAuthorityService(authority);
+        var state = ReplayRunner.CreateInitialState(42);
+
+        var ticks = BuildSignedChain(authority, state, startTick: 0, count: 3);
+        var result = service.FinalizeRun(
+            Guid.NewGuid(), Guid.NewGuid(), ticks[^1].StateHash, CreateHash(1), ticks);
+
+        Assert.True(TickAuthorityService.VerifyTickMerkleRoot(result, ticks));
+    }
+
+    [Fact]
+    public void VerifyTickMerkleRoot_TamperedTick_ReturnsFalse()
+    {
+        var authority = CreateAuthority();
+        var service = new TickAuthorityService(authority);
+        var state = ReplayRunner.CreateInitialState(42);
+
+        var ticks = BuildSignedChain(authority, state, startTick: 0, count: 3);
+        var result = service.FinalizeRun(
+            Guid.NewGuid(), Guid.NewGuid(), ticks[^1].StateHash, CreateHash(1), ticks);
+
+        // Tamper with a tick's state hash after signing — root must no longer match.
+        var tamperedTicks = ticks.Select(t => t).ToList();
+        var bad = tamperedTicks[0];
+        var tamperedState = (byte[])bad.StateHash.Clone();
+        tamperedState[0] ^= 0xFF;
+        tamperedTicks[0] = new SignedTick(bad.Tick, bad.PrevStateHash, tamperedState, bad.InputHash, bad.Signature);
+
+        Assert.False(TickAuthorityService.VerifyTickMerkleRoot(result, tamperedTicks));
+    }
+
+    [Fact]
+    public void VerifyTickMerkleRoot_NoMerkleRootAndEmptyChain_ReturnsTrue()
+    {
+        var authority = CreateAuthority();
+        var result = authority.Sign(Guid.NewGuid(), Guid.NewGuid(), CreateHash(1), CreateHash(2));
+
+        // A result without TickMerkleRoot is consistent with an empty chain.
+        Assert.True(TickAuthorityService.VerifyTickMerkleRoot(result, []));
+    }
+
+    [Fact]
+    public void VerifyTickMerkleRoot_NoMerkleRootWithNonEmptyChain_ReturnsFalse()
+    {
+        var authority = CreateAuthority();
+        var state = ReplayRunner.CreateInitialState(42);
+        var ticks = BuildSignedChain(authority, state, startTick: 0, count: 1);
+        var result = authority.Sign(Guid.NewGuid(), Guid.NewGuid(), CreateHash(1), CreateHash(2));
+
+        // No TickMerkleRoot but chain is non-empty → mismatch.
+        Assert.False(TickAuthorityService.VerifyTickMerkleRoot(result, ticks));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
