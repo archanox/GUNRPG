@@ -92,7 +92,12 @@ public sealed class MerkleTree
     /// <paramref name="root"/>; otherwise <see langword="false"/>.
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="proof"/> or <paramref name="root"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="root"/> is not exactly 32 bytes.</exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="root"/> is not exactly 32 bytes,
+    /// when <see cref="MerkleProof.LeafHash"/> is <see langword="null"/> or not exactly 32 bytes,
+    /// when <see cref="MerkleProof.SiblingHashes"/> is <see langword="null"/>,
+    /// or when any sibling hash is <see langword="null"/> or not exactly 32 bytes.
+    /// </exception>
     public static bool VerifyProof(MerkleProof proof, byte[] root)
     {
         ArgumentNullException.ThrowIfNull(proof);
@@ -100,15 +105,29 @@ public sealed class MerkleTree
         if (root.Length != HashSize)
             throw new ArgumentException($"Root must be exactly {HashSize} bytes.", nameof(root));
 
+        if (proof.LeafHash is null || proof.LeafHash.Length != HashSize)
+            throw new ArgumentException(
+                $"proof.LeafHash must be a non-null {HashSize}-byte SHA-256 hash.", nameof(proof));
+
+        if (proof.SiblingHashes is null)
+            throw new ArgumentException("proof.SiblingHashes must not be null.", nameof(proof));
+
         var current = (byte[])proof.LeafHash.Clone();
         var index = proof.LeafIndex;
 
+        var siblingIndex = 0;
         foreach (var sibling in proof.SiblingHashes)
         {
+            if (sibling is null || sibling.Length != HashSize)
+                throw new ArgumentException(
+                    $"Sibling hash at index {siblingIndex} must be a non-null {HashSize}-byte SHA-256 hash.",
+                    nameof(proof));
+
             current = index % 2 == 0
                 ? ComputeParentHash(current, sibling)
                 : ComputeParentHash(sibling, current);
             index /= 2;
+            siblingIndex++;
         }
 
         return current.AsSpan().SequenceEqual(root);

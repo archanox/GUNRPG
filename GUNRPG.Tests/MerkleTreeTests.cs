@@ -256,6 +256,49 @@ public sealed class MerkleTreeTests
         Assert.Throws<ArgumentException>(() => MerkleTree.VerifyProof(proof, new byte[16]));
     }
 
+    [Fact]
+    public void VerifyProof_NullLeafHash_Throws()
+    {
+        var root = CreateHash(99);
+        var proof = new MerkleProof(null!, [], 0);
+        Assert.Throws<ArgumentException>(() => MerkleTree.VerifyProof(proof, root));
+    }
+
+    [Fact]
+    public void VerifyProof_WrongSizeLeafHash_Throws()
+    {
+        var root = CreateHash(99);
+        var proof = new MerkleProof(new byte[16], [], 0);
+        Assert.Throws<ArgumentException>(() => MerkleTree.VerifyProof(proof, root));
+    }
+
+    [Fact]
+    public void VerifyProof_NullSiblingList_Throws()
+    {
+        var root = CreateHash(99);
+        var proof = new MerkleProof(CreateHash(1), null!, 0);
+        Assert.Throws<ArgumentException>(() => MerkleTree.VerifyProof(proof, root));
+    }
+
+    [Fact]
+    public void VerifyProof_NullSiblingEntry_Throws()
+    {
+        var leaves = BuildLeaves(2);
+        var root = MerkleTree.ComputeRoot(leaves);
+        // Build a proof with a null sibling
+        var badProof = new MerkleProof(leaves[0], new byte[][] { null! }, 0);
+        Assert.Throws<ArgumentException>(() => MerkleTree.VerifyProof(badProof, root));
+    }
+
+    [Fact]
+    public void VerifyProof_WrongSizeSiblingEntry_Throws()
+    {
+        var leaves = BuildLeaves(2);
+        var root = MerkleTree.ComputeRoot(leaves);
+        var badProof = new MerkleProof(leaves[0], new byte[][] { new byte[16] }, 0);
+        Assert.Throws<ArgumentException>(() => MerkleTree.VerifyProof(badProof, root));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // 5. TickAuthorityService.ComputeTickLeafHash – public static helper
     // ──────────────────────────────────────────────────────────────────────────
@@ -411,20 +454,17 @@ public sealed class MerkleTreeTests
     }
 
     [Fact]
-    public void FinalizeRun_EmptyChain_BindsZeroMerkleRoot()
+    public void FinalizeRun_EmptyChain_Throws()
     {
         var authority = CreateAuthority();
         var service = new TickAuthorityService(authority);
         var finalHash = CreateHash(10);
         var replayHash = CreateHash(11);
 
-        // FinalizeRun with empty chain: Merkle root should be the all-zero root of an empty tree.
-        var result = service.FinalizeRun(Guid.NewGuid(), Guid.NewGuid(), finalHash, replayHash, []);
-
-        Assert.NotNull(result.TickMerkleRoot);
-        var merkleRootBytes = Convert.FromHexString(result.TickMerkleRoot);
-        Assert.All(merkleRootBytes, b => Assert.Equal(0, b));
-        Assert.True(SessionAuthority.VerifySignedRun(result, authority.ToAuthority()));
+        // FinalizeRun with an empty chain must be rejected — the persistence boundary
+        // requires at least one verified signed tick.
+        Assert.Throws<ArgumentException>(
+            () => service.FinalizeRun(Guid.NewGuid(), Guid.NewGuid(), finalHash, replayHash, []));
     }
 
     [Fact]
