@@ -38,7 +38,9 @@ public sealed class MerkleFrontier
     /// <summary>
     /// Adds a leaf hash to the frontier, merging carry subtrees as needed.
     /// </summary>
-    /// <param name="leafHash">The 32-byte SHA-256 leaf hash (pre-image of the leaf data).</param>
+    /// <param name="leafHash">
+    /// The 32-byte leaf value / leaf hash bytes used as <c>leafData</c> in <c>SHA256(0x00 || leafData)</c>.
+    /// </param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="leafHash"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">Thrown when <paramref name="leafHash"/> is not exactly 32 bytes.</exception>
     public void AddLeaf(byte[] leafHash)
@@ -107,7 +109,7 @@ public sealed class MerkleFrontier
 
             if (root is null)
             {
-                root = node;
+                root = (byte[])node.Clone();
                 rootLevel = k;
             }
             else
