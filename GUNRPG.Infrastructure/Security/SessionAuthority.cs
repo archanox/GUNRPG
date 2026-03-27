@@ -133,6 +133,60 @@ public sealed class SessionAuthority : ISessionAuthority
     }
 
     /// <summary>
+    /// Signs a finalized session run, binding the final state hash, the full input-log
+    /// replay hash, the Merkle root of all tick leaf hashes, and the checkpoint list.
+    /// The Ed25519 signature covers:
+    /// SessionId || PlayerId || FinalStateHash || ReplayHash || TickMerkleRoot || Hash(Checkpoints).
+    /// </summary>
+    /// <param name="sessionId">The session's unique identifier.</param>
+    /// <param name="playerId">The player/operator unique identifier.</param>
+    /// <param name="finalHashBytes">SHA-256 hash of the replay-derived final state (32 bytes).</param>
+    /// <param name="replayHashBytes">SHA-256 hash of the full input log (32 bytes).</param>
+    /// <param name="tickMerkleRootBytes">
+    /// Merkle root of all tick leaf hashes (32 bytes).
+    /// Compute via <see cref="MerkleTree.ComputeRoot"/> from per-tick leaf hashes.
+    /// </param>
+    /// <param name="checkpoints">
+    /// Ordered list of state-hash checkpoints recorded during simulation.
+    /// Must not be <see langword="null"/>; may be empty.
+    /// </param>
+    public SignedRunResult Sign(
+        Guid sessionId,
+        Guid playerId,
+        byte[] finalHashBytes,
+        byte[] replayHashBytes,
+        byte[] tickMerkleRootBytes,
+        IReadOnlyList<RunCheckpoint> checkpoints)
+    {
+        ArgumentNullException.ThrowIfNull(finalHashBytes);
+        ArgumentNullException.ThrowIfNull(replayHashBytes);
+        ArgumentNullException.ThrowIfNull(tickMerkleRootBytes);
+        ArgumentNullException.ThrowIfNull(checkpoints);
+        if (finalHashBytes.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
+            throw new ArgumentException(
+                $"finalHashBytes must be exactly {System.Security.Cryptography.SHA256.HashSizeInBytes} bytes (SHA-256).",
+                nameof(finalHashBytes));
+        if (replayHashBytes.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
+            throw new ArgumentException(
+                $"replayHashBytes must be exactly {System.Security.Cryptography.SHA256.HashSizeInBytes} bytes (SHA-256).",
+                nameof(replayHashBytes));
+        if (tickMerkleRootBytes.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
+            throw new ArgumentException(
+                $"tickMerkleRootBytes must be exactly {System.Security.Cryptography.SHA256.HashSizeInBytes} bytes (SHA-256).",
+                nameof(tickMerkleRootBytes));
+
+        var checkpointsHash = AuthorityCrypto.ComputeCheckpointsHash(checkpoints);
+        var payloadHash = AuthorityCrypto.ComputeRunWithCheckpointsPayloadHash(
+            sessionId, playerId, finalHashBytes, replayHashBytes, tickMerkleRootBytes, checkpointsHash);
+        var signature = AuthorityCrypto.SignHashedPayload(_privateKey, payloadHash);
+        var finalHashHex = Convert.ToHexString(finalHashBytes);
+        var replayHashHex = Convert.ToHexString(replayHashBytes);
+        var merkleRootHex = Convert.ToHexString(tickMerkleRootBytes);
+        return new SignedRunResult(
+            sessionId, playerId, finalHashHex, Id, signature, replayHashHex, merkleRootHex, checkpoints);
+    }
+
+    /// <summary>
     /// Signs a simulation tick and returns the raw Ed25519 signature (64 bytes).
     /// The signature covers: Tick (big-endian int64) || PrevStateHash || StateHash || InputHash.
     /// </summary>
@@ -189,7 +243,8 @@ public sealed class SessionAuthority : ISessionAuthority
 
         if (result.ReplayHash is not null && result.TickMerkleRoot is not null)
         {
-            // Result was signed with the Merkle payload (FinalStateHash + ReplayHash + TickMerkleRoot).
+            // Result was signed with the Merkle payload (FinalStateHash + ReplayHash + TickMerkleRoot)
+            // or the Checkpoints payload (FinalStateHash + ReplayHash + TickMerkleRoot + Hash(Checkpoints)).
             byte[] replayHashBytes;
             byte[] merkleRootBytes;
             try
@@ -207,8 +262,18 @@ public sealed class SessionAuthority : ISessionAuthority
             if (merkleRootBytes.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
                 return false;
 
-            payloadHash = AuthorityCrypto.ComputeRunWithMerklePayloadHash(
-                result.SessionId, result.PlayerId, finalHashBytes, replayHashBytes, merkleRootBytes);
+            if (result.Checkpoints is not null)
+            {
+                // Checkpoints payload: includes Hash(Checkpoints) in the signature.
+                var checkpointsHash = AuthorityCrypto.ComputeCheckpointsHash(result.Checkpoints);
+                payloadHash = AuthorityCrypto.ComputeRunWithCheckpointsPayloadHash(
+                    result.SessionId, result.PlayerId, finalHashBytes, replayHashBytes, merkleRootBytes, checkpointsHash);
+            }
+            else
+            {
+                payloadHash = AuthorityCrypto.ComputeRunWithMerklePayloadHash(
+                    result.SessionId, result.PlayerId, finalHashBytes, replayHashBytes, merkleRootBytes);
+            }
         }
         else if (result.ReplayHash is not null)
         {
