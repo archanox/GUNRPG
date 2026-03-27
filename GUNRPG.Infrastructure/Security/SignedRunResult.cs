@@ -78,6 +78,14 @@ public sealed class SignedRunResult
     /// </summary>
     public string? ReplayHash { get; }
 
+    /// <summary>
+    /// Merkle root of all tick leaf hashes in the run, encoded as an uppercase hex string.
+    /// Present only when the result was signed with the Merkle overload
+    /// (<see cref="SessionAuthority.Sign(Guid, Guid, byte[], byte[], byte[])"/>).
+    /// When present the signature covers <see cref="FinalHash"/>, <see cref="ReplayHash"/>, and this value.
+    /// </summary>
+    public string? TickMerkleRoot { get; }
+
     /// <summary>Ed25519 signature over the validation payload hash.</summary>
     public byte[] Signature => (byte[])_signature.Clone();
 
