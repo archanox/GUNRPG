@@ -377,6 +377,46 @@ public sealed class MerkleCheckpointTests
             checkpoints: [new RunCheckpoint(0, new byte[16])]));   // wrong size
     }
 
+    [Fact]
+    public void SignedRunResult_OutOfOrderCheckpoints_Throws()
+    {
+        var authority = CreateAuthority();
+        var finalHash = CreateHash(83);
+        var sig = authority.Sign(Guid.NewGuid(), Guid.NewGuid(), finalHash, CreateHash(84), CreateHash(85)).Signature;
+
+        // Checkpoint tick indices are out of order: 256 comes before 0.
+        Assert.Throws<ArgumentException>(() => new SignedRunResult(
+            Guid.NewGuid(), Guid.NewGuid(),
+            Convert.ToHexString(finalHash), "auth", sig,
+            Convert.ToHexString(CreateHash(84)),
+            Convert.ToHexString(CreateHash(85)),
+            checkpoints:
+            [
+                new RunCheckpoint(256, CreateHash(86)),
+                new RunCheckpoint(0, CreateHash(87))   // out of order
+            ]));
+    }
+
+    [Fact]
+    public void SignedRunResult_DuplicateCheckpointTickIndex_Throws()
+    {
+        var authority = CreateAuthority();
+        var finalHash = CreateHash(88);
+        var sig = authority.Sign(Guid.NewGuid(), Guid.NewGuid(), finalHash, CreateHash(89), CreateHash(90)).Signature;
+
+        // Two checkpoints share the same tick index.
+        Assert.Throws<ArgumentException>(() => new SignedRunResult(
+            Guid.NewGuid(), Guid.NewGuid(),
+            Convert.ToHexString(finalHash), "auth", sig,
+            Convert.ToHexString(CreateHash(89)),
+            Convert.ToHexString(CreateHash(90)),
+            checkpoints:
+            [
+                new RunCheckpoint(256, CreateHash(91)),
+                new RunCheckpoint(256, CreateHash(92))  // duplicate
+            ]));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // 6. Checkpoint state hashes match the tick chain
     // ──────────────────────────────────────────────────────────────────────────
