@@ -98,7 +98,9 @@ public sealed class SignedRunResult
         TickMerkleRoot = tickMerkleRoot;
         _signature = AuthorityCrypto.CloneAndValidateSignature(signature);
 
-        // Store a defensively-copied list so callers cannot mutate the stored state hashes.
+        // Deep-copy each checkpoint so the stored list and its StateHash arrays are
+        // independent from the caller's original data. Note that the individual StateHash
+        // byte arrays inside the stored RunCheckpoints are still mutable by readers.
         if (checkpoints is not null)
         {
             var safe = new List<RunCheckpoint>(checkpoints.Count);

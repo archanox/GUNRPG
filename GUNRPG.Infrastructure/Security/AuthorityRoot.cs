@@ -204,9 +204,15 @@ internal static class AuthorityCrypto
 
         foreach (var cp in checkpoints)
         {
+            if (cp is null)
+                throw new ArgumentException("Checkpoint entry cannot be null.", nameof(checkpoints));
+
             BinaryPrimitives.WriteInt64BigEndian(buffer.AsSpan(offset), cp.TickIndex);
             offset += Int64Size;
-            cp.StateHash.CopyTo(buffer, offset);
+
+            // Validate and normalize the state hash to an exact 32-byte SHA-256 value.
+            var stateHash = CloneAndValidateSha256Hash(cp.StateHash);
+            stateHash.CopyTo(buffer, offset);
             offset += SHA256.HashSizeInBytes;
         }
 
