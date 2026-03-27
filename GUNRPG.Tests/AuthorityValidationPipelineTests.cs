@@ -330,16 +330,15 @@ public sealed class AuthorityValidationPipelineTests
     }
 
     [Fact]
-    public void VerifySignedRun_ReturnsFalse_WhenFinalHashIsInvalidHex()
+    public void SignedRunResult_Constructor_Throws_WhenFinalHashIsInvalidHex()
     {
         var sessionAuthority = CreateSessionAuthority();
         var sig = new byte[64];
         // 64 'Z' characters: valid length but non-hex characters.
-        // The constructor accepts any 64-char string; VerifySignedRun must return false
-        // rather than throw when Convert.FromHexString fails.
+        // The constructor must now reject non-hex strings at construction time.
         var nonHexHash = new string('Z', 64);
-        var result = new SignedRunResult(Guid.NewGuid(), Guid.NewGuid(), nonHexHash, sessionAuthority.Id, sig);
-        Assert.False(SessionAuthority.VerifySignedRun(result, sessionAuthority.ToAuthority()));
+        Assert.Throws<ArgumentException>(() =>
+            new SignedRunResult(Guid.NewGuid(), Guid.NewGuid(), nonHexHash, sessionAuthority.Id, sig));
     }
 
     [Fact]

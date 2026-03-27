@@ -503,6 +503,38 @@ public sealed class MerkleTreeTests
                 replayHash: null, tickMerkleRoot: merkleHex));
     }
 
+    [Fact]
+    public void SignedRunResult_InvalidHexFinalHash_Throws()
+    {
+        var signature = new byte[64];
+        // 64 chars but contains 'G' — not a valid hex character.
+        var badHex = new string('G', 64);
+        Assert.Throws<ArgumentException>(() =>
+            new SignedRunResult(Guid.NewGuid(), Guid.NewGuid(), badHex, "auth", signature));
+    }
+
+    [Fact]
+    public void SignedRunResult_InvalidHexReplayHash_Throws()
+    {
+        var signature = new byte[64];
+        var goodHex = Convert.ToHexString(CreateHash(1));
+        var badHex = new string('Z', 64);
+        Assert.Throws<ArgumentException>(() =>
+            new SignedRunResult(Guid.NewGuid(), Guid.NewGuid(), goodHex, "auth", signature,
+                replayHash: badHex));
+    }
+
+    [Fact]
+    public void SignedRunResult_InvalidHexTickMerkleRoot_Throws()
+    {
+        var signature = new byte[64];
+        var goodHex = Convert.ToHexString(CreateHash(1));
+        var badHex = new string('!', 64);
+        Assert.Throws<ArgumentException>(() =>
+            new SignedRunResult(Guid.NewGuid(), Guid.NewGuid(), goodHex, "auth", signature,
+                replayHash: goodHex, tickMerkleRoot: badHex));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // 8. TickAuthorityService.FinalizeRun – Merkle root binding
     // ──────────────────────────────────────────────────────────────────────────
@@ -666,6 +698,26 @@ public sealed class MerkleTreeTests
     {
         var builder = new MerkleBuilder();
         Assert.Throws<ArgumentException>(() => builder.AddLeaf(new byte[16]));
+    }
+
+    [Fact]
+    public void MerkleBuilder_AddLeaf_ClonesInput_MutationDoesNotAffectRoot()
+    {
+        // Root computed before mutation must equal root computed after mutation,
+        // proving AddLeaf defensively clones the caller-supplied buffer.
+        var leaf = CreateHash(7);
+        var builder = new MerkleBuilder();
+        builder.AddLeaf(leaf);
+
+        var rootBefore = builder.BuildRoot();
+
+        // Mutate the original leaf array after adding it.
+        leaf[0] ^= 0xFF;
+
+        var rootAfter = builder.BuildRoot();
+
+        Assert.True(rootBefore.AsSpan().SequenceEqual(rootAfter),
+            "Mutating the leaf array after AddLeaf must not change the root.");
     }
 
     // ──────────────────────────────────────────────────────────────────────────
