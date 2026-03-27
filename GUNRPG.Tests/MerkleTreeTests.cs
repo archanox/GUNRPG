@@ -822,6 +822,9 @@ public sealed class MerkleTreeTests
     [InlineData(7)]
     [InlineData(8)]
     [InlineData(9)]
+    [InlineData(11)]
+    [InlineData(13)]
+    [InlineData(15)]
     [InlineData(16)]
     [InlineData(17)]
     public void MerkleFrontier_Root_MatchesMerkleTreeComputeRoot(int leafCount)

@@ -14,7 +14,7 @@ public sealed class MerkleBuilder
     private readonly MerkleFrontier _frontier = new();
 
     /// <summary>Gets the number of leaf hashes added so far.</summary>
-    public int Count => (int)_frontier.LeafCount;
+    public int Count => checked((int)_frontier.LeafCount);
 
     /// <summary>
     /// Adds a leaf hash to the builder.
