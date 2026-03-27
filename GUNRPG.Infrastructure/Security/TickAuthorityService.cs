@@ -546,21 +546,43 @@ public sealed class TickAuthorityService
         if (result.Checkpoints is null || result.Checkpoints.Count == 0)
             return true;
 
-        // Build a lookup from tick index to state hash.
-        var tickStateHashes = new Dictionary<long, byte[]>(tickChain.Count);
-        foreach (var t in tickChain)
-            tickStateHashes[t.Tick] = t.StateHash;
+        // Both result.Checkpoints (enforced in SignedRunResult constructor) and tickChain
+        // (enforced by VerifyTickChain) have strictly-increasing tick indices.
+        // Use a two-pointer merge scan: O(n+m) time, O(1) extra memory.
+        var checkpoints = result.Checkpoints;
+        var checkpointCount = checkpoints.Count;
+        var tickCount = tickChain.Count;
 
-        foreach (var checkpoint in result.Checkpoints)
+        var checkpointIndex = 0; // index into checkpoints
+        var tickIndex = 0;       // index into tickChain
+
+        while (checkpointIndex < checkpointCount && tickIndex < tickCount)
         {
-            if (!tickStateHashes.TryGetValue(checkpoint.TickIndex, out var tickStateHash))
-                return false;
+            var checkpoint = checkpoints[checkpointIndex];
+            var tick = tickChain[tickIndex];
 
-            if (!checkpoint.StateHash.AsSpan().SequenceEqual(tickStateHash))
+            if (checkpoint.TickIndex == tick.Tick)
+            {
+                if (!checkpoint.StateHash.AsSpan().SequenceEqual(tick.StateHash))
+                    return false;
+
+                checkpointIndex++;
+                tickIndex++;
+            }
+            else if (checkpoint.TickIndex > tick.Tick)
+            {
+                // Advance tickChain until we either match or surpass the checkpoint tick.
+                tickIndex++;
+            }
+            else
+            {
+                // checkpoint.TickIndex < tick.Tick: checkpoint refers to a tick not in the chain.
                 return false;
+            }
         }
 
-        return true;
+        // All checkpoints must have been matched.
+        return checkpointIndex == checkpointCount;
     }
 
     /// <summary>
