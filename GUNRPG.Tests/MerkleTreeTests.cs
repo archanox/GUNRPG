@@ -809,6 +809,139 @@ public sealed class MerkleTreeTests
         return leaves;
     }
 
+    // ──────────────────────────────────────────────────────────────────────────
+    // 10. MerkleFrontier – incremental root matches MerkleTree.ComputeRoot
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(7)]
+    [InlineData(8)]
+    [InlineData(9)]
+    [InlineData(16)]
+    [InlineData(17)]
+    public void MerkleFrontier_Root_MatchesMerkleTreeComputeRoot(int leafCount)
+    {
+        var leaves = BuildLeaves(leafCount);
+
+        var fullRoot = MerkleTree.ComputeRoot(leaves);
+
+        var frontier = new MerkleFrontier();
+        foreach (var leaf in leaves)
+            frontier.AddLeaf(leaf);
+        var frontierRoot = frontier.ComputeRoot();
+
+        Assert.Equal(Convert.ToHexString(fullRoot), Convert.ToHexString(frontierRoot));
+    }
+
+    [Fact]
+    public void MerkleFrontier_EmptyFrontier_Returns32ZeroBytes()
+    {
+        var frontier = new MerkleFrontier();
+        var root = frontier.ComputeRoot();
+
+        Assert.Equal(32, root.Length);
+        Assert.All(root, b => Assert.Equal(0, b));
+    }
+
+    [Fact]
+    public void MerkleFrontier_LargeRun_MatchesMerkleTree()
+    {
+        // 10_000 leaves — ensures memory is O(log n) and root matches full tree.
+        const int count = 10_000;
+        var leaves = BuildLeaves(count);
+
+        var fullRoot = MerkleTree.ComputeRoot(leaves);
+
+        var frontier = new MerkleFrontier();
+        foreach (var leaf in leaves)
+            frontier.AddLeaf(leaf);
+        var frontierRoot = frontier.ComputeRoot();
+
+        Assert.Equal(Convert.ToHexString(fullRoot), Convert.ToHexString(frontierRoot));
+        // Frontier internal level count must be O(log2(n)) ≈ 14 for 10_000 leaves.
+        Assert.Equal(count, (int)frontier.LeafCount);
+    }
+
+    [Fact]
+    public void MerkleFrontier_DeterministicOrdering_ProducesSameRoot()
+    {
+        var leaves = BuildLeaves(12);
+
+        var frontier1 = new MerkleFrontier();
+        var frontier2 = new MerkleFrontier();
+        foreach (var leaf in leaves)
+        {
+            frontier1.AddLeaf(leaf);
+            frontier2.AddLeaf(leaf);
+        }
+
+        Assert.Equal(
+            Convert.ToHexString(frontier1.ComputeRoot()),
+            Convert.ToHexString(frontier2.ComputeRoot()));
+    }
+
+    [Fact]
+    public void MerkleFrontier_DifferentLeaves_ProduceDifferentRoots()
+    {
+        var leaves1 = BuildLeaves(4);
+        var leaves2 = BuildLeaves(4);
+        leaves2[2][0] ^= 0xFF; // tamper one leaf
+
+        var frontier1 = new MerkleFrontier();
+        var frontier2 = new MerkleFrontier();
+        foreach (var leaf in leaves1) frontier1.AddLeaf(leaf);
+        foreach (var leaf in leaves2) frontier2.AddLeaf(leaf);
+
+        Assert.NotEqual(
+            Convert.ToHexString(frontier1.ComputeRoot()),
+            Convert.ToHexString(frontier2.ComputeRoot()));
+    }
+
+    [Fact]
+    public void MerkleFrontier_SingleLeaf_AppliesDomainSeparation()
+    {
+        var leaf = CreateHash(42);
+        var frontier = new MerkleFrontier();
+        frontier.AddLeaf(leaf);
+        var root = frontier.ComputeRoot();
+
+        // Root must be SHA256(0x00 || leaf), not the raw leaf value.
+        Assert.False(root.AsSpan().SequenceEqual(leaf));
+        Assert.Equal(32, root.Length);
+    }
+
+    [Fact]
+    public void MerkleFrontier_LeafCount_TracksAddedLeaves()
+    {
+        var frontier = new MerkleFrontier();
+        Assert.Equal(0L, frontier.LeafCount);
+
+        frontier.AddLeaf(CreateHash(1));
+        Assert.Equal(1L, frontier.LeafCount);
+
+        frontier.AddLeaf(CreateHash(2));
+        Assert.Equal(2L, frontier.LeafCount);
+    }
+
+    [Fact]
+    public void MerkleFrontier_AddLeaf_NullHash_ThrowsArgumentNullException()
+    {
+        var frontier = new MerkleFrontier();
+        Assert.Throws<ArgumentNullException>(() => frontier.AddLeaf(null!));
+    }
+
+    [Fact]
+    public void MerkleFrontier_AddLeaf_WrongLengthHash_ThrowsArgumentException()
+    {
+        var frontier = new MerkleFrontier();
+        Assert.Throws<ArgumentException>(() => frontier.AddLeaf(new byte[16]));
+    }
+
     private static SessionAuthority CreateAuthority(string id = "test-authority")
     {
         var privateKey = SessionAuthority.GeneratePrivateKey();

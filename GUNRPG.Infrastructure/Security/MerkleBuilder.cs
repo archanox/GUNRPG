@@ -6,16 +6,15 @@ namespace GUNRPG.Security;
 /// computed on demand by calling <see cref="BuildRoot"/>.
 /// </summary>
 /// <remarks>
-/// This abstraction avoids materialising the full leaf list at once in call sites
-/// and makes it straightforward to evolve toward incremental Merkle frontier
-/// computation in the future.
+/// Internally delegates to <see cref="MerkleFrontier"/>, which maintains O(log n) state
+/// and avoids materialising the full leaf list.
 /// </remarks>
 public sealed class MerkleBuilder
 {
-    private readonly List<byte[]> _leaves = [];
+    private readonly MerkleFrontier _frontier = new();
 
     /// <summary>Gets the number of leaf hashes added so far.</summary>
-    public int Count => _leaves.Count;
+    public int Count => (int)_frontier.LeafCount;
 
     /// <summary>
     /// Adds a leaf hash to the builder.
@@ -26,13 +25,7 @@ public sealed class MerkleBuilder
     /// <exception cref="ArgumentException">Thrown when <paramref name="leafHash"/> is not exactly 32 bytes.</exception>
     public MerkleBuilder AddLeaf(byte[] leafHash)
     {
-        ArgumentNullException.ThrowIfNull(leafHash);
-        if (leafHash.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
-            throw new ArgumentException(
-                $"leafHash must be exactly {System.Security.Cryptography.SHA256.HashSizeInBytes} bytes.",
-                nameof(leafHash));
-
-        _leaves.Add((byte[])leafHash.Clone());
+        _frontier.AddLeaf(leafHash);
         return this;
     }
 
@@ -41,5 +34,5 @@ public sealed class MerkleBuilder
     /// Returns a 32-byte zero array when no leaves have been added.
     /// </summary>
     /// <returns>The 32-byte Merkle root.</returns>
-    public byte[] BuildRoot() => MerkleTree.ComputeRoot(_leaves);
+    public byte[] BuildRoot() => _frontier.ComputeRoot();
 }

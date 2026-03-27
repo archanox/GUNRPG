@@ -396,11 +396,11 @@ public sealed class TickAuthorityService
                 "finalStateHash does not match the last verified tick's StateHash. " +
                 "The run cannot be finalized without a complete verified tick chain.");
 
-        // Compute the Merkle root of all tick leaf hashes using the incremental builder.
-        var builder = new MerkleBuilder();
+        // Compute the Merkle root of all tick leaf hashes using the incremental frontier.
+        var frontier = new MerkleFrontier();
         foreach (var t in verifiedTickChain)
-            builder.AddLeaf(ComputeTickLeafHash(t.Tick, t.PrevStateHash, t.StateHash, t.InputHash));
-        var merkleRoot = builder.BuildRoot();
+            frontier.AddLeaf(ComputeTickLeafHash(t.Tick, t.PrevStateHash, t.StateHash, t.InputHash));
+        var merkleRoot = frontier.ComputeRoot();
 
         return _signer!.Sign(sessionId, playerId, finalStateHash, replayHash, merkleRoot);
     }
@@ -477,11 +477,11 @@ public sealed class TickAuthorityService
         if (result.TickMerkleRoot is null)
             return tickChain.Count == 0;
 
-        var builder = new MerkleBuilder();
+        var frontier = new MerkleFrontier();
         foreach (var t in tickChain)
-            builder.AddLeaf(ComputeTickLeafHash(t.Tick, t.PrevStateHash, t.StateHash, t.InputHash));
+            frontier.AddLeaf(ComputeTickLeafHash(t.Tick, t.PrevStateHash, t.StateHash, t.InputHash));
 
-        var computedRoot = Convert.ToHexString(builder.BuildRoot());
+        var computedRoot = Convert.ToHexString(frontier.ComputeRoot());
         return string.Equals(computedRoot, result.TickMerkleRoot, StringComparison.OrdinalIgnoreCase);
     }
 
