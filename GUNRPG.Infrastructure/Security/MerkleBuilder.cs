@@ -32,7 +32,7 @@ public sealed class MerkleBuilder
                 $"leafHash must be exactly {System.Security.Cryptography.SHA256.HashSizeInBytes} bytes.",
                 nameof(leafHash));
 
-        _leaves.Add(leafHash);
+        _leaves.Add((byte[])leafHash.Clone());
         return this;
     }
 

@@ -27,6 +27,10 @@ public sealed class SignedRunResult
             throw new ArgumentException(
                 $"FinalHash must be a {FinalHashHexLength}-character uppercase hex string (SHA-256).",
                 nameof(finalHash));
+        if (!IsValidHex(finalHash))
+            throw new ArgumentException(
+                "FinalHash must contain only hexadecimal characters (0-9, A-F).",
+                nameof(finalHash));
         if (string.IsNullOrWhiteSpace(authorityId))
             throw new ArgumentException("AuthorityId must not be empty.", nameof(authorityId));
         if (replayHash is not null)
@@ -34,6 +38,10 @@ public sealed class SignedRunResult
             if (replayHash.Length != FinalHashHexLength)
                 throw new ArgumentException(
                     $"ReplayHash must be a {FinalHashHexLength}-character uppercase hex string (SHA-256) when provided.",
+                    nameof(replayHash));
+            if (!IsValidHex(replayHash))
+                throw new ArgumentException(
+                    "ReplayHash must contain only hexadecimal characters (0-9, A-F).",
                     nameof(replayHash));
         }
 
@@ -46,6 +54,10 @@ public sealed class SignedRunResult
             if (tickMerkleRoot.Length != FinalHashHexLength)
                 throw new ArgumentException(
                     $"TickMerkleRoot must be a {FinalHashHexLength}-character uppercase hex string (SHA-256) when provided.",
+                    nameof(tickMerkleRoot));
+            if (!IsValidHex(tickMerkleRoot))
+                throw new ArgumentException(
+                    "TickMerkleRoot must contain only hexadecimal characters (0-9, A-F).",
                     nameof(tickMerkleRoot));
         }
 
@@ -90,4 +102,14 @@ public sealed class SignedRunResult
     public byte[] Signature => (byte[])_signature.Clone();
 
     internal byte[] SignatureBytes => _signature;
+
+    private static bool IsValidHex(string value)
+    {
+        foreach (var c in value)
+        {
+            if (c is not ((>= '0' and <= '9') or (>= 'A' and <= 'F') or (>= 'a' and <= 'f')))
+                return false;
+        }
+        return true;
+    }
 }

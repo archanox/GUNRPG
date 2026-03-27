@@ -434,7 +434,7 @@ public sealed class TickAuthorityService
     /// <c>Tick (big-endian int64) || len(PrevStateHash) (big-endian int32) || PrevStateHash ||
     /// len(StateHash) (big-endian int32) || StateHash || len(InputHash) (big-endian int32) || InputHash</c>.
     /// The final leaf hash is <c>SHA-256</c> over that buffer.
-    /// This encoding matches <see cref="ComputeTickPayloadHash"/> exactly.
+    /// This encoding matches <see cref="AuthorityCrypto.ComputeTickPayloadHash"/> exactly.
     /// </summary>
     /// <param name="tick">The simulation tick number.</param>
     /// <param name="prevStateHash">
