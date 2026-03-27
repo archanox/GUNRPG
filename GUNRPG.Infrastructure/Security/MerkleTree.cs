@@ -11,8 +11,12 @@ namespace GUNRPG.Security;
 /// <list type="bullet">
 ///   <item>If the number of leaves at any level is odd the last leaf is duplicated.</item>
 ///   <item>
-///     Parent hash: <c>SHA256(leftChild || rightChild)</c>
-///     (two raw 32-byte hashes concatenated, no length prefix).
+///     Leaf node: <c>SHA256(0x00 || leafData)</c> — the <c>0x00</c> domain-separation byte
+///     prevents leaf/node hash collisions.
+///   </item>
+///   <item>
+///     Internal node: <c>SHA256(0x01 || leftChild || rightChild)</c> — the <c>0x01</c> byte
+///     ensures internal nodes can never be confused with leaf nodes.
 ///   </item>
 ///   <item>An empty leaf list returns a 32-byte zero root.</item>
 /// </list>
@@ -20,6 +24,14 @@ namespace GUNRPG.Security;
 public sealed class MerkleTree
 {
     private const int HashSize = SHA256.HashSizeInBytes;
+
+    /// <summary>
+    /// Maximum allowed depth (number of sibling hashes) in an inclusion proof.
+    /// A tree with 2^64 leaves would have depth 64; any proof deeper than this
+    /// is pathological and rejected to prevent denial-of-service via excessively
+    /// large proof inputs.
+    /// </summary>
+    public const int MaxMerkleProofDepth = 64;
 
     /// <summary>
     /// Computes the Merkle root of the given leaf hashes.
@@ -94,8 +106,10 @@ public sealed class MerkleTree
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="proof"/> or <paramref name="root"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="root"/> is not exactly 32 bytes,
+    /// when <see cref="MerkleProof.LeafIndex"/> is negative,
     /// when <see cref="MerkleProof.LeafHash"/> is <see langword="null"/> or not exactly 32 bytes,
-    /// when <see cref="MerkleProof.SiblingHashes"/> is <see langword="null"/>,
+    /// when <see cref="MerkleProof.SiblingHashes"/> is <see langword="null"/> or exceeds
+    /// <see cref="MaxMerkleProofDepth"/> entries (DoS protection),
     /// or when any sibling hash is <see langword="null"/> or not exactly 32 bytes.
     /// </exception>
     public static bool VerifyProof(MerkleProof proof, byte[] root)
@@ -105,6 +119,9 @@ public sealed class MerkleTree
         if (root.Length != HashSize)
             throw new ArgumentException($"Root must be exactly {HashSize} bytes.", nameof(root));
 
+        if (proof.LeafIndex < 0)
+            throw new ArgumentException("proof.LeafIndex must be non-negative.", nameof(proof));
+
         if (proof.LeafHash is null || proof.LeafHash.Length != HashSize)
             throw new ArgumentException(
                 $"proof.LeafHash must be a non-null {HashSize}-byte SHA-256 hash.", nameof(proof));
@@ -112,7 +129,14 @@ public sealed class MerkleTree
         if (proof.SiblingHashes is null)
             throw new ArgumentException("proof.SiblingHashes must not be null.", nameof(proof));
 
-        var current = (byte[])proof.LeafHash.Clone();
+        if (proof.SiblingHashes.Count > MaxMerkleProofDepth)
+            throw new ArgumentException(
+                $"Merkle proof depth ({proof.SiblingHashes.Count}) exceeds the allowed limit of {MaxMerkleProofDepth}.",
+                nameof(proof));
+
+        // Apply leaf-domain prefix (0x00) before traversal so leaf nodes cannot
+        // be confused with internal nodes (0x01 prefix).
+        var current = ComputeLeafNode(proof.LeafHash);
         var index = proof.LeafIndex;
 
         var siblingIndex = 0;
@@ -143,7 +167,7 @@ public sealed class MerkleTree
                 throw new ArgumentException(
                     $"Leaf at index {i} must be a non-null {HashSize}-byte SHA-256 hash.",
                     "leaves");
-            layer.Add((byte[])leaf.Clone());
+            layer.Add(ComputeLeafNode(leaf));
         }
 
         return layer;
@@ -162,11 +186,27 @@ public sealed class MerkleTree
         return next;
     }
 
+    /// <summary>
+    /// Applies the leaf-domain prefix: <c>SHA256(0x00 || leafData)</c>.
+    /// </summary>
+    private static byte[] ComputeLeafNode(byte[] leafData)
+    {
+        var buffer = new byte[1 + HashSize];
+        buffer[0] = 0x00;
+        leafData.CopyTo(buffer, 1);
+        return SHA256.HashData(buffer);
+    }
+
+    /// <summary>
+    /// Combines two child nodes: <c>SHA256(0x01 || left || right)</c>.
+    /// The <c>0x01</c> byte ensures internal nodes are distinct from leaf nodes.
+    /// </summary>
     private static byte[] ComputeParentHash(byte[] left, byte[] right)
     {
-        var buffer = new byte[HashSize + HashSize];
-        left.CopyTo(buffer, 0);
-        right.CopyTo(buffer, HashSize);
+        var buffer = new byte[1 + HashSize + HashSize];
+        buffer[0] = 0x01;
+        left.CopyTo(buffer, 1);
+        right.CopyTo(buffer, 1 + HashSize);
         return SHA256.HashData(buffer);
     }
 }
