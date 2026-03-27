@@ -329,13 +329,15 @@ public sealed class TickAuthorityService
 
     /// <summary>
     /// Finalises a run after successful chain verification, producing a
-    /// <see cref="SignedRunResult"/> that binds both the final state hash and the
-    /// full input-log replay hash.
+    /// <see cref="SignedRunResult"/> that binds the final state hash, the full input-log
+    /// replay hash, and the Merkle root of all tick leaf hashes.
     /// </summary>
     /// <remarks>
     /// This overload first calls <see cref="VerifyTickChain(IReadOnlyList{SignedTick}, IReadOnlyList{byte[]})"/>
     /// to fully verify the chain (signatures, continuity, hash links, genesis sentinel), then
     /// checks that <paramref name="finalStateHash"/> matches the last verified tick before signing.
+    /// The Merkle root is computed from the leaf hash of every signed tick checkpoint in
+    /// <paramref name="verifiedTickChain"/> using <see cref="ComputeTickLeafHash"/>.
     /// Enforces the rule: no valid <see cref="SignedTick"/> chain → no persistence.
     /// </remarks>
     /// <param name="sessionId">Unique identifier of the session.</param>
@@ -353,7 +355,8 @@ public sealed class TickAuthorityService
     /// internally — the caller does not need to call <see cref="VerifyTickChain"/> separately.
     /// </param>
     /// <returns>
-    /// A <see cref="SignedRunResult"/> whose signature covers both hashes.
+    /// A <see cref="SignedRunResult"/> whose signature covers the final state hash, replay hash,
+    /// and the Merkle root of all tick leaf hashes.
     /// </returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown when this service was created without a signer (verifier-only constructor),
@@ -387,7 +390,13 @@ public sealed class TickAuthorityService
                     "The run cannot be finalised without a complete verified tick chain.");
         }
 
-        return _signer!.Sign(sessionId, playerId, finalStateHash, replayHash);
+        // Compute the Merkle root of all tick leaf hashes and bind it to the signed result.
+        var leafHashes = verifiedTickChain
+            .Select(t => ComputeTickLeafHash(t.Tick, t.PrevStateHash, t.StateHash, t.InputHash))
+            .ToList();
+        var merkleRoot = MerkleTree.ComputeRoot(leafHashes);
+
+        return _signer!.Sign(sessionId, playerId, finalStateHash, replayHash, merkleRoot);
     }
 
     /// <summary>
@@ -411,6 +420,25 @@ public sealed class TickAuthorityService
         EnsureSigner();
         return _signer!.Sign(sessionId, playerId, finalStateHash, replayHash);
     }
+
+    /// <summary>
+    /// Computes the deterministic leaf hash for a single signed tick.
+    /// This is the canonical value for each tick's position in the Merkle tree.
+    /// The leaf hash covers: Tick (big-endian int64) || PrevStateHash || StateHash || InputHash.
+    /// </summary>
+    /// <param name="tick">The simulation tick number.</param>
+    /// <param name="prevStateHash">
+    /// The <see cref="SignedTick.PrevStateHash"/> of this tick (32 bytes).
+    /// </param>
+    /// <param name="stateHash">
+    /// The <see cref="SignedTick.StateHash"/> of this tick (32 bytes).
+    /// </param>
+    /// <param name="inputHash">
+    /// The <see cref="SignedTick.InputHash"/> of this tick (32 bytes).
+    /// </param>
+    /// <returns>A 32-byte SHA-256 leaf hash suitable for use as a Merkle tree leaf.</returns>
+    public static byte[] ComputeTickLeafHash(long tick, byte[] prevStateHash, byte[] stateHash, byte[] inputHash)
+        => AuthorityCrypto.ComputeTickLeafHash(tick, prevStateHash, stateHash, inputHash);
 
     /// <summary>
     /// Computes the SHA-256 hash of a <see cref="TickInputs"/> batch.
