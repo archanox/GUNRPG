@@ -37,6 +37,20 @@ public sealed class TickAuthorityService
     public const int SignInterval = 10;
 
     /// <summary>
+    /// Number of ticks between successive Merkle checkpoints recorded in a
+    /// <see cref="SignedRunResult"/>.  A checkpoint captures the state hash at that tick
+    /// so that replay verifiers can validate large sections of the run without
+    /// re-simulating every tick.
+    /// </summary>
+    /// <remarks>
+    /// The value 256 balances checkpoint granularity against storage overhead.
+    /// The final tick is always checkpointed regardless of the interval.
+    /// Checkpoint state hashes are cryptographically bound to the authority signature
+    /// via <c>Hash(Checkpoints)</c> in the signing payload.
+    /// </remarks>
+    public const int CheckpointInterval = 256;
+
+    /// <summary>
     /// Returns a copy of the canonical "previous state hash" used for the very first signed
     /// checkpoint (tick 0). This is 32 zero bytes, ensuring the genesis tick is unambiguously
     /// the start of the chain.
@@ -396,13 +410,22 @@ public sealed class TickAuthorityService
                 "finalStateHash does not match the last verified tick's StateHash. " +
                 "The run cannot be finalized without a complete verified tick chain.");
 
-        // Compute the Merkle root of all tick leaf hashes using the incremental frontier.
+        // Compute the Merkle root of all tick leaf hashes using the incremental frontier,
+        // and build the checkpoint list (every CheckpointInterval ticks, plus the final tick).
         var frontier = new MerkleFrontier();
-        foreach (var t in verifiedTickChain)
+        var checkpoints = new List<RunCheckpoint>();
+        for (var i = 0; i < verifiedTickChain.Count; i++)
+        {
+            var t = verifiedTickChain[i]!;
             frontier.AddLeaf(ComputeTickLeafHash(t.Tick, t.PrevStateHash, t.StateHash, t.InputHash));
+
+            if (t.Tick % CheckpointInterval == 0 || i == verifiedTickChain.Count - 1)
+                checkpoints.Add(new RunCheckpoint(t.Tick, t.StateHash));
+        }
+
         var merkleRoot = frontier.ComputeRoot();
 
-        return _signer!.Sign(sessionId, playerId, finalStateHash, replayHash, merkleRoot);
+        return _signer!.Sign(sessionId, playerId, finalStateHash, replayHash, merkleRoot, checkpoints);
     }
 
     /// <summary>
@@ -483,6 +506,61 @@ public sealed class TickAuthorityService
 
         var computedRoot = Convert.ToHexString(frontier.ComputeRoot());
         return string.Equals(computedRoot, result.TickMerkleRoot, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Verifies that the checkpoint state hashes in <paramref name="result"/> match the
+    /// corresponding signed tick state hashes in <paramref name="tickChain"/>.
+    /// </summary>
+    /// <remarks>
+    /// This is the fast-path checkpoint verification step.  Because checkpoint hashes are
+    /// cryptographically bound to the authority signature (via <c>Hash(Checkpoints)</c>
+    /// in the signing payload), a verifier who trusts the signature can use this method to
+    /// confirm that every checkpoint corresponds to a verified tick state hash without
+    /// re-simulating the entire run.
+    /// <para>
+    /// Typical usage:
+    /// <list type="number">
+    ///   <item>Call <see cref="SessionAuthority.VerifySignedRun"/> to validate the signature.</item>
+    ///   <item>Call this method to validate the checkpoint state hashes against the tick chain.</item>
+    ///   <item>Call <see cref="VerifyTickMerkleRoot"/> to validate the full Merkle root.</item>
+    /// </list>
+    /// </para>
+    /// </remarks>
+    /// <param name="result">The signed run result whose checkpoints to validate.</param>
+    /// <param name="tickChain">The tick chain to look up state hashes from.</param>
+    /// <returns>
+    /// <see langword="true"/> if all checkpoints match their corresponding tick state hashes,
+    /// or if <paramref name="result"/> has no checkpoints.
+    /// <see langword="false"/> if any checkpoint tick index is absent from the tick chain
+    /// or the state hash does not match.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="result"/> or <paramref name="tickChain"/> is <see langword="null"/>.
+    /// </exception>
+    public static bool VerifyCheckpoints(SignedRunResult result, IReadOnlyList<SignedTick> tickChain)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        ArgumentNullException.ThrowIfNull(tickChain);
+
+        if (result.Checkpoints is null || result.Checkpoints.Count == 0)
+            return true;
+
+        // Build a lookup from tick index to state hash.
+        var tickStateHashes = new Dictionary<long, byte[]>(tickChain.Count);
+        foreach (var t in tickChain)
+            tickStateHashes[t.Tick] = t.StateHash;
+
+        foreach (var checkpoint in result.Checkpoints)
+        {
+            if (!tickStateHashes.TryGetValue(checkpoint.TickIndex, out var tickStateHash))
+                return false;
+
+            if (!checkpoint.StateHash.AsSpan().SequenceEqual(tickStateHash))
+                return false;
+        }
+
+        return true;
     }
 
     /// <summary>

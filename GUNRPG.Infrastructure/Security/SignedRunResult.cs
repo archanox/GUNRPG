@@ -19,7 +19,8 @@ public sealed class SignedRunResult
         string authorityId,
         byte[] signature,
         string? replayHash = null,
-        string? tickMerkleRoot = null)
+        string? tickMerkleRoot = null,
+        IReadOnlyList<RunCheckpoint>? checkpoints = null)
     {
         if (string.IsNullOrWhiteSpace(finalHash))
             throw new ArgumentException("FinalHash must not be empty.", nameof(finalHash));
@@ -61,6 +62,30 @@ public sealed class SignedRunResult
                     nameof(tickMerkleRoot));
         }
 
+        if (checkpoints is not null)
+        {
+            if (tickMerkleRoot is null)
+                throw new ArgumentException(
+                    "Checkpoints can only be provided when TickMerkleRoot is also provided.",
+                    nameof(checkpoints));
+            for (var i = 0; i < checkpoints.Count; i++)
+            {
+                var cp = checkpoints[i];
+                if (cp is null)
+                    throw new ArgumentException(
+                        $"Checkpoint at index {i} must not be null.", nameof(checkpoints));
+                if (cp.TickIndex < 0L)
+                    throw new ArgumentException(
+                        $"Checkpoint at index {i} has a negative TickIndex ({cp.TickIndex}).",
+                        nameof(checkpoints));
+                if (cp.StateHash is null || cp.StateHash.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
+                    throw new ArgumentException(
+                        $"Checkpoint at index {i} has an invalid StateHash " +
+                        $"(must be {System.Security.Cryptography.SHA256.HashSizeInBytes} bytes).",
+                        nameof(checkpoints));
+            }
+        }
+
         SessionId = sessionId;
         PlayerId = playerId;
         FinalHash = finalHash;
@@ -68,6 +93,15 @@ public sealed class SignedRunResult
         ReplayHash = replayHash;
         TickMerkleRoot = tickMerkleRoot;
         _signature = AuthorityCrypto.CloneAndValidateSignature(signature);
+
+        // Store a defensively-copied list so callers cannot mutate the stored state hashes.
+        if (checkpoints is not null)
+        {
+            var safe = new List<RunCheckpoint>(checkpoints.Count);
+            foreach (var cp in checkpoints)
+                safe.Add(new RunCheckpoint(cp.TickIndex, (byte[])cp.StateHash.Clone()));
+            Checkpoints = safe.AsReadOnly();
+        }
     }
 
     /// <summary>Unique identifier of the session that was finalized.</summary>
@@ -97,6 +131,15 @@ public sealed class SignedRunResult
     /// When present the signature covers <see cref="FinalHash"/>, <see cref="ReplayHash"/>, and this value.
     /// </summary>
     public string? TickMerkleRoot { get; }
+
+    /// <summary>
+    /// Ordered list of Merkle checkpoints recorded at a fixed interval during simulation.
+    /// Present only when the result was signed with the checkpoint overload
+    /// (<see cref="SessionAuthority.Sign(Guid, Guid, byte[], byte[], byte[], IReadOnlyList{RunCheckpoint})"/>).
+    /// When present the signature covers <see cref="FinalHash"/>, <see cref="ReplayHash"/>,
+    /// <see cref="TickMerkleRoot"/>, and <c>Hash(Checkpoints)</c>.
+    /// </summary>
+    public IReadOnlyList<RunCheckpoint>? Checkpoints { get; }
 
     /// <summary>Ed25519 signature over the validation payload hash.</summary>
     public byte[] Signature => (byte[])_signature.Clone();

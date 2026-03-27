@@ -186,6 +186,70 @@ internal static class AuthorityCrypto
     }
 
     /// <summary>
+    /// Computes the canonical hash of a checkpoint list.
+    /// Encoding: <c>count (big-endian int32) || for each: TickIndex (big-endian int64) || StateHash (32 bytes)</c>.
+    /// An empty list produces <c>SHA-256(00 00 00 00)</c> (hash of a zero count).
+    /// </summary>
+    internal static byte[] ComputeCheckpointsHash(IReadOnlyList<RunCheckpoint> checkpoints)
+    {
+        ArgumentNullException.ThrowIfNull(checkpoints);
+
+        // Each entry: 8 bytes TickIndex (int64) + 32 bytes StateHash = 40 bytes.
+        const int entrySize = Int64Size + SHA256.HashSizeInBytes;
+        var buffer = new byte[Int32Size + checkpoints.Count * entrySize];
+        var offset = 0;
+
+        BinaryPrimitives.WriteInt32BigEndian(buffer, checkpoints.Count);
+        offset += Int32Size;
+
+        foreach (var cp in checkpoints)
+        {
+            BinaryPrimitives.WriteInt64BigEndian(buffer.AsSpan(offset), cp.TickIndex);
+            offset += Int64Size;
+            cp.StateHash.CopyTo(buffer, offset);
+            offset += SHA256.HashSizeInBytes;
+        }
+
+        return SHA256.HashData(buffer);
+    }
+
+    /// <summary>
+    /// Computes the signing payload hash for a run result that includes the final state hash,
+    /// a replay hash, the Merkle root of all tick leaf hashes, and a hash of the checkpoints list.
+    /// The signature covers:
+    /// SessionId || PlayerId || FinalStateHash || ReplayHash || TickMerkleRoot || Hash(Checkpoints).
+    /// </summary>
+    internal static byte[] ComputeRunWithCheckpointsPayloadHash(
+        Guid sessionId,
+        Guid playerId,
+        byte[] finalStateHash,
+        byte[] replayHash,
+        byte[] tickMerkleRoot,
+        byte[] checkpointsHash)
+    {
+        var normalizedFinalStateHash = CloneAndValidateSha256Hash(finalStateHash);
+        var normalizedReplayHash = CloneAndValidateSha256Hash(replayHash);
+        var normalizedMerkleRoot = CloneAndValidateSha256Hash(tickMerkleRoot);
+        var normalizedCheckpointsHash = CloneAndValidateSha256Hash(checkpointsHash);
+        var buffer = new byte[
+            GuidSize + GuidSize
+            + Int32Size + normalizedFinalStateHash.Length
+            + Int32Size + normalizedReplayHash.Length
+            + Int32Size + normalizedMerkleRoot.Length
+            + Int32Size + normalizedCheckpointsHash.Length];
+        var offset = 0;
+
+        WriteGuid(sessionId, buffer, ref offset);
+        WriteGuid(playerId, buffer, ref offset);
+        WriteLengthPrefixed(normalizedFinalStateHash, buffer, ref offset);
+        WriteLengthPrefixed(normalizedReplayHash, buffer, ref offset);
+        WriteLengthPrefixed(normalizedMerkleRoot, buffer, ref offset);
+        WriteLengthPrefixed(normalizedCheckpointsHash, buffer, ref offset);
+
+        return SHA256.HashData(buffer);
+    }
+
+    /// <summary>
     /// Computes the deterministic leaf hash for a single signed tick.
     /// The canonical encoding (before hashing) is:
     /// <c>Tick (big-endian int64) || len(PrevStateHash) (big-endian int32) || PrevStateHash ||
