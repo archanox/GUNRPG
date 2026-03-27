@@ -18,7 +18,8 @@ public sealed class SignedRunResult
         string finalHash,
         string authorityId,
         byte[] signature,
-        string? replayHash = null)
+        string? replayHash = null,
+        string? tickMerkleRoot = null)
     {
         if (string.IsNullOrWhiteSpace(finalHash))
             throw new ArgumentException("FinalHash must not be empty.", nameof(finalHash));
@@ -36,11 +37,24 @@ public sealed class SignedRunResult
                     nameof(replayHash));
         }
 
+        if (tickMerkleRoot is not null)
+        {
+            if (replayHash is null)
+                throw new ArgumentException(
+                    "TickMerkleRoot can only be provided when ReplayHash is also provided.",
+                    nameof(tickMerkleRoot));
+            if (tickMerkleRoot.Length != FinalHashHexLength)
+                throw new ArgumentException(
+                    $"TickMerkleRoot must be a {FinalHashHexLength}-character uppercase hex string (SHA-256) when provided.",
+                    nameof(tickMerkleRoot));
+        }
+
         SessionId = sessionId;
         PlayerId = playerId;
         FinalHash = finalHash;
         AuthorityId = authorityId;
         ReplayHash = replayHash;
+        TickMerkleRoot = tickMerkleRoot;
         _signature = AuthorityCrypto.CloneAndValidateSignature(signature);
     }
 
