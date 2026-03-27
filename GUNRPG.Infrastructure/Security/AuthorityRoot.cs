@@ -155,6 +155,50 @@ internal static class AuthorityCrypto
     }
 
     /// <summary>
+    /// Computes the signing payload hash for a run result that includes the final state hash,
+    /// a replay hash, and the Merkle root of all tick leaf hashes.
+    /// The signature covers: SessionId || PlayerId || FinalStateHash || ReplayHash || TickMerkleRoot.
+    /// </summary>
+    internal static byte[] ComputeRunWithMerklePayloadHash(
+        Guid sessionId,
+        Guid playerId,
+        byte[] finalStateHash,
+        byte[] replayHash,
+        byte[] tickMerkleRoot)
+    {
+        var normalizedFinalStateHash = CloneAndValidateSha256Hash(finalStateHash);
+        var normalizedReplayHash = CloneAndValidateSha256Hash(replayHash);
+        var normalizedMerkleRoot = CloneAndValidateSha256Hash(tickMerkleRoot);
+        var buffer = new byte[
+            GuidSize + GuidSize
+            + Int32Size + normalizedFinalStateHash.Length
+            + Int32Size + normalizedReplayHash.Length
+            + Int32Size + normalizedMerkleRoot.Length];
+        var offset = 0;
+
+        WriteGuid(sessionId, buffer, ref offset);
+        WriteGuid(playerId, buffer, ref offset);
+        WriteLengthPrefixed(normalizedFinalStateHash, buffer, ref offset);
+        WriteLengthPrefixed(normalizedReplayHash, buffer, ref offset);
+        WriteLengthPrefixed(normalizedMerkleRoot, buffer, ref offset);
+
+        return SHA256.HashData(buffer);
+    }
+
+    /// <summary>
+    /// Computes the deterministic leaf hash for a single signed tick.
+    /// The leaf hash covers: Tick (big-endian int64) || PrevStateHash || StateHash || InputHash.
+    /// This is the same payload as <see cref="ComputeTickPayloadHash"/> and serves as the
+    /// canonical leaf value for each tick's position in the Merkle tree.
+    /// </summary>
+    internal static byte[] ComputeTickLeafHash(
+        long tick,
+        byte[] prevStateHash,
+        byte[] stateHash,
+        byte[] inputHash) =>
+        ComputeTickPayloadHash(tick, prevStateHash, stateHash, inputHash);
+
+    /// <summary>
     /// Computes the signing payload hash for a per-tick signed tick.
     /// The payload covers: Tick (big-endian int64) || PrevStateHash || StateHash || InputHash.
     /// Including <paramref name="prevStateHash"/> chains each signed tick to its predecessor,
