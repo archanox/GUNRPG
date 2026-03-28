@@ -463,4 +463,373 @@ public sealed class ReplayVerifier
             return false;
         }
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Merkle Proof-of-Divergence
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Performs full verification of a signed run against a deterministic simulation,
+    /// optionally using signed state snapshots to accelerate replay, and—when the run
+    /// is invalid due to simulation divergence—produces a cryptographic
+    /// <see cref="DivergenceProof"/> identifying the exact divergent tick.
+    /// </summary>
+    /// <param name="tickChain">The complete, ordered chain of signed tick checkpoints.</param>
+    /// <param name="runResult">The signed run result to verify.</param>
+    /// <param name="simulation">A deterministic simulation used to re-execute the tick chain.</param>
+    /// <param name="divergenceProof">
+    /// When this method returns <see langword="false"/> due to simulation divergence,
+    /// receives a <see cref="DivergenceProof"/> that cryptographically identifies the
+    /// divergent tick and can be verified by any third party using only the
+    /// <see cref="SignedRunResult.TickMerkleRoot"/> from <paramref name="runResult"/>.
+    /// Set to <see langword="null"/> when verification passes or when it fails for a
+    /// non-simulation reason (invalid signature, Merkle root mismatch, etc.).
+    /// </param>
+    /// <param name="snapshots">
+    /// Optional list of signed state snapshots that accelerate binary-search replay.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> if every verification step passes;
+    /// <see langword="false"/> if any check fails.
+    /// </returns>
+    public bool TryVerifyRun(
+        IReadOnlyList<SignedTick> tickChain,
+        SignedRunResult runResult,
+        IDeterministicSimulation simulation,
+        out DivergenceProof? divergenceProof,
+        IReadOnlyList<StateSnapshot>? snapshots = null)
+    {
+        ArgumentNullException.ThrowIfNull(tickChain);
+        ArgumentNullException.ThrowIfNull(runResult);
+        ArgumentNullException.ThrowIfNull(simulation);
+
+        divergenceProof = null;
+
+        // Guard: tick chain must be strictly ordered and contain no null entries.
+        for (var i = 0; i < tickChain.Count; i++)
+        {
+            if (tickChain[i] is null)
+                return false;
+            if (i > 0 && tickChain[i].Tick <= tickChain[i - 1].Tick)
+                return false;
+        }
+
+        // Step 1: Verify the run signature.
+        if (!SessionAuthority.VerifySignedRun(runResult, _authority))
+            return false;
+
+        // Step 2: Verify the Merkle root of the tick chain.
+        if (!TickAuthorityService.VerifyTickMerkleRoot(runResult, tickChain))
+            return false;
+
+        // Step 3: Verify checkpoint structure.
+        if (!TickAuthorityService.VerifyCheckpoints(runResult, tickChain))
+            return false;
+
+        var checkpoints = runResult.Checkpoints;
+        var tickPositionLookup = BuildTickPositionLookup(tickChain);
+        var snapshotLookup = BuildVerifiedSnapshotLookup(snapshots, runResult);
+
+        // No checkpoints: fall back to per-tick linear replay with divergence detection.
+        if (checkpoints is null || checkpoints.Count == 0)
+        {
+            return TryVerifyFinalHashWithDivergence(
+                simulation, tickChain, runResult.FinalHash,
+                snapshotLookup, tickPositionLookup, out divergenceProof);
+        }
+
+        // Defensively verify every checkpoint tick index is in the lookup.
+        foreach (var cp in checkpoints)
+        {
+            if (!tickPositionLookup.ContainsKey(cp.TickIndex))
+                return false;
+        }
+
+        // Verify the first checkpoint.
+        var firstEndIndex = tickPositionLookup[checkpoints[0].TickIndex];
+        InitSimulation(simulation, tickChain, firstEndIndex, snapshotLookup, tickPositionLookup);
+        var firstHash = simulation.GetStateHash();
+        if (!IsValidStateHash(firstHash) || !firstHash.AsSpan().SequenceEqual(checkpoints[0].StateHash))
+        {
+            // Divergence is somewhere in [0, firstEndIndex]: scan tick by tick.
+            divergenceProof = FindDivergenceInRange(simulation, tickChain, 0, firstEndIndex);
+            return false;
+        }
+
+        // Single-checkpoint run: the one checkpoint must be the final tick.
+        if (checkpoints.Count == 1)
+        {
+            if (checkpoints[0].TickIndex != tickChain[^1].Tick)
+                return false;
+
+            return TryParseHexHash(runResult.FinalHash, out var singleFinalHash)
+                   && firstHash.AsSpan().SequenceEqual(singleFinalHash);
+        }
+
+        // Binary search to narrow the divergence window.
+        var low = 0;
+        var high = checkpoints.Count - 1;
+
+        while (high - low > 1)
+        {
+            var mid = low + (high - low) / 2;
+            var midEndIndex = tickPositionLookup[checkpoints[mid].TickIndex];
+
+            InitSimulation(simulation, tickChain, midEndIndex, snapshotLookup, tickPositionLookup);
+            var midHash = simulation.GetStateHash();
+
+            if (IsValidStateHash(midHash) && midHash.AsSpan().SequenceEqual(checkpoints[mid].StateHash))
+                low = mid;
+            else
+                high = mid;
+        }
+
+        // Linear replay within [low, high] with per-tick divergence detection.
+        var lowEndIndex = tickPositionLookup[checkpoints[low].TickIndex];
+        var highEndIndex = tickPositionLookup[checkpoints[high].TickIndex];
+        InitSimulation(simulation, tickChain, lowEndIndex, snapshotLookup, tickPositionLookup);
+
+        for (var i = lowEndIndex + 1; i <= highEndIndex; i++)
+        {
+            simulation.ApplyTick(tickChain[i]);
+            var hash = simulation.GetStateHash();
+            if (!IsValidStateHash(hash) || !hash.AsSpan().SequenceEqual(tickChain[i].StateHash))
+            {
+                divergenceProof = BuildDivergenceProof(tickChain, tickChain[i], hash);
+                return false;
+            }
+        }
+
+        // Validate the final signed state hash.
+        var highHash = simulation.GetStateHash();
+        if (!IsValidStateHash(highHash) || !highHash.AsSpan().SequenceEqual(checkpoints[high].StateHash))
+            return false;
+
+        if (checkpoints[^1].TickIndex != tickChain[^1].Tick)
+            return false;
+
+        return TryParseHexHash(runResult.FinalHash, out var signedFinalHash)
+               && highHash.AsSpan().SequenceEqual(signedFinalHash);
+    }
+
+    /// <summary>
+    /// Creates a <see cref="DivergenceProof"/> for the tick at <paramref name="divergentTick"/>
+    /// within the given <paramref name="tickChain"/>.
+    /// </summary>
+    /// <param name="tickChain">The complete ordered tick chain that was signed.</param>
+    /// <param name="divergentTick">The tick number where divergence was detected.</param>
+    /// <param name="expectedHash">
+    /// The 32-byte tick leaf hash committed to the Merkle tree for the divergent tick
+    /// (computed via <see cref="TickAuthorityService.ComputeTickLeafHash"/>).
+    /// </param>
+    /// <param name="actualHash">
+    /// The 32-byte hash produced by the local simulation at the divergent tick.
+    /// </param>
+    /// <returns>A <see cref="DivergenceProof"/> that can be verified against the run's Merkle root.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="tickChain"/>, <paramref name="expectedHash"/>, or
+    /// <paramref name="actualHash"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="divergentTick"/> is not found in <paramref name="tickChain"/>.
+    /// </exception>
+    public static DivergenceProof CreateDivergenceProof(
+        IReadOnlyList<SignedTick> tickChain,
+        long divergentTick,
+        byte[] expectedHash,
+        byte[] actualHash)
+    {
+        ArgumentNullException.ThrowIfNull(tickChain);
+        ArgumentNullException.ThrowIfNull(expectedHash);
+        ArgumentNullException.ThrowIfNull(actualHash);
+
+        // Find the zero-based leaf index of the divergent tick.
+        var leafIndex = -1;
+        for (var i = 0; i < tickChain.Count; i++)
+        {
+            if (tickChain[i].Tick == divergentTick)
+            {
+                leafIndex = i;
+                break;
+            }
+        }
+
+        if (leafIndex < 0)
+            throw new ArgumentException(
+                $"Tick {divergentTick} was not found in the tick chain.", nameof(divergentTick));
+
+        // Build the full list of Merkle leaf hashes.
+        var leafHashes = new List<byte[]>(tickChain.Count);
+        foreach (var t in tickChain)
+            leafHashes.Add(TickAuthorityService.ComputeTickLeafHash(
+                t.Tick, t.PrevStateHash, t.StateHash, t.InputHash));
+
+        // Generate the Merkle inclusion proof for this leaf.
+        var merkleProof = MerkleTree.GenerateProof(leafHashes, leafIndex);
+
+        return new DivergenceProof(
+            divergentTick,
+            leafIndex,
+            (byte[])expectedHash.Clone(),
+            (byte[])actualHash.Clone(),
+            merkleProof.SiblingHashes);
+    }
+
+    /// <summary>
+    /// Verifies a <see cref="DivergenceProof"/> against the Merkle root from a signed run.
+    /// </summary>
+    /// <remarks>
+    /// Verification steps:
+    /// <list type="number">
+    ///   <item>Reject structurally invalid proofs (null/wrong-length hash fields).</item>
+    ///   <item>
+    ///     Apply the Merkle inclusion proof: reconstruct the Merkle root from
+    ///     <see cref="DivergenceProof.ExpectedTickHash"/> and the sibling hashes in
+    ///     <see cref="DivergenceProof.MerkleProof"/> and confirm it equals
+    ///     <paramref name="merkleRoot"/>.
+    ///   </item>
+    ///   <item>
+    ///     Confirm divergence: <see cref="DivergenceProof.ExpectedTickHash"/> must differ from
+    ///     <see cref="DivergenceProof.ActualTickHash"/>.
+    ///   </item>
+    /// </list>
+    /// </remarks>
+    /// <param name="proof">The divergence proof to verify.</param>
+    /// <param name="merkleRoot">
+    /// The 32-byte Merkle root from <see cref="SignedRunResult.TickMerkleRoot"/>.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when the proof is structurally valid, the Merkle inclusion
+    /// check passes, and the expected and actual hashes differ (confirming divergence).
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="proof"/> or <paramref name="merkleRoot"/> is
+    /// <see langword="null"/>.
+    /// </exception>
+    public static bool VerifyDivergenceProof(DivergenceProof proof, byte[] merkleRoot)
+    {
+        ArgumentNullException.ThrowIfNull(proof);
+        ArgumentNullException.ThrowIfNull(merkleRoot);
+
+        // Reject structurally invalid proof structures.
+        if (!proof.IsStructurallyValid)
+            return false;
+
+        if (merkleRoot.Length != SHA256.HashSizeInBytes)
+            return false;
+
+        // Build a MerkleProof from the DivergenceProof's fields and verify Merkle inclusion.
+        var inclusionProof = new MerkleProof(
+            (byte[])proof.ExpectedTickHash.Clone(),
+            proof.MerkleProof,
+            proof.LeafIndex);
+
+        bool inclusionValid;
+        try
+        {
+            inclusionValid = MerkleTree.VerifyProof(inclusionProof, (byte[])merkleRoot.Clone());
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        if (!inclusionValid)
+            return false;
+
+        // Confirm that expected and actual hashes differ, proving divergence.
+        return !proof.ExpectedTickHash.AsSpan().SequenceEqual(proof.ActualTickHash);
+    }
+
+    /// <summary>
+    /// Full per-tick linear replay for runs without checkpoints.
+    /// Detects the first divergent tick and produces a proof; falls back to a simple
+    /// final-hash comparison when no divergence is detected.
+    /// </summary>
+    private static bool TryVerifyFinalHashWithDivergence(
+        IDeterministicSimulation simulation,
+        IReadOnlyList<SignedTick> tickChain,
+        string finalHashHex,
+        List<StateSnapshot> verifiedSnapshots,
+        Dictionary<long, int> tickPositionLookup,
+        out DivergenceProof? divergenceProof)
+    {
+        divergenceProof = null;
+
+        if (tickChain.Count == 0)
+        {
+            simulation.Reset();
+            var emptyHash = simulation.GetStateHash();
+            return TryParseHexHash(finalHashHex, out var fh)
+                   && IsValidStateHash(emptyHash)
+                   && emptyHash.AsSpan().SequenceEqual(fh);
+        }
+
+        // Linear replay from genesis, checking each signed tick.
+        simulation.Reset();
+        for (var i = 0; i < tickChain.Count; i++)
+        {
+            simulation.ApplyTick(tickChain[i]);
+            var hash = simulation.GetStateHash();
+            if (!IsValidStateHash(hash) || !hash.AsSpan().SequenceEqual(tickChain[i].StateHash))
+            {
+                divergenceProof = BuildDivergenceProof(tickChain, tickChain[i], hash);
+                return false;
+            }
+        }
+
+        var simulatedHash = simulation.GetStateHash();
+        return TryParseHexHash(finalHashHex, out var finalHash)
+               && IsValidStateHash(simulatedHash)
+               && simulatedHash.AsSpan().SequenceEqual(finalHash);
+    }
+
+    /// <summary>
+    /// Replays the tick chain from genesis (tick by tick) from <paramref name="startIndex"/>
+    /// to <paramref name="endIndex"/> inclusive and returns a <see cref="DivergenceProof"/>
+    /// for the first tick whose simulated state hash does not match the signed state hash.
+    /// Returns <see langword="null"/> if no divergence is found in the range.
+    /// </summary>
+    private static DivergenceProof? FindDivergenceInRange(
+        IDeterministicSimulation simulation,
+        IReadOnlyList<SignedTick> tickChain,
+        int startIndex,
+        int endIndex)
+    {
+        simulation.Reset();
+        for (var i = startIndex; i <= endIndex; i++)
+        {
+            simulation.ApplyTick(tickChain[i]);
+            var hash = simulation.GetStateHash();
+            if (!IsValidStateHash(hash) || !hash.AsSpan().SequenceEqual(tickChain[i].StateHash))
+                return BuildDivergenceProof(tickChain, tickChain[i], hash);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Constructs a <see cref="DivergenceProof"/> for a tick whose signed state hash
+    /// does not match the simulation output.
+    /// </summary>
+    private static DivergenceProof BuildDivergenceProof(
+        IReadOnlyList<SignedTick> tickChain,
+        SignedTick divergentTick,
+        byte[]? actualStateHash)
+    {
+        var expectedHash = TickAuthorityService.ComputeTickLeafHash(
+            divergentTick.Tick, divergentTick.PrevStateHash,
+            divergentTick.StateHash, divergentTick.InputHash);
+
+        // Use a zero-filled sentinel when the simulation returned a null or wrong-length hash.
+        // The sentinel satisfies DivergenceProof's 32-byte requirement and still differs from
+        // the expected leaf hash (which is a SHA-256 hash of real tick data), so the proof
+        // correctly reports divergence. The original invalid value cannot be stored directly
+        // because DivergenceProof enforces a fixed 32-byte size.
+        var actualHash = IsValidStateHash(actualStateHash)
+            ? actualStateHash
+            : new byte[SHA256.HashSizeInBytes];
+
+        return CreateDivergenceProof(tickChain, divergentTick.Tick, expectedHash, actualHash);
+    }
 }
