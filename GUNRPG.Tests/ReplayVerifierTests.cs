@@ -418,15 +418,38 @@ public sealed class ReplayVerifierTests
         private readonly SimulationState _state;
         private readonly StateHasher _hasher = new();
         private byte[] _currentHash = new byte[32];
+        private long _currentTick = -1;
 
         public StateHasherSimulation(SimulationState state) => _state = state;
 
-        public void Reset() => _currentHash = new byte[32];
+        public void Reset()
+        {
+            _currentHash = new byte[32];
+            _currentTick = -1;
+        }
 
-        public void ApplyTick(SignedTick tick) =>
+        public void ApplyTick(SignedTick tick)
+        {
             _currentHash = _hasher.HashTick(tick.Tick, _state);
+            _currentTick = tick.Tick;
+        }
 
         public byte[] GetStateHash() => (byte[])_currentHash.Clone();
+
+        public byte[] SerializeState()
+        {
+            // Serialize as: tick (8 bytes big-endian) || hash (32 bytes)
+            var bytes = new byte[8 + 32];
+            System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(bytes, _currentTick);
+            _currentHash.CopyTo(bytes, 8);
+            return bytes;
+        }
+
+        public void LoadState(byte[] state)
+        {
+            _currentTick = System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(state.AsSpan(0, 8));
+            _currentHash = state[8..40];
+        }
     }
 
     /// <summary>
@@ -466,6 +489,16 @@ public sealed class ReplayVerifierTests
                 hash[0] ^= 0xFF; // flip a bit to simulate divergence
             return hash;
         }
+
+        public byte[] SerializeState() => _inner.SerializeState();
+
+        public void LoadState(byte[] state)
+        {
+            _inner.LoadState(state);
+            // Recompute divergence state: if the loaded tick is >= divergeAt, mark as diverged.
+            var loadedTick = System.Buffers.Binary.BinaryPrimitives.ReadInt64BigEndian(state.AsSpan(0, 8));
+            _hasDiverged = loadedTick >= _divergeAtOrAfterTick;
+        }
     }
 
     /// <summary>
@@ -481,5 +514,7 @@ public sealed class ReplayVerifierTests
         public void Reset() { }
         public void ApplyTick(SignedTick tick) { }
         public byte[] GetStateHash() => new byte[_hashLength];
+        public byte[] SerializeState() => [];
+        public void LoadState(byte[] state) { }
     }
 }

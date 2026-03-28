@@ -187,6 +187,47 @@ public sealed class SessionAuthority : ISessionAuthority
     }
 
     /// <summary>
+    /// Creates and signs a <see cref="StateSnapshot"/> at a checkpoint tick boundary.
+    /// </summary>
+    /// <param name="sessionId">The session's unique identifier.</param>
+    /// <param name="tickIndex">The checkpoint tick index at which the snapshot was captured.</param>
+    /// <param name="stateHash">
+    /// SHA-256 hash of the simulation state at <paramref name="tickIndex"/> (32 bytes).
+    /// Must match the corresponding <see cref="RunCheckpoint.StateHash"/> in the run result.
+    /// </param>
+    /// <param name="serializedState">
+    /// Deterministic serialization of the simulation state, produced by
+    /// <see cref="IDeterministicSimulation.SerializeState"/>.
+    /// </param>
+    /// <returns>
+    /// A <see cref="StateSnapshot"/> whose <see cref="StateSnapshot.Signature"/> covers:
+    /// <c>SessionId || TickIndex || StateHash || SerializedState</c>.
+    /// </returns>
+    public StateSnapshot CreateSnapshot(
+        Guid sessionId,
+        long tickIndex,
+        byte[] stateHash,
+        byte[] serializedState)
+    {
+        ArgumentNullException.ThrowIfNull(stateHash);
+        ArgumentNullException.ThrowIfNull(serializedState);
+        if (stateHash.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
+            throw new ArgumentException(
+                $"stateHash must be exactly {System.Security.Cryptography.SHA256.HashSizeInBytes} bytes (SHA-256).",
+                nameof(stateHash));
+
+        var payloadHash = AuthorityCrypto.ComputeSnapshotPayloadHash(
+            sessionId, tickIndex, stateHash, serializedState);
+        var signature = AuthorityCrypto.SignHashedPayload(_privateKey, payloadHash);
+
+        return new StateSnapshot(
+            tickIndex,
+            (byte[])stateHash.Clone(),
+            (byte[])serializedState.Clone(),
+            signature);
+    }
+
+    /// <summary>
     /// Signs a simulation tick and returns the raw Ed25519 signature (64 bytes).
     /// The signature covers: Tick (big-endian int64) || PrevStateHash || StateHash || InputHash.
     /// </summary>
