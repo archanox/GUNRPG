@@ -74,7 +74,7 @@ public sealed class StateSnapshotTests
         var (authority, ticks, result) = BuildValidRunWithCheckpoints(seed: 200, tickPositions: [0, 256, 512]);
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
-        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, checkpointIndex: 0);
+        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, checkpointIndex: 0, seed: 200);
 
         Assert.True(verifier.VerifySnapshot(sessionId, snapshot, result));
     }
@@ -91,7 +91,7 @@ public sealed class StateSnapshotTests
         var wrongAuthority = CreateAuthority("wrong-snap-authority");
 
         // Snapshot signed with a different authority.
-        var wrongSnapshot = BuildSnapshotAtCheckpointWithAuthority(wrongAuthority, sessionId, ticks, result, 0);
+        var wrongSnapshot = BuildSnapshotAtCheckpointWithAuthority(wrongAuthority, sessionId, ticks, result, 0, seed: 210);
 
         var verifier = new ReplayVerifier(authority.ToAuthority());
         Assert.False(verifier.VerifySnapshot(sessionId, wrongSnapshot, result));
@@ -104,9 +104,7 @@ public sealed class StateSnapshotTests
         var (authority, ticks, result) = BuildValidRunWithCheckpoints(seed: 211, tickPositions: [0, 256, 512]);
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
-        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0);
-
-        // Flip a byte in the signature.
+        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0, seed: 211);
         var badSig = (byte[])snapshot.Signature.Clone();
         badSig[0] ^= 0xFF;
         var tamperedSnapshot = snapshot with { Signature = badSig };
@@ -125,7 +123,7 @@ public sealed class StateSnapshotTests
         var (authority, ticks, result) = BuildValidRunWithCheckpoints(seed: 220, tickPositions: [0, 256, 512]);
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
-        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0);
+        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0, seed: 220);
 
         // Replace StateHash with a different (but valid-length) hash.
         var badHash = new byte[32];
@@ -142,7 +140,7 @@ public sealed class StateSnapshotTests
         var (authority, ticks, result) = BuildValidRunWithCheckpoints(seed: 221, tickPositions: [0, 256, 512]);
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
-        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0);
+        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0, seed: 221);
 
         // Replace StateHash with a 16-byte array (wrong length).
         var shortHash = new byte[16];
@@ -206,7 +204,7 @@ public sealed class StateSnapshotTests
         var (authority, ticks, result) = BuildValidRunWithCheckpoints(seed: 240, tickPositions: [0, 256, 512]);
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
-        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0);
+        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0, seed: 240);
 
         // Corrupt the serialized state (the signature will no longer match the payload).
         var badState = (byte[])snapshot.SerializedState.Clone();
@@ -228,7 +226,7 @@ public sealed class StateSnapshotTests
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
         // Create a snapshot at checkpoint 0 (tick 0).
-        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0);
+        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0, seed: 300);
 
         var simulation = new SerializableSimulation(ReplayRunner.CreateInitialState(300));
         Assert.True(verifier.VerifyRun(ticks, result, simulation, [snapshot]));
@@ -242,7 +240,7 @@ public sealed class StateSnapshotTests
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
         // Create a snapshot at checkpoint 2 (tick 512).
-        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 2);
+        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 2, seed: 301);
 
         var simulation = new SerializableSimulation(ReplayRunner.CreateInitialState(301));
         Assert.True(verifier.VerifyRun(ticks, result, simulation, [snapshot]));
@@ -255,7 +253,7 @@ public sealed class StateSnapshotTests
         var (authority, ticks, result) = BuildValidRunWithCheckpoints(seed: 302, tickPositions: [0, 256, 512, 768, 1024]);
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
-        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 1);
+        var snapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 1, seed: 302);
 
         var simWithout = new SerializableSimulation(ReplayRunner.CreateInitialState(302));
         var simWith = new SerializableSimulation(ReplayRunner.CreateInitialState(302));
@@ -274,7 +272,6 @@ public sealed class StateSnapshotTests
         // VerifyRun should still succeed using the reset-and-replay fallback.
         var sessionId = Guid.NewGuid();
         var (authority, ticks, result) = BuildValidRunWithCheckpoints(seed: 303, tickPositions: [0, 256, 512]);
-        var authority2 = CreateAuthority("snap-authority-2");
 
         // Build a snapshot with an out-of-range tick — it won't verify, so VerifyRun should still pass
         // by falling back to genesis replay.
@@ -297,9 +294,9 @@ public sealed class StateSnapshotTests
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
         // Create snapshots at checkpoints 0, 1, and 2 (ticks 0, 256, 512).
-        var snap0 = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0);
-        var snap1 = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 1);
-        var snap2 = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 2);
+        var snap0 = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0, seed: 304);
+        var snap1 = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 1, seed: 304);
+        var snap2 = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 2, seed: 304);
 
         var simulation = new SerializableSimulation(ReplayRunner.CreateInitialState(304));
         // Provide all three snapshots — verifier should pick the best one automatically.
@@ -337,7 +334,7 @@ public sealed class StateSnapshotTests
         var (authority, ticks, result) = BuildValidRunWithCheckpoints(seed: 310, tickPositions: [0, 256, 512]);
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
-        var validSnapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0);
+        var validSnapshot = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0, seed: 310);
 
         // Corrupt the signature of a second snapshot.
         var corruptedSig = (byte[])validSnapshot.Signature.Clone();
@@ -364,9 +361,9 @@ public sealed class StateSnapshotTests
             seed: 320, tickPositions: [0, 512, 1024, 1280]);
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
-        var snap0 = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0);
-        var snap1 = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 1);
-        var snap2 = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 2);
+        var snap0 = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 0, seed: 320);
+        var snap1 = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 1, seed: 320);
+        var snap2 = BuildSnapshotAtCheckpoint(authority, sessionId, ticks, result, 2, seed: 320);
 
         var simulation = new SerializableSimulation(ReplayRunner.CreateInitialState(320));
         Assert.True(verifier.VerifyRun(ticks, result, simulation, [snap0, snap1, snap2]));
@@ -434,16 +431,18 @@ public sealed class StateSnapshotTests
 
     /// <summary>
     /// Builds a signed snapshot at a specific checkpoint index in <paramref name="result"/>.
-    /// The serialized state is derived from replaying the tick chain up to that checkpoint.
+    /// The serialized state is derived from replaying the tick chain up to that checkpoint
+    /// using the same initial state as was used to build the tick chain.
     /// </summary>
     private static StateSnapshot BuildSnapshotAtCheckpoint(
         SessionAuthority authority,
         Guid sessionId,
         List<SignedTick> ticks,
         SignedRunResult result,
-        int checkpointIndex)
+        int checkpointIndex,
+        int seed)
     {
-        return BuildSnapshotAtCheckpointWithAuthority(authority, sessionId, ticks, result, checkpointIndex);
+        return BuildSnapshotAtCheckpointWithAuthority(authority, sessionId, ticks, result, checkpointIndex, seed);
     }
 
     private static StateSnapshot BuildSnapshotAtCheckpointWithAuthority(
@@ -451,10 +450,11 @@ public sealed class StateSnapshotTests
         Guid sessionId,
         List<SignedTick> ticks,
         SignedRunResult result,
-        int checkpointIndex)
+        int checkpointIndex,
+        int seed)
     {
         var checkpoint = result.Checkpoints![checkpointIndex];
-        var state = ReplayRunner.CreateInitialState(0); // state is tick-independent in test hasher
+        var state = ReplayRunner.CreateInitialState(seed);
 
         var sim = new SerializableSimulation(state);
         foreach (var t in ticks)

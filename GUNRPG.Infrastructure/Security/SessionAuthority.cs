@@ -224,7 +224,7 @@ public sealed class SessionAuthority : ISessionAuthority
             tickIndex,
             (byte[])stateHash.Clone(),
             (byte[])serializedState.Clone(),
-            signature);
+            (byte[])signature.Clone());
     }
 
     /// <summary>

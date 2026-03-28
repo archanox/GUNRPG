@@ -9,8 +9,13 @@ namespace GUNRPG.Security;
 /// long runs.
 /// </summary>
 /// <remarks>
-/// A snapshot is cryptographically bound to a session via the Ed25519
-/// <see cref="Signature"/> over <c>SessionId || TickIndex || StateHash || SerializedState</c>.
+/// A snapshot is cryptographically bound to a session via an Ed25519
+/// <see cref="Signature"/> over a SHA-256 pre-hash of the canonical payload.
+/// The canonical payload encoding is:
+/// <c>SessionId (16 bytes, big-endian) ||
+/// TickIndex (big-endian int64) ||
+/// len(StateHash) (big-endian int32) || StateHash ||
+/// len(SerializedState) (big-endian int32) || SerializedState</c>.
 /// Verifiers must confirm the signature before trusting the snapshot payload.
 /// <para>
 /// The <see cref="TickIndex"/> must match a checkpoint tick in the enclosing
@@ -32,8 +37,11 @@ namespace GUNRPG.Security;
 /// produced by <see cref="IDeterministicSimulation.SerializeState"/>.
 /// </param>
 /// <param name="Signature">
-/// Ed25519 signature from the session authority over the snapshot payload:
-/// <c>SessionId || TickIndex (big-endian int64) || StateHash (length-prefixed) || SerializedState (length-prefixed)</c>.
+/// Ed25519 signature from the session authority over the SHA-256 pre-hash of the canonical payload.
+/// Canonical encoding: <c>SessionId (16 bytes, big-endian) ||
+/// TickIndex (big-endian int64) ||
+/// len(StateHash) (big-endian int32) || StateHash ||
+/// len(SerializedState) (big-endian int32) || SerializedState</c>.
 /// </param>
 public sealed record StateSnapshot(
     long TickIndex,

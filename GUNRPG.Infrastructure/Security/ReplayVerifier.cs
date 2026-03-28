@@ -110,16 +110,17 @@ public sealed class ReplayVerifier
 
         var checkpoints = runResult.Checkpoints;
 
+        // Build a O(1) lookup from tick value to position in tickChain.
+        // Built here (before the checkpoint guard) so it can be shared with the
+        // no-checkpoint fallback path and every InitSimulation call.
+        var tickPositionLookup = BuildTickPositionLookup(tickChain);
+
+        // Pre-verify snapshots once and build a sorted lookup keyed by TickIndex.
+        var snapshotLookup = BuildVerifiedSnapshotLookup(snapshots, runResult);
+
         // No checkpoints: fall back to a direct full replay to confirm the final state hash.
         if (checkpoints is null || checkpoints.Count == 0)
-        {
-            var verifiedSnapshots = BuildVerifiedSnapshotLookup(snapshots, runResult);
-            return VerifyFinalHashByReplay(simulation, tickChain, runResult.FinalHash, verifiedSnapshots);
-        }
-
-        // Build a O(1) lookup from tick value to position in tickChain.
-        // This prevents O(n) chain scans on each binary-search replay step.
-        var tickPositionLookup = BuildTickPositionLookup(tickChain);
+            return VerifyFinalHashByReplay(simulation, tickChain, runResult.FinalHash, snapshotLookup, tickPositionLookup);
 
         // Defensively verify that every checkpoint tick index is present in the lookup.
         // VerifyCheckpoints (step 3) enforces this invariant, but we guard here to prevent
@@ -130,12 +131,9 @@ public sealed class ReplayVerifier
                 return false;
         }
 
-        // Pre-verify snapshots once and build a sorted lookup keyed by TickIndex.
-        var snapshotLookup = BuildVerifiedSnapshotLookup(snapshots, runResult);
-
         // Step 4: Binary-search checkpoint simulation.
         // Verify the first checkpoint by replaying from genesis (or nearest snapshot).
-        InitSimulation(simulation, tickChain, 0, tickPositionLookup[checkpoints[0].TickIndex], snapshotLookup);
+        InitSimulation(simulation, tickChain, tickPositionLookup[checkpoints[0].TickIndex], snapshotLookup, tickPositionLookup);
         var firstHash = simulation.GetStateHash();
         if (!IsValidStateHash(firstHash) || !firstHash.AsSpan().SequenceEqual(checkpoints[0].StateHash))
             return false;
@@ -162,7 +160,7 @@ public sealed class ReplayVerifier
             var mid = low + (high - low) / 2;
             var midEndIndex = tickPositionLookup[checkpoints[mid].TickIndex];
 
-            InitSimulation(simulation, tickChain, 0, midEndIndex, snapshotLookup);
+            InitSimulation(simulation, tickChain, midEndIndex, snapshotLookup, tickPositionLookup);
 
             var midHash = simulation.GetStateHash();
             if (IsValidStateHash(midHash) && midHash.AsSpan().SequenceEqual(checkpoints[mid].StateHash))
@@ -177,7 +175,7 @@ public sealed class ReplayVerifier
         // Because the last checkpoint in the result is always the final tick, this step
         // also serves as the final-state-hash confirmation (step 6).
         var lowEndIndex = tickPositionLookup[checkpoints[low].TickIndex];
-        InitSimulation(simulation, tickChain, 0, lowEndIndex, snapshotLookup);
+        InitSimulation(simulation, tickChain, lowEndIndex, snapshotLookup, tickPositionLookup);
 
         var highEndIndex = tickPositionLookup[checkpoints[high].TickIndex];
         for (var i = lowEndIndex + 1; i <= highEndIndex; i++)
@@ -242,7 +240,17 @@ public sealed class ReplayVerifier
             return false;
         }
 
-        if (!AuthorityCrypto.VerifyHashedPayload(_authority.PublicKeyBytes, payloadHash, snapshot.Signature))
+        bool signatureValid;
+        try
+        {
+            signatureValid = AuthorityCrypto.VerifyHashedPayload(_authority.PublicKeyBytes, payloadHash, snapshot.Signature);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        if (!signatureValid)
             return false;
 
         // 3. Ensure the snapshot tick matches a checkpoint in the run result.
@@ -347,41 +355,44 @@ public sealed class ReplayVerifier
     /// Initialises the simulation to produce state at tick chain position
     /// <paramref name="endIndexInclusive"/>, using the best available snapshot when
     /// possible to avoid a full replay from genesis.
+    /// After a successful <see cref="IDeterministicSimulation.LoadState"/> the loaded hash
+    /// is validated against the snapshot's <see cref="StateSnapshot.StateHash"/>; if they
+    /// differ (indicating an inconsistent or buggy <c>LoadState</c> implementation) the
+    /// method falls back to <see cref="IDeterministicSimulation.Reset"/> + full replay.
     /// </summary>
     private static void InitSimulation(
         IDeterministicSimulation simulation,
         IReadOnlyList<SignedTick> tickChain,
-        int startIndexInclusive,
         int endIndexInclusive,
-        List<StateSnapshot> verifiedSnapshots)
+        List<StateSnapshot> verifiedSnapshots,
+        Dictionary<long, int> tickPositionLookup)
     {
         var snap = FindBestSnapshot(verifiedSnapshots, tickChain, endIndexInclusive);
 
         if (snap is not null)
         {
-            // Find the position in tickChain immediately after the snapshot tick.
-            // We need to apply all ticks after the snapshot up to endIndexInclusive.
             simulation.LoadState(snap.SerializedState);
-            var snapTick = snap.TickIndex;
-            var resumeFrom = -1;
 
-            for (var i = 0; i <= endIndexInclusive; i++)
+            // Validate that the loaded state hash matches the snapshot's StateHash.
+            // If it doesn't (inconsistent or buggy LoadState), fall back to full replay.
+            var loadedHash = simulation.GetStateHash();
+            if (!IsValidStateHash(loadedHash) || !loadedHash.AsSpan().SequenceEqual(snap.StateHash))
             {
-                if (tickChain[i].Tick == snapTick)
-                {
-                    resumeFrom = i + 1;
-                    break;
-                }
-            }
-
-            if (resumeFrom < 0)
-            {
-                // Snapshot tick not found in range — fall back to full replay.
                 simulation.Reset();
                 ReplayUpTo(simulation, tickChain, endIndexInclusive);
                 return;
             }
 
+            // Use O(1) lookup to find the snapshot tick position in the chain.
+            if (!tickPositionLookup.TryGetValue(snap.TickIndex, out var snapPos))
+            {
+                // Snapshot tick not found in chain — fall back to full replay.
+                simulation.Reset();
+                ReplayUpTo(simulation, tickChain, endIndexInclusive);
+                return;
+            }
+
+            var resumeFrom = snapPos + 1;
             for (var i = resumeFrom; i <= endIndexInclusive; i++)
                 simulation.ApplyTick(tickChain[i]);
         }
@@ -416,17 +427,16 @@ public sealed class ReplayVerifier
         IDeterministicSimulation simulation,
         IReadOnlyList<SignedTick> tickChain,
         string finalHashHex,
-        List<StateSnapshot> verifiedSnapshots)
+        List<StateSnapshot> verifiedSnapshots,
+        Dictionary<long, int> tickPositionLookup)
     {
-        var endIndex = tickChain.Count - 1;
-
-        if (endIndex < 0)
+        if (tickChain.Count == 0)
         {
             simulation.Reset();
         }
         else
         {
-            InitSimulation(simulation, tickChain, 0, endIndex, verifiedSnapshots);
+            InitSimulation(simulation, tickChain, tickChain.Count - 1, verifiedSnapshots, tickPositionLookup);
         }
 
         var simulatedHash = simulation.GetStateHash();
