@@ -32,4 +32,24 @@ public interface IDeterministicSimulation
     /// Returns the SHA-256 hash of the current simulation state (32 bytes).
     /// </summary>
     byte[] GetStateHash();
+
+    /// <summary>
+    /// Serializes the current simulation state to a byte array.
+    /// </summary>
+    /// <remarks>
+    /// Serialization must be deterministic: the same simulation state must always
+    /// produce the same bytes. After calling <see cref="LoadState"/> with the returned
+    /// bytes, <see cref="GetStateHash"/> must return the same hash as before serialization.
+    /// </remarks>
+    byte[] SerializeState();
+
+    /// <summary>
+    /// Restores the simulation to the state represented by <paramref name="state"/>.
+    /// After this call, <see cref="GetStateHash"/> must return the same hash that was
+    /// returned immediately before the state was serialized.
+    /// </summary>
+    /// <param name="state">
+    /// A byte array previously produced by <see cref="SerializeState"/>.
+    /// </param>
+    void LoadState(byte[] state);
 }

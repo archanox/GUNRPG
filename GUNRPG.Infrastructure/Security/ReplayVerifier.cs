@@ -24,6 +24,9 @@ namespace GUNRPG.Security;
 ///   <item>Confirm the signed final hash (<see cref="SignedRunResult.FinalHash"/>) matches the simulated end state.</item>
 /// </list>
 /// If any step fails the method returns <see langword="false"/> immediately (early exit).
+/// When optional <see cref="StateSnapshot"/>s are provided to <see cref="VerifyRun"/>,
+/// each binary-search probe is accelerated by starting from the nearest trusted snapshot
+/// instead of always replaying from genesis.
 /// </remarks>
 public sealed class ReplayVerifier
 {
@@ -41,7 +44,8 @@ public sealed class ReplayVerifier
     }
 
     /// <summary>
-    /// Performs full verification of a signed run against a deterministic simulation.
+    /// Performs full verification of a signed run against a deterministic simulation,
+    /// optionally using signed state snapshots to accelerate replay.
     /// </summary>
     /// <param name="tickChain">
     /// The complete, ordered chain of signed tick checkpoints for the run.
@@ -58,6 +62,14 @@ public sealed class ReplayVerifier
     /// <see cref="SHA256.HashSizeInBytes"/> (32) bytes; an invalid-length hash is
     /// treated as a divergence and causes the method to return <see langword="false"/>.
     /// </param>
+    /// <param name="snapshots">
+    /// Optional list of signed state snapshots that accelerate replay.  When provided,
+    /// each simulation reset is replaced by loading the nearest valid snapshot ≤ the
+    /// target tick.  All snapshots are pre-verified against <paramref name="runResult"/>
+    /// using <see cref="VerifySnapshot"/> before use; any snapshot that fails verification
+    /// is silently skipped.  When <see langword="null"/> or empty, the method falls back to
+    /// full replay from genesis for every probe step.
+    /// </param>
     /// <returns>
     /// <see langword="true"/> if every verification step passes;
     /// <see langword="false"/> if any check fails (out-of-order tick chain, invalid
@@ -67,7 +79,8 @@ public sealed class ReplayVerifier
     public bool VerifyRun(
         IReadOnlyList<SignedTick> tickChain,
         SignedRunResult runResult,
-        IDeterministicSimulation simulation)
+        IDeterministicSimulation simulation,
+        IReadOnlyList<StateSnapshot>? snapshots = null)
     {
         ArgumentNullException.ThrowIfNull(tickChain);
         ArgumentNullException.ThrowIfNull(runResult);
@@ -99,7 +112,10 @@ public sealed class ReplayVerifier
 
         // No checkpoints: fall back to a direct full replay to confirm the final state hash.
         if (checkpoints is null || checkpoints.Count == 0)
-            return VerifyFinalHashByReplay(simulation, tickChain, runResult.FinalHash);
+        {
+            var verifiedSnapshots = BuildVerifiedSnapshotLookup(snapshots, runResult);
+            return VerifyFinalHashByReplay(simulation, tickChain, runResult.FinalHash, verifiedSnapshots);
+        }
 
         // Build a O(1) lookup from tick value to position in tickChain.
         // This prevents O(n) chain scans on each binary-search replay step.
@@ -114,10 +130,12 @@ public sealed class ReplayVerifier
                 return false;
         }
 
+        // Pre-verify snapshots once and build a sorted lookup keyed by TickIndex.
+        var snapshotLookup = BuildVerifiedSnapshotLookup(snapshots, runResult);
+
         // Step 4: Binary-search checkpoint simulation.
-        // Verify the first checkpoint by replaying from genesis.
-        simulation.Reset();
-        ReplayUpTo(simulation, tickChain, tickPositionLookup[checkpoints[0].TickIndex]);
+        // Verify the first checkpoint by replaying from genesis (or nearest snapshot).
+        InitSimulation(simulation, tickChain, 0, tickPositionLookup[checkpoints[0].TickIndex], snapshotLookup);
         var firstHash = simulation.GetStateHash();
         if (!IsValidStateHash(firstHash) || !firstHash.AsSpan().SequenceEqual(checkpoints[0].StateHash))
             return false;
@@ -142,9 +160,9 @@ public sealed class ReplayVerifier
         while (high - low > 1)
         {
             var mid = low + (high - low) / 2;
+            var midEndIndex = tickPositionLookup[checkpoints[mid].TickIndex];
 
-            simulation.Reset();
-            ReplayUpTo(simulation, tickChain, tickPositionLookup[checkpoints[mid].TickIndex]);
+            InitSimulation(simulation, tickChain, 0, midEndIndex, snapshotLookup);
 
             var midHash = simulation.GetStateHash();
             if (IsValidStateHash(midHash) && midHash.AsSpan().SequenceEqual(checkpoints[mid].StateHash))
@@ -158,9 +176,8 @@ public sealed class ReplayVerifier
         // up to the candidate divergence checkpoint (high).
         // Because the last checkpoint in the result is always the final tick, this step
         // also serves as the final-state-hash confirmation (step 6).
-        simulation.Reset();
         var lowEndIndex = tickPositionLookup[checkpoints[low].TickIndex];
-        ReplayUpTo(simulation, tickChain, lowEndIndex);
+        InitSimulation(simulation, tickChain, 0, lowEndIndex, snapshotLookup);
 
         var highEndIndex = tickPositionLookup[checkpoints[high].TickIndex];
         for (var i = lowEndIndex + 1; i <= highEndIndex; i++)
@@ -180,6 +197,74 @@ public sealed class ReplayVerifier
 
         return TryParseHexHash(runResult.FinalHash, out var signedFinalHash)
                && highHash.AsSpan().SequenceEqual(signedFinalHash);
+    }
+
+    /// <summary>
+    /// Verifies a <see cref="StateSnapshot"/> against the given session and run result.
+    /// </summary>
+    /// <param name="sessionId">The session's unique identifier.</param>
+    /// <param name="snapshot">The snapshot to verify.</param>
+    /// <param name="runResult">
+    /// The signed run result whose <see cref="SignedRunResult.Checkpoints"/> list the
+    /// snapshot tick must appear in.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> if all of the following hold:
+    /// <list type="bullet">
+    ///   <item>The authority signature on the snapshot is valid.</item>
+    ///   <item><see cref="StateSnapshot.StateHash"/> is exactly 32 bytes.</item>
+    ///   <item><see cref="StateSnapshot.TickIndex"/> matches a checkpoint in <paramref name="runResult"/>.</item>
+    ///   <item><see cref="StateSnapshot.StateHash"/> equals the matching checkpoint hash.</item>
+    /// </list>
+    /// Returns <see langword="false"/> if any condition is not met.
+    /// </returns>
+    public bool VerifySnapshot(Guid sessionId, StateSnapshot snapshot, SignedRunResult runResult)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(runResult);
+
+        // 1. Validate hash length (32 bytes).
+        if (!snapshot.HasValidHashLength)
+            return false;
+
+        // 2. Verify the authority signature over the snapshot payload.
+        if (snapshot.SerializedState is null || snapshot.Signature is null)
+            return false;
+
+        byte[] payloadHash;
+        try
+        {
+            payloadHash = AuthorityCrypto.ComputeSnapshotPayloadHash(
+                sessionId, snapshot.TickIndex, snapshot.StateHash, snapshot.SerializedState);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        if (!AuthorityCrypto.VerifyHashedPayload(_authority.PublicKeyBytes, payloadHash, snapshot.Signature))
+            return false;
+
+        // 3. Ensure the snapshot tick matches a checkpoint in the run result.
+        var checkpoints = runResult.Checkpoints;
+        if (checkpoints is null || checkpoints.Count == 0)
+            return false;
+
+        RunCheckpoint? matchingCheckpoint = null;
+        foreach (var cp in checkpoints)
+        {
+            if (cp.TickIndex == snapshot.TickIndex)
+            {
+                matchingCheckpoint = cp;
+                break;
+            }
+        }
+
+        if (matchingCheckpoint is null)
+            return false;
+
+        // 4. Ensure the snapshot hash matches the checkpoint hash.
+        return snapshot.StateHash.AsSpan().SequenceEqual(matchingCheckpoint.StateHash);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -206,6 +291,108 @@ public sealed class ReplayVerifier
     }
 
     /// <summary>
+    /// Pre-verifies all snapshots and returns a sorted list of those that pass,
+    /// keyed by <see cref="StateSnapshot.TickIndex"/>. The session ID is derived
+    /// from <paramref name="runResult"/>. Invalid or null snapshots are silently skipped.
+    /// Returns an empty list when <paramref name="snapshots"/> is null or empty.
+    /// </summary>
+    private List<StateSnapshot> BuildVerifiedSnapshotLookup(
+        IReadOnlyList<StateSnapshot>? snapshots,
+        SignedRunResult runResult)
+    {
+        if (snapshots is null || snapshots.Count == 0)
+            return [];
+
+        var verified = new List<StateSnapshot>(snapshots.Count);
+        foreach (var snap in snapshots)
+        {
+            if (snap is not null && VerifySnapshot(runResult.SessionId, snap, runResult))
+                verified.Add(snap);
+        }
+
+        // Sort ascending by TickIndex for binary-search-style lookups.
+        verified.Sort(static (a, b) => a.TickIndex.CompareTo(b.TickIndex));
+        return verified;
+    }
+
+    /// <summary>
+    /// Finds the latest snapshot whose <see cref="StateSnapshot.TickIndex"/> is ≤
+    /// <paramref name="targetTickChainIndex"/> (expressed as a position in the tick chain).
+    /// Returns <see langword="null"/> when no suitable snapshot exists.
+    /// </summary>
+    private static StateSnapshot? FindBestSnapshot(
+        List<StateSnapshot> verifiedSnapshots,
+        IReadOnlyList<SignedTick> tickChain,
+        int targetTickChainIndex)
+    {
+        if (verifiedSnapshots.Count == 0)
+            return null;
+
+        var targetTick = tickChain[targetTickChainIndex].Tick;
+        StateSnapshot? best = null;
+
+        // Linear scan; the list is sorted ascending, so the last eligible entry is the best.
+        foreach (var snap in verifiedSnapshots)
+        {
+            if (snap.TickIndex <= targetTick)
+                best = snap;
+            else
+                break;
+        }
+
+        return best;
+    }
+
+    /// <summary>
+    /// Initialises the simulation to produce state at tick chain position
+    /// <paramref name="endIndexInclusive"/>, using the best available snapshot when
+    /// possible to avoid a full replay from genesis.
+    /// </summary>
+    private static void InitSimulation(
+        IDeterministicSimulation simulation,
+        IReadOnlyList<SignedTick> tickChain,
+        int startIndexInclusive,
+        int endIndexInclusive,
+        List<StateSnapshot> verifiedSnapshots)
+    {
+        var snap = FindBestSnapshot(verifiedSnapshots, tickChain, endIndexInclusive);
+
+        if (snap is not null)
+        {
+            // Find the position in tickChain immediately after the snapshot tick.
+            // We need to apply all ticks after the snapshot up to endIndexInclusive.
+            simulation.LoadState(snap.SerializedState);
+            var snapTick = snap.TickIndex;
+            var resumeFrom = -1;
+
+            for (var i = 0; i <= endIndexInclusive; i++)
+            {
+                if (tickChain[i].Tick == snapTick)
+                {
+                    resumeFrom = i + 1;
+                    break;
+                }
+            }
+
+            if (resumeFrom < 0)
+            {
+                // Snapshot tick not found in range — fall back to full replay.
+                simulation.Reset();
+                ReplayUpTo(simulation, tickChain, endIndexInclusive);
+                return;
+            }
+
+            for (var i = resumeFrom; i <= endIndexInclusive; i++)
+                simulation.ApplyTick(tickChain[i]);
+        }
+        else
+        {
+            simulation.Reset();
+            ReplayUpTo(simulation, tickChain, endIndexInclusive);
+        }
+    }
+
+    /// <summary>
     /// Applies ticks from the chain at positions 0 through
     /// <paramref name="endIndexInclusive"/> (inclusive) to <paramref name="simulation"/>.
     /// The caller is responsible for calling <see cref="IDeterministicSimulation.Reset"/>
@@ -228,11 +415,19 @@ public sealed class ReplayVerifier
     private static bool VerifyFinalHashByReplay(
         IDeterministicSimulation simulation,
         IReadOnlyList<SignedTick> tickChain,
-        string finalHashHex)
+        string finalHashHex,
+        List<StateSnapshot> verifiedSnapshots)
     {
-        simulation.Reset();
-        foreach (var tick in tickChain)
-            simulation.ApplyTick(tick);
+        var endIndex = tickChain.Count - 1;
+
+        if (endIndex < 0)
+        {
+            simulation.Reset();
+        }
+        else
+        {
+            InitSimulation(simulation, tickChain, 0, endIndex, verifiedSnapshots);
+        }
 
         var simulatedHash = simulation.GetStateHash();
         return TryParseHexHash(finalHashHex, out var finalHash)

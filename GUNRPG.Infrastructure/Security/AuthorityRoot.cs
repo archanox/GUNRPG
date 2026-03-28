@@ -256,6 +256,38 @@ internal static class AuthorityCrypto
     }
 
     /// <summary>
+    /// Computes the signing payload hash for a state snapshot.
+    /// The canonical encoding (before hashing) is:
+    /// <c>SessionId (16 bytes, big-endian) ||
+    /// TickIndex (big-endian int64) ||
+    /// len(StateHash) (big-endian int32) || StateHash ||
+    /// len(SerializedState) (big-endian int32) || SerializedState</c>.
+    /// The final hash is <c>SHA-256</c> over that buffer.
+    /// </summary>
+    internal static byte[] ComputeSnapshotPayloadHash(
+        Guid sessionId,
+        long tickIndex,
+        byte[] stateHash,
+        byte[] serializedState)
+    {
+        ArgumentNullException.ThrowIfNull(serializedState);
+        var normalizedStateHash = CloneAndValidateSha256Hash(stateHash);
+        var buffer = new byte[
+            GuidSize
+            + Int64Size
+            + Int32Size + normalizedStateHash.Length
+            + Int32Size + serializedState.Length];
+        var offset = 0;
+
+        WriteGuid(sessionId, buffer, ref offset);
+        WriteInt64(tickIndex, buffer, ref offset);
+        WriteLengthPrefixed(normalizedStateHash, buffer, ref offset);
+        WriteLengthPrefixed(serializedState, buffer, ref offset);
+
+        return SHA256.HashData(buffer);
+    }
+
+    /// <summary>
     /// Computes the deterministic leaf hash for a single signed tick.
     /// The canonical encoding (before hashing) is:
     /// <c>Tick (big-endian int64) || len(PrevStateHash) (big-endian int32) || PrevStateHash ||
