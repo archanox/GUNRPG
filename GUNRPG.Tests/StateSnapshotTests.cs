@@ -432,7 +432,8 @@ public sealed class StateSnapshotTests
     /// <summary>
     /// Builds a signed snapshot at a specific checkpoint index in <paramref name="result"/>.
     /// The serialized state is derived from replaying the tick chain up to that checkpoint
-    /// using the same initial state as was used to build the tick chain.
+    /// using an initial state created with <paramref name="seed"/>, matching the state
+    /// used to build the tick chain.
     /// </summary>
     private static StateSnapshot BuildSnapshotAtCheckpoint(
         SessionAuthority authority,
