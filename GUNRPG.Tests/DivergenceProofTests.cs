@@ -28,7 +28,8 @@ public sealed class DivergenceProofTests
             TickIndex: 0,
             LeafIndex: 0,
             ExpectedTickHash: CreateHash(1),
-            ActualTickHash: CreateHash(2),
+            ExpectedStateHash: CreateHash(2),
+            ActualStateHash: CreateHash(3),
             MerkleProof: []);
 
         Assert.True(proof.IsStructurallyValid);
@@ -37,42 +38,56 @@ public sealed class DivergenceProofTests
     [Fact]
     public void DivergenceProof_NullExpectedHash_NotStructurallyValid()
     {
-        var proof = new DivergenceProof(0, 0, null!, CreateHash(2), []);
+        var proof = new DivergenceProof(0, 0, null!, CreateHash(2), CreateHash(3), []);
         Assert.False(proof.IsStructurallyValid);
     }
 
     [Fact]
     public void DivergenceProof_WrongLengthExpectedHash_NotStructurallyValid()
     {
-        var proof = new DivergenceProof(0, 0, new byte[16], CreateHash(2), []);
+        var proof = new DivergenceProof(0, 0, new byte[16], CreateHash(2), CreateHash(3), []);
         Assert.False(proof.IsStructurallyValid);
     }
 
     [Fact]
-    public void DivergenceProof_NullActualHash_NotStructurallyValid()
+    public void DivergenceProof_NullExpectedStateHash_NotStructurallyValid()
     {
-        var proof = new DivergenceProof(0, 0, CreateHash(1), null!, []);
+        var proof = new DivergenceProof(0, 0, CreateHash(1), null!, CreateHash(3), []);
         Assert.False(proof.IsStructurallyValid);
     }
 
     [Fact]
-    public void DivergenceProof_WrongLengthActualHash_NotStructurallyValid()
+    public void DivergenceProof_WrongLengthExpectedStateHash_NotStructurallyValid()
     {
-        var proof = new DivergenceProof(0, 0, CreateHash(1), new byte[16], []);
+        var proof = new DivergenceProof(0, 0, CreateHash(1), new byte[16], CreateHash(3), []);
+        Assert.False(proof.IsStructurallyValid);
+    }
+
+    [Fact]
+    public void DivergenceProof_NullActualStateHash_NotStructurallyValid()
+    {
+        var proof = new DivergenceProof(0, 0, CreateHash(1), CreateHash(2), null!, []);
+        Assert.False(proof.IsStructurallyValid);
+    }
+
+    [Fact]
+    public void DivergenceProof_WrongLengthActualStateHash_NotStructurallyValid()
+    {
+        var proof = new DivergenceProof(0, 0, CreateHash(1), CreateHash(2), new byte[16], []);
         Assert.False(proof.IsStructurallyValid);
     }
 
     [Fact]
     public void DivergenceProof_NullMerkleProof_NotStructurallyValid()
     {
-        var proof = new DivergenceProof(0, 0, CreateHash(1), CreateHash(2), null!);
+        var proof = new DivergenceProof(0, 0, CreateHash(1), CreateHash(2), CreateHash(3), null!);
         Assert.False(proof.IsStructurallyValid);
     }
 
     [Fact]
     public void DivergenceProof_NegativeLeafIndex_NotStructurallyValid()
     {
-        var proof = new DivergenceProof(0, -1, CreateHash(1), CreateHash(2), []);
+        var proof = new DivergenceProof(0, -1, CreateHash(1), CreateHash(2), CreateHash(3), []);
         Assert.False(proof.IsStructurallyValid);
     }
 
@@ -86,18 +101,16 @@ public sealed class DivergenceProofTests
         var (authority, service, ticks, result) = BuildValidRun(seed: 1, tickPositions: [0, 256, 512]);
 
         var divergentTick = ticks[1];
-        var expectedHash = TickAuthorityService.ComputeTickLeafHash(
-            divergentTick.Tick, divergentTick.PrevStateHash,
-            divergentTick.StateHash, divergentTick.InputHash);
-        var actualHash = CreateHash(99);
+        var actualStateHash = CreateHash(99);
 
-        var proof = ReplayVerifier.CreateDivergenceProof(ticks, divergentTick.Tick, expectedHash, actualHash);
+        var proof = ReplayVerifier.CreateDivergenceProof(ticks, divergentTick.Tick, actualStateHash);
 
         Assert.NotNull(proof);
         Assert.Equal(divergentTick.Tick, proof.TickIndex);
         Assert.Equal(1, proof.LeafIndex);
         Assert.Equal(32, proof.ExpectedTickHash.Length);
-        Assert.Equal(32, proof.ActualTickHash.Length);
+        Assert.Equal(32, proof.ExpectedStateHash.Length);
+        Assert.Equal(32, proof.ActualStateHash.Length);
         Assert.NotNull(proof.MerkleProof);
     }
 
@@ -107,30 +120,30 @@ public sealed class DivergenceProofTests
         var (_, _, ticks, _) = BuildValidRun(seed: 2, tickPositions: [0, 256, 512]);
 
         Assert.Throws<ArgumentException>(() =>
-            ReplayVerifier.CreateDivergenceProof(ticks, 9999L, CreateHash(1), CreateHash(2)));
+            ReplayVerifier.CreateDivergenceProof(ticks, 9999L, CreateHash(1)));
     }
 
     [Fact]
     public void CreateDivergenceProof_NullTickChain_Throws()
     {
         Assert.Throws<ArgumentNullException>(() =>
-            ReplayVerifier.CreateDivergenceProof(null!, 0, CreateHash(1), CreateHash(2)));
+            ReplayVerifier.CreateDivergenceProof(null!, 0, CreateHash(1)));
     }
 
     [Fact]
-    public void CreateDivergenceProof_NullExpectedHash_Throws()
+    public void CreateDivergenceProof_WrongLengthActualStateHash_Throws()
     {
         var (_, _, ticks, _) = BuildValidRun(seed: 3, tickPositions: [0, 256]);
-        Assert.Throws<ArgumentNullException>(() =>
-            ReplayVerifier.CreateDivergenceProof(ticks, 0, null!, CreateHash(2)));
+        Assert.Throws<ArgumentException>(() =>
+            ReplayVerifier.CreateDivergenceProof(ticks, 0, new byte[16]));
     }
 
     [Fact]
-    public void CreateDivergenceProof_NullActualHash_Throws()
+    public void CreateDivergenceProof_NullActualStateHash_Throws()
     {
         var (_, _, ticks, _) = BuildValidRun(seed: 4, tickPositions: [0, 256]);
         Assert.Throws<ArgumentNullException>(() =>
-            ReplayVerifier.CreateDivergenceProof(ticks, 0, CreateHash(1), null!));
+            ReplayVerifier.CreateDivergenceProof(ticks, 0, null!));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -144,13 +157,10 @@ public sealed class DivergenceProofTests
         var merkleRoot = Convert.FromHexString(result.TickMerkleRoot!);
 
         var divergentTick = ticks[1];
-        var expectedHash = TickAuthorityService.ComputeTickLeafHash(
-            divergentTick.Tick, divergentTick.PrevStateHash,
-            divergentTick.StateHash, divergentTick.InputHash);
-        // Actual hash differs from expected (simulating divergence)
-        var actualHash = CreateHash(42);
+        // Actual state hash differs from what the authority committed (simulating divergence).
+        var actualStateHash = CreateHash(42);
 
-        var proof = ReplayVerifier.CreateDivergenceProof(ticks, divergentTick.Tick, expectedHash, actualHash);
+        var proof = ReplayVerifier.CreateDivergenceProof(ticks, divergentTick.Tick, actualStateHash);
 
         Assert.True(ReplayVerifier.VerifyDivergenceProof(proof, merkleRoot));
     }
@@ -164,11 +174,9 @@ public sealed class DivergenceProofTests
         for (var i = 0; i < ticks.Count; i++)
         {
             var t = ticks[i];
-            var expectedHash = TickAuthorityService.ComputeTickLeafHash(
-                t.Tick, t.PrevStateHash, t.StateHash, t.InputHash);
-            var actualHash = CreateHash(i + 100);
+            var actualStateHash = CreateHash(i + 100);
 
-            var proof = ReplayVerifier.CreateDivergenceProof(ticks, t.Tick, expectedHash, actualHash);
+            var proof = ReplayVerifier.CreateDivergenceProof(ticks, t.Tick, actualStateHash);
             Assert.True(ReplayVerifier.VerifyDivergenceProof(proof, merkleRoot),
                 $"Proof for tick at index {i} should verify.");
         }
@@ -185,11 +193,7 @@ public sealed class DivergenceProofTests
         var merkleRoot = Convert.FromHexString(result.TickMerkleRoot!);
 
         var divergentTick = ticks[1];
-        var expectedHash = TickAuthorityService.ComputeTickLeafHash(
-            divergentTick.Tick, divergentTick.PrevStateHash,
-            divergentTick.StateHash, divergentTick.InputHash);
-
-        var proof = ReplayVerifier.CreateDivergenceProof(ticks, divergentTick.Tick, expectedHash, CreateHash(99));
+        var proof = ReplayVerifier.CreateDivergenceProof(ticks, divergentTick.Tick, CreateHash(99));
 
         // Tamper with a sibling hash
         var tamperedSiblings = proof.MerkleProof
@@ -207,11 +211,7 @@ public sealed class DivergenceProofTests
         var merkleRoot = Convert.FromHexString(result.TickMerkleRoot!);
 
         var divergentTick = ticks[1];
-        var expectedHash = TickAuthorityService.ComputeTickLeafHash(
-            divergentTick.Tick, divergentTick.PrevStateHash,
-            divergentTick.StateHash, divergentTick.InputHash);
-
-        var proof = ReplayVerifier.CreateDivergenceProof(ticks, divergentTick.Tick, expectedHash, CreateHash(99));
+        var proof = ReplayVerifier.CreateDivergenceProof(ticks, divergentTick.Tick, CreateHash(99));
 
         // Tamper with the expected tick hash (should break Merkle inclusion)
         var tamperedProof = proof with { ExpectedTickHash = TamperHash(proof.ExpectedTickHash) };
@@ -226,11 +226,7 @@ public sealed class DivergenceProofTests
         var wrongRoot = CreateHash(77); // random wrong root
 
         var divergentTick = ticks[0];
-        var expectedHash = TickAuthorityService.ComputeTickLeafHash(
-            divergentTick.Tick, divergentTick.PrevStateHash,
-            divergentTick.StateHash, divergentTick.InputHash);
-
-        var proof = ReplayVerifier.CreateDivergenceProof(ticks, divergentTick.Tick, expectedHash, CreateHash(99));
+        var proof = ReplayVerifier.CreateDivergenceProof(ticks, divergentTick.Tick, CreateHash(99));
 
         Assert.False(ReplayVerifier.VerifyDivergenceProof(proof, wrongRoot));
     }
@@ -238,17 +234,14 @@ public sealed class DivergenceProofTests
     [Fact]
     public void VerifyDivergenceProof_ExpectedEqualsActual_ReturnsFalse()
     {
-        // A proof where expected == actual does not demonstrate divergence.
+        // A proof where expected state hash == actual state hash does not demonstrate divergence.
         var (_, _, ticks, result) = BuildValidRun(seed: 23, tickPositions: [0, 256, 512]);
         var merkleRoot = Convert.FromHexString(result.TickMerkleRoot!);
 
         var divergentTick = ticks[0];
-        var expectedHash = TickAuthorityService.ComputeTickLeafHash(
-            divergentTick.Tick, divergentTick.PrevStateHash,
-            divergentTick.StateHash, divergentTick.InputHash);
-
-        // Actual hash is the same as expected (no divergence)
-        var proof = ReplayVerifier.CreateDivergenceProof(ticks, divergentTick.Tick, expectedHash, (byte[])expectedHash.Clone());
+        // Pass the signed tick's own state hash as the actual — so expected == actual.
+        var proof = ReplayVerifier.CreateDivergenceProof(
+            ticks, divergentTick.Tick, (byte[])divergentTick.StateHash.Clone());
 
         Assert.False(ReplayVerifier.VerifyDivergenceProof(proof, merkleRoot));
     }
@@ -263,7 +256,7 @@ public sealed class DivergenceProofTests
     [Fact]
     public void VerifyDivergenceProof_NullMerkleRoot_Throws()
     {
-        var proof = new DivergenceProof(0, 0, CreateHash(1), CreateHash(2), []);
+        var proof = new DivergenceProof(0, 0, CreateHash(1), CreateHash(2), CreateHash(3), []);
         Assert.Throws<ArgumentNullException>(() =>
             ReplayVerifier.VerifyDivergenceProof(proof, null!));
     }
@@ -272,8 +265,8 @@ public sealed class DivergenceProofTests
     public void VerifyDivergenceProof_StructurallyInvalidProof_ReturnsFalse()
     {
         // Null MerkleProof field → structurally invalid → returns false rather than throwing.
-        var proof = new DivergenceProof(0, 0, CreateHash(1), CreateHash(2), null!);
-        var merkleRoot = CreateHash(3);
+        var proof = new DivergenceProof(0, 0, CreateHash(1), CreateHash(2), CreateHash(3), null!);
+        var merkleRoot = CreateHash(4);
 
         Assert.False(ReplayVerifier.VerifyDivergenceProof(proof, merkleRoot));
     }
@@ -286,8 +279,8 @@ public sealed class DivergenceProofTests
         var oversizedSiblings = Enumerable.Range(0, MerkleTree.MaxMerkleProofDepth + 1)
             .Select(_ => CreateHash(1))
             .ToList();
-        var proof = new DivergenceProof(0, 0, CreateHash(1), CreateHash(2), oversizedSiblings);
-        var merkleRoot = CreateHash(3);
+        var proof = new DivergenceProof(0, 0, CreateHash(1), CreateHash(2), CreateHash(3), oversizedSiblings);
+        var merkleRoot = CreateHash(4);
 
         Assert.False(ReplayVerifier.VerifyDivergenceProof(proof, merkleRoot));
     }
@@ -298,8 +291,8 @@ public sealed class DivergenceProofTests
         // With 2 sibling hashes the tree has 4 leaves (depth 2); leaf index 4 is out-of-range.
         var siblings = new List<byte[]> { CreateHash(10), CreateHash(11) };
         // LeafIndex 4 >= (1 << 2) = 4 → impossible position
-        var proof = new DivergenceProof(0, 4, CreateHash(1), CreateHash(2), siblings);
-        var merkleRoot = CreateHash(3);
+        var proof = new DivergenceProof(0, 4, CreateHash(1), CreateHash(2), CreateHash(3), siblings);
+        var merkleRoot = CreateHash(4);
 
         Assert.False(ReplayVerifier.VerifyDivergenceProof(proof, merkleRoot));
     }
@@ -310,8 +303,8 @@ public sealed class DivergenceProofTests
         // With 1 sibling hash the tree has 2 leaves (depth 1); valid leaf indices are 0 and 1.
         // LeafIndex 2 is the first out-of-range value (>= 1 << 1 = 2).
         var siblings = new List<byte[]> { CreateHash(10) };
-        var proof = new DivergenceProof(0, 2, CreateHash(1), CreateHash(2), siblings);
-        var merkleRoot = CreateHash(3);
+        var proof = new DivergenceProof(0, 2, CreateHash(1), CreateHash(2), CreateHash(3), siblings);
+        var merkleRoot = CreateHash(4);
 
         Assert.False(ReplayVerifier.VerifyDivergenceProof(proof, merkleRoot));
     }
@@ -560,9 +553,7 @@ public sealed class DivergenceProofTests
         for (var i = 0; i < ticks.Count; i++)
         {
             var t = ticks[i];
-            var expectedHash = TickAuthorityService.ComputeTickLeafHash(
-                t.Tick, t.PrevStateHash, t.StateHash, t.InputHash);
-            var proof = ReplayVerifier.CreateDivergenceProof(ticks, t.Tick, expectedHash, CreateHash(i + 1));
+            var proof = ReplayVerifier.CreateDivergenceProof(ticks, t.Tick, CreateHash(i + 1));
 
             Assert.Equal(i, proof.LeafIndex);
         }
