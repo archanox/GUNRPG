@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using GUNRPG.Core.Simulation;
 
 namespace GUNRPG.Security;
@@ -10,6 +11,7 @@ namespace GUNRPG.Security;
 /// <remarks>
 /// Full verification procedure:
 /// <list type="number">
+///   <item>Guard: tick chain must be strictly ordered by tick index.</item>
 ///   <item>Verify the run signature (<see cref="SessionAuthority.VerifySignedRun"/>).</item>
 ///   <item>Verify the Merkle root (<see cref="TickAuthorityService.VerifyTickMerkleRoot"/>).</item>
 ///   <item>Verify checkpoint structure (<see cref="TickAuthorityService.VerifyCheckpoints"/>).</item>
@@ -39,6 +41,8 @@ public sealed class ReplayVerifier
     /// </summary>
     /// <param name="tickChain">
     /// The complete, ordered chain of signed tick checkpoints for the run.
+    /// Must be strictly ordered by <see cref="SignedTick.Tick"/>; returns
+    /// <see langword="false"/> if the invariant is violated.
     /// </param>
     /// <param name="runResult">
     /// The signed run result to verify, including checkpoints and Merkle root.
@@ -46,11 +50,15 @@ public sealed class ReplayVerifier
     /// <param name="simulation">
     /// A deterministic simulation implementation used to re-execute the tick chain
     /// and compare state hashes against the signed checkpoints.
+    /// <see cref="IDeterministicSimulation.GetStateHash"/> must return exactly
+    /// <see cref="SHA256.HashSizeInBytes"/> (32) bytes; an invalid-length hash is
+    /// treated as a divergence and causes the method to return <see langword="false"/>.
     /// </param>
     /// <returns>
     /// <see langword="true"/> if every verification step passes;
-    /// <see langword="false"/> if any check fails (invalid signature, Merkle mismatch,
-    /// checkpoint structure violation, or simulation state divergence).
+    /// <see langword="false"/> if any check fails (out-of-order tick chain, invalid
+    /// signature, Merkle mismatch, checkpoint structure violation, invalid state hash
+    /// length, or simulation state divergence).
     /// </returns>
     public bool VerifyRun(
         IReadOnlyList<SignedTick> tickChain,
@@ -60,6 +68,13 @@ public sealed class ReplayVerifier
         ArgumentNullException.ThrowIfNull(tickChain);
         ArgumentNullException.ThrowIfNull(runResult);
         ArgumentNullException.ThrowIfNull(simulation);
+
+        // Guard: tick chain must be strictly ordered by tick index.
+        for (var i = 1; i < tickChain.Count; i++)
+        {
+            if (tickChain[i].Tick <= tickChain[i - 1].Tick)
+                return false;
+        }
 
         // Step 1: Verify the run signature.
         if (!SessionAuthority.VerifySignedRun(runResult, _authority))
@@ -79,12 +94,16 @@ public sealed class ReplayVerifier
         if (checkpoints is null || checkpoints.Count == 0)
             return VerifyFinalHashByReplay(simulation, tickChain, runResult.FinalHash);
 
+        // Build a O(1) lookup from tick value to position in tickChain.
+        // This prevents O(n) chain scans on each binary-search replay step.
+        var tickPositionLookup = BuildTickPositionLookup(tickChain);
+
         // Step 4: Binary-search checkpoint simulation.
         // Verify the first checkpoint by replaying from genesis.
         simulation.Reset();
-        ReplayUpTo(simulation, tickChain, checkpoints[0].TickIndex);
+        ReplayUpTo(simulation, tickChain, tickPositionLookup[checkpoints[0].TickIndex]);
         var firstHash = simulation.GetStateHash();
-        if (!firstHash.AsSpan().SequenceEqual(checkpoints[0].StateHash))
+        if (!IsValidStateHash(firstHash) || !firstHash.AsSpan().SequenceEqual(checkpoints[0].StateHash))
             return false;
 
         // With a single checkpoint (= final tick), verification is already complete.
@@ -102,10 +121,10 @@ public sealed class ReplayVerifier
             var mid = low + (high - low) / 2;
 
             simulation.Reset();
-            ReplayUpTo(simulation, tickChain, checkpoints[mid].TickIndex);
+            ReplayUpTo(simulation, tickChain, tickPositionLookup[checkpoints[mid].TickIndex]);
 
             var midHash = simulation.GetStateHash();
-            if (midHash.AsSpan().SequenceEqual(checkpoints[mid].StateHash))
+            if (IsValidStateHash(midHash) && midHash.AsSpan().SequenceEqual(checkpoints[mid].StateHash))
                 low = mid;
             else
                 high = mid;
@@ -117,18 +136,54 @@ public sealed class ReplayVerifier
         // Because the last checkpoint in the result is always the final tick, this step
         // also serves as the final-state-hash confirmation (step 6).
         simulation.Reset();
-        ReplayUpTo(simulation, tickChain, checkpoints[low].TickIndex);
+        var lowEndIndex = tickPositionLookup[checkpoints[low].TickIndex];
+        ReplayUpTo(simulation, tickChain, lowEndIndex);
 
-        foreach (var tick in TicksAfter(tickChain, checkpoints[low].TickIndex, checkpoints[high].TickIndex))
-            simulation.ApplyTick(tick);
+        var highEndIndex = tickPositionLookup[checkpoints[high].TickIndex];
+        for (var i = lowEndIndex + 1; i <= highEndIndex; i++)
+            simulation.ApplyTick(tickChain[i]);
 
         var highHash = simulation.GetStateHash();
-        return highHash.AsSpan().SequenceEqual(checkpoints[high].StateHash);
+        return IsValidStateHash(highHash) && highHash.AsSpan().SequenceEqual(checkpoints[high].StateHash);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
     // Private helpers
     // ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="hash"/> is a valid
+    /// SHA-256 hash: non-null and exactly <see cref="SHA256.HashSizeInBytes"/> bytes.
+    /// </summary>
+    private static bool IsValidStateHash(byte[]? hash) =>
+        hash is not null && hash.Length == SHA256.HashSizeInBytes;
+
+    /// <summary>
+    /// Builds a dictionary that maps each <see cref="SignedTick.Tick"/> value to its
+    /// zero-based index in <paramref name="tickChain"/>, enabling O(1) position lookups.
+    /// </summary>
+    private static Dictionary<long, int> BuildTickPositionLookup(IReadOnlyList<SignedTick> tickChain)
+    {
+        var lookup = new Dictionary<long, int>(tickChain.Count);
+        for (var i = 0; i < tickChain.Count; i++)
+            lookup[tickChain[i].Tick] = i;
+        return lookup;
+    }
+
+    /// <summary>
+    /// Applies ticks from the chain at positions 0 through
+    /// <paramref name="endIndexInclusive"/> (inclusive) to <paramref name="simulation"/>.
+    /// The caller is responsible for calling <see cref="IDeterministicSimulation.Reset"/>
+    /// before this method when a fresh replay is required.
+    /// </summary>
+    private static void ReplayUpTo(
+        IDeterministicSimulation simulation,
+        IReadOnlyList<SignedTick> tickChain,
+        int endIndexInclusive)
+    {
+        for (var i = 0; i <= endIndexInclusive; i++)
+            simulation.ApplyTick(tickChain[i]);
+    }
 
     /// <summary>
     /// Full replay fallback when the run result has no checkpoints.
@@ -149,41 +204,6 @@ public sealed class ReplayVerifier
         catch (FormatException) { return false; }
 
         var simulatedHash = simulation.GetStateHash();
-        return simulatedHash.AsSpan().SequenceEqual(finalHash);
-    }
-
-    /// <summary>
-    /// Resets the simulation and replays all ticks with
-    /// <see cref="SignedTick.Tick"/> &lt;= <paramref name="targetTickIndex"/>.
-    /// </summary>
-    private static void ReplayUpTo(
-        IDeterministicSimulation simulation,
-        IReadOnlyList<SignedTick> tickChain,
-        long targetTickIndex)
-    {
-        foreach (var tick in tickChain)
-        {
-            if (tick.Tick > targetTickIndex)
-                break;
-            simulation.ApplyTick(tick);
-        }
-    }
-
-    /// <summary>
-    /// Returns ticks in <paramref name="tickChain"/> with tick index strictly greater than
-    /// <paramref name="afterTickIndex"/> and at most <paramref name="upToTickIndex"/>.
-    /// Assumes the chain is ordered by ascending tick index.
-    /// </summary>
-    private static IEnumerable<SignedTick> TicksAfter(
-        IReadOnlyList<SignedTick> tickChain,
-        long afterTickIndex,
-        long upToTickIndex)
-    {
-        foreach (var tick in tickChain)
-        {
-            if (tick.Tick <= afterTickIndex) continue;
-            if (tick.Tick > upToTickIndex) break;
-            yield return tick;
-        }
+        return IsValidStateHash(simulatedHash) && simulatedHash.AsSpan().SequenceEqual(finalHash);
     }
 }

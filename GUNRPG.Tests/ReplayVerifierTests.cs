@@ -262,6 +262,67 @@ public sealed class ReplayVerifierTests
     }
 
     // ──────────────────────────────────────────────────────────────────────────
+    // 8. Tick chain ordering validation
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void VerifyRun_OutOfOrderTickChain_ReturnsFalse()
+    {
+        var (authority, _, ticks, result) = BuildValidRun(seed: 70, tickPositions: [0, 256, 512]);
+        var verifier = new ReplayVerifier(authority.ToAuthority());
+        var simulation = new StateHasherSimulation(ReplayRunner.CreateInitialState(70));
+
+        // Swap the second and third ticks to break ordering.
+        var reordered = new List<SignedTick>(ticks) { [1] = ticks[2], [2] = ticks[1] };
+
+        Assert.False(verifier.VerifyRun(reordered, result, simulation),
+            "VerifyRun must return false when tick chain is not strictly ordered.");
+    }
+
+    [Fact]
+    public void VerifyRun_DuplicateTickInChain_ReturnsFalse()
+    {
+        var (authority, _, ticks, result) = BuildValidRun(seed: 71, tickPositions: [0, 256, 512]);
+        var verifier = new ReplayVerifier(authority.ToAuthority());
+        var simulation = new StateHasherSimulation(ReplayRunner.CreateInitialState(71));
+
+        // Insert a duplicate of tick[1] at position 2 (same Tick value as index 1).
+        var withDuplicate = new List<SignedTick> { ticks[0], ticks[1], ticks[1], ticks[2] };
+
+        Assert.False(verifier.VerifyRun(withDuplicate, result, simulation),
+            "VerifyRun must return false when the tick chain contains duplicate tick indices.");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // 9. State hash length validation
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void VerifyRun_SimulationReturnsWrongLengthHash_ReturnsFalse()
+    {
+        var (authority, _, ticks, result) = BuildValidRun(seed: 80, tickPositions: [0, 256, 512]);
+        var verifier = new ReplayVerifier(authority.ToAuthority());
+
+        // Simulation that always returns a 16-byte hash instead of 32 bytes.
+        var simulation = new WrongLengthHashSimulation(hashLength: 16);
+
+        Assert.False(verifier.VerifyRun(ticks, result, simulation),
+            "VerifyRun must return false when GetStateHash returns a hash that is not 32 bytes.");
+    }
+
+    [Fact]
+    public void VerifyRun_SimulationReturnsEmptyHash_ReturnsFalse()
+    {
+        var (authority, _, ticks, result) = BuildValidRun(seed: 81, tickPositions: [0, 256, 512]);
+        var verifier = new ReplayVerifier(authority.ToAuthority());
+
+        var simulation = new WrongLengthHashSimulation(hashLength: 0);
+
+        Assert.False(verifier.VerifyRun(ticks, result, simulation),
+            "VerifyRun must return false when GetStateHash returns an empty byte array.");
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────────────────────────────────
 
@@ -391,5 +452,20 @@ public sealed class ReplayVerifierTests
                 hash[0] ^= 0xFF; // flip a bit to simulate divergence
             return hash;
         }
+    }
+
+    /// <summary>
+    /// Simulation that always returns a hash of a fixed (wrong) length,
+    /// used to test that <see cref="ReplayVerifier"/> rejects invalid hash sizes.
+    /// </summary>
+    private sealed class WrongLengthHashSimulation : IDeterministicSimulation
+    {
+        private readonly int _hashLength;
+
+        public WrongLengthHashSimulation(int hashLength) => _hashLength = hashLength;
+
+        public void Reset() { }
+        public void ApplyTick(SignedTick tick) { }
+        public byte[] GetStateHash() => new byte[_hashLength];
     }
 }
