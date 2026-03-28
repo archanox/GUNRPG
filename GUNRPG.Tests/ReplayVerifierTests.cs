@@ -293,6 +293,20 @@ public sealed class ReplayVerifierTests
             "VerifyRun must return false when the tick chain contains duplicate tick indices.");
     }
 
+    [Fact]
+    public void VerifyRun_NullElementInTickChain_ReturnsFalse()
+    {
+        var (authority, _, ticks, result) = BuildValidRun(seed: 72, tickPositions: [0, 256]);
+        var verifier = new ReplayVerifier(authority.ToAuthority());
+        var simulation = new StateHasherSimulation(ReplayRunner.CreateInitialState(72));
+
+        // Insert a null element into the tick chain.
+        var withNull = new List<SignedTick> { ticks[0], null!, ticks[1] };
+
+        Assert.False(verifier.VerifyRun(withNull, result, simulation),
+            "VerifyRun must return false when the tick chain contains a null entry.");
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // 9. State hash length validation
     // ──────────────────────────────────────────────────────────────────────────

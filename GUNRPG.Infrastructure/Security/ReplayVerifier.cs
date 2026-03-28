@@ -4,20 +4,24 @@ using GUNRPG.Core.Simulation;
 namespace GUNRPG.Security;
 
 /// <summary>
-/// Verifies a completed signed run using binary-search checkpoint simulation,
-/// reducing replay complexity from O(n) sequential steps to O(n log k) where
-/// k is the number of checkpoints.
+/// Verifies a completed signed run using binary-search over checkpoints combined
+/// with deterministic replay of tick segments.
 /// </summary>
 /// <remarks>
-/// Full verification procedure:
+/// This strategy trades a single linear replay for multiple shorter replays:
+/// it can localise a divergence point in O(log k) checkpoint probes (where k is
+/// the number of checkpoints) and exit early once a mismatch is found, but in
+/// the worst case may perform O(n log k) tick applications and therefore can
+/// require more total simulation work than one O(n) linear replay for valid runs.
+/// <para>Full verification procedure:</para>
 /// <list type="number">
-///   <item>Guard: tick chain must be strictly ordered by tick index.</item>
+///   <item>Guard: tick chain must be non-null, contain no null entries, and be strictly ordered by tick index.</item>
 ///   <item>Verify the run signature (<see cref="SessionAuthority.VerifySignedRun"/>).</item>
 ///   <item>Verify the Merkle root (<see cref="TickAuthorityService.VerifyTickMerkleRoot"/>).</item>
 ///   <item>Verify checkpoint structure (<see cref="TickAuthorityService.VerifyCheckpoints"/>).</item>
-///   <item>Binary-search checkpoint simulation: locate divergence in O(log k) replay segments.</item>
-///   <item>Linear replay within the divergence window to confirm the final segment.</item>
-///   <item>Confirm the final state hash (the last checkpoint is always the final tick).</item>
+///   <item>Binary-search checkpoint simulation: probe midpoints between checkpoints to locate divergence.</item>
+///   <item>Linear replay within the narrowed divergence window to confirm the final segment.</item>
+///   <item>Confirm the signed final hash (<see cref="SignedRunResult.FinalHash"/>) matches the simulated end state.</item>
 /// </list>
 /// If any step fails the method returns <see langword="false"/> immediately (early exit).
 /// </remarks>
@@ -69,10 +73,13 @@ public sealed class ReplayVerifier
         ArgumentNullException.ThrowIfNull(runResult);
         ArgumentNullException.ThrowIfNull(simulation);
 
-        // Guard: tick chain must be strictly ordered by tick index.
-        for (var i = 1; i < tickChain.Count; i++)
+        // Guard: tick chain must be strictly ordered by tick index and contain no null entries.
+        for (var i = 0; i < tickChain.Count; i++)
         {
-            if (tickChain[i].Tick <= tickChain[i - 1].Tick)
+            if (tickChain[i] is null)
+                return false;
+
+            if (i > 0 && tickChain[i].Tick <= tickChain[i - 1].Tick)
                 return false;
         }
 
@@ -98,6 +105,15 @@ public sealed class ReplayVerifier
         // This prevents O(n) chain scans on each binary-search replay step.
         var tickPositionLookup = BuildTickPositionLookup(tickChain);
 
+        // Defensively verify that every checkpoint tick index is present in the lookup.
+        // VerifyCheckpoints (step 3) enforces this invariant, but we guard here to prevent
+        // KeyNotFoundException on any subsequent lookup access.
+        foreach (var cp in checkpoints)
+        {
+            if (!tickPositionLookup.ContainsKey(cp.TickIndex))
+                return false;
+        }
+
         // Step 4: Binary-search checkpoint simulation.
         // Verify the first checkpoint by replaying from genesis.
         simulation.Reset();
@@ -106,9 +122,16 @@ public sealed class ReplayVerifier
         if (!IsValidStateHash(firstHash) || !firstHash.AsSpan().SequenceEqual(checkpoints[0].StateHash))
             return false;
 
-        // With a single checkpoint (= final tick), verification is already complete.
+        // With a single checkpoint, ensure it corresponds to the last tick in the chain
+        // and that the simulated hash matches the signed final hash.
         if (checkpoints.Count == 1)
-            return true;
+        {
+            if (checkpoints[0].TickIndex != tickChain[^1].Tick)
+                return false;
+
+            return TryParseHexHash(runResult.FinalHash, out var singleFinalHash)
+                   && firstHash.AsSpan().SequenceEqual(singleFinalHash);
+        }
 
         var low = 0;
         var high = checkpoints.Count - 1;
@@ -144,7 +167,19 @@ public sealed class ReplayVerifier
             simulation.ApplyTick(tickChain[i]);
 
         var highHash = simulation.GetStateHash();
-        return IsValidStateHash(highHash) && highHash.AsSpan().SequenceEqual(checkpoints[high].StateHash);
+        if (!IsValidStateHash(highHash) || !highHash.AsSpan().SequenceEqual(checkpoints[high].StateHash))
+            return false;
+
+        // Ensure the last checkpoint covers the final tick in the chain, and that the
+        // signed final hash matches the simulated state — so FinalHash is always validated
+        // even when the checkpoint list might omit the final tick.
+        // Safety: checkpoints.Count >= 2 here (Count 0 and Count 1 both returned early),
+        // and tickChain is non-empty (VerifyCheckpoints passed with non-empty checkpoints).
+        if (checkpoints[^1].TickIndex != tickChain[^1].Tick)
+            return false;
+
+        return TryParseHexHash(runResult.FinalHash, out var signedFinalHash)
+               && highHash.AsSpan().SequenceEqual(signedFinalHash);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -199,11 +234,28 @@ public sealed class ReplayVerifier
         foreach (var tick in tickChain)
             simulation.ApplyTick(tick);
 
-        byte[] finalHash;
-        try { finalHash = Convert.FromHexString(finalHashHex); }
-        catch (FormatException) { return false; }
-
         var simulatedHash = simulation.GetStateHash();
-        return IsValidStateHash(simulatedHash) && simulatedHash.AsSpan().SequenceEqual(finalHash);
+        return TryParseHexHash(finalHashHex, out var finalHash)
+               && IsValidStateHash(simulatedHash)
+               && simulatedHash.AsSpan().SequenceEqual(finalHash);
+    }
+
+    /// <summary>
+    /// Attempts to decode <paramref name="hexHash"/> as a hex-encoded byte array.
+    /// Returns <see langword="false"/> and sets <paramref name="hash"/> to an empty array
+    /// if decoding fails.
+    /// </summary>
+    private static bool TryParseHexHash(string hexHash, out byte[] hash)
+    {
+        try
+        {
+            hash = Convert.FromHexString(hexHash);
+            return true;
+        }
+        catch (FormatException)
+        {
+            hash = [];
+            return false;
+        }
     }
 }
