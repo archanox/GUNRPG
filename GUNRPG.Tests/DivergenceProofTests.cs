@@ -278,6 +278,44 @@ public sealed class DivergenceProofTests
         Assert.False(ReplayVerifier.VerifyDivergenceProof(proof, merkleRoot));
     }
 
+    [Fact]
+    public void VerifyDivergenceProof_ProofDepthExceedsMax_ReturnsFalse()
+    {
+        // A MerkleProof list that is longer than MerkleTree.MaxMerkleProofDepth (64)
+        // should be rejected immediately as a DoS guard.
+        var oversizedSiblings = Enumerable.Range(0, MerkleTree.MaxMerkleProofDepth + 1)
+            .Select(_ => CreateHash(1))
+            .ToList();
+        var proof = new DivergenceProof(0, 0, CreateHash(1), CreateHash(2), oversizedSiblings);
+        var merkleRoot = CreateHash(3);
+
+        Assert.False(ReplayVerifier.VerifyDivergenceProof(proof, merkleRoot));
+    }
+
+    [Fact]
+    public void VerifyDivergenceProof_LeafIndexBeyondTreeSize_ReturnsFalse()
+    {
+        // With 2 sibling hashes the tree has 4 leaves (depth 2); leaf index 4 is out-of-range.
+        var siblings = new List<byte[]> { CreateHash(10), CreateHash(11) };
+        // LeafIndex 4 >= (1 << 2) = 4 → impossible position
+        var proof = new DivergenceProof(0, 4, CreateHash(1), CreateHash(2), siblings);
+        var merkleRoot = CreateHash(3);
+
+        Assert.False(ReplayVerifier.VerifyDivergenceProof(proof, merkleRoot));
+    }
+
+    [Fact]
+    public void VerifyDivergenceProof_LeafIndexAtMaxForDepth_ReturnsFalse()
+    {
+        // With 1 sibling hash the tree has 2 leaves (depth 1); valid leaf indices are 0 and 1.
+        // LeafIndex 2 is the first out-of-range value (>= 1 << 1 = 2).
+        var siblings = new List<byte[]> { CreateHash(10) };
+        var proof = new DivergenceProof(0, 2, CreateHash(1), CreateHash(2), siblings);
+        var merkleRoot = CreateHash(3);
+
+        Assert.False(ReplayVerifier.VerifyDivergenceProof(proof, merkleRoot));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // 5. TryVerifyRun – valid run
     // ──────────────────────────────────────────────────────────────────────────
