@@ -440,7 +440,7 @@ public sealed class ReplayVerifierTests
         {
             // Serialize as: tick (8 bytes big-endian) || hash (32 bytes)
             var bytes = new byte[8 + 32];
-            System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(bytes, _currentTick);
+            System.Buffers.Binary.BinaryPrimitives.WriteInt64BigEndian(bytes.AsSpan(0, 8), _currentTick);
             _currentHash.CopyTo(bytes, 8);
             return bytes;
         }
