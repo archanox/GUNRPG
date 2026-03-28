@@ -552,7 +552,8 @@ public sealed class ReplayVerifier
         if (!IsValidStateHash(firstHash) || !firstHash.AsSpan().SequenceEqual(checkpoints[0].StateHash))
         {
             // Divergence is somewhere in [0, firstEndIndex]: scan tick by tick.
-            divergenceProof = FindDivergenceInRange(simulation, tickChain, 0, firstEndIndex);
+            var leafHashesForFirst = ComputeLeafHashes(tickChain);
+            divergenceProof = FindDivergenceInRange(simulation, tickChain, leafHashesForFirst, 0, firstEndIndex);
             return false;
         }
 
@@ -589,13 +590,17 @@ public sealed class ReplayVerifier
         var highEndIndex = tickPositionLookup[checkpoints[high].TickIndex];
         InitSimulation(simulation, tickChain, lowEndIndex, snapshotLookup, tickPositionLookup);
 
+        // Pre-compute leaf hashes once so BuildDivergenceProof can reuse them
+        // without recomputing the entire chain inside CreateDivergenceProof.
+        var leafHashes = ComputeLeafHashes(tickChain);
+
         for (var i = lowEndIndex + 1; i <= highEndIndex; i++)
         {
             simulation.ApplyTick(tickChain[i]);
             var hash = simulation.GetStateHash();
             if (!IsValidStateHash(hash) || !hash.AsSpan().SequenceEqual(tickChain[i].StateHash))
             {
-                divergenceProof = BuildDivergenceProof(tickChain, tickChain[i], hash);
+                divergenceProof = BuildDivergenceProof(leafHashes, i, tickChain[i], hash);
                 return false;
             }
         }
@@ -618,7 +623,7 @@ public sealed class ReplayVerifier
     /// </summary>
     /// <param name="tickChain">The complete ordered tick chain that was signed.</param>
     /// <param name="divergentTick">The tick number where divergence was detected.</param>
-    /// <param name="expectedHash">
+    /// <param name="expectedLeafHash">
     /// The 32-byte tick leaf hash committed to the Merkle tree for the divergent tick
     /// (computed via <see cref="TickAuthorityService.ComputeTickLeafHash"/>).
     /// </param>
@@ -627,7 +632,7 @@ public sealed class ReplayVerifier
     /// </param>
     /// <returns>A <see cref="DivergenceProof"/> that can be verified against the run's Merkle root.</returns>
     /// <exception cref="ArgumentNullException">
-    /// Thrown when <paramref name="tickChain"/>, <paramref name="expectedHash"/>, or
+    /// Thrown when <paramref name="tickChain"/>, <paramref name="expectedLeafHash"/>, or
     /// <paramref name="actualHash"/> is <see langword="null"/>.
     /// </exception>
     /// <exception cref="ArgumentException">
@@ -636,11 +641,11 @@ public sealed class ReplayVerifier
     public static DivergenceProof CreateDivergenceProof(
         IReadOnlyList<SignedTick> tickChain,
         long divergentTick,
-        byte[] expectedHash,
+        byte[] expectedLeafHash,
         byte[] actualHash)
     {
         ArgumentNullException.ThrowIfNull(tickChain);
-        ArgumentNullException.ThrowIfNull(expectedHash);
+        ArgumentNullException.ThrowIfNull(expectedLeafHash);
         ArgumentNullException.ThrowIfNull(actualHash);
 
         // Find the zero-based leaf index of the divergent tick.
@@ -658,21 +663,10 @@ public sealed class ReplayVerifier
             throw new ArgumentException(
                 $"Tick {divergentTick} was not found in the tick chain.", nameof(divergentTick));
 
-        // Build the full list of Merkle leaf hashes.
-        var leafHashes = new List<byte[]>(tickChain.Count);
-        foreach (var t in tickChain)
-            leafHashes.Add(TickAuthorityService.ComputeTickLeafHash(
-                t.Tick, t.PrevStateHash, t.StateHash, t.InputHash));
+        // Build the full list of Merkle leaf hashes (computed once and passed to proof generation).
+        var leafHashes = ComputeLeafHashes(tickChain);
 
-        // Generate the Merkle inclusion proof for this leaf.
-        var merkleProof = MerkleTree.GenerateProof(leafHashes, leafIndex);
-
-        return new DivergenceProof(
-            divergentTick,
-            leafIndex,
-            (byte[])expectedHash.Clone(),
-            (byte[])actualHash.Clone(),
-            merkleProof.SiblingHashes);
+        return CreateDivergenceProofFromLeaves(leafHashes, leafIndex, divergentTick, expectedLeafHash, actualHash);
     }
 
     /// <summary>
@@ -716,6 +710,19 @@ public sealed class ReplayVerifier
             return false;
 
         if (merkleRoot.Length != SHA256.HashSizeInBytes)
+            return false;
+
+        // Depth limit: reject proofs deeper than MaxMerkleProofDepth (DoS protection).
+        // MerkleTree.VerifyProof also enforces this, but the early-exit here avoids
+        // allocating a MerkleProof wrapper for clearly malformed inputs.
+        if (proof.MerkleProof.Count > MerkleTree.MaxMerkleProofDepth)
+            return false;
+
+        // LeafIndex range check: for a tree of depth d (d sibling hashes), valid leaf
+        // indices are [0, 2^d - 1]. For depth >= 31 every non-negative int is in range,
+        // so only check when the shift would not overflow an int.
+        var proofDepth = proof.MerkleProof.Count;
+        if (proofDepth <= 30 && proof.LeafIndex >= (1 << proofDepth))
             return false;
 
         // Build a MerkleProof from the DivergenceProof's fields and verify Merkle inclusion.
@@ -765,6 +772,9 @@ public sealed class ReplayVerifier
                    && emptyHash.AsSpan().SequenceEqual(fh);
         }
 
+        // Pre-compute leaf hashes once so proof generation doesn't recompute them.
+        var leafHashes = ComputeLeafHashes(tickChain);
+
         // Linear replay from genesis, checking each signed tick.
         simulation.Reset();
         for (var i = 0; i < tickChain.Count; i++)
@@ -773,7 +783,7 @@ public sealed class ReplayVerifier
             var hash = simulation.GetStateHash();
             if (!IsValidStateHash(hash) || !hash.AsSpan().SequenceEqual(tickChain[i].StateHash))
             {
-                divergenceProof = BuildDivergenceProof(tickChain, tickChain[i], hash);
+                divergenceProof = BuildDivergenceProof(leafHashes, i, tickChain[i], hash);
                 return false;
             }
         }
@@ -793,6 +803,7 @@ public sealed class ReplayVerifier
     private static DivergenceProof? FindDivergenceInRange(
         IDeterministicSimulation simulation,
         IReadOnlyList<SignedTick> tickChain,
+        IReadOnlyList<byte[]> leafHashes,
         int startIndex,
         int endIndex)
     {
@@ -802,7 +813,7 @@ public sealed class ReplayVerifier
             simulation.ApplyTick(tickChain[i]);
             var hash = simulation.GetStateHash();
             if (!IsValidStateHash(hash) || !hash.AsSpan().SequenceEqual(tickChain[i].StateHash))
-                return BuildDivergenceProof(tickChain, tickChain[i], hash);
+                return BuildDivergenceProof(leafHashes, i, tickChain[i], hash);
         }
 
         return null;
@@ -810,14 +821,16 @@ public sealed class ReplayVerifier
 
     /// <summary>
     /// Constructs a <see cref="DivergenceProof"/> for a tick whose signed state hash
-    /// does not match the simulation output.
+    /// does not match the simulation output, using pre-computed leaf hashes to avoid
+    /// recomputing the full tick chain inside <see cref="CreateDivergenceProof"/>.
     /// </summary>
     private static DivergenceProof BuildDivergenceProof(
-        IReadOnlyList<SignedTick> tickChain,
+        IReadOnlyList<byte[]> leafHashes,
+        int leafIndex,
         SignedTick divergentTick,
         byte[]? actualStateHash)
     {
-        var expectedHash = TickAuthorityService.ComputeTickLeafHash(
+        var expectedLeafHash = TickAuthorityService.ComputeTickLeafHash(
             divergentTick.Tick, divergentTick.PrevStateHash,
             divergentTick.StateHash, divergentTick.InputHash);
 
@@ -830,6 +843,42 @@ public sealed class ReplayVerifier
             ? actualStateHash
             : new byte[SHA256.HashSizeInBytes];
 
-        return CreateDivergenceProof(tickChain, divergentTick.Tick, expectedHash, actualHash);
+        return CreateDivergenceProofFromLeaves(leafHashes, leafIndex, divergentTick.Tick, expectedLeafHash, actualHash);
+    }
+
+    /// <summary>
+    /// Computes the Merkle leaf hash for every tick in <paramref name="tickChain"/> and
+    /// returns them as an ordered list.  This is factored out so callers can compute the
+    /// hashes once and reuse the array across multiple proof-generation calls.
+    /// </summary>
+    private static List<byte[]> ComputeLeafHashes(IReadOnlyList<SignedTick> tickChain)
+    {
+        var leafHashes = new List<byte[]>(tickChain.Count);
+        foreach (var t in tickChain)
+            leafHashes.Add(TickAuthorityService.ComputeTickLeafHash(
+                t.Tick, t.PrevStateHash, t.StateHash, t.InputHash));
+        return leafHashes;
+    }
+
+    /// <summary>
+    /// Core proof-construction helper.  Generates the Merkle inclusion proof from
+    /// pre-computed <paramref name="leafHashes"/> and assembles the
+    /// <see cref="DivergenceProof"/> record.
+    /// </summary>
+    private static DivergenceProof CreateDivergenceProofFromLeaves(
+        IReadOnlyList<byte[]> leafHashes,
+        int leafIndex,
+        long tickIndex,
+        byte[] expectedLeafHash,
+        byte[] actualHash)
+    {
+        var merkleProof = MerkleTree.GenerateProof(leafHashes, leafIndex);
+
+        return new DivergenceProof(
+            tickIndex,
+            leafIndex,
+            (byte[])expectedLeafHash.Clone(),
+            (byte[])actualHash.Clone(),
+            merkleProof.SiblingHashes);
     }
 }
