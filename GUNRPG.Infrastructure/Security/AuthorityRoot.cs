@@ -288,6 +288,38 @@ internal static class AuthorityCrypto
     }
 
     /// <summary>
+    /// Computes the signing payload hash for a run receipt.
+    /// The canonical encoding (before hashing) is:
+    /// <c>SessionId (16 bytes, big-endian) ||
+    /// FinalTick (big-endian int64) ||
+    /// len(FinalStateHash) (big-endian int32) || FinalStateHash ||
+    /// len(TickMerkleRoot) (big-endian int32) || TickMerkleRoot</c>.
+    /// The final hash is <c>SHA-256</c> over that buffer.
+    /// </summary>
+    internal static byte[] ComputeReceiptPayloadHash(
+        Guid sessionId,
+        long finalTick,
+        byte[] finalStateHash,
+        byte[] tickMerkleRoot)
+    {
+        var normalizedFinalStateHash = CloneAndValidateSha256Hash(finalStateHash);
+        var normalizedTickMerkleRoot = CloneAndValidateSha256Hash(tickMerkleRoot);
+        var buffer = new byte[
+            GuidSize
+            + Int64Size
+            + Int32Size + normalizedFinalStateHash.Length
+            + Int32Size + normalizedTickMerkleRoot.Length];
+        var offset = 0;
+
+        WriteGuid(sessionId, buffer, ref offset);
+        WriteInt64(finalTick, buffer, ref offset);
+        WriteLengthPrefixed(normalizedFinalStateHash, buffer, ref offset);
+        WriteLengthPrefixed(normalizedTickMerkleRoot, buffer, ref offset);
+
+        return SHA256.HashData(buffer);
+    }
+
+    /// <summary>
     /// Computes the deterministic leaf hash for a single signed tick.
     /// The canonical encoding (before hashing) is:
     /// <c>Tick (big-endian int64) || len(PrevStateHash) (big-endian int32) || PrevStateHash ||
