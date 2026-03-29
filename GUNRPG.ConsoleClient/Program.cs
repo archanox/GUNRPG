@@ -573,6 +573,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             Screen.LoginMenu => BuildLoginMenu(cts),
             Screen.Authenticating => BuildAuthenticating(),
             Screen.MainMenu => BuildMainMenu(cts),
+            Screen.OperatorStats => BuildOperatorStats(),
             Screen.SelectOperator => BuildSelectOperator(),
             Screen.CreateOperator => BuildCreateOperator(),
             Screen.BaseCamp => BuildBaseCamp(),
@@ -639,8 +640,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         // Without (offline/legacy): original Create + Select + Exit layout.
         var hasAuth = sessionManager is not null;
         var menuItems = hasAuth
-            ? new List<string> { "OPERATORS", "MISSIONS", "LOGOUT", "QUIT" }
-            : new List<string> { "CREATE NEW OPERATOR", "SELECT OPERATOR", "EXIT" };
+            ? new List<string> { "OPERATORS", "MISSIONS", "OPERATOR STATS", "LOGOUT", "QUIT" }
+            : new List<string> { "CREATE NEW OPERATOR", "SELECT OPERATOR", "OPERATOR STATS", "EXIT" };
 
         return new VStackWidget([
             UI.CreateBorder($"GUNRPG - OPERATOR TERMINAL {modeLabel}"),
@@ -686,6 +687,26 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                             else
                             {
                                 // No operator selected — redirect to operator selection first.
+                                ErrorMessage = null;
+                                LoadOperatorList();
+                                CurrentScreen = Screen.SelectOperator;
+                            }
+                            break;
+                        case "OPERATOR STATS":
+                            if (CurrentOperator is not null)
+                            {
+                                ReturnScreen = Screen.MainMenu;
+                                CurrentScreen = Screen.OperatorStats;
+                            }
+                            else if (mode == GameMode.Blocked && !TryEnsureOnline())
+                            {
+                                ErrorMessage = "Cannot load operator stats while server is unreachable.";
+                                Message = "Select or infil an operator while online first.\n\nPress OK to continue.";
+                                CurrentScreen = Screen.Message;
+                                ReturnScreen = Screen.MainMenu;
+                            }
+                            else
+                            {
                                 ErrorMessage = null;
                                 LoadOperatorList();
                                 CurrentScreen = Screen.SelectOperator;
@@ -1170,9 +1191,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                         CurrentScreen = Screen.PetActions;
                         break;
                     case "VIEW STATS":
-                        Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\n\nPress OK to continue.";
-                        CurrentScreen = Screen.Message;
                         ReturnScreen = Screen.BaseCamp;
+                        CurrentScreen = Screen.OperatorStats;
                         break;
                     case "MAIN MENU":
                         CurrentScreen = Screen.MainMenu;
@@ -1225,9 +1245,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                         CurrentScreen = Screen.AbortMission;
                         break;
                     case "VIEW STATS":
-                        Message = $"Operator: {op.Name}\nXP: {op.TotalXp}\nHealth: {op.CurrentHealth:F0}/{op.MaxHealth:F0}\nWeapon: {op.EquippedWeaponName}\nMission In Progress\n\nPress OK to continue.";
-                        CurrentScreen = Screen.Message;
                         ReturnScreen = Screen.BaseCamp;
+                        CurrentScreen = Screen.OperatorStats;
                         break;
                     case "MAIN MENU":
                         CurrentScreen = Screen.MainMenu;
@@ -2295,6 +2314,47 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         ]);
     }
 
+    Hex1bWidget BuildOperatorStats()
+    {
+        var op = CurrentOperator;
+        if (op == null)
+        {
+            return new VStackWidget([
+                UI.CreateBorder("OPERATOR STATS"),
+                new TextBlockWidget(""),
+                UI.CreateBorder("NO OPERATOR", new VStackWidget([
+                    new TextBlockWidget("  No operator selected."),
+                    new TextBlockWidget(""),
+                    new ListWidget(new[] { "BACK" }).OnItemActivated(_ => CurrentScreen = ReturnScreen)
+                ])),
+                UI.CreateStatusBar("Select an operator first")
+            ]);
+        }
+
+        var stats = op.Stats ?? new GUNRPG.ClientModels.OperatorStats();
+        var successRate = stats.InfilCount > 0
+            ? (int)Math.Round(stats.ExfilCount * 100d / stats.InfilCount, MidpointRounding.AwayFromZero)
+            : 0;
+
+        return new VStackWidget([
+            UI.CreateBorder("OPERATOR STATS"),
+            new TextBlockWidget(""),
+            UI.CreateBorder(op.Name.ToUpperInvariant(), new VStackWidget([
+                new TextBlockWidget($"  Infiltrations:      {stats.InfilCount,6}"),
+                new TextBlockWidget($"  Exfiltrations:      {stats.ExfilCount,6}"),
+                new TextBlockWidget($"  Enemy Kills:        {stats.EnemyKills,6}"),
+                new TextBlockWidget(""),
+                new TextBlockWidget("  Total Infil Time:"),
+                new TextBlockWidget($"  {FormatDuration(stats.TotalInfilDurationTicks)}"),
+                new TextBlockWidget(""),
+                new TextBlockWidget($"  Exfil Success Rate: {successRate,3}%"),
+                new TextBlockWidget(""),
+                new ListWidget(new[] { "BACK" }).OnItemActivated(_ => CurrentScreen = ReturnScreen)
+            ])),
+            UI.CreateStatusBar($"Operator ID: {op.Id}")
+        ]);
+    }
+
     Hex1bWidget BuildMessage()
     {
         var lines = Message?.Split('\n') ?? [""];
@@ -2748,6 +2808,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
             {
                 Id = CurrentOperator.Id,
                 Name = CurrentOperator.Name,
+                Stats = CurrentOperator.Stats,
                 TotalXp = CurrentOperator.TotalXp,
                 CurrentHealth = CurrentOperator.CurrentHealth,
                 MaxHealth = CurrentOperator.MaxHealth,
@@ -2765,6 +2826,12 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         _raidStartTimeUtc = null;
         CurrentScreen = Screen.ExfilFailed;
+    }
+
+    static string FormatDuration(long ticks)
+    {
+        var duration = TimeSpan.FromTicks(Math.Max(0, ticks));
+        return $"{(int)duration.TotalHours:00}h {duration.Minutes:00}m {duration.Seconds:00}s";
     }
 
     Hex1bWidget BuildPetActions()
@@ -2904,6 +2971,14 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         {
             Id = Guid.Parse(dto.Id),
             Name = dto.Name,
+            Stats = new GUNRPG.ClientModels.OperatorStats
+            {
+                OperatorId = Guid.TryParse(dto.Id, out var parsedOperatorId) ? parsedOperatorId : Guid.Empty,
+                InfilCount = dto.Stats?.InfilCount ?? 0,
+                ExfilCount = dto.Stats?.ExfilCount ?? 0,
+                TotalInfilDurationTicks = dto.Stats?.TotalInfilDurationTicks ?? 0,
+                EnemyKills = dto.Stats?.EnemyKills ?? 0
+            },
             TotalXp = dto.TotalXp,
             CurrentHealth = dto.CurrentHealth,
             MaxHealth = dto.MaxHealth,
@@ -2941,6 +3016,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
         {
             Id = json.GetProperty("id").GetGuid(),
             Name = json.GetProperty("name").GetString() ?? "",
+            Stats = ParseOperatorStats(json),
             TotalXp = json.GetProperty("totalXp").GetInt64(),
             CurrentHealth = json.GetProperty("currentHealth").GetSingle(),
             MaxHealth = json.GetProperty("maxHealth").GetSingle(),
@@ -2959,6 +3035,28 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
                 : null,
             LockedLoadout = json.GetProperty("lockedLoadout").GetString() ?? "",
             Pet = pet
+        };
+    }
+
+    static GUNRPG.ClientModels.OperatorStats ParseOperatorStats(JsonElement json)
+    {
+        if (!json.TryGetProperty("stats", out var statsJson) || statsJson.ValueKind == JsonValueKind.Null)
+        {
+            return new GUNRPG.ClientModels.OperatorStats
+            {
+                OperatorId = json.GetProperty("id").GetGuid()
+            };
+        }
+
+        return new GUNRPG.ClientModels.OperatorStats
+        {
+            OperatorId = statsJson.TryGetProperty("operatorId", out var operatorId)
+                ? operatorId.GetGuid()
+                : json.GetProperty("id").GetGuid(),
+            InfilCount = statsJson.TryGetProperty("infilCount", out var infilCount) ? infilCount.GetInt32() : 0,
+            ExfilCount = statsJson.TryGetProperty("exfilCount", out var exfilCount) ? exfilCount.GetInt32() : 0,
+            TotalInfilDurationTicks = statsJson.TryGetProperty("totalInfilDurationTicks", out var durationTicks) ? durationTicks.GetInt64() : 0,
+            EnemyKills = statsJson.TryGetProperty("enemyKills", out var enemyKills) ? enemyKills.GetInt32() : 0
         };
     }
 
@@ -3103,6 +3201,7 @@ enum Screen
     /// <summary>The device-code flow is in progress. Shows verification URL and user code.</summary>
     Authenticating,
     MainMenu,
+    OperatorStats,
     SelectOperator,
     CreateOperator,
     BaseCamp,

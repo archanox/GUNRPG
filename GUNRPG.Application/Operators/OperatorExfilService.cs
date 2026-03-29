@@ -31,6 +31,7 @@ public sealed class OperatorExfilService
     private const float HealthComparisonTolerance = 0.001f;
 
     private readonly IOperatorEventStore _eventStore;
+    private readonly OperatorStatsService? _operatorStatsService;
     private readonly OperatorEventReplicator? _replicator;
     private readonly OperatorUpdateHub? _updateHub;
     private readonly IGameplayLedgerBridge? _ledgerBridge;
@@ -43,9 +44,11 @@ public sealed class OperatorExfilService
         OperatorUpdateHub? updateHub = null,
         IGameplayLedgerBridge? ledgerBridge = null,
         GameplayLedgerOptions? ledgerOptions = null,
-        ILogger<OperatorExfilService>? logger = null)
+        ILogger<OperatorExfilService>? logger = null,
+        OperatorStatsService? operatorStatsService = null)
     {
         _eventStore = eventStore ?? throw new ArgumentNullException(nameof(eventStore));
+        _operatorStatsService = operatorStatsService;
         _replicator = replicator;
         _updateHub = updateHub;
         _ledgerBridge = ledgerBridge;
@@ -524,6 +527,7 @@ public sealed class OperatorExfilService
         try
         {
             await AppendBatchAsync(eventsToAppend);
+            await UpdateCompletedRunStatsAsync(operatorId);
             return ServiceResult.Success();
         }
         catch (Exception ex)
@@ -563,6 +567,7 @@ public sealed class OperatorExfilService
         try
         {
             await AppendAsync(infilEndedEvent);
+            await UpdateCompletedRunStatsAsync(operatorId);
             return ServiceResult.Success();
         }
         catch (Exception ex)
@@ -785,6 +790,10 @@ public sealed class OperatorExfilService
             try
             {
                 await AppendBatchAsync(eventsToAppend);
+                if (eventsToAppend.Any(evt => evt is InfilEndedEvent))
+                {
+                    await UpdateCompletedRunStatsAsync(outcome.OperatorId);
+                }
             }
             catch (Exception ex)
             {
@@ -793,6 +802,19 @@ public sealed class OperatorExfilService
         }
 
         return ServiceResult.Success();
+    }
+
+    private async Task UpdateCompletedRunStatsAsync(OperatorId operatorId)
+    {
+        if (_operatorStatsService is null)
+            return;
+
+        var events = await _eventStore.LoadEventsAsync(operatorId);
+        var runStats = RunStatsExtractor.ExtractLatest(events);
+        if (runStats is not null)
+        {
+            await _operatorStatsService.UpdateStatsAsync(runStats);
+        }
     }
 
 
