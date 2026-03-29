@@ -453,7 +453,7 @@ public sealed class OperatorExfilService
     }
 
     /// <summary>
-    /// Clears a dangling ActiveCombatSessionId by emitting a CombatVictoryEvent.
+    /// Clears a dangling ActiveCombatSessionId by emitting a CombatSessionClearedEvent.
     /// Use when the referenced combat session no longer exists in the store but the
     /// operator aggregate still holds its ID, preventing a new session from being started.
     /// </summary>
@@ -471,7 +471,11 @@ public sealed class OperatorExfilService
         var previousHash = aggregate.GetLastEventHash();
         var sequenceNumber = aggregate.CurrentSequence + 1;
 
-        var clearEvent = new CombatVictoryEvent(operatorId, sequenceNumber, previousHash);
+        var clearEvent = new CombatSessionClearedEvent(
+            operatorId,
+            sequenceNumber,
+            "Combat session cleared without victory",
+            previousHash);
 
         try
         {
@@ -809,12 +813,7 @@ public sealed class OperatorExfilService
         if (_operatorStatsService is null)
             return;
 
-        var events = await _eventStore.LoadEventsAsync(operatorId);
-        var runStats = RunStatsExtractor.ExtractLatest(events);
-        if (runStats is not null)
-        {
-            await _operatorStatsService.UpdateStatsAsync(runStats);
-        }
+        await _operatorStatsService.ReconcileAsync(operatorId.Value);
     }
 
 

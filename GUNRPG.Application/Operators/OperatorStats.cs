@@ -43,6 +43,9 @@ public static class RunStatsExtractor
                     enemyKills++;
                     break;
 
+                case CombatSessionClearedEvent when infilStartedAt.HasValue:
+                    break;
+
                 case InfilEndedEvent ended when infilStartedAt.HasValue:
                     var (wasSuccessful, _) = ended.GetPayload();
                     var infilDurationTicks = Math.Max(0L, (ended.Timestamp - infilStartedAt.Value).Ticks);

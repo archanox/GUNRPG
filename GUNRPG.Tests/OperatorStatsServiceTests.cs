@@ -7,6 +7,7 @@ using GUNRPG.Core.Equipment;
 using GUNRPG.Core.Operators;
 using GUNRPG.Infrastructure.Persistence;
 using LiteDB;
+using Xunit;
 
 namespace GUNRPG.Tests;
 
@@ -65,6 +66,44 @@ public sealed class OperatorStatsServiceTests : IDisposable
         Assert.False(run.SuccessfulExfil);
         Assert.Equal(TimeSpan.FromMinutes(14).Ticks, run.InfilDurationTicks);
         Assert.Equal(2, run.EnemyKills);
+    }
+
+    [Fact]
+    public void RunStatsExtractor_DoesNotCountSessionCleanupAsEnemyKill()
+    {
+        var operatorId = OperatorId.NewId();
+        var startedAt = new DateTimeOffset(2026, 03, 29, 6, 0, 0, TimeSpan.Zero);
+
+        var created = new OperatorCreatedEvent(operatorId, "StatsOp", startedAt.AddMinutes(-1));
+        var infilStarted = new InfilStartedEvent(operatorId, 1, Guid.NewGuid(), "SOKOL 545", startedAt, created.Hash, startedAt);
+        var sessionCleared = new CombatSessionClearedEvent(operatorId, 2, "Retreated", infilStarted.Hash, startedAt.AddMinutes(3));
+        var infilEnded = new InfilEndedEvent(operatorId, 3, wasSuccessful: false, reason: "Retreated", previousHash: sessionCleared.Hash, timestamp: startedAt.AddMinutes(4));
+
+        var run = Assert.Single(RunStatsExtractor.ExtractCompletedRuns([created, infilStarted, sessionCleared, infilEnded]));
+
+        Assert.Equal(0, run.EnemyKills);
+    }
+
+    [Fact]
+    public async Task GetStatsAsync_RebuildsAuthoritativeStatsWhenStoredCopyIsStale()
+    {
+        var operatorId = OperatorId.NewId();
+        var startedAt = new DateTimeOffset(2026, 03, 29, 6, 0, 0, TimeSpan.Zero);
+
+        var created = new OperatorCreatedEvent(operatorId, "StatsOp", startedAt.AddMinutes(-1));
+        var infilStarted = new InfilStartedEvent(operatorId, 1, Guid.NewGuid(), "SOKOL 545", startedAt, created.Hash, startedAt);
+        var victory = new CombatVictoryEvent(operatorId, 2, infilStarted.Hash, startedAt.AddMinutes(5));
+        var infilEnded = new InfilEndedEvent(operatorId, 3, wasSuccessful: true, reason: "Exfil", previousHash: victory.Hash, timestamp: startedAt.AddMinutes(10));
+
+        await _eventStore.AppendEventsAsync([created, infilStarted, victory, infilEnded]);
+        await _statsStore.UpsertAsync(new OperatorStats(operatorId.Value, 99, 99, 99, 99));
+
+        var stats = await _statsService.GetStatsAsync(operatorId.Value);
+
+        Assert.Equal(1, stats.InfilCount);
+        Assert.Equal(1, stats.ExfilCount);
+        Assert.Equal(TimeSpan.FromMinutes(10).Ticks, stats.TotalInfilDurationTicks);
+        Assert.Equal(1, stats.EnemyKills);
     }
 
     [Fact]
