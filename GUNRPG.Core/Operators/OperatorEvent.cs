@@ -358,6 +358,48 @@ public sealed class CombatVictoryEvent : OperatorEvent
 }
 
 /// <summary>
+/// Event emitted when an active combat session reference is cleared without recording a victory.
+/// This is used for retreat/cleanup flows that should not count as enemy kills.
+/// </summary>
+public sealed class CombatSessionClearedEvent : OperatorEvent
+{
+    public CombatSessionClearedEvent(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string reason,
+        string previousHash,
+        DateTimeOffset? timestamp = null)
+        : base(
+            operatorId,
+            sequenceNumber,
+            eventType: "CombatSessionCleared",
+            payload: JsonSerializer.Serialize(new { Reason = reason }),
+            previousHash: previousHash,
+            timestamp: timestamp)
+    {
+    }
+
+    public string GetReason()
+    {
+        var data = JsonSerializer.Deserialize<CombatSessionClearedPayload>(Payload)!;
+        return data.Reason;
+    }
+
+    public static CombatSessionClearedEvent Rehydrate(
+        OperatorId operatorId,
+        long sequenceNumber,
+        string payload,
+        string previousHash,
+        DateTimeOffset timestamp)
+    {
+        var data = JsonSerializer.Deserialize<CombatSessionClearedPayload>(payload)!;
+        return new CombatSessionClearedEvent(operatorId, sequenceNumber, data.Reason, previousHash, timestamp);
+    }
+
+    private record CombatSessionClearedPayload(string Reason);
+}
+
+/// <summary>
 /// Event emitted when an operator fails to complete exfil.
 /// This resets the operator's exfil streak.
 /// </summary>

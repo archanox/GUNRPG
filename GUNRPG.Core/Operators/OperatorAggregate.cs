@@ -217,6 +217,11 @@ public sealed class OperatorAggregate
                 ActiveCombatSessionId = null;
                 break;
 
+            case CombatSessionClearedEvent:
+                // Retreat/cleanup clears the active combat session without implying a victory.
+                ActiveCombatSessionId = null;
+                break;
+
             case ExfilFailedEvent:
                 ExfilStreak = 0;
                 break;

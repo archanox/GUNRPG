@@ -20,15 +20,25 @@ public sealed class OperatorStatsService
 
     public async Task<OperatorStats> GetStatsAsync(Guid operatorId)
     {
+        return await ReconcileAsync(operatorId);
+    }
+
+    public async Task<OperatorStats> ReconcileAsync(Guid operatorId)
+    {
         var existing = await _statsStore.TryGetAsync(operatorId);
-        if (existing is not null)
+        var events = await _eventStore.LoadEventsAsync(OperatorId.FromGuid(operatorId));
+        if (events.Count == 0)
         {
-            return existing;
+            return existing ?? new OperatorStats(operatorId, 0, 0, 0, 0);
         }
 
-        var events = await _eventStore.LoadEventsAsync(OperatorId.FromGuid(operatorId));
         var rebuilt = RebuildStats(operatorId, events);
-        await _statsStore.UpsertAsync(rebuilt);
+
+        if (existing != rebuilt)
+        {
+            await _statsStore.UpsertAsync(rebuilt);
+        }
+
         return rebuilt;
     }
 

@@ -334,6 +334,7 @@ public sealed class LiteDbOperatorEventStore : IOperatorEventStore
             "WoundsTreated" => WoundsTreatedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "LoadoutChanged" => LoadoutChangedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "CombatVictory" => CombatVictoryEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
+            "CombatSessionCleared" => CombatSessionClearedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "ExfilFailed" => ExfilFailedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "OperatorDied" => OperatorDiedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),
             "InfilStarted" => InfilStartedEvent.Rehydrate(operatorId, doc.SequenceNumber, doc.Payload, doc.PreviousHash, doc.Timestamp),

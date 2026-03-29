@@ -2831,7 +2831,8 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
     static string FormatDuration(long ticks)
     {
         var duration = TimeSpan.FromTicks(Math.Max(0, ticks));
-        return $"{(int)duration.TotalHours:00}h {duration.Minutes:00}m {duration.Seconds:00}s";
+        var totalHours = (long)duration.TotalHours;
+        return $"{totalHours:00}h {duration.Minutes:00}m {duration.Seconds:00}s";
     }
 
     Hex1bWidget BuildPetActions()
