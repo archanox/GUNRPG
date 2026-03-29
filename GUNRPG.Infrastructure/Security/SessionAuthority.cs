@@ -228,6 +228,49 @@ public sealed class SessionAuthority : ISessionAuthority
     }
 
     /// <summary>
+    /// Creates a <see cref="RunReceipt"/> from a verified signed run result.
+    /// </summary>
+    /// <param name="run">
+    /// The signed run result for which to create a receipt.
+    /// Must have a non-null <see cref="SignedRunResult.TickMerkleRoot"/>.
+    /// </param>
+    /// <returns>
+    /// A <see cref="RunReceipt"/> whose <see cref="RunReceipt.Signature"/> covers:
+    /// <c>SessionId || FinalTick || FinalStateHash || TickMerkleRoot</c>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="run"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="run"/> does not have a <see cref="SignedRunResult.TickMerkleRoot"/>.
+    /// </exception>
+    public RunReceipt CreateRunReceipt(SignedRunResult run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+
+        if (run.TickMerkleRoot is null)
+            throw new ArgumentException(
+                "Run must have a TickMerkleRoot to create a receipt.", nameof(run));
+
+        var finalStateHash = Convert.FromHexString(run.FinalHash);
+        var tickMerkleRoot = Convert.FromHexString(run.TickMerkleRoot);
+        var finalTick = run.Checkpoints is not null && run.Checkpoints.Count > 0
+            ? run.Checkpoints[^1].TickIndex
+            : 0L;
+
+        var payloadHash = AuthorityCrypto.ComputeReceiptPayloadHash(
+            run.SessionId, finalTick, finalStateHash, tickMerkleRoot);
+        var signature = AuthorityCrypto.SignHashedPayload(_privateKey, payloadHash);
+
+        return new RunReceipt(
+            run.SessionId,
+            finalTick,
+            (byte[])finalStateHash.Clone(),
+            (byte[])tickMerkleRoot.Clone(),
+            signature);
+    }
+
+    /// <summary>
     /// Signs a simulation tick and returns the raw Ed25519 signature (64 bytes).
     /// The signature covers: Tick (big-endian int64) || PrevStateHash || StateHash || InputHash.
     /// </summary>
