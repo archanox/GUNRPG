@@ -60,6 +60,9 @@ public sealed record RunReceipt(
 
     /// <summary>
     /// Serializes this receipt to a JSON string. Byte array fields are base64-encoded.
+    /// If a byte array field is null (structurally invalid receipt), it is serialized
+    /// as an empty string. Callers should ensure <see cref="IsStructurallyValid"/> is
+    /// true before sharing a serialized receipt.
     /// </summary>
     public string ToJson()
     {

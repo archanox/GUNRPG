@@ -576,7 +576,11 @@ public sealed class RunReceiptTests
         return hash;
     }
 
-    /// <summary>Creates a fake 64-byte Ed25519 signature for structural tests only.</summary>
+    /// <summary>
+    /// Creates a 64-byte buffer for structural-validation tests only.
+    /// The bytes are <em>not</em> a valid Ed25519 signature and must never be passed
+    /// to <see cref="RunReceiptService.Verify"/>.
+    /// </summary>
     private static byte[] CreateSignatureBytes(int seed)
     {
         var sig = new byte[64];
