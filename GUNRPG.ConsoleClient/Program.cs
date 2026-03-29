@@ -2951,6 +2951,7 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
     static OperatorState OperatorStateFromDto(OperatorDto dto)
     {
+        var operatorId = Guid.Parse(dto.Id);
         PetState? pet = null;
         if (dto.Pet != null)
         {
@@ -2969,11 +2970,11 @@ class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend b
 
         return new OperatorState
         {
-            Id = Guid.Parse(dto.Id),
+            Id = operatorId,
             Name = dto.Name,
             Stats = new GUNRPG.ClientModels.OperatorStats
             {
-                OperatorId = Guid.TryParse(dto.Id, out var parsedOperatorId) ? parsedOperatorId : Guid.Empty,
+                OperatorId = operatorId,
                 InfilCount = dto.Stats?.InfilCount ?? 0,
                 ExfilCount = dto.Stats?.ExfilCount ?? 0,
                 TotalInfilDurationTicks = dto.Stats?.TotalInfilDurationTicks ?? 0,
