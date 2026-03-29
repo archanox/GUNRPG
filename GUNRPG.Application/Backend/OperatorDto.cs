@@ -10,6 +10,7 @@ public sealed class OperatorDto
 {
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public OperatorStatsDto Stats { get; set; } = new();
     public long TotalXp { get; set; }
     public float CurrentHealth { get; set; }
     public float MaxHealth { get; set; }

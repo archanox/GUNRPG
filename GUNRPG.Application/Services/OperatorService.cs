@@ -19,6 +19,7 @@ public sealed class OperatorService
     private readonly OperatorExfilService _exfilService;
     private readonly CombatSessionService _sessionService;
     private readonly IOperatorEventStore _eventStore;
+    private readonly OperatorStatsService _statsService;
     private readonly IOfflineSyncHeadStore? _offlineSyncHeadStore;
     private readonly IDeterministicCombatEngine? _combatEngine;
 
@@ -27,11 +28,13 @@ public sealed class OperatorService
         CombatSessionService sessionService,
         IOperatorEventStore eventStore,
         IOfflineSyncHeadStore? offlineSyncHeadStore = null,
-        IDeterministicCombatEngine? combatEngine = null)
+        IDeterministicCombatEngine? combatEngine = null,
+        OperatorStatsService? statsService = null)
     {
         _exfilService = exfilService;
         _sessionService = sessionService;
         _eventStore = eventStore;
+        _statsService = statsService ?? new OperatorStatsService(new InMemoryOperatorStatsStore(), eventStore);
         _offlineSyncHeadStore = offlineSyncHeadStore;
         _combatEngine = combatEngine;
     }
@@ -55,7 +58,8 @@ public sealed class OperatorService
             return ServiceResult<OperatorStateDto>.FromResult(loadResult);
         }
 
-        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
+        var stats = await _statsService.GetStatsAsync(result.Value!.Value);
+        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!, stats));
     }
 
     /// <summary>
@@ -73,6 +77,7 @@ public sealed class OperatorService
         }
 
         var aggregate = loadResult.Value!;
+        var stats = await _statsService.GetStatsAsync(operatorId);
 
         // Server-authoritative timer enforcement: if the operator is in Infil mode and the
         // 30-minute window has passed, auto-fail the infil here. This mirrors the same guard
@@ -96,9 +101,10 @@ public sealed class OperatorService
             if (!loadResult.IsSuccess)
                 return ServiceResult<OperatorStateDto>.FromResult(loadResult);
             aggregate = loadResult.Value!;
+            stats = await _statsService.GetStatsAsync(operatorId);
         }
 
-        var operatorDto = ToDto(aggregate);
+        var operatorDto = ToDto(aggregate, stats);
         
         // If operator has an active combat session, load and include it
         if (operatorDto.ActiveCombatSessionId.HasValue)
@@ -112,6 +118,7 @@ public sealed class OperatorService
                 {
                     Id = operatorDto.Id,
                     Name = operatorDto.Name,
+                    Stats = operatorDto.Stats,
                     TotalXp = operatorDto.TotalXp,
                     CurrentHealth = operatorDto.CurrentHealth,
                     MaxHealth = operatorDto.MaxHealth,
@@ -135,6 +142,7 @@ public sealed class OperatorService
                 {
                     Id = operatorDto.Id,
                     Name = operatorDto.Name,
+                    Stats = operatorDto.Stats,
                     TotalXp = operatorDto.TotalXp,
                     CurrentHealth = operatorDto.CurrentHealth,
                     MaxHealth = operatorDto.MaxHealth,
@@ -299,7 +307,7 @@ public sealed class OperatorService
         return ServiceResult<StartInfilResponse>.Success(new StartInfilResponse
         {
             SessionId = infilSessionId,
-            Operator = ToDto(operatorAggregate)
+            Operator = ToDto(operatorAggregate, await _statsService.GetStatsAsync(operatorId))
         });
     }
 
@@ -348,7 +356,8 @@ public sealed class OperatorService
             return ServiceResult<OperatorStateDto>.FromResult(loadResult);
         }
 
-        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
+        var stats = await _statsService.GetStatsAsync(operatorId);
+        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!, stats));
     }
 
     public async Task<ServiceResult<Guid>> StartCombatSessionAsync(Guid operatorId)
@@ -470,7 +479,7 @@ public sealed class OperatorService
             return ServiceResult<OperatorStateDto>.FromResult(loadResult);
         }
 
-        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
+        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!, await _statsService.GetStatsAsync(operatorId)));
     }
 
     public async Task<ServiceResult<OperatorStateDto>> TreatWoundsAsync(Guid operatorId, TreatWoundsRequest request)
@@ -487,7 +496,7 @@ public sealed class OperatorService
             return ServiceResult<OperatorStateDto>.FromResult(loadResult);
         }
 
-        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
+        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!, await _statsService.GetStatsAsync(operatorId)));
     }
 
     public async Task<ServiceResult<OperatorStateDto>> ApplyXpAsync(Guid operatorId, ApplyXpRequest request)
@@ -504,7 +513,7 @@ public sealed class OperatorService
             return ServiceResult<OperatorStateDto>.FromResult(loadResult);
         }
 
-        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
+        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!, await _statsService.GetStatsAsync(operatorId)));
     }
 
     public async Task<ServiceResult<OperatorStateDto>> ApplyPetActionAsync(Guid operatorId, PetActionRequest request)
@@ -521,7 +530,7 @@ public sealed class OperatorService
             return ServiceResult<OperatorStateDto>.FromResult(loadResult);
         }
 
-        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!));
+        return ServiceResult<OperatorStateDto>.Success(ToDto(loadResult.Value!, await _statsService.GetStatsAsync(operatorId)));
     }
 
     public async Task<ServiceResult> SyncOfflineMission(OfflineMissionEnvelope envelope)
@@ -676,12 +685,20 @@ public sealed class OperatorService
         return true;
     }
 
-    private static OperatorStateDto ToDto(OperatorAggregate aggregate)
+    private static OperatorStateDto ToDto(OperatorAggregate aggregate, OperatorStats stats)
     {
         return new OperatorStateDto
         {
             Id = aggregate.Id.Value,
             Name = aggregate.Name,
+            Stats = new OperatorStatsDto
+            {
+                OperatorId = stats.OperatorId,
+                InfilCount = stats.InfilCount,
+                ExfilCount = stats.ExfilCount,
+                TotalInfilDurationTicks = stats.TotalInfilDurationTicks,
+                EnemyKills = stats.EnemyKills
+            },
             TotalXp = aggregate.TotalXp,
             CurrentHealth = aggregate.CurrentHealth,
             MaxHealth = aggregate.MaxHealth,

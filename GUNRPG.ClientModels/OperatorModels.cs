@@ -21,6 +21,7 @@ public sealed class OperatorState
 {
     public Guid Id { get; init; }
     public string Name { get; init; } = string.Empty;
+    public OperatorStats Stats { get; init; } = new();
     public long TotalXp { get; init; }
     public float CurrentHealth { get; init; }
     public float MaxHealth { get; init; }
@@ -40,6 +41,15 @@ public sealed class OperatorState
 
     /// <summary>True when the operator is deployed in the field (Infil mode).</summary>
     public bool IsOnMission => CurrentMode == "Infil";
+}
+
+public sealed class OperatorStats
+{
+    public Guid OperatorId { get; init; }
+    public int InfilCount { get; init; }
+    public int ExfilCount { get; init; }
+    public long TotalInfilDurationTicks { get; init; }
+    public int EnemyKills { get; init; }
 }
 
 /// <summary>

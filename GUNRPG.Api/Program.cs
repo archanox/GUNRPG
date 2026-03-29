@@ -69,9 +69,10 @@ builder.Services.AddSingleton<OperatorEventReplicator>(sp =>
 builder.Services.Replace(ServiceDescriptor.Singleton<OperatorExfilService>(sp =>
 {
     var eventStore = sp.GetRequiredService<IOperatorEventStore>();
+    var statsService = sp.GetRequiredService<OperatorStatsService>();
     var replicator = sp.GetRequiredService<OperatorEventReplicator>();
     var updateHub = sp.GetRequiredService<OperatorUpdateHub>();
-    return new OperatorExfilService(eventStore, replicator, updateHub);
+    return new OperatorExfilService(eventStore, replicator, updateHub, operatorStatsService: statsService);
 }));
 
 builder.Services.AddSingleton<CombatSessionService>(sp =>
@@ -87,10 +88,12 @@ builder.Services.AddSingleton<OperatorService>(sp =>
     var exfilService = sp.GetRequiredService<OperatorExfilService>();
     var sessionService = sp.GetRequiredService<CombatSessionService>();
     var eventStore = sp.GetRequiredService<IOperatorEventStore>();
+    var statsService = sp.GetRequiredService<OperatorStatsService>();
     var offlineSyncHeadStore = sp.GetRequiredService<IOfflineSyncHeadStore>();
     var combatEngine = sp.GetRequiredService<IDeterministicCombatEngine>();
-    return new OperatorService(exfilService, sessionService, eventStore, offlineSyncHeadStore, combatEngine);
+    return new OperatorService(exfilService, sessionService, eventStore, offlineSyncHeadStore, combatEngine, statsService);
 });
+builder.Services.AddSingleton<OperatorStatsService>();
 
 // ── Identity System (WebAuthn + JWT + Device Code Flow) ──────────────────
 // Bind Fido2Configuration from appsettings "WebAuthn" section

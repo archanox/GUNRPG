@@ -128,6 +128,7 @@ public static class ApiMapping
         {
             Id = appDto.Id,
             Name = appDto.Name,
+            Stats = ToApiDto(appDto.Stats),
             TotalXp = appDto.TotalXp,
             CurrentHealth = appDto.CurrentHealth,
             MaxHealth = appDto.MaxHealth,
@@ -141,6 +142,18 @@ public static class ApiMapping
             ActiveCombatSession = appDto.ActiveCombatSession != null ? ToApiDto(appDto.ActiveCombatSession) : null,
             LockedLoadout = appDto.LockedLoadout,
             Pet = appDto.Pet != null ? ToApiDto(appDto.Pet) : null
+        };
+    }
+
+    public static ApiOperatorStatsDto ToApiDto(OperatorStatsDto appDto)
+    {
+        return new ApiOperatorStatsDto
+        {
+            OperatorId = appDto.OperatorId,
+            InfilCount = appDto.InfilCount,
+            ExfilCount = appDto.ExfilCount,
+            TotalInfilDurationTicks = appDto.TotalInfilDurationTicks,
+            EnemyKills = appDto.EnemyKills
         };
     }
 

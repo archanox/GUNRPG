@@ -7,6 +7,7 @@ public sealed class ApiOperatorStateDto
 {
     public Guid Id { get; init; }
     public string Name { get; init; } = "";
+    public ApiOperatorStatsDto Stats { get; init; } = new();
     public long TotalXp { get; init; }
     public float CurrentHealth { get; init; }
     public float MaxHealth { get; init; }
