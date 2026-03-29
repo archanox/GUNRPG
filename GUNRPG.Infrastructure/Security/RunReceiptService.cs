@@ -28,8 +28,10 @@ public static class RunReceiptService
     /// </param>
     /// <param name="authority">The session authority whose private key signs the receipt.</param>
     /// <returns>
-    /// A <see cref="RunReceipt"/> whose <see cref="RunReceipt.Signature"/> covers:
-    /// <c>SessionId || FinalTick || FinalStateHash || TickMerkleRoot</c>.
+    /// A <see cref="RunReceipt"/> whose <see cref="RunReceipt.Signature"/> covers the canonical
+    /// receipt payload hash computed by <see cref="AuthorityCrypto.ComputeReceiptPayloadHash"/>,
+    /// which length-prefixes the component hashes instead of using a raw
+    /// <c>SessionId || FinalTick || FinalStateHash || TickMerkleRoot</c> concatenation.
     /// </returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="run"/> or <paramref name="authority"/> is <see langword="null"/>.
