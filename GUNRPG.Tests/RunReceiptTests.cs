@@ -445,6 +445,72 @@ public sealed class RunReceiptTests
         Assert.Throws<ArgumentNullException>(() => RunReceipt.FromJson(null!));
     }
 
+    [Fact]
+    public void FromJson_TruncatedFinalStateHash_ThrowsJsonException()
+    {
+        var (authority, _, result) = BuildValidRun(seed: 54, tickPositions: [0, 256, 512]);
+        var receipt = RunReceiptService.Create(result, authority);
+
+        // Build JSON manually with a too-short finalStateHash (16 bytes instead of 32)
+        var tamperedJson = BuildReceiptJson(
+            receipt.SessionId, receipt.FinalTick,
+            finalStateHashBase64: Convert.ToBase64String(new byte[16]),
+            tickMerkleRootBase64: Convert.ToBase64String(receipt.TickMerkleRoot),
+            signatureBase64: Convert.ToBase64String(receipt.Signature));
+
+        var ex = Assert.Throws<JsonException>(() => RunReceipt.FromJson(tamperedJson));
+        Assert.Contains("finalStateHash", ex.Message);
+    }
+
+    [Fact]
+    public void FromJson_TruncatedTickMerkleRoot_ThrowsJsonException()
+    {
+        var (authority, _, result) = BuildValidRun(seed: 55, tickPositions: [0, 256, 512]);
+        var receipt = RunReceiptService.Create(result, authority);
+
+        // Build JSON manually with a too-short tickMerkleRoot (16 bytes instead of 32)
+        var tamperedJson = BuildReceiptJson(
+            receipt.SessionId, receipt.FinalTick,
+            finalStateHashBase64: Convert.ToBase64String(receipt.FinalStateHash),
+            tickMerkleRootBase64: Convert.ToBase64String(new byte[16]),
+            signatureBase64: Convert.ToBase64String(receipt.Signature));
+
+        var ex = Assert.Throws<JsonException>(() => RunReceipt.FromJson(tamperedJson));
+        Assert.Contains("tickMerkleRoot", ex.Message);
+    }
+
+    [Fact]
+    public void FromJson_TruncatedSignature_ThrowsJsonException()
+    {
+        var (authority, _, result) = BuildValidRun(seed: 56, tickPositions: [0, 256, 512]);
+        var receipt = RunReceiptService.Create(result, authority);
+
+        // Build JSON manually with a too-short signature (16 bytes instead of 64)
+        var tamperedJson = BuildReceiptJson(
+            receipt.SessionId, receipt.FinalTick,
+            finalStateHashBase64: Convert.ToBase64String(receipt.FinalStateHash),
+            tickMerkleRootBase64: Convert.ToBase64String(receipt.TickMerkleRoot),
+            signatureBase64: Convert.ToBase64String(new byte[16]));
+
+        var ex = Assert.Throws<JsonException>(() => RunReceipt.FromJson(tamperedJson));
+        Assert.Contains("signature", ex.Message);
+    }
+
+    [Fact]
+    public void FromJson_InvalidBase64_ThrowsJsonException()
+    {
+        var (authority, _, result) = BuildValidRun(seed: 57, tickPositions: [0, 256, 512]);
+        var receipt = RunReceiptService.Create(result, authority);
+
+        var tamperedJson = BuildReceiptJson(
+            receipt.SessionId, receipt.FinalTick,
+            finalStateHashBase64: "!!! not base64 !!!",
+            tickMerkleRootBase64: Convert.ToBase64String(receipt.TickMerkleRoot),
+            signatureBase64: Convert.ToBase64String(receipt.Signature));
+
+        Assert.Throws<JsonException>(() => RunReceipt.FromJson(tamperedJson));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // 7. Third-party verification (no replay required)
     // ──────────────────────────────────────────────────────────────────────────
@@ -595,6 +661,23 @@ public sealed class RunReceiptTests
         var tampered = (byte[])hash.Clone();
         tampered[0] ^= 0xFF;
         return tampered;
+    }
+
+    /// <summary>
+    /// Builds a receipt JSON string directly from components, bypassing <see cref="RunReceipt.ToJson"/>.
+    /// Used by tamper tests to construct receipts with invalid field values.
+    /// </summary>
+    private static string BuildReceiptJson(
+        Guid sessionId,
+        long finalTick,
+        string finalStateHashBase64,
+        string tickMerkleRootBase64,
+        string signatureBase64)
+    {
+        return $"{{\"sessionId\":\"{sessionId}\",\"finalTick\":{finalTick},"
+               + $"\"finalStateHash\":\"{finalStateHashBase64}\","
+               + $"\"tickMerkleRoot\":\"{tickMerkleRootBase64}\","
+               + $"\"signature\":\"{signatureBase64}\"}}";
     }
 
     /// <summary>

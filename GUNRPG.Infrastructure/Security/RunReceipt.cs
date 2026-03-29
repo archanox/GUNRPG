@@ -81,7 +81,11 @@ public sealed record RunReceipt(
     /// </summary>
     /// <param name="json">The JSON string to deserialize.</param>
     /// <returns>The deserialized <see cref="RunReceipt"/>.</returns>
-    /// <exception cref="JsonException">Thrown when <paramref name="json"/> is not valid JSON.</exception>
+    /// <exception cref="JsonException">
+    /// Thrown when <paramref name="json"/> is not valid JSON, a required field is missing or
+    /// null, a hash field does not decode to exactly 32 bytes, or the signature field does not
+    /// decode to exactly 64 bytes.
+    /// </exception>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="json"/> is null.</exception>
     public static RunReceipt FromJson(string json)
     {
@@ -90,12 +94,39 @@ public sealed record RunReceipt(
         var dto = JsonSerializer.Deserialize(json, RunReceiptJsonContext.Default.RunReceiptDto)
                   ?? throw new JsonException("Failed to deserialize RunReceipt: result was null.");
 
-        return new RunReceipt(
-            dto.SessionId,
-            dto.FinalTick,
-            Convert.FromBase64String(dto.FinalStateHash),
-            Convert.FromBase64String(dto.TickMerkleRoot),
-            Convert.FromBase64String(dto.Signature));
+        byte[] finalStateHash;
+        byte[] tickMerkleRoot;
+        byte[] signature;
+
+        try
+        {
+            if (dto.FinalStateHash is null)
+                throw new JsonException("RunReceipt JSON is missing 'finalStateHash'.");
+            finalStateHash = Convert.FromBase64String(dto.FinalStateHash);
+            if (finalStateHash.Length != HashSize)
+                throw new JsonException(
+                    $"RunReceipt 'finalStateHash' must decode to {HashSize} bytes, got {finalStateHash.Length}.");
+
+            if (dto.TickMerkleRoot is null)
+                throw new JsonException("RunReceipt JSON is missing 'tickMerkleRoot'.");
+            tickMerkleRoot = Convert.FromBase64String(dto.TickMerkleRoot);
+            if (tickMerkleRoot.Length != HashSize)
+                throw new JsonException(
+                    $"RunReceipt 'tickMerkleRoot' must decode to {HashSize} bytes, got {tickMerkleRoot.Length}.");
+
+            if (dto.Signature is null)
+                throw new JsonException("RunReceipt JSON is missing 'signature'.");
+            signature = Convert.FromBase64String(dto.Signature);
+            if (signature.Length != SignatureSize)
+                throw new JsonException(
+                    $"RunReceipt 'signature' must decode to {SignatureSize} bytes, got {signature.Length}.");
+        }
+        catch (FormatException ex)
+        {
+            throw new JsonException("RunReceipt JSON contains an invalid base64-encoded field.", ex);
+        }
+
+        return new RunReceipt(dto.SessionId, dto.FinalTick, finalStateHash, tickMerkleRoot, signature);
     }
 }
 

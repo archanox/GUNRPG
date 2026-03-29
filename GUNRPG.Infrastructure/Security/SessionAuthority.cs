@@ -235,8 +235,11 @@ public sealed class SessionAuthority : ISessionAuthority
     /// Must have a non-null <see cref="SignedRunResult.TickMerkleRoot"/>.
     /// </param>
     /// <returns>
-    /// A <see cref="RunReceipt"/> whose <see cref="RunReceipt.Signature"/> covers:
-    /// <c>SessionId || FinalTick || FinalStateHash || TickMerkleRoot</c>.
+    /// A <see cref="RunReceipt"/> whose <see cref="RunReceipt.Signature"/> covers the
+    /// canonical receipt payload computed by
+    /// <see cref="AuthorityCrypto.ComputeReceiptPayloadHash(Guid,long,byte[],byte[])"/> for
+    /// <c>SessionId</c>, <c>FinalTick</c>, <c>FinalStateHash</c>, and <c>TickMerkleRoot</c>
+    /// (including the length-prefixed encodings of the hash values).
     /// </returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="run"/> is <see langword="null"/>.
