@@ -13,6 +13,7 @@ using GUNRPG.Core.Intents;
 using GUNRPG.Infrastructure;
 using GUNRPG.Infrastructure.Backend;
 using GUNRPG.Infrastructure.Persistence;
+using GUNRPG.Security;
 using Hex1b;
 using Hex1b.Widgets;
 using JsonSerializer = System.Text.Json.JsonSerializer;
@@ -24,6 +25,13 @@ using PetState = GUNRPG.ClientModels.PetState;
 using BattleLogEntryDto = GUNRPG.ClientModels.BattleLogEntry;
 using OperatorState = GUNRPG.ClientModels.OperatorState;
 using OperatorSummary = GUNRPG.ClientModels.OperatorSummary;
+
+// Handle subcommands before launching the TUI.
+if (args.Length >= 2 && args[0] == "keygen" && args[1] == "authority")
+{
+    RunKeygenAuthority();
+    return;
+}
 
 var baseAddress = ResolveServerAddress(args, Environment.GetEnvironmentVariable("GUNRPG_API_BASE"))
     .TrimEnd('/'); // normalize to avoid double-slash URLs and ensure node URL comparisons work
@@ -237,6 +245,31 @@ static bool IsLocalServer(string hostname, string machineName)
 
     return hostname.Equals(machineName, StringComparison.OrdinalIgnoreCase)
         || hostname.Equals(machineName + ".local", StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Handles the <c>gunrpg keygen authority</c> subcommand.
+/// Generates an Ed25519 key pair and writes it to <c>authority_private.key</c> and
+/// <c>authority_public.key</c> in the current directory.
+/// </summary>
+static void RunKeygenAuthority()
+{
+    Console.WriteLine("Generating authority key pair...");
+
+    var (privateKey, publicKey) = AuthorityKeyGenerator.GenerateKeyPair();
+
+    const string privateKeyFile = "authority_private.key";
+    const string publicKeyFile = "authority_public.key";
+
+    AuthorityKeyGenerator.WriteKeyFiles(privateKeyFile, publicKeyFile, privateKey, publicKey);
+
+    var configEntry = AuthorityKeyGenerator.FormatPublicKeyEntry(publicKey);
+
+    Console.WriteLine($"Private key: {privateKeyFile}");
+    Console.WriteLine($"Public key:  {publicKeyFile}");
+    Console.WriteLine();
+    Console.WriteLine("Add the following entry to config/authorities.json to trust this key:");
+    Console.WriteLine($"  {configEntry}");
 }
 
 class GameState(HttpClient client, JsonSerializerOptions options, IGameBackend backend, GameBackendResolver backendResolver, OfflineStore? offlineStore = null, LiteDB.LiteDatabase? offlineDb = null, SessionManager? sessionManager = null, Screen initialScreen = Screen.MainMenu)
