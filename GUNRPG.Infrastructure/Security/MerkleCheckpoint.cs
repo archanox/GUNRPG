@@ -43,7 +43,8 @@ public sealed record MerkleCheckpoint(
     ulong Tick,
     byte[] MerkleRoot,
     byte[] AuthorityPublicKey,
-    byte[] Signature)
+    byte[] Signature,
+    MerkleCheckpointProof? Proof = null)
 {
     /// <summary>
     /// Returns <see langword="true"/> if the field lengths are structurally valid
@@ -79,14 +80,28 @@ public sealed record MerkleCheckpoint(
     /// <summary>
     /// Serialises the checkpoint to a JSON byte array suitable for storage.
     /// Fields are base-64 encoded as per the standard JSON mapping for <c>byte[]</c>.
+    /// The optional <see cref="Proof"/> is included when non-<see langword="null"/>.
     /// </summary>
     public byte[] ToJsonBytes()
     {
+        MerkleCheckpointProofDto? proofDto = null;
+        if (Proof is not null)
+        {
+            var siblingHashes = new string[Proof.SiblingHashes.Count];
+            for (var i = 0; i < Proof.SiblingHashes.Count; i++)
+                siblingHashes[i] = Convert.ToBase64String(Proof.SiblingHashes[i]);
+            proofDto = new MerkleCheckpointProofDto(
+                Proof.EventIndex,
+                Convert.ToBase64String(Proof.LeafHash),
+                siblingHashes);
+        }
+
         var dto = new MerkleCheckpointDto(
             Tick,
             Convert.ToBase64String(MerkleRoot),
             Convert.ToBase64String(AuthorityPublicKey),
-            Convert.ToBase64String(Signature));
+            Convert.ToBase64String(Signature),
+            proofDto);
         return JsonSerializer.SerializeToUtf8Bytes(dto, MerkleCheckpointJsonContext.Default.MerkleCheckpointDto);
     }
 
@@ -127,17 +142,66 @@ public sealed record MerkleCheckpoint(
             throw new JsonException(
                 $"MerkleCheckpoint.Signature must be {AuthorityCrypto.SignatureSize} bytes after base-64 decoding.");
 
-        return new MerkleCheckpoint(dto.Tick, merkleRoot, authorityPublicKey, signature);
+        MerkleCheckpointProof? proof = null;
+        if (dto.Proof is not null)
+        {
+            var proofDto = dto.Proof;
+            byte[] leafHash;
+            try
+            {
+                leafHash = Convert.FromBase64String(proofDto.LeafHash
+                    ?? throw new JsonException("MerkleCheckpointProof.LeafHash is required."));
+            }
+            catch (FormatException ex)
+            {
+                throw new JsonException("MerkleCheckpointProof.LeafHash is not valid base-64.", ex);
+            }
+
+            if (leafHash.Length != SHA256.HashSizeInBytes)
+                throw new JsonException(
+                    $"MerkleCheckpointProof.LeafHash must be {SHA256.HashSizeInBytes} bytes after base-64 decoding.");
+
+            var rawSiblings = proofDto.SiblingHashes ?? [];
+            var siblings = new byte[rawSiblings.Length][];
+            for (var i = 0; i < rawSiblings.Length; i++)
+            {
+                try
+                {
+                    siblings[i] = Convert.FromBase64String(rawSiblings[i]
+                        ?? throw new JsonException($"MerkleCheckpointProof.SiblingHashes[{i}] is required."));
+                }
+                catch (FormatException ex)
+                {
+                    throw new JsonException($"MerkleCheckpointProof.SiblingHashes[{i}] is not valid base-64.", ex);
+                }
+
+                if (siblings[i].Length != SHA256.HashSizeInBytes)
+                    throw new JsonException(
+                        $"MerkleCheckpointProof.SiblingHashes[{i}] must be {SHA256.HashSizeInBytes} bytes after base-64 decoding.");
+            }
+
+            proof = new MerkleCheckpointProof(proofDto.EventIndex, leafHash, siblings);
+        }
+
+        return new MerkleCheckpoint(dto.Tick, merkleRoot, authorityPublicKey, signature, proof);
     }
 }
+
+/// <summary>JSON DTO for <see cref="MerkleCheckpointProof"/> serialisation.</summary>
+internal sealed record MerkleCheckpointProofDto(
+    long EventIndex,
+    string? LeafHash,
+    string[]? SiblingHashes);
 
 /// <summary>JSON DTO for <see cref="MerkleCheckpoint"/> serialisation.</summary>
 internal sealed record MerkleCheckpointDto(
     ulong Tick,
     string? MerkleRoot,
     string? AuthorityPublicKey,
-    string? Signature);
+    string? Signature,
+    MerkleCheckpointProofDto? Proof = null);
 
 [JsonSerializable(typeof(MerkleCheckpointDto))]
+[JsonSerializable(typeof(MerkleCheckpointProofDto))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 internal sealed partial class MerkleCheckpointJsonContext : JsonSerializerContext;
