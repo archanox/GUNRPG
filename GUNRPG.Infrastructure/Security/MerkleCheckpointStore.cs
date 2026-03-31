@@ -123,9 +123,13 @@ public sealed class MerkleCheckpointStore
             {
                 results.Add(MerkleCheckpoint.FromJsonBytes(File.ReadAllBytes(file)));
             }
-            catch
+            catch (System.Text.Json.JsonException)
             {
-                // Silently skip malformed files.
+                // Silently skip malformed JSON checkpoint files.
+            }
+            catch (FormatException)
+            {
+                // Silently skip checkpoint files with invalid data formats.
             }
         }
 

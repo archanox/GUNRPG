@@ -226,7 +226,8 @@ public sealed class AuthoritySignedCheckpointTests
 
         // Verify from checkpoint tick (should be identical).
         var simulationFromCp = new StateHasherSimulation(state);
-        var resultFromCp = verifier.VerifyRun(ticks, result, simulationFromCp, merkleCheckpoint, registry);
+        var resultFromCp = verifier.VerifyRun(ticks, result, simulationFromCp,
+            merkleCheckpoint: merkleCheckpoint, authorityRegistry: registry);
 
         Assert.True(resultFull, "Full replay verification must pass.");
         Assert.True(resultFromCp, "Checkpoint-resumed verification must also pass.");
@@ -256,7 +257,8 @@ public sealed class AuthoritySignedCheckpointTests
 
         Assert.True(verifier.VerifyRun(ticks, result, new StateHasherSimulation(state)),
             "Full replay must pass.");
-        Assert.True(verifier.VerifyRun(ticks, result, new StateHasherSimulation(state), merkleCheckpoint, registry),
+        Assert.True(verifier.VerifyRun(ticks, result, new StateHasherSimulation(state),
+                merkleCheckpoint: merkleCheckpoint, authorityRegistry: registry),
             "Checkpoint-resumed verification must also pass.");
     }
 
@@ -274,7 +276,7 @@ public sealed class AuthoritySignedCheckpointTests
 
         // Passing null checkpoint should behave identically to the 3-parameter overload.
         var r1 = verifier.VerifyRun(ticks, result, new StateHasherSimulation(state));
-        var r2 = verifier.VerifyRun(ticks, result, new StateHasherSimulation(state), null);
+        var r2 = verifier.VerifyRun(ticks, result, new StateHasherSimulation(state), merkleCheckpoint: null);
 
         Assert.Equal(r1, r2);
     }
@@ -307,7 +309,8 @@ public sealed class AuthoritySignedCheckpointTests
 
         Assert.False(verifier.VerifyRun(ticks, result, divSim1),
             "Full replay must detect divergence after checkpoint tick.");
-        Assert.False(verifier.VerifyRun(ticks, result, divSim2, merkleCheckpoint, registry),
+        Assert.False(verifier.VerifyRun(ticks, result, divSim2,
+                merkleCheckpoint: merkleCheckpoint, authorityRegistry: registry),
             "Checkpoint-resumed verification must also detect divergence after checkpoint tick.");
     }
 
@@ -338,7 +341,8 @@ public sealed class AuthoritySignedCheckpointTests
         var registry = new AuthorityRegistry([authority.PublicKey]);
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
-        Assert.False(verifier.VerifyRun(ticks, result, new StateHasherSimulation(state), tampered, registry));
+        Assert.False(verifier.VerifyRun(ticks, result, new StateHasherSimulation(state),
+            merkleCheckpoint: tampered, authorityRegistry: registry));
     }
 
     [Fact]
@@ -362,7 +366,8 @@ public sealed class AuthoritySignedCheckpointTests
         var registry = new AuthorityRegistry([authority.PublicKey]);
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
-        Assert.False(verifier.VerifyRun(ticks, result, new StateHasherSimulation(state), checkpoint, registry));
+        Assert.False(verifier.VerifyRun(ticks, result, new StateHasherSimulation(state),
+            merkleCheckpoint: checkpoint, authorityRegistry: registry));
     }
 
     [Fact]
@@ -381,7 +386,8 @@ public sealed class AuthoritySignedCheckpointTests
         var registry = new AuthorityRegistry([authority.PublicKey]);
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
-        Assert.False(verifier.VerifyRun(ticks, result, new StateHasherSimulation(state), merkleCheckpoint, registry));
+        Assert.False(verifier.VerifyRun(ticks, result, new StateHasherSimulation(state),
+            merkleCheckpoint: merkleCheckpoint, authorityRegistry: registry));
     }
 
     [Fact]
@@ -404,7 +410,8 @@ public sealed class AuthoritySignedCheckpointTests
         var registry = new AuthorityRegistry([authority.PublicKey]);
         var verifier = new ReplayVerifier(authority.ToAuthority());
 
-        Assert.False(verifier.VerifyRun(ticks, result, new StateHasherSimulation(state), checkpoint, registry));
+        Assert.False(verifier.VerifyRun(ticks, result, new StateHasherSimulation(state),
+            merkleCheckpoint: checkpoint, authorityRegistry: registry));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
