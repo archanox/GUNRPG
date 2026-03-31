@@ -45,7 +45,9 @@ public sealed class ReplayVerifier
 
     /// <summary>
     /// Performs full verification of a signed run against a deterministic simulation,
-    /// optionally using signed state snapshots to accelerate replay.
+    /// optionally using signed state snapshots to accelerate replay, and optionally
+    /// narrowing the checkpoint search window using a trusted authority-signed
+    /// <see cref="MerkleCheckpoint"/>.
     /// </summary>
     /// <param name="tickChain">
     /// The complete, ordered chain of signed tick checkpoints for the run.
@@ -70,6 +72,25 @@ public sealed class ReplayVerifier
     /// is silently skipped.  When <see langword="null"/> or empty, the method falls back to
     /// full replay from genesis for every probe step.
     /// </param>
+    /// <param name="merkleCheckpoint">
+    /// An optional authority-signed <see cref="MerkleCheckpoint"/>.  When provided, its
+    /// signature is verified (using <paramref name="authorityRegistry"/> when non-null, or the
+    /// verifier's own authority key otherwise) and its
+    /// <see cref="MerkleCheckpoint.MerkleRoot"/> is matched against the corresponding
+    /// <see cref="RunCheckpoint"/> in <paramref name="runResult"/>.  On success the
+    /// binary-search window is constrained to ticks at or after
+    /// <see cref="MerkleCheckpoint.Tick"/>, narrowing the divergence search.
+    /// Replay work for each probe is still determined by the available
+    /// <paramref name="snapshots"/> (falling back to replay from genesis when none exist).
+    /// When <see langword="null"/>, the full checkpoint range is searched.
+    /// </param>
+    /// <param name="authorityRegistry">
+    /// Optional registry of trusted authority public keys used to validate
+    /// <paramref name="merkleCheckpoint"/>.  When <see langword="null"/> the checkpoint's
+    /// <see cref="MerkleCheckpoint.AuthorityPublicKey"/> is verified against this verifier's
+    /// own authority public key instead.  Ignored when <paramref name="merkleCheckpoint"/>
+    /// is <see langword="null"/>.
+    /// </param>
     /// <returns>
     /// <see langword="true"/> if every verification step passes;
     /// <see langword="false"/> if any check fails (out-of-order tick chain, invalid
@@ -80,7 +101,9 @@ public sealed class ReplayVerifier
         IReadOnlyList<SignedTick> tickChain,
         SignedRunResult runResult,
         IDeterministicSimulation simulation,
-        IReadOnlyList<StateSnapshot>? snapshots = null)
+        IReadOnlyList<StateSnapshot>? snapshots = null,
+        MerkleCheckpoint? merkleCheckpoint = null,
+        AuthorityRegistry? authorityRegistry = null)
     {
         ArgumentNullException.ThrowIfNull(tickChain);
         ArgumentNullException.ThrowIfNull(runResult);
@@ -96,15 +119,26 @@ public sealed class ReplayVerifier
                 return false;
         }
 
-        // Step 1: Verify the run signature.
+        // Step 1: Validate the MerkleCheckpoint when provided.
+        // This verifies the signature and locates the matching RunCheckpoint index so
+        // binary search can begin there rather than at index 0.  Simulation still replays
+        // from the nearest available snapshot for each probe step.
+        int checkpointStartIndex = -1;
+        if (merkleCheckpoint is not null)
+        {
+            if (!ValidateMerkleCheckpoint(merkleCheckpoint, runResult, authorityRegistry, out checkpointStartIndex))
+                return false;
+        }
+
+        // Step 2: Verify the run signature.
         if (!SessionAuthority.VerifySignedRun(runResult, _authority))
             return false;
 
-        // Step 2: Verify the Merkle root of the tick chain.
+        // Step 3: Verify the Merkle root of the tick chain.
         if (!TickAuthorityService.VerifyTickMerkleRoot(runResult, tickChain))
             return false;
 
-        // Step 3: Verify checkpoint structure (fast two-pointer scan).
+        // Step 4: Verify checkpoint structure (fast two-pointer scan).
         if (!TickAuthorityService.VerifyCheckpoints(runResult, tickChain))
             return false;
 
@@ -123,7 +157,7 @@ public sealed class ReplayVerifier
             return VerifyFinalHashByReplay(simulation, tickChain, runResult.FinalHash, snapshotLookup, tickPositionLookup);
 
         // Defensively verify that every checkpoint tick index is present in the lookup.
-        // VerifyCheckpoints (step 3) enforces this invariant, but we guard here to prevent
+        // VerifyCheckpoints (step 4) enforces this invariant, but we guard here to prevent
         // KeyNotFoundException on any subsequent lookup access.
         foreach (var cp in checkpoints)
         {
@@ -131,25 +165,31 @@ public sealed class ReplayVerifier
                 return false;
         }
 
-        // Step 4: Binary-search checkpoint simulation.
-        // Verify the first checkpoint by replaying from genesis (or nearest snapshot).
-        InitSimulation(simulation, tickChain, tickPositionLookup[checkpoints[0].TickIndex], snapshotLookup, tickPositionLookup);
+        // Determine the effective start of the binary-search window.
+        // When a MerkleCheckpoint was validated, checkpointStartIndex is the index in
+        // runResult.Checkpoints that corresponds to the checkpoint tick; search begins there.
+        // When no MerkleCheckpoint was provided, start from index 0 (full range).
+        var startIndex = checkpointStartIndex >= 0 ? checkpointStartIndex : 0;
+
+        // Step 5: Binary-search checkpoint simulation.
+        // Verify the checkpoint at startIndex by replaying from the nearest snapshot (or genesis).
+        InitSimulation(simulation, tickChain, tickPositionLookup[checkpoints[startIndex].TickIndex], snapshotLookup, tickPositionLookup);
         var firstHash = simulation.GetStateHash();
-        if (!IsValidStateHash(firstHash) || !firstHash.AsSpan().SequenceEqual(checkpoints[0].StateHash))
+        if (!IsValidStateHash(firstHash) || !firstHash.AsSpan().SequenceEqual(checkpoints[startIndex].StateHash))
             return false;
 
-        // With a single checkpoint, ensure it corresponds to the last tick in the chain
-        // and that the simulated hash matches the signed final hash.
-        if (checkpoints.Count == 1)
+        // With a single effective checkpoint, ensure it corresponds to the last tick in the
+        // chain and that the simulated hash matches the signed final hash.
+        if (startIndex == checkpoints.Count - 1)
         {
-            if (checkpoints[0].TickIndex != tickChain[^1].Tick)
+            if (checkpoints[startIndex].TickIndex != tickChain[^1].Tick)
                 return false;
 
             return TryParseHexHash(runResult.FinalHash, out var singleFinalHash)
                    && firstHash.AsSpan().SequenceEqual(singleFinalHash);
         }
 
-        var low = 0;
+        var low = startIndex;
         var high = checkpoints.Count - 1;
 
         // Binary search: narrow down to the smallest window [low, high] that may
@@ -169,11 +209,11 @@ public sealed class ReplayVerifier
                 high = mid;
         }
 
-        // Step 5 & 6: Linear replay within the [low, high] window.
+        // Step 6: Linear replay within the [low, high] window.
         // Re-simulate from the last verified checkpoint (low) and apply ticks one-by-one
         // up to the candidate divergence checkpoint (high).
         // Because the last checkpoint in the result is always the final tick, this step
-        // also serves as the final-state-hash confirmation (step 6).
+        // also serves as the final-state-hash confirmation (step 7).
         var lowEndIndex = tickPositionLookup[checkpoints[low].TickIndex];
         InitSimulation(simulation, tickChain, lowEndIndex, snapshotLookup, tickPositionLookup);
 
@@ -185,8 +225,8 @@ public sealed class ReplayVerifier
         if (!IsValidStateHash(highHash) || !highHash.AsSpan().SequenceEqual(checkpoints[high].StateHash))
             return false;
 
-        // Ensure the last checkpoint covers the final tick in the chain, and that the
-        // signed final hash matches the simulated state — so FinalHash is always validated
+        // Step 7: Ensure the last checkpoint covers the final tick in the chain, and that
+        // the signed final hash matches the simulated state — so FinalHash is always validated
         // even when the checkpoint list might omit the final tick.
         // Safety: checkpoints.Count >= 2 here (Count 0 and Count 1 both returned early),
         // and tickChain is non-empty (VerifyCheckpoints passed with non-empty checkpoints).
@@ -276,169 +316,6 @@ public sealed class ReplayVerifier
     }
 
     /// <summary>
-    /// Performs full verification of a signed run against a deterministic simulation,
-    /// optionally resuming from a trusted authority-signed <see cref="MerkleCheckpoint"/>
-    /// to skip earlier portions of the run.
-    /// </summary>
-    /// <param name="tickChain">
-    /// The complete, ordered chain of signed tick checkpoints for the run.
-    /// </param>
-    /// <param name="runResult">
-    /// The signed run result to verify, including checkpoints and Merkle root.
-    /// </param>
-    /// <param name="simulation">
-    /// A deterministic simulation used to re-execute the tick chain.
-    /// </param>
-    /// <param name="merkleCheckpoint">
-    /// An optional authority-signed <see cref="MerkleCheckpoint"/> that represents a trusted
-    /// state at a specific tick.  When provided:
-    /// <list type="number">
-    ///   <item>The checkpoint signature is validated against <paramref name="authorityRegistry"/>
-    ///     (or the verifier's own authority key when the registry is <see langword="null"/>).</item>
-    ///   <item>The checkpoint's <see cref="MerkleCheckpoint.MerkleRoot"/> is matched against
-    ///     the corresponding <see cref="RunCheckpoint"/> in <paramref name="runResult"/>.</item>
-    ///   <item>Binary-search replay starts from <see cref="MerkleCheckpoint.Tick"/> instead of
-    ///     tick 0, reducing simulation work.</item>
-    /// </list>
-    /// When <see langword="null"/>, verification starts from tick 0 (identical to
-    /// <see cref="VerifyRun(IReadOnlyList{SignedTick},SignedRunResult,IDeterministicSimulation,IReadOnlyList{StateSnapshot})"/>).
-    /// </param>
-    /// <param name="authorityRegistry">
-    /// Optional registry of trusted authority public keys used to validate
-    /// <paramref name="merkleCheckpoint"/>.  When <see langword="null"/> the checkpoint's
-    /// <see cref="MerkleCheckpoint.AuthorityPublicKey"/> is verified against this verifier's
-    /// own authority public key instead.
-    /// </param>
-    /// <param name="snapshots">
-    /// Optional list of signed state snapshots that accelerate replay.
-    /// </param>
-    /// <returns>
-    /// <see langword="true"/> if every verification step passes;
-    /// <see langword="false"/> if any check fails.
-    /// </returns>
-    public bool VerifyRun(
-        IReadOnlyList<SignedTick> tickChain,
-        SignedRunResult runResult,
-        IDeterministicSimulation simulation,
-        MerkleCheckpoint? merkleCheckpoint,
-        AuthorityRegistry? authorityRegistry = null,
-        IReadOnlyList<StateSnapshot>? snapshots = null)
-    {
-        ArgumentNullException.ThrowIfNull(tickChain);
-        ArgumentNullException.ThrowIfNull(runResult);
-        ArgumentNullException.ThrowIfNull(simulation);
-
-        // Guard: tick chain must be strictly ordered by tick index and contain no null entries.
-        for (var i = 0; i < tickChain.Count; i++)
-        {
-            if (tickChain[i] is null)
-                return false;
-
-            if (i > 0 && tickChain[i].Tick <= tickChain[i - 1].Tick)
-                return false;
-        }
-
-        // Step 1: Validate the MerkleCheckpoint when provided.
-        int checkpointStartIndex = -1; // Index into runResult.Checkpoints to start binary search from.
-        if (merkleCheckpoint is not null)
-        {
-            if (!ValidateMerkleCheckpoint(merkleCheckpoint, runResult, authorityRegistry, out checkpointStartIndex))
-                return false;
-        }
-
-        // Step 2: Verify the run signature.
-        if (!SessionAuthority.VerifySignedRun(runResult, _authority))
-            return false;
-
-        // Step 3: Verify the Merkle root of the tick chain.
-        if (!TickAuthorityService.VerifyTickMerkleRoot(runResult, tickChain))
-            return false;
-
-        // Step 4: Verify checkpoint structure (fast two-pointer scan).
-        if (!TickAuthorityService.VerifyCheckpoints(runResult, tickChain))
-            return false;
-
-        var checkpoints = runResult.Checkpoints;
-
-        var tickPositionLookup = BuildTickPositionLookup(tickChain);
-        var snapshotLookup = BuildVerifiedSnapshotLookup(snapshots, runResult);
-
-        // No checkpoints: fall back to full replay.
-        if (checkpoints is null || checkpoints.Count == 0)
-            return VerifyFinalHashByReplay(simulation, tickChain, runResult.FinalHash, snapshotLookup, tickPositionLookup);
-
-        // Defensively verify that every checkpoint tick index is present in the lookup.
-        foreach (var cp in checkpoints)
-        {
-            if (!tickPositionLookup.ContainsKey(cp.TickIndex))
-                return false;
-        }
-
-        // Determine the effective start index in the checkpoints list.
-        // When a MerkleCheckpoint was provided and validated, checkpointStartIndex is the
-        // index in runResult.Checkpoints whose state we have already verified via the
-        // checkpoint signature; the binary-search window begins at that index.
-        // When no checkpoint was provided, start from index 0 (full scan from genesis).
-        var startIndex = checkpointStartIndex >= 0 ? checkpointStartIndex : 0;
-
-        // Initialise the simulation to the tick at startIndex.
-        // The unified InitSimulation call handles all three cases identically:
-        //   - no snapshot, no checkpoint → full replay from genesis
-        //   - matching StateSnapshot available → resume from snapshot
-        //   - MerkleCheckpoint validated → startIndex points past already-trusted ticks;
-        //     InitSimulation finds the best snapshot ≤ the target tick, which may be the
-        //     checkpoint tick itself when a matching StateSnapshot is also present.
-        InitSimulation(simulation, tickChain, tickPositionLookup[checkpoints[startIndex].TickIndex], snapshotLookup, tickPositionLookup);
-        var firstHash = simulation.GetStateHash();
-        if (!IsValidStateHash(firstHash) || !firstHash.AsSpan().SequenceEqual(checkpoints[startIndex].StateHash))
-            return false;
-
-        // With only one effective checkpoint remaining, ensure it is the last tick and validate final hash.
-        if (startIndex == checkpoints.Count - 1)
-        {
-            if (checkpoints[startIndex].TickIndex != tickChain[^1].Tick)
-                return false;
-
-            return TryParseHexHash(runResult.FinalHash, out var singleFinalHash)
-                   && firstHash.AsSpan().SequenceEqual(singleFinalHash);
-        }
-
-        var low = startIndex;
-        var high = checkpoints.Count - 1;
-
-        while (high - low > 1)
-        {
-            var mid = low + (high - low) / 2;
-            var midEndIndex = tickPositionLookup[checkpoints[mid].TickIndex];
-
-            InitSimulation(simulation, tickChain, midEndIndex, snapshotLookup, tickPositionLookup);
-
-            var midHash = simulation.GetStateHash();
-            if (IsValidStateHash(midHash) && midHash.AsSpan().SequenceEqual(checkpoints[mid].StateHash))
-                low = mid;
-            else
-                high = mid;
-        }
-
-        var lowEndIndex = tickPositionLookup[checkpoints[low].TickIndex];
-        InitSimulation(simulation, tickChain, lowEndIndex, snapshotLookup, tickPositionLookup);
-
-        var highEndIndex = tickPositionLookup[checkpoints[high].TickIndex];
-        for (var i = lowEndIndex + 1; i <= highEndIndex; i++)
-            simulation.ApplyTick(tickChain[i]);
-
-        var highHash = simulation.GetStateHash();
-        if (!IsValidStateHash(highHash) || !highHash.AsSpan().SequenceEqual(checkpoints[high].StateHash))
-            return false;
-
-        if (checkpoints[^1].TickIndex != tickChain[^1].Tick)
-            return false;
-
-        return TryParseHexHash(runResult.FinalHash, out var signedFinalHash)
-               && highHash.AsSpan().SequenceEqual(signedFinalHash);
-    }
-
-    /// <summary>
     /// Validates a <see cref="MerkleCheckpoint"/> against the run result and, when valid,
     /// outputs the index into <paramref name="runResult"/>'s checkpoints list that corresponds
     /// to the checkpoint tick.
@@ -498,6 +375,11 @@ public sealed class ReplayVerifier
         //    Also verify that MerkleRoot matches the RunCheckpoint.StateHash.
         var checkpoints = runResult.Checkpoints;
         if (checkpoints is null || checkpoints.Count == 0)
+            return false;
+
+        // Guard against overflow: RunCheckpoint.TickIndex is long, so ticks > long.MaxValue
+        // cannot match any valid checkpoint and must be rejected before casting.
+        if (merkleCheckpoint.Tick > (ulong)long.MaxValue)
             return false;
 
         var checkpointTick = (long)merkleCheckpoint.Tick;
