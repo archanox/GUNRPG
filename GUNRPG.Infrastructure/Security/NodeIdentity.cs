@@ -40,6 +40,27 @@ public sealed class NodeIdentity
     public bool IsAuthority => Role == AuthorityRole.Authority;
 
     /// <summary>
+    /// Returns a short fingerprint of this node's public key for use in logging and diagnostics.
+    /// The fingerprint is the first 16 hex characters (8 bytes) of the public key, prefixed with
+    /// <c>ed25519:</c>.
+    /// Returns <see langword="null"/> when the node has no private key (i.e. when
+    /// <see cref="PublicKey"/> is <see langword="null"/>).
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// Console.WriteLine($"Authority node detected ({identity.GetFingerprint()})");
+    /// // e.g. "Authority node detected (ed25519:abcd1234ef567890)"
+    /// </code>
+    /// </example>
+    public string? GetFingerprint()
+    {
+        if (_publicKey is null)
+            return null;
+
+        return $"ed25519:{Convert.ToHexString(_publicKey[..8]).ToLowerInvariant()}";
+    }
+
+    /// <summary>
     /// Creates an anonymous (verifier-only) node identity with no private key.
     /// </summary>
     public static NodeIdentity Anonymous() => new(AuthorityRole.Verifier, null);

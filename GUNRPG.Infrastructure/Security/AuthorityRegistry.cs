@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -27,7 +28,11 @@ public sealed class AuthorityRegistry
 {
     private const string Ed25519Prefix = "ed25519:";
 
-    private readonly IReadOnlyList<byte[]> _authorities;
+    // Keys stored as lowercase hex strings for O(1) lookup.
+    private readonly HashSet<string> _authorities;
+
+    // Raw byte arrays retained so GetAuthorities() can return them defensively cloned.
+    private readonly IReadOnlyList<byte[]> _authorityBytes;
 
     /// <summary>Initializes a registry with an explicit list of trusted public keys.</summary>
     /// <param name="authorityPublicKeys">
@@ -43,7 +48,8 @@ public sealed class AuthorityRegistry
     {
         ArgumentNullException.ThrowIfNull(authorityPublicKeys);
 
-        var list = new List<byte[]>();
+        var hexSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var byteList = new List<byte[]>();
         foreach (var key in authorityPublicKeys)
         {
             if (key is null)
@@ -51,10 +57,13 @@ public sealed class AuthorityRegistry
             if (key.Length != AuthorityCrypto.KeySize)
                 throw new ArgumentException(
                     $"Authority public key must be exactly {AuthorityCrypto.KeySize} bytes.", nameof(authorityPublicKeys));
-            list.Add((byte[])key.Clone());
+            var cloned = (byte[])key.Clone();
+            hexSet.Add(ToHexKey(cloned));
+            byteList.Add(cloned);
         }
 
-        _authorities = list;
+        _authorities = hexSet;
+        _authorityBytes = byteList;
     }
 
     /// <summary>An empty registry that trusts no authorities.</summary>
@@ -108,7 +117,7 @@ public sealed class AuthorityRegistry
 
     /// <summary>
     /// Returns <see langword="true"/> when <paramref name="publicKey"/> is a trusted authority.
-    /// Comparison is byte-for-byte.
+    /// Lookup is O(1) via an internal hex-string <see cref="HashSet{T}"/>.
     /// </summary>
     /// <param name="publicKey">The Ed25519 public key to look up (must be exactly 32 bytes).</param>
     /// <exception cref="ArgumentNullException">
@@ -124,13 +133,7 @@ public sealed class AuthorityRegistry
             throw new ArgumentException(
                 $"Public key must be exactly {AuthorityCrypto.KeySize} bytes.", nameof(publicKey));
 
-        foreach (var trusted in _authorities)
-        {
-            if (publicKey.AsSpan().SequenceEqual(trusted))
-                return true;
-        }
-
-        return false;
+        return _authorities.Contains(ToHexKey(publicKey));
     }
 
     /// <summary>
@@ -138,8 +141,12 @@ public sealed class AuthorityRegistry
     /// </summary>
     public IReadOnlyCollection<byte[]> GetAuthorities()
     {
-        return _authorities.Select(k => (byte[])k.Clone()).ToArray();
+        return _authorityBytes.Select(k => (byte[])k.Clone()).ToArray();
     }
+
+    /// <summary>Converts a public key to a canonical lowercase hex string for HashSet storage.</summary>
+    private static string ToHexKey(byte[] key) =>
+        Convert.ToHexString(key).ToLowerInvariant();
 
     private static byte[] ParsePublicKeyEntry(string entry, int index)
     {
