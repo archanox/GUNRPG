@@ -320,6 +320,32 @@ internal static class AuthorityCrypto
     }
 
     /// <summary>
+    /// Computes the signing payload hash for a <see cref="MerkleCheckpoint"/>.
+    /// The canonical encoding (before hashing) is:
+    /// <c>"checkpoint" (UTF-8, 10 bytes) || Tick (big-endian uint64) || MerkleRoot (32 bytes)</c>.
+    /// The final hash is <c>SHA-256</c> over that buffer.
+    /// </summary>
+    internal static byte[] ComputeMerkleCheckpointPayloadHash(ulong tick, byte[] merkleRoot)
+    {
+        var normalizedRoot = CloneAndValidateSha256Hash(merkleRoot);
+        // "checkpoint" in UTF-8 = 10 bytes.
+        ReadOnlySpan<byte> prefix = "checkpoint"u8;
+        const int uint64Size = sizeof(ulong);
+        var buffer = new byte[prefix.Length + uint64Size + normalizedRoot.Length];
+        var offset = 0;
+
+        prefix.CopyTo(buffer.AsSpan(offset));
+        offset += prefix.Length;
+
+        BinaryPrimitives.WriteUInt64BigEndian(buffer.AsSpan(offset), tick);
+        offset += uint64Size;
+
+        normalizedRoot.CopyTo(buffer, offset);
+
+        return SHA256.HashData(buffer);
+    }
+
+    /// <summary>
     /// Computes the deterministic leaf hash for a single signed tick.
     /// The canonical encoding (before hashing) is:
     /// <c>Tick (big-endian int64) || len(PrevStateHash) (big-endian int32) || PrevStateHash ||

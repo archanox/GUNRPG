@@ -275,6 +275,249 @@ public sealed class ReplayVerifier
         return snapshot.StateHash.AsSpan().SequenceEqual(matchingCheckpoint.StateHash);
     }
 
+    /// <summary>
+    /// Performs full verification of a signed run against a deterministic simulation,
+    /// optionally resuming from a trusted authority-signed <see cref="MerkleCheckpoint"/>
+    /// to skip earlier portions of the run.
+    /// </summary>
+    /// <param name="tickChain">
+    /// The complete, ordered chain of signed tick checkpoints for the run.
+    /// </param>
+    /// <param name="runResult">
+    /// The signed run result to verify, including checkpoints and Merkle root.
+    /// </param>
+    /// <param name="simulation">
+    /// A deterministic simulation used to re-execute the tick chain.
+    /// </param>
+    /// <param name="merkleCheckpoint">
+    /// An optional authority-signed <see cref="MerkleCheckpoint"/> that represents a trusted
+    /// state at a specific tick.  When provided:
+    /// <list type="number">
+    ///   <item>The checkpoint signature is validated against <paramref name="authorityRegistry"/>
+    ///     (or the verifier's own authority key when the registry is <see langword="null"/>).</item>
+    ///   <item>The checkpoint's <see cref="MerkleCheckpoint.MerkleRoot"/> is matched against
+    ///     the corresponding <see cref="RunCheckpoint"/> in <paramref name="runResult"/>.</item>
+    ///   <item>Binary-search replay starts from <see cref="MerkleCheckpoint.Tick"/> instead of
+    ///     tick 0, reducing simulation work.</item>
+    /// </list>
+    /// When <see langword="null"/>, verification starts from tick 0 (identical to
+    /// <see cref="VerifyRun(IReadOnlyList{SignedTick},SignedRunResult,IDeterministicSimulation,IReadOnlyList{StateSnapshot})"/>).
+    /// </param>
+    /// <param name="authorityRegistry">
+    /// Optional registry of trusted authority public keys used to validate
+    /// <paramref name="merkleCheckpoint"/>.  When <see langword="null"/> the checkpoint's
+    /// <see cref="MerkleCheckpoint.AuthorityPublicKey"/> is verified against this verifier's
+    /// own authority public key instead.
+    /// </param>
+    /// <param name="snapshots">
+    /// Optional list of signed state snapshots that accelerate replay.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> if every verification step passes;
+    /// <see langword="false"/> if any check fails.
+    /// </returns>
+    public bool VerifyRun(
+        IReadOnlyList<SignedTick> tickChain,
+        SignedRunResult runResult,
+        IDeterministicSimulation simulation,
+        MerkleCheckpoint? merkleCheckpoint,
+        AuthorityRegistry? authorityRegistry = null,
+        IReadOnlyList<StateSnapshot>? snapshots = null)
+    {
+        ArgumentNullException.ThrowIfNull(tickChain);
+        ArgumentNullException.ThrowIfNull(runResult);
+        ArgumentNullException.ThrowIfNull(simulation);
+
+        // Guard: tick chain must be strictly ordered by tick index and contain no null entries.
+        for (var i = 0; i < tickChain.Count; i++)
+        {
+            if (tickChain[i] is null)
+                return false;
+
+            if (i > 0 && tickChain[i].Tick <= tickChain[i - 1].Tick)
+                return false;
+        }
+
+        // Step 1: Validate the MerkleCheckpoint when provided.
+        int checkpointStartIndex = -1; // Index into runResult.Checkpoints to start binary search from.
+        if (merkleCheckpoint is not null)
+        {
+            if (!ValidateMerkleCheckpoint(merkleCheckpoint, runResult, authorityRegistry, out checkpointStartIndex))
+                return false;
+        }
+
+        // Step 2: Verify the run signature.
+        if (!SessionAuthority.VerifySignedRun(runResult, _authority))
+            return false;
+
+        // Step 3: Verify the Merkle root of the tick chain.
+        if (!TickAuthorityService.VerifyTickMerkleRoot(runResult, tickChain))
+            return false;
+
+        // Step 4: Verify checkpoint structure (fast two-pointer scan).
+        if (!TickAuthorityService.VerifyCheckpoints(runResult, tickChain))
+            return false;
+
+        var checkpoints = runResult.Checkpoints;
+
+        var tickPositionLookup = BuildTickPositionLookup(tickChain);
+        var snapshotLookup = BuildVerifiedSnapshotLookup(snapshots, runResult);
+
+        // No checkpoints: fall back to full replay.
+        if (checkpoints is null || checkpoints.Count == 0)
+            return VerifyFinalHashByReplay(simulation, tickChain, runResult.FinalHash, snapshotLookup, tickPositionLookup);
+
+        // Defensively verify that every checkpoint tick index is present in the lookup.
+        foreach (var cp in checkpoints)
+        {
+            if (!tickPositionLookup.ContainsKey(cp.TickIndex))
+                return false;
+        }
+
+        // Determine the effective start index in the checkpoints list.
+        // When a MerkleCheckpoint was provided and validated, checkpointStartIndex is the
+        // index in runResult.Checkpoints whose state we have already verified via the
+        // checkpoint signature; the binary-search window begins at that index.
+        // When no checkpoint was provided, start from index 0 (full scan from genesis).
+        var startIndex = checkpointStartIndex >= 0 ? checkpointStartIndex : 0;
+
+        // Initialise the simulation to the tick at startIndex.
+        // The unified InitSimulation call handles all three cases identically:
+        //   - no snapshot, no checkpoint → full replay from genesis
+        //   - matching StateSnapshot available → resume from snapshot
+        //   - MerkleCheckpoint validated → startIndex points past already-trusted ticks;
+        //     InitSimulation finds the best snapshot ≤ the target tick, which may be the
+        //     checkpoint tick itself when a matching StateSnapshot is also present.
+        InitSimulation(simulation, tickChain, tickPositionLookup[checkpoints[startIndex].TickIndex], snapshotLookup, tickPositionLookup);
+        var firstHash = simulation.GetStateHash();
+        if (!IsValidStateHash(firstHash) || !firstHash.AsSpan().SequenceEqual(checkpoints[startIndex].StateHash))
+            return false;
+
+        // With only one effective checkpoint remaining, ensure it is the last tick and validate final hash.
+        if (startIndex == checkpoints.Count - 1)
+        {
+            if (checkpoints[startIndex].TickIndex != tickChain[^1].Tick)
+                return false;
+
+            return TryParseHexHash(runResult.FinalHash, out var singleFinalHash)
+                   && firstHash.AsSpan().SequenceEqual(singleFinalHash);
+        }
+
+        var low = startIndex;
+        var high = checkpoints.Count - 1;
+
+        while (high - low > 1)
+        {
+            var mid = low + (high - low) / 2;
+            var midEndIndex = tickPositionLookup[checkpoints[mid].TickIndex];
+
+            InitSimulation(simulation, tickChain, midEndIndex, snapshotLookup, tickPositionLookup);
+
+            var midHash = simulation.GetStateHash();
+            if (IsValidStateHash(midHash) && midHash.AsSpan().SequenceEqual(checkpoints[mid].StateHash))
+                low = mid;
+            else
+                high = mid;
+        }
+
+        var lowEndIndex = tickPositionLookup[checkpoints[low].TickIndex];
+        InitSimulation(simulation, tickChain, lowEndIndex, snapshotLookup, tickPositionLookup);
+
+        var highEndIndex = tickPositionLookup[checkpoints[high].TickIndex];
+        for (var i = lowEndIndex + 1; i <= highEndIndex; i++)
+            simulation.ApplyTick(tickChain[i]);
+
+        var highHash = simulation.GetStateHash();
+        if (!IsValidStateHash(highHash) || !highHash.AsSpan().SequenceEqual(checkpoints[high].StateHash))
+            return false;
+
+        if (checkpoints[^1].TickIndex != tickChain[^1].Tick)
+            return false;
+
+        return TryParseHexHash(runResult.FinalHash, out var signedFinalHash)
+               && highHash.AsSpan().SequenceEqual(signedFinalHash);
+    }
+
+    /// <summary>
+    /// Validates a <see cref="MerkleCheckpoint"/> against the run result and, when valid,
+    /// outputs the index into <paramref name="runResult"/>'s checkpoints list that corresponds
+    /// to the checkpoint tick.
+    /// </summary>
+    /// <returns><see langword="true"/> when all validation steps pass.</returns>
+    private bool ValidateMerkleCheckpoint(
+        MerkleCheckpoint merkleCheckpoint,
+        SignedRunResult runResult,
+        AuthorityRegistry? authorityRegistry,
+        out int checkpointIndex)
+    {
+        checkpointIndex = -1;
+
+        // 1. Structural validation.
+        if (!merkleCheckpoint.HasValidStructure)
+            return false;
+
+        // 2. Authority trust: check against registry when provided, otherwise against own key.
+        if (authorityRegistry is not null)
+        {
+            if (!authorityRegistry.IsTrustedAuthority(merkleCheckpoint.AuthorityPublicKey))
+                return false;
+        }
+        else
+        {
+            if (!merkleCheckpoint.AuthorityPublicKey.AsSpan().SequenceEqual(_authority.PublicKeyBytes))
+                return false;
+        }
+
+        // 3. Cryptographic signature verification.
+        byte[] payloadHash;
+        try
+        {
+            payloadHash = AuthorityCrypto.ComputeMerkleCheckpointPayloadHash(
+                merkleCheckpoint.Tick, merkleCheckpoint.MerkleRoot);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        bool signatureValid;
+        try
+        {
+            signatureValid = AuthorityCrypto.VerifyHashedPayload(
+                merkleCheckpoint.AuthorityPublicKey, payloadHash, merkleCheckpoint.Signature);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        if (!signatureValid)
+            return false;
+
+        // 4. Tick ordering: checkpoint tick must map to a RunCheckpoint in the run result.
+        //    Also verify that MerkleRoot matches the RunCheckpoint.StateHash.
+        var checkpoints = runResult.Checkpoints;
+        if (checkpoints is null || checkpoints.Count == 0)
+            return false;
+
+        var checkpointTick = (long)merkleCheckpoint.Tick;
+        for (var i = 0; i < checkpoints.Count; i++)
+        {
+            if (checkpoints[i].TickIndex == checkpointTick)
+            {
+                // 5. Ensure the MerkleRoot matches the expected state hash at this tick.
+                if (!merkleCheckpoint.MerkleRoot.AsSpan().SequenceEqual(checkpoints[i].StateHash))
+                    return false;
+
+                checkpointIndex = i;
+                return true;
+            }
+        }
+
+        // Checkpoint tick is not in the run result checkpoints.
+        return false;
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Private helpers
     // ──────────────────────────────────────────────────────────────────────────

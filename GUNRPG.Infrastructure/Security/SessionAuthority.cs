@@ -285,6 +285,81 @@ public sealed class SessionAuthority : ISessionAuthority
     }
 
     /// <summary>
+    /// Creates and signs a <see cref="MerkleCheckpoint"/> at the given simulation tick.
+    /// Only authority nodes (those that hold a private key) can produce checkpoints.
+    /// </summary>
+    /// <param name="tick">The simulation tick this checkpoint represents.</param>
+    /// <param name="merkleRoot">
+    /// The simulation state hash at <paramref name="tick"/> (SHA-256, exactly 32 bytes).
+    /// </param>
+    /// <returns>
+    /// A new <see cref="MerkleCheckpoint"/> whose <see cref="MerkleCheckpoint.Signature"/> is an
+    /// Ed25519 signature over
+    /// <c>SHA-256("checkpoint" || tick (big-endian uint64) || merkleRoot)</c>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="merkleRoot"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="merkleRoot"/> is not exactly 32 bytes.</exception>
+    public MerkleCheckpoint CreateMerkleCheckpoint(ulong tick, byte[] merkleRoot)
+    {
+        ArgumentNullException.ThrowIfNull(merkleRoot);
+        if (merkleRoot.Length != System.Security.Cryptography.SHA256.HashSizeInBytes)
+            throw new ArgumentException(
+                $"merkleRoot must be exactly {System.Security.Cryptography.SHA256.HashSizeInBytes} bytes (SHA-256).",
+                nameof(merkleRoot));
+
+        var payloadHash = AuthorityCrypto.ComputeMerkleCheckpointPayloadHash(tick, merkleRoot);
+        var signature = AuthorityCrypto.SignHashedPayload(_privateKey, payloadHash);
+        return new MerkleCheckpoint(tick, (byte[])merkleRoot.Clone(), (byte[])_publicKey.Clone(), signature);
+    }
+
+    /// <summary>
+    /// Verifies a <see cref="MerkleCheckpoint"/>:
+    /// <list type="number">
+    ///   <item>Validates field lengths (<see cref="MerkleCheckpoint.HasValidStructure"/>).</item>
+    ///   <item>Checks that <see cref="MerkleCheckpoint.AuthorityPublicKey"/> is trusted by <paramref name="registry"/>.</item>
+    ///   <item>Verifies the Ed25519 signature.</item>
+    /// </list>
+    /// </summary>
+    /// <param name="checkpoint">The checkpoint to verify.</param>
+    /// <param name="registry">The registry of trusted authority public keys.</param>
+    /// <returns>
+    /// <see langword="true"/> if all three checks pass; <see langword="false"/> otherwise.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="checkpoint"/> or <paramref name="registry"/> is <see langword="null"/>.
+    /// </exception>
+    public static bool VerifyMerkleCheckpoint(MerkleCheckpoint checkpoint, AuthorityRegistry registry)
+    {
+        ArgumentNullException.ThrowIfNull(checkpoint);
+        ArgumentNullException.ThrowIfNull(registry);
+
+        if (!checkpoint.HasValidStructure)
+            return false;
+
+        if (!registry.IsTrustedAuthority(checkpoint.AuthorityPublicKey))
+            return false;
+
+        byte[] payloadHash;
+        try
+        {
+            payloadHash = AuthorityCrypto.ComputeMerkleCheckpointPayloadHash(checkpoint.Tick, checkpoint.MerkleRoot);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+
+        try
+        {
+            return AuthorityCrypto.VerifyHashedPayload(checkpoint.AuthorityPublicKey, payloadHash, checkpoint.Signature);
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Verifies the Ed25519 signature on a <see cref="SignedTick"/> using this authority's public key.
     /// </summary>
     /// <inheritdoc cref="ISessionAuthority.VerifyTick"/>
