@@ -95,6 +95,51 @@ public sealed class MerkleTree
     }
 
     /// <summary>
+    /// Generates a <see cref="MerkleCheckpointProof"/> for the leaf at <paramref name="eventIndex"/>.
+    /// The proof allows any peer to verify the event's inclusion in the tree without replaying
+    /// the full event log.
+    /// </summary>
+    /// <param name="leaves">The ordered list of leaf hashes.</param>
+    /// <param name="eventIndex">Zero-based index of the event (leaf) to prove.</param>
+    /// <returns>
+    /// A <see cref="MerkleCheckpointProof"/> that can be verified against the Merkle root
+    /// produced by <see cref="ComputeRoot"/> for the same <paramref name="leaves"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="leaves"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="eventIndex"/> is out of range.
+    /// </exception>
+    /// <exception cref="ArgumentException">Thrown when any leaf is <see langword="null"/> or not exactly 32 bytes.</exception>
+    public static MerkleCheckpointProof BuildCheckpointProof(IReadOnlyList<byte[]> leaves, long eventIndex)
+    {
+        ArgumentNullException.ThrowIfNull(leaves);
+        if (eventIndex < 0 || eventIndex >= leaves.Count)
+            throw new ArgumentOutOfRangeException(nameof(eventIndex),
+                $"eventIndex {eventIndex} is out of range for a leaf list of length {leaves.Count}.");
+
+        var layer = BuildInitialLayer(leaves);
+        var siblings = new List<byte[]>();
+        var index = (int)eventIndex;
+
+        while (layer.Count > 1)
+        {
+            var siblingIndex = (index % 2 == 0) ? index + 1 : index - 1;
+            // If sibling is beyond the end (odd layer) the last leaf was duplicated.
+            siblings.Add(siblingIndex < layer.Count
+                ? (byte[])layer[siblingIndex].Clone()
+                : (byte[])layer[index].Clone());
+
+            layer = BuildNextLayer(layer);
+            index /= 2;
+        }
+
+        return new MerkleCheckpointProof(
+            eventIndex,
+            (byte[])leaves[(int)eventIndex].Clone(),
+            siblings);
+    }
+
+    /// <summary>
     /// Verifies that a Merkle proof is consistent with the provided <paramref name="root"/>.
     /// </summary>
     /// <param name="proof">The proof to verify.</param>

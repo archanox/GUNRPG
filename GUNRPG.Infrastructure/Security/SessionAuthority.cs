@@ -318,17 +318,34 @@ public sealed class SessionAuthority : ISessionAuthority
     ///   <item>Validates field lengths (<see cref="MerkleCheckpoint.HasValidStructure"/>).</item>
     ///   <item>Checks that <see cref="MerkleCheckpoint.AuthorityPublicKey"/> is trusted by <paramref name="registry"/>.</item>
     ///   <item>Verifies the Ed25519 signature.</item>
+    ///   <item>
+    ///     When <paramref name="expectedMerkleRoot"/> is provided and the checkpoint has a
+    ///     <see cref="MerkleCheckpoint.Proof"/>, verifies the proof against
+    ///     <paramref name="expectedMerkleRoot"/> using
+    ///     <see cref="MerkleCheckpointProof.VerifyCheckpointProof"/>.
+    ///   </item>
     /// </list>
     /// </summary>
     /// <param name="checkpoint">The checkpoint to verify.</param>
     /// <param name="registry">The registry of trusted authority public keys.</param>
+    /// <param name="expectedMerkleRoot">
+    /// Optional 32-byte Merkle root to verify <see cref="MerkleCheckpoint.Proof"/> against
+    /// (typically the <see cref="SignedRunResult.TickMerkleRoot"/> of the associated run).
+    /// When <see langword="null"/> the proof is not checked even if present.
+    /// When non-<see langword="null"/> and the checkpoint carries a proof, the proof must
+    /// verify successfully or the method returns <see langword="false"/>.
+    /// When non-<see langword="null"/> but the checkpoint has no proof, the check is skipped.
+    /// </param>
     /// <returns>
-    /// <see langword="true"/> if all three checks pass; <see langword="false"/> otherwise.
+    /// <see langword="true"/> if all applicable checks pass; <see langword="false"/> otherwise.
     /// </returns>
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="checkpoint"/> or <paramref name="registry"/> is <see langword="null"/>.
     /// </exception>
-    public static bool VerifyMerkleCheckpoint(MerkleCheckpoint checkpoint, AuthorityRegistry registry)
+    public static bool VerifyMerkleCheckpoint(
+        MerkleCheckpoint checkpoint,
+        AuthorityRegistry registry,
+        byte[]? expectedMerkleRoot = null)
     {
         ArgumentNullException.ThrowIfNull(checkpoint);
         ArgumentNullException.ThrowIfNull(registry);
@@ -349,14 +366,34 @@ public sealed class SessionAuthority : ISessionAuthority
             return false;
         }
 
+        bool signatureValid;
         try
         {
-            return AuthorityCrypto.VerifyHashedPayload(checkpoint.AuthorityPublicKey, payloadHash, checkpoint.Signature);
+            signatureValid = AuthorityCrypto.VerifyHashedPayload(checkpoint.AuthorityPublicKey, payloadHash, checkpoint.Signature);
         }
         catch (ArgumentException)
         {
             return false;
         }
+
+        if (!signatureValid)
+            return false;
+
+        // When a proof is present and an expected root is supplied, verify the proof.
+        if (checkpoint.Proof is not null && expectedMerkleRoot is not null)
+        {
+            try
+            {
+                if (!MerkleCheckpointProof.VerifyCheckpointProof(checkpoint.Proof, expectedMerkleRoot))
+                    return false;
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>
