@@ -58,8 +58,10 @@ public sealed class AuthorityRegistry
                 throw new ArgumentException(
                     $"Authority public key must be exactly {AuthorityCrypto.KeySize} bytes.", nameof(authorityPublicKeys));
             var cloned = (byte[])key.Clone();
-            hexSet.Add(ToHexKey(cloned));
-            byteList.Add(cloned);
+            if (hexSet.Add(ToHexKey(cloned)))
+            {
+                byteList.Add(cloned);
+            }
         }
 
         _authorities = hexSet;

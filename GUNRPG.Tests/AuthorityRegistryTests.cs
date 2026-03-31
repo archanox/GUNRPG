@@ -147,8 +147,8 @@ public sealed class AuthorityRegistryTests
     [Fact]
     public void LoadFromFile_EmptyAuthorities_LoadsEmptyRegistry()
     {
-        var path = WriteJson("""{"authorities":[]}""");
-        var registry = AuthorityRegistry.LoadFromFile(path);
+        using var tempPath = WriteJson("""{"authorities":[]}""");
+        var registry = AuthorityRegistry.LoadFromFile(tempPath.Path);
 
         Assert.Empty(registry.GetAuthorities());
     }
@@ -158,9 +158,9 @@ public sealed class AuthorityRegistryTests
     {
         var (_, publicKey) = AuthorityKeyGenerator.GenerateKeyPair();
         var entry = AuthorityKeyGenerator.FormatPublicKeyEntry(publicKey);
-        var path = WriteJson($$"""{"authorities":["{{entry}}"]}""");
+        using var tempPath = WriteJson($$"""{"authorities":["{{entry}}"]}""");
 
-        var registry = AuthorityRegistry.LoadFromFile(path);
+        var registry = AuthorityRegistry.LoadFromFile(tempPath.Path);
 
         Assert.True(registry.IsTrustedAuthority(publicKey));
     }
@@ -172,9 +172,9 @@ public sealed class AuthorityRegistryTests
         var (_, key2) = AuthorityKeyGenerator.GenerateKeyPair();
         var e1 = AuthorityKeyGenerator.FormatPublicKeyEntry(key1);
         var e2 = AuthorityKeyGenerator.FormatPublicKeyEntry(key2);
-        var path = WriteJson($$"""{"authorities":["{{e1}}","{{e2}}"]}""");
+        using var tempPath = WriteJson($$"""{"authorities":["{{e1}}","{{e2}}"]}""");
 
-        var registry = AuthorityRegistry.LoadFromFile(path);
+        var registry = AuthorityRegistry.LoadFromFile(tempPath.Path);
 
         Assert.True(registry.IsTrustedAuthority(key1));
         Assert.True(registry.IsTrustedAuthority(key2));
@@ -190,31 +190,31 @@ public sealed class AuthorityRegistryTests
     [Fact]
     public void LoadFromFile_InvalidJson_ThrowsJsonException()
     {
-        var path = WriteJson("not-valid-json");
-        Assert.Throws<JsonException>(() => AuthorityRegistry.LoadFromFile(path));
+        using var tempPath = WriteJson("not-valid-json");
+        Assert.Throws<JsonException>(() => AuthorityRegistry.LoadFromFile(tempPath.Path));
     }
 
     [Fact]
     public void LoadFromFile_MissingPrefix_ThrowsJsonException()
     {
         // Key without the "ed25519:" prefix
-        var path = WriteJson("""{"authorities":["abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"]}""");
-        Assert.Throws<JsonException>(() => AuthorityRegistry.LoadFromFile(path));
+        using var tempPath = WriteJson("""{"authorities":["abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"]}""");
+        Assert.Throws<JsonException>(() => AuthorityRegistry.LoadFromFile(tempPath.Path));
     }
 
     [Fact]
     public void LoadFromFile_InvalidHex_ThrowsJsonException()
     {
-        var path = WriteJson("""{"authorities":["ed25519:not-valid-hex!"]}""");
-        Assert.Throws<JsonException>(() => AuthorityRegistry.LoadFromFile(path));
+        using var tempPath = WriteJson("""{"authorities":["ed25519:not-valid-hex!"]}""");
+        Assert.Throws<JsonException>(() => AuthorityRegistry.LoadFromFile(tempPath.Path));
     }
 
     [Fact]
     public void LoadFromFile_WrongKeyLength_ThrowsJsonException()
     {
         // Only 16 bytes (32 hex chars)
-        var path = WriteJson("""{"authorities":["ed25519:deadbeefdeadbeefdeadbeefdeadbeef"]}""");
-        Assert.Throws<JsonException>(() => AuthorityRegistry.LoadFromFile(path));
+        using var tempPath = WriteJson("""{"authorities":["ed25519:deadbeefdeadbeefdeadbeefdeadbeef"]}""");
+        Assert.Throws<JsonException>(() => AuthorityRegistry.LoadFromFile(tempPath.Path));
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -236,9 +236,9 @@ public sealed class AuthorityRegistryTests
     {
         var (privateKey, publicKey) = AuthorityKeyGenerator.GenerateKeyPair();
         var registry = new AuthorityRegistry([publicKey]);
-        var keyPath = WriteTempKeyFile(privateKey);
+        using var keyPath = WriteTempKeyFile(privateKey);
 
-        var identity = NodeIdentity.Load(keyPath, registry);
+        var identity = NodeIdentity.Load(keyPath.Path, registry);
 
         Assert.Equal(AuthorityRole.Authority, identity.Role);
         Assert.True(identity.IsAuthority);
@@ -251,9 +251,9 @@ public sealed class AuthorityRegistryTests
     {
         var (privateKey, _) = AuthorityKeyGenerator.GenerateKeyPair();
         var registry = AuthorityRegistry.Empty; // key is not registered
-        var keyPath = WriteTempKeyFile(privateKey);
+        using var keyPath = WriteTempKeyFile(privateKey);
 
-        var identity = NodeIdentity.Load(keyPath, registry);
+        var identity = NodeIdentity.Load(keyPath.Path, registry);
 
         Assert.Equal(AuthorityRole.Verifier, identity.Role);
         Assert.False(identity.IsAuthority);
@@ -269,8 +269,8 @@ public sealed class AuthorityRegistryTests
     [Fact]
     public void NodeIdentity_Load_WrongLengthKey_ThrowsArgumentException()
     {
-        var keyPath = WriteTempKeyFile(new byte[16]);
-        Assert.Throws<ArgumentException>(() => NodeIdentity.Load(keyPath, AuthorityRegistry.Empty));
+        using var keyPath = WriteTempKeyFile(new byte[16]);
+        Assert.Throws<ArgumentException>(() => NodeIdentity.Load(keyPath.Path, AuthorityRegistry.Empty));
     }
 
     [Fact]
@@ -287,9 +287,9 @@ public sealed class AuthorityRegistryTests
     {
         var (privateKey, publicKey) = AuthorityKeyGenerator.GenerateKeyPair();
         var registry = new AuthorityRegistry([publicKey]);
-        var keyPath = WriteTempKeyFile(privateKey);
+        using var keyPath = WriteTempKeyFile(privateKey);
 
-        var identity = NodeIdentity.TryLoad(keyPath, registry);
+        var identity = NodeIdentity.TryLoad(keyPath.Path, registry);
 
         Assert.Equal(AuthorityRole.Authority, identity.Role);
     }
@@ -299,9 +299,9 @@ public sealed class AuthorityRegistryTests
     {
         var (privateKey, publicKey) = AuthorityKeyGenerator.GenerateKeyPair();
         var registry = new AuthorityRegistry([publicKey]);
-        var keyPath = WriteTempKeyFile(privateKey);
+        using var keyPath = WriteTempKeyFile(privateKey);
 
-        var identity = NodeIdentity.Load(keyPath, registry);
+        var identity = NodeIdentity.Load(keyPath.Path, registry);
 
         var copy1 = identity.PublicKey!;
         var copy2 = identity.PublicKey!;
@@ -314,9 +314,9 @@ public sealed class AuthorityRegistryTests
     {
         var (privateKey, publicKey) = AuthorityKeyGenerator.GenerateKeyPair();
         var registry = new AuthorityRegistry([publicKey]);
-        var keyPath = WriteTempKeyFile(privateKey);
+        using var keyPath = WriteTempKeyFile(privateKey);
 
-        var identity = NodeIdentity.Load(keyPath, registry);
+        var identity = NodeIdentity.Load(keyPath.Path, registry);
         var fingerprint = identity.GetFingerprint();
 
         Assert.NotNull(fingerprint);
@@ -372,9 +372,9 @@ public sealed class AuthorityRegistryTests
     {
         var (_, publicKey) = AuthorityKeyGenerator.GenerateKeyPair();
         var entry = AuthorityKeyGenerator.FormatPublicKeyEntry(publicKey);
-        var path = WriteJson($$"""{"authorities":["{{entry}}"]}""");
+        using var tempPath = WriteJson($$"""{"authorities":["{{entry}}"]}""");
 
-        var registry = AuthorityRegistry.LoadFromFile(path);
+        var registry = AuthorityRegistry.LoadFromFile(tempPath.Path);
 
         Assert.True(registry.IsTrustedAuthority(publicKey));
     }
@@ -548,18 +548,29 @@ public sealed class AuthorityRegistryTests
         return (authority, ticks, result);
     }
 
-    private static string WriteJson(string json)
+    private static TempFile WriteJson(string json)
     {
         var path = Path.Combine(Path.GetTempPath(), $"gunrpg-test-{Guid.NewGuid():N}.json");
         File.WriteAllText(path, json);
-        return path;
+        return new TempFile(path);
     }
 
-    private static string WriteTempKeyFile(byte[] keyBytes)
+    private static TempFile WriteTempKeyFile(byte[] keyBytes)
     {
         var path = Path.Combine(Path.GetTempPath(), $"gunrpg-test-key-{Guid.NewGuid():N}.key");
         File.WriteAllBytes(path, keyBytes);
-        return path;
+        return new TempFile(path);
+    }
+
+    /// <summary>Deletes a temporary file when disposed.</summary>
+    private sealed class TempFile : IDisposable
+    {
+        public TempFile(string path) { Path = path; }
+        public string Path { get; }
+        public void Dispose()
+        {
+            try { File.Delete(Path); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+        }
     }
 
     private static byte[] TamperBytes(byte[] bytes)
