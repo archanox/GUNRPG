@@ -90,16 +90,25 @@ public sealed class NodeIdentity
     /// <exception cref="FileNotFoundException">
     /// Thrown when the file at <paramref name="privateKeyPath"/> does not exist.
     /// </exception>
+    /// <exception cref="UnauthorizedAccessException">
+    /// Thrown when the file at <paramref name="privateKeyPath"/> exists but cannot be read due to
+    /// insufficient permissions.
+    /// </exception>
     public static NodeIdentity Load(string privateKeyPath, AuthorityRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(privateKeyPath);
         ArgumentNullException.ThrowIfNull(registry);
 
-        if (!File.Exists(privateKeyPath))
+        byte[] keyBytes;
+        try
+        {
+            keyBytes = File.ReadAllBytes(privateKeyPath);
+        }
+        catch (FileNotFoundException)
+        {
             throw new FileNotFoundException(
                 $"Authority private key file not found: {privateKeyPath}", privateKeyPath);
-
-        var keyBytes = File.ReadAllBytes(privateKeyPath);
+        }
         if (keyBytes.Length != AuthorityCrypto.KeySize)
             throw new ArgumentException(
                 $"Authority private key must be exactly {AuthorityCrypto.KeySize} bytes, " +
@@ -127,15 +136,20 @@ public sealed class NodeIdentity
     /// <returns>
     /// A <see cref="NodeIdentity"/> with <see cref="AuthorityRole.Authority"/> when the key file exists
     /// and its public key is in the registry; <see cref="AuthorityRole.Verifier"/> when the file is absent;
-    /// and propagates any exception when the file exists but is invalid.
+    /// and propagates any exception when the file exists but cannot be read or is invalid.
     /// </returns>
     public static NodeIdentity TryLoad(string privateKeyPath, AuthorityRegistry registry)
     {
         ArgumentNullException.ThrowIfNull(privateKeyPath);
         ArgumentNullException.ThrowIfNull(registry);
 
-        return File.Exists(privateKeyPath)
-            ? Load(privateKeyPath, registry)
-            : Anonymous();
+        try
+        {
+            return Load(privateKeyPath, registry);
+        }
+        catch (FileNotFoundException)
+        {
+            return Anonymous();
+        }
     }
 }

@@ -39,7 +39,7 @@ public static class RunReceiptService
     /// <exception cref="ArgumentException">
     /// Thrown when <paramref name="run"/> does not have a <see cref="SignedRunResult.TickMerkleRoot"/>.
     /// </exception>
-    public static RunReceipt Create(SignedRunResult run, SessionAuthority authority)
+    internal static RunReceipt Create(SignedRunResult run, SessionAuthority authority)
     {
         ArgumentNullException.ThrowIfNull(run);
         ArgumentNullException.ThrowIfNull(authority);
