@@ -76,6 +76,9 @@ public static class RunReceiptService
     /// </exception>
     public static RunReceipt Create(SignedRunResult run, SessionAuthority authority, AuthorityRole nodeRole)
     {
+        ArgumentNullException.ThrowIfNull(run);
+        ArgumentNullException.ThrowIfNull(authority);
+
         if (nodeRole != AuthorityRole.Authority)
             throw new InvalidOperationException(
                 "Only authority nodes may sign run receipts. " +

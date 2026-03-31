@@ -254,12 +254,33 @@ static bool IsLocalServer(string hostname, string machineName)
 /// </summary>
 static void RunKeygenAuthority()
 {
+    const string privateKeyFile = "authority_private.key";
+    const string publicKeyFile = "authority_public.key";
+
+    var privateExists = System.IO.File.Exists(privateKeyFile);
+    var publicExists = System.IO.File.Exists(publicKeyFile);
+
+    if (privateExists || publicExists)
+    {
+        Console.WriteLine("Warning: One or both authority key files already exist in the current directory:");
+        if (privateExists)
+            Console.WriteLine($"  {privateKeyFile}");
+        if (publicExists)
+            Console.WriteLine($"  {publicKeyFile}");
+
+        Console.Write("Overwrite existing file(s)? [y/N] ");
+        var response = Console.ReadLine();
+        if (string.IsNullOrWhiteSpace(response) ||
+            !response.StartsWith("y", StringComparison.OrdinalIgnoreCase))
+        {
+            Console.WriteLine("Aborted: existing key files were not overwritten.");
+            return;
+        }
+    }
+
     Console.WriteLine("Generating authority key pair...");
 
     var (privateKey, publicKey) = AuthorityKeyGenerator.GenerateKeyPair();
-
-    const string privateKeyFile = "authority_private.key";
-    const string publicKeyFile = "authority_public.key";
 
     AuthorityKeyGenerator.WriteKeyFiles(privateKeyFile, publicKeyFile, privateKey, publicKey);
 
