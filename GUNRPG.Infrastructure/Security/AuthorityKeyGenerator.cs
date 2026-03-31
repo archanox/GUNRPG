@@ -62,6 +62,14 @@ public static class AuthorityKeyGenerator
 
         File.WriteAllBytes(privateKeyPath, privateKey);
         File.WriteAllBytes(publicKeyPath, publicKey);
+
+        // Restrict the private key to owner-read/write only on Unix platforms.
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+        {
+            File.SetUnixFileMode(
+                privateKeyPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
     }
 
     /// <summary>

@@ -122,6 +122,24 @@ public sealed class AuthorityRegistryTests
         Assert.True(registry.IsTrustedAuthority(key3));
     }
 
+    [Fact]
+    public void IsTrustedAuthority_MultipleKeys_UnknownKeyRejected()
+    {
+        var (_, key1) = AuthorityKeyGenerator.GenerateKeyPair();
+        var (_, key2) = AuthorityKeyGenerator.GenerateKeyPair();
+        var (_, key3) = AuthorityKeyGenerator.GenerateKeyPair();
+        var (_, unknownKey) = AuthorityKeyGenerator.GenerateKeyPair();
+        var registry = new AuthorityRegistry([key1, key2, key3]);
+
+        // All three registered keys must be found.
+        Assert.True(registry.IsTrustedAuthority(key1));
+        Assert.True(registry.IsTrustedAuthority(key2));
+        Assert.True(registry.IsTrustedAuthority(key3));
+
+        // A key that was never added must be rejected.
+        Assert.False(registry.IsTrustedAuthority(unknownKey));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // 3. AuthorityRegistry – LoadFromFile
     // ──────────────────────────────────────────────────────────────────────────
@@ -289,6 +307,30 @@ public sealed class AuthorityRegistryTests
         var copy2 = identity.PublicKey!;
         Assert.Equal(copy1, copy2);
         Assert.NotSame(copy1, copy2);
+    }
+
+    [Fact]
+    public void NodeIdentity_GetFingerprint_AuthorityNode_ReturnsEd25519PrefixedShortHex()
+    {
+        var (privateKey, publicKey) = AuthorityKeyGenerator.GenerateKeyPair();
+        var registry = new AuthorityRegistry([publicKey]);
+        var keyPath = WriteTempKeyFile(privateKey);
+
+        var identity = NodeIdentity.Load(keyPath, registry);
+        var fingerprint = identity.GetFingerprint();
+
+        Assert.NotNull(fingerprint);
+        Assert.StartsWith("ed25519:", fingerprint, StringComparison.Ordinal);
+        // "ed25519:" (8 chars) + 16 hex chars = 24 total
+        Assert.Equal(24, fingerprint.Length);
+    }
+
+    [Fact]
+    public void NodeIdentity_GetFingerprint_AnonymousNode_ReturnsNull()
+    {
+        var identity = NodeIdentity.Anonymous();
+
+        Assert.Null(identity.GetFingerprint());
     }
 
     // ──────────────────────────────────────────────────────────────────────────
