@@ -51,6 +51,18 @@ public sealed class TickAuthorityService
     public const int CheckpointInterval = 256;
 
     /// <summary>
+    /// Number of ticks between successive authority-signed <see cref="MerkleCheckpoint"/>
+    /// artifacts produced during replay verification.
+    /// </summary>
+    /// <remarks>
+    /// The value 1024 is coarser than <see cref="CheckpointInterval"/> (256) because
+    /// <see cref="MerkleCheckpoint"/>s are independently persisted and distributed to
+    /// verifier nodes, making a lower frequency more practical for storage and gossip.
+    /// Checkpoints are produced only by authority nodes; verifier nodes consume them.
+    /// </remarks>
+    public const int AuthorityCheckpointInterval = 1024;
+
+    /// <summary>
     /// Returns a copy of the canonical "previous state hash" used for the very first signed
     /// checkpoint (tick 0). This is 32 zero bytes, ensuring the genesis tick is unambiguously
     /// the start of the chain.
