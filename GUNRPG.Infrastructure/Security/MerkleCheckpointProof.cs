@@ -20,29 +20,52 @@ namespace GUNRPG.Security;
 /// </list>
 /// </para>
 /// <para>
+/// Declared as a regular class (not a record) to avoid the record's default reference equality
+/// on <see cref="LeafHash"/> / <see cref="SiblingHashes"/>, which could cause subtle bugs
+/// when proofs are compared or used as dictionary keys.
+/// </para>
+/// <para>
 /// Use <see cref="MerkleTree.BuildCheckpointProof"/> to generate a proof and
 /// <see cref="VerifyCheckpointProof"/> to verify one.
 /// </para>
 /// </remarks>
-/// <param name="EventIndex">
-/// Zero-based index of the event (tick leaf) being proved in the ordered event log.
-/// Determines left/right ordering at each Merkle tree level during verification.
-/// </param>
-/// <param name="LeafHash">
-/// The raw 32-byte SHA-256 leaf hash of the event.  The domain-separation prefix
-/// (<c>0x00</c> byte) is applied internally by <see cref="VerifyCheckpointProof"/>
-/// before reconstruction, mirroring the convention used by <see cref="MerkleTree"/>.
-/// </param>
-/// <param name="SiblingHashes">
-/// Ordered list of sibling hashes from the event leaf level up to (but not including)
-/// the root.  Each entry is the sibling subtree hash at that tree level.
-/// The count must not exceed <see cref="MerkleTree.MaxMerkleProofDepth"/>.
-/// </param>
-public sealed record MerkleCheckpointProof(
-    long EventIndex,
-    byte[] LeafHash,
-    IReadOnlyList<byte[]> SiblingHashes)
+public sealed class MerkleCheckpointProof
 {
+    /// <summary>
+    /// Initialises a new <see cref="MerkleCheckpointProof"/>.
+    /// </summary>
+    /// <param name="eventIndex">
+    /// Zero-based index of the event (tick leaf) being proved in the ordered event log.
+    /// Determines left/right ordering at each Merkle tree level during verification.
+    /// </param>
+    /// <param name="leafHash">
+    /// The raw 32-byte SHA-256 leaf hash of the event.  The domain-separation prefix
+    /// (<c>0x00</c> byte) is applied internally by <see cref="VerifyCheckpointProof"/>
+    /// before reconstruction, mirroring the convention used by <see cref="MerkleTree"/>.
+    /// </param>
+    /// <param name="siblingHashes">
+    /// Ordered list of sibling hashes from the event leaf level up to (but not including)
+    /// the root.  Each entry is the sibling subtree hash at that tree level.
+    /// The count must not exceed <see cref="MerkleTree.MaxMerkleProofDepth"/>.
+    /// </param>
+    public MerkleCheckpointProof(long eventIndex, byte[] leafHash, IReadOnlyList<byte[]> siblingHashes)
+    {
+        EventIndex = eventIndex;
+        LeafHash = leafHash;
+        SiblingHashes = siblingHashes;
+    }
+
+    /// <summary>Zero-based index of the event (tick leaf) in the ordered event log.</summary>
+    public long EventIndex { get; }
+
+    /// <summary>The raw 32-byte SHA-256 leaf hash of the event.</summary>
+    public byte[] LeafHash { get; }
+
+    /// <summary>
+    /// Ordered list of sibling hashes from the event leaf level up to (but not including) the root.
+    /// </summary>
+    public IReadOnlyList<byte[]> SiblingHashes { get; }
+
     private const int HashSize = SHA256.HashSizeInBytes;
 
     /// <summary>

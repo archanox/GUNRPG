@@ -379,6 +379,12 @@ public sealed class SessionAuthority : ISessionAuthority
         if (!signatureValid)
             return false;
 
+        // When expectedMerkleRoot is provided, the checkpoint's signed MerkleRoot must match.
+        // This ensures the checkpoint is for the correct run, not an unrelated one.
+        if (expectedMerkleRoot is not null &&
+            !checkpoint.MerkleRoot.AsSpan().SequenceEqual(expectedMerkleRoot))
+            return false;
+
         // When a proof is present and an expected root is supplied, verify the proof.
         if (checkpoint.Proof is not null && expectedMerkleRoot is not null)
         {

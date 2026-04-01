@@ -161,7 +161,15 @@ public sealed record MerkleCheckpoint(
                 throw new JsonException(
                     $"MerkleCheckpointProof.LeafHash must be {SHA256.HashSizeInBytes} bytes after base-64 decoding.");
 
+            if (proofDto.EventIndex < 0)
+                throw new JsonException("MerkleCheckpointProof.EventIndex must be non-negative.");
+
             var rawSiblings = proofDto.SiblingHashes ?? [];
+
+            if (rawSiblings.Length > MerkleTree.MaxMerkleProofDepth)
+                throw new JsonException(
+                    $"MerkleCheckpointProof.SiblingHashes length {rawSiblings.Length} exceeds the maximum Merkle proof depth {MerkleTree.MaxMerkleProofDepth}.");
+
             var siblings = new byte[rawSiblings.Length][];
             for (var i = 0; i < rawSiblings.Length; i++)
             {
