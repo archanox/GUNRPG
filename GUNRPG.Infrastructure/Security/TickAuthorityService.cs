@@ -654,8 +654,15 @@ public sealed class TickAuthorityService
     {
         ArgumentNullException.ThrowIfNull(tickChain);
         var leaves = new List<byte[]>(tickChain.Count);
-        foreach (var t in tickChain)
-            leaves.Add(ComputeTickLeafHash(t.Tick, t.PrevStateHash, t.StateHash, t.InputHash));
+        for (var i = 0; i < tickChain.Count; i++)
+        {
+            var tick = tickChain[i];
+            if (tick is null)
+                throw new ArgumentException(
+                    $"tickChain must not contain null entries (null at index {i}).",
+                    nameof(tickChain));
+            leaves.Add(ComputeTickLeafHash(tick.Tick, tick.PrevStateHash, tick.StateHash, tick.InputHash));
+        }
         return MerkleTree.BuildCheckpointProof(leaves, eventIndex);
     }
 

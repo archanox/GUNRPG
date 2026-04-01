@@ -137,7 +137,7 @@ public sealed class MerkleCheckpointProofTests
         leaves2[2][0] ^= 0xFF; // tamper leaf 2 in second set
         var root1 = MerkleTree.ComputeRoot(leaves1);
 
-        // Proof built for leaves1 at index 2 – but verified against leaves1 root with tampered leaf
+        // Proof built for leaves2 at index 2 – then verified against the root from leaves1
         var proof = MerkleTree.BuildCheckpointProof(leaves2, 2);
 
         Assert.False(MerkleCheckpointProof.VerifyCheckpointProof(proof, root1));
@@ -355,6 +355,48 @@ public sealed class MerkleCheckpointProofTests
             MerkleCheckpoint.FromJsonBytes(System.Text.Encoding.UTF8.GetBytes(corrupted)));
     }
 
+    [Fact]
+    public void MerkleCheckpoint_FromJsonBytes_NegativeEventIndex_ThrowsJsonException()
+    {
+        // Manually inject a negative eventIndex in the proof JSON.
+        var authority = CreateAuthority();
+        var leaves = BuildLeaves(2);
+        var root = MerkleTree.ComputeRoot(leaves);
+        var proof = MerkleTree.BuildCheckpointProof(leaves, 0);
+        var innerCheckpoint = authority.CreateMerkleCheckpoint(0, root);
+        var checkpoint = new MerkleCheckpoint(
+            innerCheckpoint.Tick, innerCheckpoint.MerkleRoot,
+            innerCheckpoint.AuthorityPublicKey, innerCheckpoint.Signature, proof);
+        var json = System.Text.Encoding.UTF8.GetString(checkpoint.ToJsonBytes());
+
+        // Replace "eventIndex":0 with "eventIndex":-1.
+        var corrupted = json.Replace("\"eventIndex\":0", "\"eventIndex\":-1");
+        Assert.Throws<JsonException>(() =>
+            MerkleCheckpoint.FromJsonBytes(System.Text.Encoding.UTF8.GetBytes(corrupted)));
+    }
+
+    [Fact]
+    public void MerkleCheckpoint_FromJsonBytes_ExcessiveSiblingCount_ThrowsJsonException()
+    {
+        // Manually inject a siblingHashes array that exceeds MaxMerkleProofDepth.
+        var authority = CreateAuthority();
+        var root = CreateHash(77);
+        var innerCheckpoint = authority.CreateMerkleCheckpoint(0, root);
+        // Build raw JSON with more siblings than MaxMerkleProofDepth (64).
+        var validRoot = Convert.ToBase64String(innerCheckpoint.MerkleRoot);
+        var validKey = Convert.ToBase64String(innerCheckpoint.AuthorityPublicKey);
+        var validSig = Convert.ToBase64String(innerCheckpoint.Signature);
+        var validLeaf = Convert.ToBase64String(CreateHash(1));
+        // 65 sibling hashes – one more than the allowed maximum of 64.
+        var tooManySiblings = string.Join(",", Enumerable.Repeat($"\"{validLeaf}\"", MerkleTree.MaxMerkleProofDepth + 1));
+        var json = $"{{\"tick\":0,\"merkleRoot\":\"{validRoot}\",\"authorityPublicKey\":\"{validKey}\"," +
+                   $"\"signature\":\"{validSig}\"," +
+                   $"\"proof\":{{\"eventIndex\":0,\"leafHash\":\"{validLeaf}\",\"siblingHashes\":[{tooManySiblings}]}}}}";
+
+        Assert.Throws<JsonException>(() =>
+            MerkleCheckpoint.FromJsonBytes(System.Text.Encoding.UTF8.GetBytes(json)));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // 7. SessionAuthority.VerifyMerkleCheckpoint with expectedMerkleRoot
     // ──────────────────────────────────────────────────────────────────────────
@@ -444,6 +486,20 @@ public sealed class MerkleCheckpointProofTests
         Assert.True(SessionAuthority.VerifyMerkleCheckpoint(checkpoint, registry, expectedMerkleRoot: root));
     }
 
+    [Fact]
+    public void VerifyMerkleCheckpoint_MerkleRootMismatch_ReturnsFalse()
+    {
+        // When expectedMerkleRoot is supplied, checkpoint.MerkleRoot must equal it.
+        // A valid signature over a different MerkleRoot must not be accepted.
+        var authority = CreateAuthority();
+        var registry = new AuthorityRegistry([authority.PublicKey]);
+        var root = CreateHash(50);
+        var checkpoint = authority.CreateMerkleCheckpoint(6144, root);
+        var differentRoot = TamperByte(root);
+
+        Assert.False(SessionAuthority.VerifyMerkleCheckpoint(checkpoint, registry, expectedMerkleRoot: differentRoot));
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // 8. TickAuthorityService.BuildCheckpointProof integration
     // ──────────────────────────────────────────────────────────────────────────
@@ -496,6 +552,19 @@ public sealed class MerkleCheckpointProofTests
     {
         Assert.Throws<ArgumentNullException>(() =>
             TickAuthorityService.BuildCheckpointProof(null!, 0));
+    }
+
+    [Fact]
+    public void TickAuthorityService_BuildCheckpointProof_NullEntry_ThrowsArgumentException()
+    {
+        var authority = CreateAuthority();
+        var state = ReplayRunner.CreateInitialState(10);
+        var ticks = BuildSignedChain(authority, state, startTick: 0, count: 3);
+        var ticksWithNull = new List<SignedTick?>(ticks) { null };
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            TickAuthorityService.BuildCheckpointProof(ticksWithNull!, 0));
+        Assert.Contains("null at index 3", ex.Message);
     }
 
     [Fact]
