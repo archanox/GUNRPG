@@ -18,8 +18,9 @@ const string ApiBase = "https://www.truegamedata.com/api/weapons/api.php";
 const string Game = "bo7";
 const int TimeoutSeconds = 30;
 
-// Locate the repository root (two levels above this project's directory).
-var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+// Locate the repository root from the working directory; works reliably both
+// locally (run from the repo root) and in GitHub Actions (checkout sets CWD).
+var repoRoot = Directory.GetCurrentDirectory();
 var weaponsFile = Path.Combine(repoRoot, "data", "weapons.json");
 var balancesDir = Path.Combine(repoRoot, "balances");
 
@@ -137,17 +138,35 @@ async Task<JsonObject?> PostApiAsync(string weapon, string action)
 {
     var url = $"{ApiBase}?game={Game}&action={action}";
     var body = JsonSerializer.Serialize(new { weapon, attachments = Array.Empty<object>(), health = "100" });
-    using var content = new StringContent(body, Encoding.UTF8, "application/json");
 
-    HttpResponseMessage response;
-    try
+    HttpResponseMessage? response = null;
+    for (int attempt = 1; attempt <= 3; attempt++)
     {
-        response = await httpClient.PostAsync(url, content);
-        response.EnsureSuccessStatusCode();
+        try
+        {
+            // Create a fresh StringContent each attempt; it is disposed inside
+            // the try block after PostAsync has consumed the request body.
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            response = await httpClient.PostAsync(url, content);
+            response.EnsureSuccessStatusCode();
+            break;
+        }
+        catch (Exception ex) when (attempt < 3)
+        {
+            Console.Error.WriteLine($"WARNING: attempt {attempt} failed for weapon={weapon} action={action}: {ex.Message} — retrying in 2s…");
+            response = null;
+            await Task.Delay(2000);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"ERROR: API unreachable for weapon={weapon} action={action}: {ex.Message}");
+            return null;
+        }
     }
-    catch (Exception ex)
+
+    if (response is null)
     {
-        Console.Error.WriteLine($"ERROR: API unreachable for weapon={weapon} action={action}: {ex.Message}");
+        Console.Error.WriteLine($"ERROR: All retry attempts failed for weapon={weapon} action={action}.");
         return null;
     }
 
@@ -219,22 +238,27 @@ JsonArray ExtractDamageRanges(JsonObject damageTable)
     var entries = FirstDamageEntries(damageTable);
     if (entries is null) return result;
 
-    foreach (var node in entries)
-    {
-        var entry = node?.AsObject();
-        if (entry is null) continue;
+    // Sort by dropoff distance to ensure deterministic ordering regardless
+    // of the order in which the API returns the entries.
+    var sortedEntries = entries
+        .Select(n => n?.AsObject())
+        .Where(n => n is not null)
+        .OrderBy(n => GetDouble(n!, "dropoff"))
+        .ToList();
 
+    foreach (var entry in sortedEntries)
+    {
         var range = new JsonObject
         {
-            ["range_m"]   = Fixed(GetDouble(entry, "dropoff")),
-            ["head"]      = Fixed(GetDouble(entry, "head")),
-            ["neck"]      = Fixed(GetDouble(entry, "neck")),
-            ["chest"]     = Fixed(GetDouble(entry, "chest")),
-            ["stomach"]   = Fixed(GetDouble(entry, "stomach")),
-            ["upper_arm"] = Fixed(GetDouble(entry, "upperarm")),
-            ["lower_arm"] = Fixed(GetDouble(entry, "lowerarm")),
-            ["upper_leg"] = Fixed(GetDouble(entry, "upperleg")),
-            ["lower_leg"] = Fixed(GetDouble(entry, "lowerleg")),
+            ["range_m"]   = Fixed(GetDouble(entry!, "dropoff")),
+            ["head"]      = Fixed(GetDouble(entry!, "head")),
+            ["neck"]      = Fixed(GetDouble(entry!, "neck")),
+            ["chest"]     = Fixed(GetDouble(entry!, "chest")),
+            ["stomach"]   = Fixed(GetDouble(entry!, "stomach")),
+            ["upper_arm"] = Fixed(GetDouble(entry!, "upperarm")),
+            ["lower_arm"] = Fixed(GetDouble(entry!, "lowerarm")),
+            ["upper_leg"] = Fixed(GetDouble(entry!, "upperleg")),
+            ["lower_leg"] = Fixed(GetDouble(entry!, "lowerleg")),
         };
         result.Add(range);
     }
