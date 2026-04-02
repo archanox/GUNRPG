@@ -33,16 +33,17 @@ jobs:
 
       - name: Commit new snapshot
         run: |
-          # Pick up any new (untracked) snapshot files written by the script.
-          NEW_SNAPSHOTS=$(git ls-files --others --exclude-standard balances/)
-          if [ -z "$NEW_SNAPSHOTS" ]; then
-            echo "No new snapshot file to commit."
+          # Pick up any snapshot files (new or modified) written by the script.
+          CHANGED_SNAPSHOTS=$(git status --porcelain balances/ | awk '{print $2}')
+          if [ -z "$CHANGED_SNAPSHOTS" ]; then
+            echo "No snapshot file changes to commit."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Derive the commit message date from the snapshot filename.
-          SNAPSHOT_DATE=$(echo "$NEW_SNAPSHOTS" | head -n1 | xargs basename .json | sed 's/\.json//')
-          git add $NEW_SNAPSHOTS
+          # Derive the commit message date from the first changed snapshot filename.
+          SNAPSHOT_FILE=$(echo "$CHANGED_SNAPSHOTS" | head -n1)
+          SNAPSHOT_DATE=$(basename "$SNAPSHOT_FILE" .json)
+          git add $CHANGED_SNAPSHOTS
           git commit -m "Balance snapshot ${SNAPSHOT_DATE}"
           git push
