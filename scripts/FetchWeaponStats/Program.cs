@@ -2,14 +2,19 @@
 // balance snapshot to balances/YYYY-MM-DD.json.
 //
 // Endpoints:
+//   GET  https://www.truegamedata.com/api/weapons/api.php?game=bo7&action=get_weapons
 //   POST https://www.truegamedata.com/api/weapons/api.php?game=bo7&action=calc_damage_table
 //   POST https://www.truegamedata.com/api/weapons/api.php?game=bo7&action=calc_stat_summary
 //
-// Reads weapon names from  data/weapons.json  (relative to the repository root).
-// Compares new weapons payload against the most recent file in balances/.
+// Discovers weapons automatically from the API at runtime; falls back to
+// data/weapons.json if discovery fails.  Weapons are processed in
+// StringComparer.Ordinal order so snapshots are always bit-identical.
+// Compares new content (weapons + attachments, excluding version/hash) against
+// the most recent file in balances/; skips writing if identical.
 // Writes a new snapshot only when the data changes; exits 0 in both cases.
 // Exits non-zero on API or I/O errors so GitHub Actions marks the step failed.
 
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -17,38 +22,14 @@ using System.Text.Json.Nodes;
 const string ApiBase = "https://www.truegamedata.com/api/weapons/api.php";
 const string Game = "bo7";
 const int TimeoutSeconds = 30;
+const int MaxRetryAttempts = 3;
+const int RetryDelayMs = 2000;
 
 // Locate the repository root from the working directory; works reliably both
 // locally (run from the repo root) and in GitHub Actions (checkout sets CWD).
 var repoRoot = Directory.GetCurrentDirectory();
 var weaponsFile = Path.Combine(repoRoot, "data", "weapons.json");
 var balancesDir = Path.Combine(repoRoot, "balances");
-
-// ---------------------------------------------------------------------------
-// Load weapon list
-// ---------------------------------------------------------------------------
-
-List<string> weapons;
-try
-{
-    var weaponsJson = await File.ReadAllTextAsync(weaponsFile);
-    weapons = JsonSerializer.Deserialize<List<string>>(weaponsJson)
-        ?? throw new InvalidOperationException("Weapon list deserialised to null.");
-}
-catch (Exception ex)
-{
-    Console.Error.WriteLine($"ERROR: Could not load {weaponsFile}: {ex.Message}");
-    return 1;
-}
-
-if (weapons.Count == 0)
-{
-    Console.Error.WriteLine("ERROR: Weapon list is empty.");
-    return 1;
-}
-
-var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
-Console.WriteLine($"Building balance snapshot for {today} ({weapons.Count} weapon(s))…\n");
 
 // ---------------------------------------------------------------------------
 // HTTP client with required headers
@@ -62,6 +43,40 @@ httpClient.DefaultRequestHeaders.Add("User-Agent",
 httpClient.DefaultRequestHeaders.Add("Sec-Fetch-Site", "cross-site");
 httpClient.DefaultRequestHeaders.Add("Sec-Fetch-Mode", "cors");
 httpClient.DefaultRequestHeaders.Add("Sec-Fetch-Dest", "empty");
+
+// ---------------------------------------------------------------------------
+// Discover weapon list
+// ---------------------------------------------------------------------------
+
+var discoveredWeapons = await DiscoverWeaponsAsync();
+if (discoveredWeapons is null)
+{
+    // Fall back to the manually maintained list when discovery fails.
+    Console.WriteLine($"WARNING: API discovery failed — falling back to {weaponsFile}.");
+    try
+    {
+        var weaponsJson = await File.ReadAllTextAsync(weaponsFile);
+        discoveredWeapons = JsonSerializer.Deserialize<List<string>>(weaponsJson)
+            ?? throw new InvalidOperationException("Weapon list deserialised to null.");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"ERROR: Could not load fallback weapon list {weaponsFile}: {ex.Message}");
+        return 1;
+    }
+}
+
+if (discoveredWeapons.Count == 0)
+{
+    Console.Error.WriteLine("ERROR: Weapon list is empty.");
+    return 1;
+}
+
+// Always process in deterministic order.
+var weapons = discoveredWeapons.OrderBy(w => w, StringComparer.Ordinal).ToList();
+
+var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+Console.WriteLine($"Building balance snapshot for {today} ({weapons.Count} weapon(s))…\n");
 
 // ---------------------------------------------------------------------------
 // Per-weapon fetch
@@ -92,14 +107,34 @@ var weaponsNode = new JsonObject();
 foreach (var (name, stats) in weaponsData)
     weaponsNode[name] = stats;
 
+// Attachment data is not yet fetched; the empty object reserves the field in
+// the schema so no future migration is needed.
+var attachmentsNode = new JsonObject();
+
+// Compute a deterministic SHA-256 hash of the normalised content (weapons +
+// attachments) so replay validators can confirm they are using identical data.
+// The hash covers version + weapons + attachments but NOT the hash field itself.
+// Keys are alphabetically ordered here so that Normalise() produces a
+// canonical string that is stable regardless of insertion order.
+var payloadForHash = new JsonObject
+{
+    ["attachments"] = attachmentsNode.DeepClone(),
+    ["version"]     = today,
+    ["weapons"]     = weaponsNode.DeepClone()
+};
+var normalizedPayload = Normalise(payloadForHash);
+var snapshotHash = ComputeSha256Hex(normalizedPayload);
+
 var snapshot = new JsonObject
 {
-    ["version"] = today,
-    ["weapons"] = weaponsNode
+    ["version"]     = today,
+    ["hash"]        = snapshotHash,
+    ["weapons"]     = weaponsNode,
+    ["attachments"] = attachmentsNode
 };
 
 // ---------------------------------------------------------------------------
-// Change detection
+// Change detection (excludes version and hash so date-only changes are ignored)
 // ---------------------------------------------------------------------------
 
 Directory.CreateDirectory(balancesDir);
@@ -107,9 +142,17 @@ var latestSnapshot = LoadLatestSnapshot(balancesDir);
 
 if (latestSnapshot is not null)
 {
-    var newWeaponsNorm = Normalise(snapshot["weapons"]);
-    var oldWeaponsNorm = Normalise(latestSnapshot["weapons"]);
-    if (newWeaponsNorm == oldWeaponsNorm)
+    var newContentNorm  = Normalise(new JsonObject
+    {
+        ["attachments"] = snapshot["attachments"]?.DeepClone(),
+        ["weapons"]     = snapshot["weapons"]?.DeepClone()
+    });
+    var oldContentNorm = Normalise(new JsonObject
+    {
+        ["attachments"] = latestSnapshot["attachments"]?.DeepClone(),
+        ["weapons"]     = latestSnapshot["weapons"]?.DeepClone()
+    });
+    if (newContentNorm == oldContentNorm)
     {
         Console.WriteLine("No changes detected — snapshot matches the most recent file. Nothing to commit.");
         return 0;
@@ -128,11 +171,145 @@ await File.WriteAllBytesAsync(outPath, jsonBytes);
 await File.AppendAllTextAsync(outPath, "\n", Encoding.UTF8);
 
 Console.WriteLine($"New snapshot written: {outPath}");
+Console.WriteLine($"Balance hash: {snapshotHash}");
 return 0;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+// Discovers all weapon identifiers from the API. Returns null when the
+// discovery endpoint is unavailable so the caller can fall back to the file.
+async Task<List<string>?> DiscoverWeaponsAsync()
+{
+    Console.WriteLine("Discovering weapons from API…");
+    var node = await GetApiAsync("get_weapons");
+    if (node is null) return null;
+
+    var discovered = new List<string>();
+
+    // The response may be an array of plain strings or an array of objects
+    // with a name/id field, depending on API version.
+    if (node is JsonArray arr)
+    {
+        foreach (var item in arr)
+        {
+            if (item is JsonValue sv && sv.TryGetValue<string>(out var name) && !string.IsNullOrWhiteSpace(name))
+            {
+                discovered.Add(name);
+            }
+            else if (item is JsonObject obj)
+            {
+                var weaponName = ExtractStringField(obj, ["name", "weapon_name", "id", "weapon_id"]);
+                if (!string.IsNullOrWhiteSpace(weaponName))
+                    discovered.Add(weaponName);
+            }
+        }
+    }
+    else if (node is JsonObject topObj)
+    {
+        // Some endpoints wrap the list in a keyed object, e.g. {"weapons": [...]}
+        foreach (var key in new[] { "weapons", "data", "items" })
+        {
+            if (topObj.TryGetPropertyValue(key, out var inner) && inner is JsonArray innerArr)
+            {
+                foreach (var item in innerArr)
+                {
+                    if (item is JsonValue sv && sv.TryGetValue<string>(out var name) && !string.IsNullOrWhiteSpace(name))
+                        discovered.Add(name);
+                    else if (item is JsonObject obj)
+                    {
+                        var weaponName = ExtractStringField(obj, ["name", "weapon_name", "id", "weapon_id"]);
+                        if (!string.IsNullOrWhiteSpace(weaponName))
+                            discovered.Add(weaponName);
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    if (discovered.Count == 0)
+    {
+        Console.Error.WriteLine("WARNING: Weapon discovery endpoint returned no usable weapon names.");
+        return null;
+    }
+
+    Console.WriteLine($"  Discovered {discovered.Count} weapon(s) from API.\n");
+    return discovered;
+}
+
+string? ExtractStringField(JsonObject obj, string[] candidates)
+{
+    foreach (var key in candidates)
+    {
+        if (obj.TryGetPropertyValue(key, out var n) && n is JsonValue sv && sv.TryGetValue<string>(out var s))
+            return s;
+    }
+    return null;
+}
+
+// GET request with retry, returns the parsed (and unwrapped) JsonNode or null.
+async Task<JsonNode?> GetApiAsync(string action)
+{
+    var url = $"{ApiBase}?game={Game}&action={action}";
+
+    HttpResponseMessage? response = null;
+    for (int attempt = 1; attempt <= MaxRetryAttempts; attempt++)
+    {
+        try
+        {
+            response = await httpClient.GetAsync(url);
+            response.EnsureSuccessStatusCode();
+            break;
+        }
+        catch (Exception ex) when (attempt < MaxRetryAttempts)
+        {
+            Console.Error.WriteLine($"WARNING: GET attempt {attempt} failed for action={action}: {ex.Message} — retrying in 2s…");
+            response = null;
+            await Task.Delay(RetryDelayMs);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"WARNING: GET failed for action={action}: {ex.Message}");
+            return null;
+        }
+    }
+
+    if (response is null)
+    {
+        Console.Error.WriteLine($"WARNING: All GET retry attempts failed for action={action}.");
+        return null;
+    }
+
+    var raw = await response.Content.ReadAsStringAsync();
+    JsonNode? node;
+    try { node = JsonNode.Parse(raw); }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"WARNING: Could not parse GET response for action={action}: {ex.Message}");
+        return null;
+    }
+
+    // Unwrap double-encoded responses.
+    if (node is JsonValue sv && sv.TryGetValue<string>(out var inner))
+    {
+        try { node = JsonNode.Parse(inner); }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"WARNING: Could not parse unwrapped GET response for action={action}: {ex.Message}");
+            return null;
+        }
+    }
+
+    return node;
+}
+
+string ComputeSha256Hex(string input)
+{
+    var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(input));
+    return Convert.ToHexString(bytes).ToLowerInvariant();
+}
 
 async Task<JsonObject?> PostApiAsync(string weapon, string action)
 {
@@ -140,7 +317,7 @@ async Task<JsonObject?> PostApiAsync(string weapon, string action)
     var body = JsonSerializer.Serialize(new { weapon, attachments = Array.Empty<object>(), health = "100" });
 
     HttpResponseMessage? response = null;
-    for (int attempt = 1; attempt <= 3; attempt++)
+    for (int attempt = 1; attempt <= MaxRetryAttempts; attempt++)
     {
         try
         {
@@ -151,11 +328,11 @@ async Task<JsonObject?> PostApiAsync(string weapon, string action)
             response.EnsureSuccessStatusCode();
             break;
         }
-        catch (Exception ex) when (attempt < 3)
+        catch (Exception ex) when (attempt < MaxRetryAttempts)
         {
             Console.Error.WriteLine($"WARNING: attempt {attempt} failed for weapon={weapon} action={action}: {ex.Message} — retrying in 2s…");
             response = null;
-            await Task.Delay(2000);
+            await Task.Delay(RetryDelayMs);
         }
         catch (Exception ex)
         {
