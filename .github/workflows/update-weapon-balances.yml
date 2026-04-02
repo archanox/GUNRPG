@@ -1,0 +1,41 @@
+name: Update Weapon Balances
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Daily at 00:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-balances:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Fetch weapon stats
+        run: python scripts/fetch_weapon_stats.py
+
+      - name: Commit new snapshot
+        run: |
+          # Pick up any new (untracked) snapshot files written by the script.
+          NEW_SNAPSHOTS=$(git ls-files --others --exclude-standard balances/)
+          if [ -z "$NEW_SNAPSHOTS" ]; then
+            echo "No new snapshot file to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Derive the commit message date from the snapshot filename.
+          SNAPSHOT_DATE=$(echo "$NEW_SNAPSHOTS" | head -n1 | xargs basename .json | sed 's/\.json//')
+          git add $NEW_SNAPSHOTS
+          git commit -m "Balance snapshot ${SNAPSHOT_DATE}"
+          git push
