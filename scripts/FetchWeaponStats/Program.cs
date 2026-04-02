@@ -12,7 +12,8 @@
 // Compares new content (weapons + attachments, excluding version/hash) against
 // the most recent file in balances/; skips writing if identical.
 // Writes a new snapshot only when the data changes; exits 0 in both cases.
-// Exits non-zero on API or I/O errors so GitHub Actions marks the step failed.
+// Exits 0 when the API is unavailable (no new snapshot is written, nothing to commit).
+// Exits non-zero only on local I/O errors.
 
 using System.Security.Cryptography;
 using System.Text;
@@ -24,6 +25,7 @@ const string Game = "bo7";
 const int TimeoutSeconds = 30;
 const int MaxRetryAttempts = 3;
 const int RetryDelayMs = 2000;
+const string ApiUnavailableWarning = "WARNING: API unavailable — skipping snapshot. Nothing to commit.";
 
 // Locate the repository root from the working directory; works reliably both
 // locally (run from the repo root) and in GitHub Actions (checkout sets CWD).
@@ -88,11 +90,19 @@ foreach (var weapon in weapons)
 {
     Console.WriteLine($"  Fetching damage table for '{weapon}'…");
     var damageTable = await PostApiAsync(weapon, "calc_damage_table");
-    if (damageTable is null) return 1;
+    if (damageTable is null)
+    {
+        Console.WriteLine(ApiUnavailableWarning);
+        return 0;
+    }
 
     Console.WriteLine($"  Fetching stat summary for '{weapon}'…");
     var summary = await PostApiAsync(weapon, "calc_stat_summary");
-    if (summary is null) return 1;
+    if (summary is null)
+    {
+        Console.WriteLine(ApiUnavailableWarning);
+        return 0;
+    }
 
     var stats = BuildWeaponStats(damageTable, summary);
     weaponsData[weapon] = stats;
