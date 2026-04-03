@@ -13,7 +13,7 @@
 // the most recent file in balances/; skips writing if identical.
 // Writes a new snapshot only when the data changes; exits 0 in both cases.
 // Exits 0 when the API is unavailable (no new snapshot is written, nothing to commit).
-// Exits non-zero only on local I/O errors.
+// Exits non-zero only on local failures such as I/O errors or invalid/missing local data.
 
 using System.Security.Cryptography;
 using System.Text;
@@ -349,14 +349,14 @@ async Task<JsonObject?> PostApiAsync(string weapon, string action)
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"ERROR: API unreachable for weapon={weapon} action={action}: {ex.Message}");
+            Console.Error.WriteLine($"WARNING: API unreachable for weapon={weapon} action={action}: {ex.Message}");
             return null;
         }
     }
 
     if (response is null)
     {
-        Console.Error.WriteLine($"ERROR: All retry attempts failed for weapon={weapon} action={action}.");
+        Console.Error.WriteLine($"WARNING: All retry attempts failed for weapon={weapon} action={action}.");
         return null;
     }
 
@@ -370,7 +370,7 @@ async Task<JsonObject?> PostApiAsync(string weapon, string action)
     }
     catch (JsonException ex)
     {
-        Console.Error.WriteLine($"ERROR: Could not parse API response for weapon={weapon} action={action}: {ex.Message}");
+        Console.Error.WriteLine($"WARNING: Could not parse API response for weapon={weapon} action={action}: {ex.Message}");
         return null;
     }
 
@@ -382,14 +382,14 @@ async Task<JsonObject?> PostApiAsync(string weapon, string action)
         }
         catch (JsonException ex)
         {
-            Console.Error.WriteLine($"ERROR: Could not parse inner JSON for weapon={weapon} action={action}: {ex.Message}");
+            Console.Error.WriteLine($"WARNING: Could not parse inner JSON for weapon={weapon} action={action}: {ex.Message}");
             return null;
         }
     }
 
     if (node is not JsonObject obj)
     {
-        Console.Error.WriteLine($"ERROR: Unexpected top-level JSON type for weapon={weapon} action={action}.");
+        Console.Error.WriteLine($"WARNING: Unexpected top-level JSON type for weapon={weapon} action={action}.");
         return null;
     }
 
