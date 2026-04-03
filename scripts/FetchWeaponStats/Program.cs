@@ -39,12 +39,15 @@ var balancesDir = Path.Combine(repoRoot, "balances");
 
 using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(TimeoutSeconds) };
 httpClient.DefaultRequestHeaders.Add("Accept", "application/json, text/plain, */*");
+httpClient.DefaultRequestHeaders.Add("Accept-Language", "en-AU,en;q=0.9");
 httpClient.DefaultRequestHeaders.Add("Origin", "capacitor://com.truegamedata.app");
 httpClient.DefaultRequestHeaders.Add("User-Agent",
     "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148");
 httpClient.DefaultRequestHeaders.Add("Sec-Fetch-Site", "cross-site");
 httpClient.DefaultRequestHeaders.Add("Sec-Fetch-Mode", "cors");
 httpClient.DefaultRequestHeaders.Add("Sec-Fetch-Dest", "empty");
+httpClient.DefaultRequestHeaders.Add("Pragma", "no-cache");
+httpClient.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
 
 // ---------------------------------------------------------------------------
 // Discover weapon list
