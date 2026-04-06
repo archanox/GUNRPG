@@ -19,6 +19,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
+using System.Globalization;
 
 const string ApiBase = "https://www.truegamedata.com/api/weapons/api.php";
 const string Game = "bo7";
@@ -53,6 +55,7 @@ httpClient.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
 // Discover weapon list
 // ---------------------------------------------------------------------------
 
+var discoveredWeaponBaseData = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
 var discoveredWeapons = await DiscoverWeaponsAsync();
 if (discoveredWeapons is null)
 {
@@ -91,10 +94,20 @@ var weaponsData = new SortedDictionary<string, JsonObject>(StringComparer.Ordina
 
 foreach (var weapon in weapons)
 {
+    var hasBaseDataFallback = discoveredWeaponBaseData.TryGetValue(weapon, out var baseWeaponData);
+
     Console.WriteLine($"  Fetching damage table for '{weapon}'…");
     var damageTable = await PostApiAsync(weapon, "calc_damage_table");
     if (damageTable is null)
     {
+        if (hasBaseDataFallback)
+        {
+            Console.WriteLine($"  Falling back to all_base_data for '{weapon}'…");
+            weaponsData[weapon] = BuildWeaponStatsFromBaseData(baseWeaponData!);
+            Console.WriteLine();
+            continue;
+        }
+
         Console.WriteLine(ApiUnavailableWarning);
         return 0;
     }
@@ -103,6 +116,14 @@ foreach (var weapon in weapons)
     var summary = await PostApiAsync(weapon, "calc_stat_summary");
     if (summary is null)
     {
+        if (hasBaseDataFallback)
+        {
+            Console.WriteLine($"  Falling back to all_base_data for '{weapon}'…");
+            weaponsData[weapon] = BuildWeaponStatsFromBaseData(baseWeaponData!);
+            Console.WriteLine();
+            continue;
+        }
+
         Console.WriteLine(ApiUnavailableWarning);
         return 0;
     }
@@ -215,7 +236,10 @@ async Task<List<string>?> DiscoverWeaponsAsync()
             {
                 var weaponName = ExtractStringField(obj, ["gun", "name", "weapon_name", "id", "weapon_id"]);
                 if (!string.IsNullOrWhiteSpace(weaponName))
+                {
                     discovered.Add(weaponName);
+                    discoveredWeaponBaseData[weaponName] = obj.DeepClone().AsObject();
+                }
             }
         }
     }
@@ -234,7 +258,10 @@ async Task<List<string>?> DiscoverWeaponsAsync()
                     {
                         var weaponName = ExtractStringField(obj, ["gun", "name", "weapon_name", "id", "weapon_id"]);
                         if (!string.IsNullOrWhiteSpace(weaponName))
+                        {
                             discovered.Add(weaponName);
+                            discoveredWeaponBaseData[weaponName] = obj.DeepClone().AsObject();
+                        }
                     }
                 }
                 break;
@@ -327,7 +354,21 @@ string ComputeSha256Hex(string input)
 async Task<JsonObject?> PostApiAsync(string weapon, string action)
 {
     var url = $"{ApiBase}?game={Game}&action={action}";
-    var body = JsonSerializer.Serialize(new { weapon, attachments = Array.Empty<object>(), health = "100" });
+    var body = action switch
+    {
+        "calc_stat_summary" => JsonSerializer.Serialize(new
+        {
+            chartData = new[]
+            {
+                new
+                {
+                    weapon,
+                    attachments = Array.Empty<object>()
+                }
+            }
+        }),
+        _ => JsonSerializer.Serialize(new { weapon, attachments = Array.Empty<object>(), health = "100" })
+    };
 
     HttpResponseMessage? response = null;
     for (int attempt = 1; attempt <= MaxRetryAttempts; attempt++)
@@ -387,6 +428,16 @@ async Task<JsonObject?> PostApiAsync(string weapon, string action)
         }
     }
 
+    if (node is JsonArray arr)
+    {
+        var firstObject = arr.Count > 0 && arr[0] is JsonObject first ? first : null;
+        if (firstObject is not null)
+            return firstObject;
+
+        Console.Error.WriteLine($"WARNING: Unexpected empty array response for weapon={weapon} action={action}.");
+        return null;
+    }
+
     if (node is not JsonObject obj)
     {
         Console.Error.WriteLine($"WARNING: Unexpected top-level JSON type for weapon={weapon} action={action}.");
@@ -409,6 +460,24 @@ JsonObject BuildWeaponStats(JsonObject damageTable, JsonObject summary)
 
     // Damage ranges (per-dropoff-distance per-body-part).
     stats["damage_ranges"] = ExtractDamageRanges(damageTable);
+
+    return stats;
+}
+
+JsonObject BuildWeaponStatsFromBaseData(JsonObject baseData)
+{
+    var stats = new JsonObject();
+
+    var rpm = GetDouble(baseData, "rpm");
+    if (rpm > 0) stats["rpm"] = (int)Math.Round(rpm);
+
+    MergeSummaryStats(stats, baseData);
+
+    var damageTables = ParseDamageTables(baseData);
+    if (damageTables.Count > 0)
+        stats["damage_ranges"] = ExtractDamageRanges(new JsonObject { ["damage"] = damageTables });
+    else
+        stats["damage_ranges"] = new JsonArray();
 
     return stats;
 }
@@ -458,24 +527,107 @@ JsonArray ExtractDamageRanges(JsonObject damageTable)
 
 void MergeSummaryStats(JsonObject stats, JsonObject summary)
 {
-    TryPick(stats, summary, "mag_size",         ["mag_size", "magazine", "ammo_capacity", "mag"],                  v => (JsonNode)JsonValue.Create((int)Math.Round(v)));
-    TryPick(stats, summary, "reload_ms",        ["reload_add_time", "reload_time", "reload_ms", "reload_empty", "reload"], v => (JsonNode)Fixed(v, 0));
-    TryPick(stats, summary, "ads_ms",           ["ads_time", "ads_ms", "aim_down_sight", "ads"],                   v => (JsonNode)Fixed(v, 0));
-    TryPick(stats, summary, "sprint_to_fire_ms",["sprint_out_time", "sprint_to_fire", "stf_time", "sprint_fire"],  v => (JsonNode)Fixed(v, 0));
-    TryPick(stats, summary, "bullet_velocity",  ["bullet_velocity", "muzzle_velocity", "velocity"],                v => (JsonNode)Fixed(v, 1));
-    TryPick(stats, summary, "move_speed",       ["movement_speed", "move_speed", "ms", "walk_speed"],              v => (JsonNode)Fixed(v, 4));
-    TryPick(stats, summary, "ads_move_speed",   ["ads_movement_speed", "ads_move_speed", "ads_ms_move"],           v => (JsonNode)Fixed(v, 4));
+    TryPick(stats, summary, "mag_size",         ["mag_size", "magazine", "ammo_capacity", "mag"],                                 (v, _) => (JsonNode)JsonValue.Create((int)Math.Round(v)));
+    TryPick(stats, summary, "reload_ms",        ["reload_add_time", "reload_time", "reload_ms", "reload_empty", "reload"],       (v, unit) => (JsonNode)Fixed(ConvertToMillisecondsIfNeeded(v, unit), 0));
+    TryPick(stats, summary, "ads_ms",           ["ads_time", "ads_ms", "aim_down_sight", "ads"],                                  (v, unit) => (JsonNode)Fixed(ConvertToMillisecondsIfNeeded(v, unit), 0));
+    TryPick(stats, summary, "sprint_to_fire_ms",["sprint_out_time", "sprint_to_fire", "stf_time", "sprint_fire", "stf"],         (v, unit) => (JsonNode)Fixed(ConvertToMillisecondsIfNeeded(v, unit), 0));
+    TryPick(stats, summary, "bullet_velocity",  ["bullet_velocity", "muzzle_velocity", "velocity", "bv"],                         (v, _) => (JsonNode)Fixed(v, 1));
+    TryPick(stats, summary, "move_speed",       ["movement_speed", "move_speed", "ms", "walk_speed", "movement"],                 (v, _) => (JsonNode)Fixed(v, 4));
+    TryPick(stats, summary, "ads_move_speed",   ["ads_movement_speed", "ads_move_speed", "ads_ms_move", "ads_movement"],         (v, _) => (JsonNode)Fixed(v, 4));
 }
 
-void TryPick(JsonObject target, JsonObject source, string outKey, string[] candidates, Func<double, JsonNode> convert)
+double ConvertToMillisecondsIfNeeded(double value, string? unit) =>
+    string.Equals(unit, "s", StringComparison.OrdinalIgnoreCase)
+    || (string.IsNullOrWhiteSpace(unit) && value > 0 && value < 10)
+        ? value * 1000.0
+        : value;
+
+void TryPick(JsonObject target, JsonObject source, string outKey, string[] candidates, Func<double, string?, JsonNode> convert)
 {
     foreach (var key in candidates)
     {
         if (!source.TryGetPropertyValue(key, out var node) || node is null) continue;
-        try { target[outKey] = convert(node.GetValue<double>()); }
-        catch { /* skip non-numeric values */ }
+        if (!TryReadMetricValue(node, out var value, out var unit)) continue;
+        target[outKey] = convert(value, unit);
         return;
     }
+}
+
+bool TryReadMetricValue(JsonNode node, out double value, out string? unit)
+{
+    value = 0;
+    unit = null;
+
+    if (node is JsonValue valueNode)
+    {
+        try
+        {
+            value = valueNode.GetValue<double>();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    if (node is not JsonObject obj)
+        return false;
+
+    unit = obj["unit"]?.GetValue<string>();
+
+    foreach (var key in new[] { "attachmentValue", "baseValue", "value" })
+    {
+        if (obj[key] is not JsonValue metricValue)
+            continue;
+
+        try
+        {
+            value = metricValue.GetValue<double>();
+            return true;
+        }
+        catch
+        {
+            // ignore non-numeric metric values and try the next candidate
+        }
+    }
+
+    return false;
+}
+
+JsonArray ParseDamageTables(JsonObject baseData)
+{
+    var tables = new JsonArray();
+    if (!baseData.TryGetPropertyValue("simple_damage_mp", out var node) || node is not JsonValue rawValue)
+        return tables;
+
+    string? rawDamage = null;
+    try
+    {
+        rawDamage = rawValue.GetValue<string>();
+    }
+    catch
+    {
+        return tables;
+    }
+
+    if (string.IsNullOrWhiteSpace(rawDamage))
+        return tables;
+
+    foreach (Match match in Regex.Matches(rawDamage, @"\[[\s\S]*?\]"))
+    {
+        try
+        {
+            if (JsonNode.Parse(match.Value) is JsonArray table)
+                tables.Add(table);
+        }
+        catch
+        {
+            // ignore malformed fallback tables and continue
+        }
+    }
+
+    return tables;
 }
 
 // Returns the first list of damage entries from the "damage" outer array.
@@ -486,8 +638,35 @@ JsonArray? FirstDamageEntries(JsonObject damageTable)
     return outerArr.Count > 0 ? outerArr[0]?.AsArray() : null;
 }
 
-double GetDouble(JsonObject obj, string key) =>
-    obj.TryGetPropertyValue(key, out var n) && n is not null ? n.GetValue<double>() : 0.0;
+double GetDouble(JsonObject obj, string key)
+{
+    if (!obj.TryGetPropertyValue(key, out var node) || node is null)
+        return 0.0;
+
+    if (node is JsonValue value)
+    {
+        try
+        {
+            return value.GetValue<double>();
+        }
+        catch
+        {
+            try
+            {
+                var stringValue = value.GetValue<string>();
+                return double.TryParse(stringValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                    ? parsed
+                    : 0.0;
+            }
+            catch
+            {
+                return 0.0;
+            }
+        }
+    }
+
+    return 0.0;
+}
 
 // Round to `decimals` places; return an integer node when the result is whole.
 JsonNode Fixed(double value, int decimals = 2)
