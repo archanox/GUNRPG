@@ -97,6 +97,8 @@ public sealed class GameStateDto
             LastActionTimestamp = snapshot.LastActionTimestamp,
             ReplayInitialSnapshotJson = snapshot.ReplayInitialSnapshotJson,
             ReplayTurns = snapshot.ReplayTurns.ToList(),
+            BalanceSnapshotVersion = snapshot.BalanceSnapshotVersion,
+            BalanceSnapshotHash = snapshot.BalanceSnapshotHash,
             Version = snapshot.Version,
             FinalHash = snapshot.FinalHash != null ? (byte[])snapshot.FinalHash.Clone() : null
         };

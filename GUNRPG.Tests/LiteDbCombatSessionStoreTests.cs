@@ -390,6 +390,8 @@ public class LiteDbCombatSessionStoreTests : IDisposable
                 CancelMovement = t.CancelMovement,
                 SubmittedAtMs = t.SubmittedAtMs
             }).ToList(),
+            BalanceSnapshotVersion = session.BalanceSnapshotVersion,
+            BalanceSnapshotHash = session.BalanceSnapshotHash,
             Version = session.Version,
             FinalHash = (byte[])session.FinalHash!.Clone(),
         };
@@ -419,6 +421,8 @@ public class LiteDbCombatSessionStoreTests : IDisposable
             CompletedAt = snapshot.CompletedAt,
             ReplayInitialSnapshotJson = snapshot.ReplayInitialSnapshotJson,
             ReplayTurns = snapshot.ReplayTurns,
+            BalanceSnapshotVersion = snapshot.BalanceSnapshotVersion,
+            BalanceSnapshotHash = snapshot.BalanceSnapshotHash,
             Version = snapshot.Version,
             FinalHash = tamperedHash,
         };
@@ -513,6 +517,8 @@ public class LiteDbCombatSessionStoreTests : IDisposable
             LastActionTimestamp = inMemorySnapshot.LastActionTimestamp,
             ReplayInitialSnapshotJson = inMemorySnapshot.ReplayInitialSnapshotJson,
             ReplayTurns = inMemorySnapshot.ReplayTurns,
+            BalanceSnapshotVersion = inMemorySnapshot.BalanceSnapshotVersion,
+            BalanceSnapshotHash = inMemorySnapshot.BalanceSnapshotHash,
             Version = inMemorySnapshot.Version,
             FinalHash = (byte[])inMemorySnapshot.FinalHash!.Clone(),
         };

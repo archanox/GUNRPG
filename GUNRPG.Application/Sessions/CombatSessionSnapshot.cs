@@ -38,6 +38,8 @@ public sealed class CombatSessionSnapshot
     public DateTimeOffset? LastActionTimestamp { get; init; }
     public string ReplayInitialSnapshotJson { get; init; } = string.Empty;
     public List<IntentSnapshot> ReplayTurns { get; init; } = new();
+    public string BalanceSnapshotVersion { get; init; } = string.Empty;
+    public string BalanceSnapshotHash { get; init; } = string.Empty;
 
     /// <summary>
     /// Schema version used when <see cref="FinalHash"/> was computed. Zero for legacy sessions.

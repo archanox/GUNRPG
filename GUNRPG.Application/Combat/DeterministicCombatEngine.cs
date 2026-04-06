@@ -147,12 +147,6 @@ public sealed class DeterministicCombatEngine : IDeterministicCombatEngine
     private static Weapon ResolveWeapon(string? equippedWeaponName, string? lockedLoadout)
     {
         var normalized = (equippedWeaponName ?? lockedLoadout ?? string.Empty).Trim();
-        return normalized switch
-        {
-            "SOKOL 545" or "LMG" => WeaponFactory.CreateSokol545(),
-            "STURMWOLF 45" or "SMG" => WeaponFactory.CreateSturmwolf45(),
-            "M15 MOD 0" or "Rifle" => WeaponFactory.CreateM15Mod0(),
-            _ => WeaponFactory.CreateM15Mod0()
-        };
+        return WeaponFactory.TryCreateWeapon(normalized) ?? WeaponFactory.CreateM15Mod0();
     }
 }

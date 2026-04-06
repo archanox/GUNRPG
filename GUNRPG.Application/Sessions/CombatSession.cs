@@ -51,6 +51,8 @@ public sealed class CombatSession
     public bool PostCombatResolved { get; set; }
     public string ReplayInitialSnapshotJson { get; private set; }
     public IReadOnlyList<IntentSnapshot> ReplayTurns => _replayTurns;
+    public string BalanceSnapshotVersion { get; }
+    public string BalanceSnapshotHash { get; }
 
     /// <summary>
     /// Deterministic hash computed from replay-critical session data when the session is
@@ -77,6 +79,8 @@ public sealed class CombatSession
         DateTimeOffset? lastActionTimestamp = null,
         string? replayInitialSnapshotJson = null,
         IEnumerable<IntentSnapshot>? replayTurns = null,
+        string? balanceSnapshotVersion = null,
+        string? balanceSnapshotHash = null,
         int version = CurrentVersion,
         byte[]? finalHash = null,
         int playerLevel = 0)
@@ -97,6 +101,8 @@ public sealed class CombatSession
         CompletedAt = completedAt;
         LastActionTimestamp = lastActionTimestamp ?? createdAt;
         ReplayInitialSnapshotJson = replayInitialSnapshotJson ?? string.Empty;
+        BalanceSnapshotVersion = balanceSnapshotVersion ?? WeaponFactory.CurrentBalanceVersion;
+        BalanceSnapshotHash = balanceSnapshotHash ?? WeaponFactory.CurrentBalanceHash;
         if (replayTurns != null)
         {
             _replayTurns.AddRange(replayTurns.Select(CloneIntentSnapshot));
@@ -163,6 +169,8 @@ public sealed class CombatSession
             SessionPhase.Planning,
             1,
             DateTimeOffset.UtcNow,
+            balanceSnapshotVersion: WeaponFactory.CurrentBalanceVersion,
+            balanceSnapshotHash: WeaponFactory.CurrentBalanceHash,
             playerLevel: resolvedPlayerLevel);
     }
 
@@ -181,7 +189,14 @@ public sealed class CombatSession
         if (nextPhase == SessionPhase.Completed && CompletedAt == null)
         {
             CompletedAt = resolvedTimestamp;
-            FinalHash = CombatSessionHasher.ComputeHash(Id, Seed, Version, TurnNumber, _replayTurns);
+            FinalHash = CombatSessionHasher.ComputeHash(
+                Id,
+                Seed,
+                Version,
+                BalanceSnapshotVersion,
+                BalanceSnapshotHash,
+                TurnNumber,
+                _replayTurns);
         }
     }
 

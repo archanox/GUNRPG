@@ -121,6 +121,8 @@ public sealed class LiteDbCombatSessionStore : ICombatSessionStore
             snapshot.Id,
             snapshot.Seed,
             snapshot.Version,
+            snapshot.BalanceSnapshotVersion,
+            snapshot.BalanceSnapshotHash,
             snapshot.TurnNumber,
             snapshot.ReplayTurns);
 
