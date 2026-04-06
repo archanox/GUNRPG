@@ -1,0 +1,1465 @@
+{
+  "version": "2026-04-06",
+  "hash": "976fa9c51641b2f2bd58d2d129b6b7b4d96fc41054ece596dec7e730913c8ac0",
+  "weapons": {
+    "AK-27": {
+      "rpm": 682,
+      "mag_size": 30,
+      "reload_ms": 1920,
+      "ads_ms": 270,
+      "sprint_to_fire_ms": 250,
+      "bullet_velocity": 700,
+      "move_speed": 4.5,
+      "ads_move_speed": 2.9,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 35,
+          "neck": 26,
+          "chest": 26,
+          "stomach": 26,
+          "upper_arm": 26,
+          "lower_arm": 26,
+          "upper_leg": 26,
+          "lower_leg": 26
+        },
+        {
+          "range_m": 21,
+          "head": 29,
+          "neck": 22,
+          "chest": 22,
+          "stomach": 22,
+          "upper_arm": 22,
+          "lower_arm": 22,
+          "upper_leg": 22,
+          "lower_leg": 22
+        },
+        {
+          "range_m": 50.8,
+          "head": 24,
+          "neck": 18,
+          "chest": 18,
+          "stomach": 18,
+          "upper_arm": 18,
+          "lower_arm": 18,
+          "upper_leg": 18,
+          "lower_leg": 18
+        }
+      ]
+    },
+    "Carbon 57": {
+      "rpm": 833,
+      "mag_size": 50,
+      "reload_ms": 2080,
+      "ads_ms": 245,
+      "sprint_to_fire_ms": 180,
+      "bullet_velocity": 550,
+      "move_speed": 4.8,
+      "ads_move_speed": 3.3,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 28,
+          "neck": 23,
+          "chest": 23,
+          "stomach": 23,
+          "upper_arm": 23,
+          "lower_arm": 23,
+          "upper_leg": 23,
+          "lower_leg": 23
+        },
+        {
+          "range_m": 14,
+          "head": 23,
+          "neck": 19,
+          "chest": 19,
+          "stomach": 19,
+          "upper_arm": 19,
+          "lower_arm": 19,
+          "upper_leg": 19,
+          "lower_leg": 19
+        },
+        {
+          "range_m": 24.1,
+          "head": 20,
+          "neck": 16,
+          "chest": 16,
+          "stomach": 16,
+          "upper_arm": 16,
+          "lower_arm": 16,
+          "upper_leg": 16,
+          "lower_leg": 16
+        },
+        {
+          "range_m": 35.6,
+          "head": 17,
+          "neck": 14,
+          "chest": 14,
+          "stomach": 14,
+          "upper_arm": 14,
+          "lower_arm": 14,
+          "upper_leg": 14,
+          "lower_leg": 14
+        }
+      ]
+    },
+    "Coda 9": {
+      "rpm": 938,
+      "mag_size": 20,
+      "reload_ms": 1500,
+      "ads_ms": 180,
+      "sprint_to_fire_ms": 120,
+      "bullet_velocity": 350,
+      "move_speed": 5.1,
+      "ads_move_speed": 3.8,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 26,
+          "neck": 20,
+          "chest": 20,
+          "stomach": 20,
+          "upper_arm": 20,
+          "lower_arm": 20,
+          "upper_leg": 20,
+          "lower_leg": 20
+        },
+        {
+          "range_m": 9,
+          "head": 22,
+          "neck": 17,
+          "chest": 17,
+          "stomach": 17,
+          "upper_arm": 17,
+          "lower_arm": 17,
+          "upper_leg": 17,
+          "lower_leg": 17
+        },
+        {
+          "range_m": 14,
+          "head": 16,
+          "neck": 13,
+          "chest": 13,
+          "stomach": 13,
+          "upper_arm": 13,
+          "lower_arm": 13,
+          "upper_leg": 13,
+          "lower_leg": 13
+        },
+        {
+          "range_m": 20,
+          "head": 14,
+          "neck": 11,
+          "chest": 11,
+          "stomach": 11,
+          "upper_arm": 11,
+          "lower_arm": 11,
+          "upper_leg": 11,
+          "lower_leg": 11
+        }
+      ]
+    },
+    "DS20 Mirage": {
+      "rpm": 625,
+      "mag_size": 30,
+      "reload_ms": 1570,
+      "ads_ms": 280,
+      "sprint_to_fire_ms": 220,
+      "bullet_velocity": 720,
+      "move_speed": 4.7,
+      "ads_move_speed": 3,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 35,
+          "neck": 27,
+          "chest": 27,
+          "stomach": 27,
+          "upper_arm": 27,
+          "lower_arm": 27,
+          "upper_leg": 27,
+          "lower_leg": 27
+        },
+        {
+          "range_m": 25.4,
+          "head": 29,
+          "neck": 23,
+          "chest": 23,
+          "stomach": 23,
+          "upper_arm": 23,
+          "lower_arm": 23,
+          "upper_leg": 23,
+          "lower_leg": 23
+        },
+        {
+          "range_m": 44.5,
+          "head": 28,
+          "neck": 22,
+          "chest": 22,
+          "stomach": 22,
+          "upper_arm": 22,
+          "lower_arm": 22,
+          "upper_leg": 22,
+          "lower_leg": 22
+        }
+      ]
+    },
+    "Dravec 45": {
+      "rpm": 652,
+      "mag_size": 36,
+      "reload_ms": 1730,
+      "ads_ms": 235,
+      "sprint_to_fire_ms": 170,
+      "bullet_velocity": 610,
+      "move_speed": 4.8,
+      "ads_move_speed": 3.4,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 33,
+          "neck": 26,
+          "chest": 26,
+          "stomach": 26,
+          "upper_arm": 26,
+          "lower_arm": 26,
+          "upper_leg": 26,
+          "lower_leg": 26
+        },
+        {
+          "range_m": 11.4,
+          "head": 27,
+          "neck": 21,
+          "chest": 21,
+          "stomach": 21,
+          "upper_arm": 21,
+          "lower_arm": 21,
+          "upper_leg": 21,
+          "lower_leg": 21
+        },
+        {
+          "range_m": 19.7,
+          "head": 22,
+          "neck": 17,
+          "chest": 17,
+          "stomach": 17,
+          "upper_arm": 17,
+          "lower_arm": 17,
+          "upper_leg": 17,
+          "lower_leg": 17
+        },
+        {
+          "range_m": 27.3,
+          "head": 19,
+          "neck": 15,
+          "chest": 15,
+          "stomach": 15,
+          "upper_arm": 15,
+          "lower_arm": 15,
+          "upper_leg": 15,
+          "lower_leg": 15
+        }
+      ]
+    },
+    "EGRT-17": {
+      "rpm": 811,
+      "mag_size": 34,
+      "reload_ms": 2320,
+      "ads_ms": 240,
+      "sprint_to_fire_ms": 200,
+      "bullet_velocity": 650,
+      "move_speed": 4.7,
+      "ads_move_speed": 3,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 26,
+          "neck": 22,
+          "chest": 22,
+          "stomach": 22,
+          "upper_arm": 22,
+          "lower_arm": 22,
+          "upper_leg": 22,
+          "lower_leg": 22
+        },
+        {
+          "range_m": 44,
+          "head": 22,
+          "neck": 19,
+          "chest": 19,
+          "stomach": 19,
+          "upper_arm": 19,
+          "lower_arm": 19,
+          "upper_leg": 19,
+          "lower_leg": 19
+        },
+        {
+          "range_m": 58,
+          "head": 19,
+          "neck": 16,
+          "chest": 16,
+          "stomach": 16,
+          "upper_arm": 16,
+          "lower_arm": 16,
+          "upper_leg": 16,
+          "lower_leg": 16
+        }
+      ]
+    },
+    "Jager 45": {
+      "rpm": 600,
+      "mag_size": 10,
+      "reload_ms": 1330,
+      "ads_ms": 150,
+      "sprint_to_fire_ms": 90,
+      "bullet_velocity": 380,
+      "move_speed": 5.3,
+      "ads_move_speed": 3.9,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 37,
+          "neck": 31,
+          "chest": 31,
+          "stomach": 31,
+          "upper_arm": 31,
+          "lower_arm": 31,
+          "upper_leg": 31,
+          "lower_leg": 31
+        },
+        {
+          "range_m": 15,
+          "head": 34,
+          "neck": 29,
+          "chest": 29,
+          "stomach": 29,
+          "upper_arm": 29,
+          "lower_arm": 29,
+          "upper_leg": 29,
+          "lower_leg": 29
+        },
+        {
+          "range_m": 27,
+          "head": 27,
+          "neck": 23,
+          "chest": 23,
+          "stomach": 23,
+          "upper_arm": 23,
+          "lower_arm": 23,
+          "upper_leg": 23,
+          "lower_leg": 23
+        }
+      ]
+    },
+    "KOGOT-7": {
+      "rpm": 952,
+      "mag_size": 30,
+      "reload_ms": 1350,
+      "ads_ms": 200,
+      "sprint_to_fire_ms": 125,
+      "bullet_velocity": 540,
+      "move_speed": 5.2,
+      "ads_move_speed": 3.6,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 25,
+          "neck": 23,
+          "chest": 23,
+          "stomach": 23,
+          "upper_arm": 23,
+          "lower_arm": 23,
+          "upper_leg": 23,
+          "lower_leg": 23
+        },
+        {
+          "range_m": 13,
+          "head": 20,
+          "neck": 19,
+          "chest": 19,
+          "stomach": 19,
+          "upper_arm": 19,
+          "lower_arm": 19,
+          "upper_leg": 19,
+          "lower_leg": 19
+        },
+        {
+          "range_m": 20,
+          "head": 17,
+          "neck": 16,
+          "chest": 16,
+          "stomach": 16,
+          "upper_arm": 16,
+          "lower_arm": 16,
+          "upper_leg": 16,
+          "lower_leg": 16
+        },
+        {
+          "range_m": 25,
+          "head": 14,
+          "neck": 13,
+          "chest": 13,
+          "stomach": 13,
+          "upper_arm": 13,
+          "lower_arm": 13,
+          "upper_leg": 13,
+          "lower_leg": 13
+        }
+      ]
+    },
+    "M15 Mod 0": {
+      "rpm": 769,
+      "mag_size": 30,
+      "reload_ms": 1850,
+      "ads_ms": 250,
+      "sprint_to_fire_ms": 210,
+      "bullet_velocity": 730,
+      "move_speed": 4.65,
+      "ads_move_speed": 2.95,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 27,
+          "neck": 21,
+          "chest": 21,
+          "stomach": 21,
+          "upper_arm": 21,
+          "lower_arm": 21,
+          "upper_leg": 21,
+          "lower_leg": 21
+        },
+        {
+          "range_m": 30.5,
+          "head": 23,
+          "neck": 18,
+          "chest": 18,
+          "stomach": 18,
+          "upper_arm": 18,
+          "lower_arm": 18,
+          "upper_leg": 18,
+          "lower_leg": 18
+        },
+        {
+          "range_m": 46.4,
+          "head": 22,
+          "neck": 17,
+          "chest": 17,
+          "stomach": 17,
+          "upper_arm": 17,
+          "lower_arm": 17,
+          "upper_leg": 17,
+          "lower_leg": 17
+        }
+      ]
+    },
+    "M34 Novaline": {
+      "rpm": 556,
+      "mag_size": 20,
+      "reload_ms": 1620,
+      "ads_ms": 350,
+      "sprint_to_fire_ms": 250,
+      "bullet_velocity": 800,
+      "move_speed": 4.4,
+      "ads_move_speed": 2.8,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 91,
+          "neck": 65,
+          "chest": 65,
+          "stomach": 65,
+          "upper_arm": 65,
+          "lower_arm": 65,
+          "upper_leg": 65,
+          "lower_leg": 65
+        },
+        {
+          "range_m": 38.1,
+          "head": 58,
+          "neck": 42,
+          "chest": 42,
+          "stomach": 42,
+          "upper_arm": 42,
+          "lower_arm": 42,
+          "upper_leg": 42,
+          "lower_leg": 42
+        },
+        {
+          "range_m": 55.9,
+          "head": 53,
+          "neck": 38,
+          "chest": 38,
+          "stomach": 38,
+          "upper_arm": 38,
+          "lower_arm": 38,
+          "upper_leg": 38,
+          "lower_leg": 38
+        },
+        {
+          "range_m": 69.8,
+          "head": 47,
+          "neck": 34,
+          "chest": 34,
+          "stomach": 34,
+          "upper_arm": 34,
+          "lower_arm": 34,
+          "upper_leg": 34,
+          "lower_leg": 34
+        }
+      ]
+    },
+    "M8A1": {
+      "rpm": 896,
+      "mag_size": 32,
+      "reload_ms": 1930,
+      "ads_ms": 310,
+      "sprint_to_fire_ms": 220,
+      "bullet_velocity": 850,
+      "move_speed": 4.5,
+      "ads_move_speed": 2.9,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 34,
+          "neck": 30,
+          "chest": 30,
+          "stomach": 30,
+          "upper_arm": 30,
+          "lower_arm": 30,
+          "upper_leg": 30,
+          "lower_leg": 30
+        },
+        {
+          "range_m": 36,
+          "head": 33,
+          "neck": 29,
+          "chest": 29,
+          "stomach": 29,
+          "upper_arm": 29,
+          "lower_arm": 29,
+          "upper_leg": 29,
+          "lower_leg": 29
+        },
+        {
+          "range_m": 48,
+          "head": 27,
+          "neck": 24,
+          "chest": 24,
+          "stomach": 24,
+          "upper_arm": 24,
+          "lower_arm": 24,
+          "upper_leg": 24,
+          "lower_leg": 24
+        }
+      ]
+    },
+    "MK.78": {
+      "rpm": 652,
+      "mag_size": 75,
+      "reload_ms": 4720,
+      "ads_ms": 440,
+      "sprint_to_fire_ms": 250,
+      "bullet_velocity": 800,
+      "move_speed": 4.4,
+      "ads_move_speed": 2.4,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 37,
+          "neck": 31,
+          "chest": 31,
+          "stomach": 31,
+          "upper_arm": 31,
+          "lower_arm": 31,
+          "upper_leg": 31,
+          "lower_leg": 31
+        },
+        {
+          "range_m": 41,
+          "head": 28,
+          "neck": 24,
+          "chest": 24,
+          "stomach": 24,
+          "upper_arm": 24,
+          "lower_arm": 24,
+          "upper_leg": 24,
+          "lower_leg": 24
+        },
+        {
+          "range_m": 61,
+          "head": 27,
+          "neck": 23,
+          "chest": 23,
+          "stomach": 23,
+          "upper_arm": 23,
+          "lower_arm": 23,
+          "upper_leg": 23,
+          "lower_leg": 23
+        }
+      ]
+    },
+    "MPC-25": {
+      "rpm": 750,
+      "mag_size": 30,
+      "reload_ms": 1570,
+      "ads_ms": 180,
+      "sprint_to_fire_ms": 110,
+      "bullet_velocity": 520,
+      "move_speed": 5.1,
+      "ads_move_speed": 3.6,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 34,
+          "neck": 30,
+          "chest": 30,
+          "stomach": 30,
+          "upper_arm": 30,
+          "lower_arm": 30,
+          "upper_leg": 30,
+          "lower_leg": 30
+        },
+        {
+          "range_m": 9.1,
+          "head": 26,
+          "neck": 23,
+          "chest": 23,
+          "stomach": 23,
+          "upper_arm": 23,
+          "lower_arm": 23,
+          "upper_leg": 23,
+          "lower_leg": 23
+        },
+        {
+          "range_m": 13.5,
+          "head": 21,
+          "neck": 19,
+          "chest": 19,
+          "stomach": 19,
+          "upper_arm": 19,
+          "lower_arm": 19,
+          "upper_leg": 19,
+          "lower_leg": 19
+        },
+        {
+          "range_m": 26,
+          "head": 18,
+          "neck": 16,
+          "chest": 16,
+          "stomach": 16,
+          "upper_arm": 16,
+          "lower_arm": 16,
+          "upper_leg": 16,
+          "lower_leg": 16
+        }
+      ]
+    },
+    "MXR-17": {
+      "rpm": 500,
+      "mag_size": 25,
+      "reload_ms": 1420,
+      "ads_ms": 240,
+      "sprint_to_fire_ms": 200,
+      "bullet_velocity": 780,
+      "move_speed": 4.7,
+      "ads_move_speed": 3,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 39,
+          "neck": 33,
+          "chest": 33,
+          "stomach": 33,
+          "upper_arm": 33,
+          "lower_arm": 33,
+          "upper_leg": 33,
+          "lower_leg": 33
+        },
+        {
+          "range_m": 33,
+          "head": 37,
+          "neck": 31,
+          "chest": 31,
+          "stomach": 31,
+          "upper_arm": 31,
+          "lower_arm": 31,
+          "upper_leg": 31,
+          "lower_leg": 31
+        },
+        {
+          "range_m": 52,
+          "head": 28,
+          "neck": 24,
+          "chest": 24,
+          "stomach": 24,
+          "upper_arm": 24,
+          "lower_arm": 24,
+          "upper_leg": 24,
+          "lower_leg": 24
+        }
+      ]
+    },
+    "Maddox RFB": {
+      "rpm": 723,
+      "mag_size": 40,
+      "reload_ms": 1800,
+      "ads_ms": 260,
+      "sprint_to_fire_ms": 190,
+      "bullet_velocity": 650,
+      "move_speed": 4.75,
+      "ads_move_speed": 3.05,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 32,
+          "neck": 28,
+          "chest": 28,
+          "stomach": 28,
+          "upper_arm": 28,
+          "lower_arm": 28,
+          "upper_leg": 28,
+          "lower_leg": 28
+        },
+        {
+          "range_m": 12.7,
+          "head": 25,
+          "neck": 22,
+          "chest": 22,
+          "stomach": 22,
+          "upper_arm": 22,
+          "lower_arm": 22,
+          "upper_leg": 22,
+          "lower_leg": 22
+        },
+        {
+          "range_m": 27.9,
+          "head": 21,
+          "neck": 19,
+          "chest": 19,
+          "stomach": 19,
+          "upper_arm": 19,
+          "lower_arm": 19,
+          "upper_leg": 19,
+          "lower_leg": 19
+        }
+      ]
+    },
+    "Peacekeeper MK1": {
+      "rpm": 857,
+      "mag_size": 30,
+      "reload_ms": 1720,
+      "ads_ms": 225,
+      "sprint_to_fire_ms": 170,
+      "bullet_velocity": 630,
+      "move_speed": 5,
+      "ads_move_speed": 3.3,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 28,
+          "neck": 23,
+          "chest": 23,
+          "stomach": 23,
+          "upper_arm": 23,
+          "lower_arm": 23,
+          "upper_leg": 23,
+          "lower_leg": 23
+        },
+        {
+          "range_m": 15,
+          "head": 27,
+          "neck": 22,
+          "chest": 22,
+          "stomach": 22,
+          "upper_arm": 22,
+          "lower_arm": 22,
+          "upper_leg": 22,
+          "lower_leg": 22
+        },
+        {
+          "range_m": 25,
+          "head": 22,
+          "neck": 18,
+          "chest": 18,
+          "stomach": 18,
+          "upper_arm": 18,
+          "lower_arm": 18,
+          "upper_leg": 18,
+          "lower_leg": 18
+        },
+        {
+          "range_m": 39,
+          "head": 18,
+          "neck": 15,
+          "chest": 15,
+          "stomach": 15,
+          "upper_arm": 15,
+          "lower_arm": 15,
+          "upper_leg": 15,
+          "lower_leg": 15
+        }
+      ]
+    },
+    "REV-46": {
+      "rpm": 1111,
+      "mag_size": 35,
+      "reload_ms": 1430,
+      "ads_ms": 190,
+      "sprint_to_fire_ms": 120,
+      "bullet_velocity": 540,
+      "move_speed": 5.2,
+      "ads_move_speed": 3.7,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 21,
+          "neck": 17,
+          "chest": 17,
+          "stomach": 17,
+          "upper_arm": 17,
+          "lower_arm": 17,
+          "upper_leg": 17,
+          "lower_leg": 17
+        },
+        {
+          "range_m": 13,
+          "head": 19,
+          "neck": 15,
+          "chest": 15,
+          "stomach": 15,
+          "upper_arm": 15,
+          "lower_arm": 15,
+          "upper_leg": 15,
+          "lower_leg": 15
+        },
+        {
+          "range_m": 23,
+          "head": 15,
+          "neck": 12,
+          "chest": 12,
+          "stomach": 12,
+          "upper_arm": 12,
+          "lower_arm": 12,
+          "upper_leg": 12,
+          "lower_leg": 12
+        },
+        {
+          "range_m": 33,
+          "head": 12,
+          "neck": 10,
+          "chest": 10,
+          "stomach": 10,
+          "upper_arm": 10,
+          "lower_arm": 10,
+          "upper_leg": 10,
+          "lower_leg": 10
+        }
+      ]
+    },
+    "RK-9": {
+      "rpm": 714,
+      "mag_size": 30,
+      "reload_ms": 1380,
+      "ads_ms": 200,
+      "sprint_to_fire_ms": 120,
+      "bullet_velocity": 570,
+      "move_speed": 5.2,
+      "ads_move_speed": 3.6,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 44,
+          "neck": 35,
+          "chest": 35,
+          "stomach": 32,
+          "upper_arm": 35,
+          "lower_arm": 32,
+          "upper_leg": 32,
+          "lower_leg": 32
+        },
+        {
+          "range_m": 9.1,
+          "head": 41,
+          "neck": 33,
+          "chest": 33,
+          "stomach": 30,
+          "upper_arm": 33,
+          "lower_arm": 30,
+          "upper_leg": 30,
+          "lower_leg": 30
+        },
+        {
+          "range_m": 20.1,
+          "head": 31,
+          "neck": 25,
+          "chest": 25,
+          "stomach": 23,
+          "upper_arm": 25,
+          "lower_arm": 23,
+          "upper_leg": 23,
+          "lower_leg": 23
+        },
+        {
+          "range_m": 27.9,
+          "head": 24,
+          "neck": 19,
+          "chest": 19,
+          "stomach": 18,
+          "upper_arm": 19,
+          "lower_arm": 18,
+          "upper_leg": 18,
+          "lower_leg": 18
+        }
+      ]
+    },
+    "Razor 9mm": {
+      "rpm": 1000,
+      "mag_size": 30,
+      "reload_ms": 1550,
+      "ads_ms": 220,
+      "sprint_to_fire_ms": 160,
+      "bullet_velocity": 500,
+      "move_speed": 4.9,
+      "ads_move_speed": 3.4,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 26,
+          "neck": 21,
+          "chest": 21,
+          "stomach": 21,
+          "upper_arm": 21,
+          "lower_arm": 21,
+          "upper_leg": 21,
+          "lower_leg": 21
+        },
+        {
+          "range_m": 12.1,
+          "head": 21,
+          "neck": 17,
+          "chest": 17,
+          "stomach": 17,
+          "upper_arm": 17,
+          "lower_arm": 17,
+          "upper_leg": 17,
+          "lower_leg": 17
+        },
+        {
+          "range_m": 18.3,
+          "head": 16,
+          "neck": 13,
+          "chest": 13,
+          "stomach": 13,
+          "upper_arm": 13,
+          "lower_arm": 13,
+          "upper_leg": 13,
+          "lower_leg": 13
+        },
+        {
+          "range_m": 30.5,
+          "head": 13,
+          "neck": 11,
+          "chest": 11,
+          "stomach": 11,
+          "upper_arm": 11,
+          "lower_arm": 11,
+          "upper_leg": 11,
+          "lower_leg": 11
+        }
+      ]
+    },
+    "Ryden 45K": {
+      "rpm": 909,
+      "mag_size": 30,
+      "reload_ms": 1430,
+      "ads_ms": 200,
+      "sprint_to_fire_ms": 140,
+      "bullet_velocity": 530,
+      "move_speed": 5,
+      "ads_move_speed": 3.5,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 27,
+          "neck": 22,
+          "chest": 22,
+          "stomach": 22,
+          "upper_arm": 22,
+          "lower_arm": 22,
+          "upper_leg": 22,
+          "lower_leg": 22
+        },
+        {
+          "range_m": 10.4,
+          "head": 26,
+          "neck": 21,
+          "chest": 21,
+          "stomach": 21,
+          "upper_arm": 21,
+          "lower_arm": 21,
+          "upper_leg": 21,
+          "lower_leg": 21
+        },
+        {
+          "range_m": 17,
+          "head": 18,
+          "neck": 15,
+          "chest": 15,
+          "stomach": 15,
+          "upper_arm": 15,
+          "lower_arm": 15,
+          "upper_leg": 15,
+          "lower_leg": 15
+        },
+        {
+          "range_m": 34.3,
+          "head": 16,
+          "neck": 13,
+          "chest": 13,
+          "stomach": 13,
+          "upper_arm": 13,
+          "lower_arm": 13,
+          "upper_leg": 13,
+          "lower_leg": 13
+        }
+      ]
+    },
+    "Shadow SK": {
+      "rpm": 86,
+      "mag_size": 10,
+      "reload_ms": 2800,
+      "ads_ms": 580,
+      "sprint_to_fire_ms": 260,
+      "bullet_velocity": 870,
+      "move_speed": 4.7,
+      "ads_move_speed": 2,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 336,
+          "neck": 224,
+          "chest": 112,
+          "stomach": 105,
+          "upper_arm": 112,
+          "lower_arm": 105,
+          "upper_leg": 97,
+          "lower_leg": 78
+        },
+        {
+          "range_m": 51,
+          "head": 318,
+          "neck": 212,
+          "chest": 106,
+          "stomach": 99,
+          "upper_arm": 106,
+          "lower_arm": 99,
+          "upper_leg": 92,
+          "lower_leg": 74
+        },
+        {
+          "range_m": 76.2,
+          "head": 294,
+          "neck": 196,
+          "chest": 98,
+          "stomach": 92,
+          "upper_arm": 98,
+          "lower_arm": 92,
+          "upper_leg": 85,
+          "lower_leg": 68
+        }
+      ]
+    },
+    "Sokol 545": {
+      "rpm": 550,
+      "mag_size": 102,
+      "reload_ms": 6120,
+      "ads_ms": 420,
+      "sprint_to_fire_ms": 235,
+      "bullet_velocity": 740,
+      "move_speed": 4.5,
+      "ads_move_speed": 2.5,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 38,
+          "neck": 38,
+          "chest": 32,
+          "stomach": 32,
+          "upper_arm": 32,
+          "lower_arm": 32,
+          "upper_leg": 32,
+          "lower_leg": 32
+        },
+        {
+          "range_m": 51,
+          "head": 37,
+          "neck": 37,
+          "chest": 31,
+          "stomach": 31,
+          "upper_arm": 31,
+          "lower_arm": 31,
+          "upper_leg": 31,
+          "lower_leg": 31
+        },
+        {
+          "range_m": 71,
+          "head": 28,
+          "neck": 28,
+          "chest": 24,
+          "stomach": 24,
+          "upper_arm": 24,
+          "lower_arm": 24,
+          "upper_leg": 24,
+          "lower_leg": 24
+        }
+      ]
+    },
+    "Sturmwolf 45": {
+      "rpm": 667,
+      "mag_size": 32,
+      "reload_ms": 1420,
+      "ads_ms": 220,
+      "sprint_to_fire_ms": 150,
+      "bullet_velocity": 540,
+      "move_speed": 4.8,
+      "ads_move_speed": 3.4,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 37,
+          "neck": 30,
+          "chest": 30,
+          "stomach": 30,
+          "upper_arm": 30,
+          "lower_arm": 30,
+          "upper_leg": 30,
+          "lower_leg": 30
+        },
+        {
+          "range_m": 11.4,
+          "head": 28,
+          "neck": 23,
+          "chest": 23,
+          "stomach": 23,
+          "upper_arm": 23,
+          "lower_arm": 23,
+          "upper_leg": 23,
+          "lower_leg": 23
+        },
+        {
+          "range_m": 17.8,
+          "head": 23,
+          "neck": 19,
+          "chest": 19,
+          "stomach": 19,
+          "upper_arm": 19,
+          "lower_arm": 19,
+          "upper_leg": 19,
+          "lower_leg": 19
+        },
+        {
+          "range_m": 26.2,
+          "head": 20,
+          "neck": 16,
+          "chest": 16,
+          "stomach": 16,
+          "upper_arm": 16,
+          "lower_arm": 16,
+          "upper_leg": 16,
+          "lower_leg": 16
+        }
+      ]
+    },
+    "VS Recon": {
+      "rpm": 43,
+      "mag_size": 6,
+      "reload_ms": 3470,
+      "ads_ms": 560,
+      "sprint_to_fire_ms": 260,
+      "bullet_velocity": 890,
+      "move_speed": 4.6,
+      "ads_move_speed": 1.9,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 336,
+          "neck": 224,
+          "chest": 112,
+          "stomach": 109,
+          "upper_arm": 112,
+          "lower_arm": 109,
+          "upper_leg": 100,
+          "lower_leg": 78
+        },
+        {
+          "range_m": 64,
+          "head": 318,
+          "neck": 212,
+          "chest": 106,
+          "stomach": 103,
+          "upper_arm": 106,
+          "lower_arm": 103,
+          "upper_leg": 95,
+          "lower_leg": 74
+        },
+        {
+          "range_m": 89,
+          "head": 294,
+          "neck": 196,
+          "chest": 98,
+          "stomach": 96,
+          "upper_arm": 98,
+          "lower_arm": 96,
+          "upper_leg": 88,
+          "lower_leg": 68
+        }
+      ]
+    },
+    "Velox 5.7": {
+      "rpm": 800,
+      "mag_size": 15,
+      "reload_ms": 1250,
+      "ads_ms": 170,
+      "sprint_to_fire_ms": 110,
+      "bullet_velocity": 380,
+      "move_speed": 5.2,
+      "ads_move_speed": 3.8,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 36,
+          "neck": 33,
+          "chest": 33,
+          "stomach": 33,
+          "upper_arm": 33,
+          "lower_arm": 33,
+          "upper_leg": 33,
+          "lower_leg": 33
+        },
+        {
+          "range_m": 6.4,
+          "head": 33,
+          "neck": 30,
+          "chest": 30,
+          "stomach": 30,
+          "upper_arm": 30,
+          "lower_arm": 30,
+          "upper_leg": 30,
+          "lower_leg": 30
+        },
+        {
+          "range_m": 19.7,
+          "head": 22,
+          "neck": 20,
+          "chest": 20,
+          "stomach": 20,
+          "upper_arm": 20,
+          "lower_arm": 20,
+          "upper_leg": 20,
+          "lower_leg": 20
+        },
+        {
+          "range_m": 25.4,
+          "head": 20,
+          "neck": 19,
+          "chest": 19,
+          "stomach": 19,
+          "upper_arm": 19,
+          "lower_arm": 19,
+          "upper_leg": 19,
+          "lower_leg": 19
+        }
+      ]
+    },
+    "Warden .308": {
+      "rpm": 480,
+      "mag_size": 8,
+      "ads_ms": 365,
+      "sprint_to_fire_ms": 240,
+      "bullet_velocity": 910,
+      "move_speed": 4.5,
+      "ads_move_speed": 2.8,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 105,
+          "neck": 105,
+          "chest": 105,
+          "stomach": 75,
+          "upper_arm": 75,
+          "lower_arm": 75,
+          "upper_leg": 75,
+          "lower_leg": 75
+        },
+        {
+          "range_m": 42,
+          "head": 100,
+          "neck": 100,
+          "chest": 100,
+          "stomach": 72,
+          "upper_arm": 72,
+          "lower_arm": 72,
+          "upper_leg": 72,
+          "lower_leg": 72
+        },
+        {
+          "range_m": 57,
+          "head": 63,
+          "neck": 63,
+          "chest": 63,
+          "stomach": 45,
+          "upper_arm": 45,
+          "lower_arm": 45,
+          "upper_leg": 45,
+          "lower_leg": 45
+        }
+      ]
+    },
+    "X9 Maverick": {
+      "rpm": 667,
+      "mag_size": 30,
+      "reload_ms": 2770,
+      "ads_ms": 260,
+      "sprint_to_fire_ms": 200,
+      "bullet_velocity": 760,
+      "move_speed": 4.8,
+      "ads_move_speed": 3.1,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 44,
+          "neck": 34,
+          "chest": 34,
+          "stomach": 33,
+          "upper_arm": 34,
+          "lower_arm": 33,
+          "upper_leg": 33,
+          "lower_leg": 33
+        },
+        {
+          "range_m": 16.5,
+          "head": 41,
+          "neck": 32,
+          "chest": 32,
+          "stomach": 31,
+          "upper_arm": 32,
+          "lower_arm": 31,
+          "upper_leg": 31,
+          "lower_leg": 31
+        },
+        {
+          "range_m": 28.6,
+          "head": 39,
+          "neck": 30,
+          "chest": 30,
+          "stomach": 29,
+          "upper_arm": 30,
+          "lower_arm": 29,
+          "upper_leg": 29,
+          "lower_leg": 29
+        },
+        {
+          "range_m": 42.5,
+          "head": 29,
+          "neck": 23,
+          "chest": 23,
+          "stomach": 22,
+          "upper_arm": 23,
+          "lower_arm": 22,
+          "upper_leg": 22,
+          "lower_leg": 22
+        }
+      ]
+    },
+    "XM325": {
+      "rpm": 1000,
+      "mag_size": 60,
+      "reload_ms": 4150,
+      "ads_ms": 390,
+      "sprint_to_fire_ms": 220,
+      "bullet_velocity": 750,
+      "move_speed": 4.6,
+      "ads_move_speed": 2.6,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 29,
+          "neck": 23,
+          "chest": 23,
+          "stomach": 23,
+          "upper_arm": 23,
+          "lower_arm": 23,
+          "upper_leg": 23,
+          "lower_leg": 23
+        },
+        {
+          "range_m": 36,
+          "head": 23,
+          "neck": 18,
+          "chest": 18,
+          "stomach": 18,
+          "upper_arm": 18,
+          "lower_arm": 18,
+          "upper_leg": 18,
+          "lower_leg": 18
+        },
+        {
+          "range_m": 51,
+          "head": 20,
+          "neck": 16,
+          "chest": 16,
+          "stomach": 16,
+          "upper_arm": 16,
+          "lower_arm": 16,
+          "upper_leg": 16,
+          "lower_leg": 16
+        }
+      ]
+    },
+    "XR-3 ION": {
+      "rpm": 1200,
+      "mag_size": 15,
+      "reload_ms": 3230,
+      "ads_ms": 600,
+      "sprint_to_fire_ms": 250,
+      "bullet_velocity": 1200,
+      "move_speed": 4.5,
+      "ads_move_speed": 1.8,
+      "damage_ranges": [
+        {
+          "range_m": 0,
+          "head": 270,
+          "neck": 180,
+          "chest": 99,
+          "stomach": 90,
+          "upper_arm": 91,
+          "lower_arm": 90,
+          "upper_leg": 81,
+          "lower_leg": 63
+        },
+        {
+          "range_m": 0,
+          "head": 270,
+          "neck": 180,
+          "chest": 99,
+          "stomach": 90,
+          "upper_arm": 91,
+          "lower_arm": 90,
+          "upper_leg": 81,
+          "lower_leg": 63
+        },
+        {
+          "range_m": 102,
+          "head": 270,
+          "neck": 180,
+          "chest": 99,
+          "stomach": 90,
+          "upper_arm": 91,
+          "lower_arm": 90,
+          "upper_leg": 81,
+          "lower_leg": 63
+        }
+      ]
+    }
+  },
+  "attachments": {}
+}
