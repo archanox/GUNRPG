@@ -145,7 +145,8 @@ public static class WeaponFactory
             return null;
 
         var snapshot = GetBalanceSnapshot(snapshotHash);
-        if (TryResolveSnapshotWeapon(name, snapshot, out var resolvedName, out var balanceWeapon))
+        if (TryResolveSnapshotWeapon(name, snapshot, out var resolvedName, out var balanceWeapon) &&
+            balanceWeapon is not null)
             return CreateWeapon(resolvedName, balanceWeapon);
 
         return null;
@@ -154,7 +155,8 @@ public static class WeaponFactory
     public static Weapon CreateWeapon(string name, string? snapshotHash = null)
     {
         var snapshot = GetBalanceSnapshot(snapshotHash);
-        if (!TryResolveSnapshotWeapon(name, snapshot, out var resolvedName, out var balanceWeapon))
+        if (!TryResolveSnapshotWeapon(name, snapshot, out var resolvedName, out var balanceWeapon) ||
+            balanceWeapon is null)
             throw new InvalidOperationException($"Weapon '{name}' is not defined in balance snapshot {snapshot.Hash}.");
 
         return CreateWeapon(resolvedName, balanceWeapon);
@@ -164,7 +166,7 @@ public static class WeaponFactory
         string name,
         BalanceSnapshot snapshot,
         out string resolvedName,
-        out BalanceWeaponSnapshot balanceWeapon)
+        out BalanceWeaponSnapshot? balanceWeapon)
     {
         if (LegacyProfiles.TryGetValue(name, out var legacyProfile) &&
             legacyProfile is not null &&
@@ -185,7 +187,7 @@ public static class WeaponFactory
         }
 
         resolvedName = string.Empty;
-        balanceWeapon = default!;
+        balanceWeapon = null;
         return false;
     }
 
