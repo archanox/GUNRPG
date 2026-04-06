@@ -220,7 +220,7 @@ public static class WeaponFactory
             AimingIdleSwayDelayMs = profile?.AimingIdleSwayDelayMs ?? 2200,
             FlinchResistance = profile?.FlinchResistance ?? 0.10f,
             ADSTimeMs = balanceWeapon.ADSTimeMs,
-            JumpADSTimeMs = profile?.JumpADSTimeMs ?? Math.Max(balanceWeapon.ADSTimeMs, (int)(balanceWeapon.ADSTimeMs * 1.25f)),
+            JumpADSTimeMs = profile?.JumpADSTimeMs ?? (int)(balanceWeapon.ADSTimeMs * 1.25f),
             MovementSpeedMetersPerSecond = balanceWeapon.MovementSpeedMetersPerSecond,
             CrouchMovementSpeedMetersPerSecond = profile?.CrouchMovementSpeedMetersPerSecond ?? Math.Max(1f, balanceWeapon.MovementSpeedMetersPerSecond * 0.55f),
             SprintingMovementSpeedMetersPerSecond = profile?.SprintingMovementSpeedMetersPerSecond ?? balanceWeapon.MovementSpeedMetersPerSecond + 2f,
