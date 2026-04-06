@@ -409,7 +409,7 @@ async Task<JsonObject?> PostApiAsync(string weapon, string action)
             return null;
         }
 
-        var firstElementType = arr[0]?.GetType().Name ?? "null";
+        var firstElementType = DescribeJsonNode(arr[0]);
         Console.Error.WriteLine($"WARNING: Unexpected array response for weapon={weapon} action={action}: count={arr.Count}, first element type={firstElementType}.");
         return null;
     }
@@ -605,23 +605,23 @@ JsonArray ParseDamageTables(JsonObject baseData)
             if (JsonNode.Parse(tableJson) is JsonArray table)
                 tables.Add(table);
         }
-        catch
+        catch (JsonException ex)
         {
-            // ignore malformed fallback tables and continue
+            Console.Error.WriteLine($"WARNING: Could not parse fallback damage table fragment: {ex.Message}");
         }
     }
 
     return tables;
 }
 
-IEnumerable<string> ExtractTopLevelJsonArrays(string rawDamage)
+IEnumerable<string> ExtractTopLevelJsonArrays(string input)
 {
     var depth = 0;
     var segmentStart = -1;
 
-    for (var i = 0; i < rawDamage.Length; i++)
+    for (var i = 0; i < input.Length; i++)
     {
-        var c = rawDamage[i];
+        var c = input[i];
         if (c == '[')
         {
             if (depth == 0)
@@ -632,17 +632,32 @@ IEnumerable<string> ExtractTopLevelJsonArrays(string rawDamage)
         else if (c == ']')
         {
             if (depth == 0)
+            {
+                Console.Error.WriteLine("WARNING: Encountered unmatched closing bracket while parsing fallback damage tables.");
                 continue;
+            }
 
             depth--;
             if (depth == 0 && segmentStart >= 0)
             {
-                yield return rawDamage[segmentStart..(i + 1)];
+                yield return input[segmentStart..(i + 1)];
                 segmentStart = -1;
             }
         }
     }
+
+    if (depth != 0)
+        Console.Error.WriteLine("WARNING: Unterminated bracketed section while parsing fallback damage tables.");
 }
+
+string DescribeJsonNode(JsonNode? node) => node switch
+{
+    null       => "null",
+    JsonObject => "object",
+    JsonArray  => "array",
+    JsonValue  => "value",
+    _          => node.GetType().Name
+};
 
 // Returns the first list of damage entries from the "damage" outer array.
 JsonArray? FirstDamageEntries(JsonObject damageTable)
