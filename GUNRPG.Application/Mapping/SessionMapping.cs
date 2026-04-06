@@ -449,6 +449,10 @@ public static class SessionMapping
 
     private static Weapon? CreateWeapon(string? name, string? balanceSnapshotHash)
     {
-        return WeaponFactory.TryCreateWeapon(name, balanceSnapshotHash) ?? (string.IsNullOrWhiteSpace(name) ? null : new Weapon(name));
+        if (string.IsNullOrWhiteSpace(name))
+            return null;
+
+        return WeaponFactory.TryCreateWeapon(name, balanceSnapshotHash)
+            ?? throw new InvalidOperationException($"Weapon '{name}' is not defined in balance snapshot '{balanceSnapshotHash ?? WeaponFactory.CurrentBalanceHash}'.");
     }
 }

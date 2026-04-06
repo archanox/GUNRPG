@@ -88,7 +88,7 @@ internal static class BalanceSnapshotCatalog
     private static readonly Lazy<IReadOnlyDictionary<string, BalanceSnapshot>> SnapshotsByHash =
         new(() => AllSnapshots.Value.ToDictionary(snapshot => snapshot.Hash, StringComparer.OrdinalIgnoreCase));
     private static readonly Lazy<BalanceSnapshot> LatestSnapshot =
-        new(() => AllSnapshots.Value.OrderBy(snapshot => snapshot.Version, StringComparer.Ordinal).Last());
+        new(() => AllSnapshots.Value.OrderBy(snapshot => snapshot.Version, Comparer<string>.Create(CompareVersion)).Last());
 
     public static BalanceSnapshot GetLatest() => LatestSnapshot.Value;
 
@@ -146,5 +146,16 @@ internal static class BalanceSnapshotCatalog
             Weapons = new Dictionary<string, BalanceWeaponSnapshot>(snapshot.Weapons, StringComparer.OrdinalIgnoreCase),
             Attachments = new Dictionary<string, BalanceAttachmentSnapshot>(snapshot.Attachments, StringComparer.OrdinalIgnoreCase)
         };
+    }
+
+    private static int CompareVersion(string? left, string? right)
+    {
+        if (DateOnly.TryParse(left, out var leftDate) && DateOnly.TryParse(right, out var rightDate))
+            return leftDate.CompareTo(rightDate);
+
+        if (Version.TryParse(left, out var leftVersion) && Version.TryParse(right, out var rightVersion))
+            return leftVersion.CompareTo(rightVersion);
+
+        return StringComparer.Ordinal.Compare(left, right);
     }
 }
