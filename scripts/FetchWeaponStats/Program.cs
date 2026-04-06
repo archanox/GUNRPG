@@ -28,7 +28,7 @@ const int TimeoutSeconds = 30;
 const int MaxRetryAttempts = 3;
 const int RetryDelayMs = 2000;
 const string ApiUnavailableWarning = "WARNING: API unavailable — skipping snapshot. Nothing to commit.";
-var damageTableRegex = new Regex(@"\[[\s\S]*?\]", RegexOptions.Compiled);
+var damageTableRegex = new Regex(@"\[[\s\S]*?\]", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
 // Locate the repository root from the working directory; works reliably both
 // locally (run from the repo root) and in GitHub Actions (checkout sets CWD).
@@ -95,41 +95,12 @@ var weaponsData = new SortedDictionary<string, JsonObject>(StringComparer.Ordina
 
 foreach (var weapon in weapons)
 {
-    var hasBaseDataFallback = discoveredWeaponBaseData.TryGetValue(weapon, out var baseWeaponData);
-
-    Console.WriteLine($"  Fetching damage table for '{weapon}'…");
-    var damageTable = await PostApiAsync(weapon, "calc_damage_table");
-    if (damageTable is null)
+    var stats = await FetchWeaponStatsAsync(weapon);
+    if (stats is null)
     {
-        if (hasBaseDataFallback)
-        {
-            Console.WriteLine($"  Falling back to all_base_data for '{weapon}'…");
-            weaponsData[weapon] = BuildWeaponStatsFromBaseData(baseWeaponData!);
-            Console.WriteLine();
-            continue;
-        }
-
         Console.WriteLine(ApiUnavailableWarning);
         return 0;
     }
-
-    Console.WriteLine($"  Fetching stat summary for '{weapon}'…");
-    var summary = await PostApiAsync(weapon, "calc_stat_summary");
-    if (summary is null)
-    {
-        if (hasBaseDataFallback)
-        {
-            Console.WriteLine($"  Falling back to all_base_data for '{weapon}'…");
-            weaponsData[weapon] = BuildWeaponStatsFromBaseData(baseWeaponData!);
-            Console.WriteLine();
-            continue;
-        }
-
-        Console.WriteLine(ApiUnavailableWarning);
-        return 0;
-    }
-
-    var stats = BuildWeaponStats(damageTable, summary);
     weaponsData[weapon] = stats;
     Console.WriteLine();
 }
@@ -448,6 +419,27 @@ async Task<JsonObject?> PostApiAsync(string weapon, string action)
     return obj;
 }
 
+async Task<JsonObject?> FetchWeaponStatsAsync(string weapon)
+{
+    Console.WriteLine($"  Fetching damage table for '{weapon}'…");
+    var damageTable = await PostApiAsync(weapon, "calc_damage_table");
+    if (damageTable is not null)
+    {
+        Console.WriteLine($"  Fetching stat summary for '{weapon}'…");
+        var summary = await PostApiAsync(weapon, "calc_stat_summary");
+        if (summary is not null)
+            return BuildWeaponStats(damageTable, summary);
+    }
+
+    if (discoveredWeaponBaseData.TryGetValue(weapon, out var baseWeaponData))
+    {
+        Console.WriteLine($"  Falling back to all_base_data for '{weapon}'…");
+        return BuildWeaponStatsFromBaseData(baseWeaponData);
+    }
+
+    return null;
+}
+
 JsonObject BuildWeaponStats(JsonObject damageTable, JsonObject summary)
 {
     var stats = new JsonObject();
@@ -561,37 +553,21 @@ bool TryReadMetricValue(JsonNode node, out double value, out string? unit)
     unit = null;
 
     if (node is JsonValue valueNode)
-    {
-        try
-        {
-            value = valueNode.GetValue<double>();
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+        return TryGetDouble(valueNode, out value);
 
     if (node is not JsonObject obj)
         return false;
 
-    unit = obj["unit"]?.GetValue<string>();
+    if (obj["unit"] is JsonValue unitValue && unitValue.TryGetValue<string>(out var parsedUnit))
+        unit = parsedUnit;
 
     foreach (var key in new[] { "attachmentValue", "baseValue", "value" })
     {
         if (obj[key] is not JsonValue metricValue)
             continue;
 
-        try
-        {
-            value = metricValue.GetValue<double>();
+        if (TryGetDouble(metricValue, out value))
             return true;
-        }
-        catch
-        {
-            // ignore non-numeric metric values and try the next candidate
-        }
     }
 
     return false;
@@ -645,29 +621,22 @@ double GetDouble(JsonObject obj, string key)
     if (!obj.TryGetPropertyValue(key, out var node) || node is null)
         return 0.0;
 
-    if (node is JsonValue value)
-    {
-        try
-        {
-            return value.GetValue<double>();
-        }
-        catch
-        {
-            try
-            {
-                var stringValue = value.GetValue<string>();
-                return double.TryParse(stringValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
-                    ? parsed
-                    : 0.0;
-            }
-            catch
-            {
-                return 0.0;
-            }
-        }
-    }
+    return node is JsonValue value && TryGetDouble(value, out var parsed)
+        ? parsed
+        : 0.0;
+}
 
-    return 0.0;
+bool TryGetDouble(JsonValue value, out double parsed)
+{
+    if (value.TryGetValue<double>(out parsed))
+        return true;
+
+    if (value.TryGetValue<string>(out var stringValue)
+        && double.TryParse(stringValue, NumberStyles.Float, CultureInfo.InvariantCulture, out parsed))
+        return true;
+
+    parsed = 0.0;
+    return false;
 }
 
 // Round to `decimals` places; return an integer node when the result is whole.
