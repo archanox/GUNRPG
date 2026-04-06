@@ -452,7 +452,11 @@ public static class SessionMapping
         if (string.IsNullOrWhiteSpace(name))
             return null;
 
+        var snapshotDescriptor = string.IsNullOrWhiteSpace(balanceSnapshotHash)
+            ? $"current balance snapshot '{WeaponFactory.CurrentBalanceHash}'"
+            : $"balance snapshot '{balanceSnapshotHash}'";
+
         return WeaponFactory.TryCreateWeapon(name, balanceSnapshotHash)
-            ?? throw new InvalidOperationException($"Weapon '{name}' is not defined in balance snapshot '{balanceSnapshotHash ?? WeaponFactory.CurrentBalanceHash}'.");
+            ?? throw new InvalidOperationException($"Weapon '{name}' is not defined in {snapshotDescriptor}.");
     }
 }
