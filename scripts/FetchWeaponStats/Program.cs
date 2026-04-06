@@ -2,7 +2,7 @@
 // balance snapshot to balances/YYYY-MM-DD.json.
 //
 // Endpoints:
-//   GET  https://www.truegamedata.com/api/weapons/api.php?game=bo7&action=get_weapons
+//   GET  https://www.truegamedata.com/api/weapons/api.php?game=bo7&action=all_base_data
 //   POST https://www.truegamedata.com/api/weapons/api.php?game=bo7&action=calc_damage_table
 //   POST https://www.truegamedata.com/api/weapons/api.php?game=bo7&action=calc_stat_summary
 //
@@ -196,10 +196,10 @@ return 0;
 async Task<List<string>?> DiscoverWeaponsAsync()
 {
     Console.WriteLine("Discovering weapons from API…");
-    var node = await GetApiAsync("get_weapons");
+    var node = await GetApiAsync("all_base_data");
     if (node is null) return null;
 
-    var discovered = new List<string>();
+    var discovered = new HashSet<string>(StringComparer.Ordinal);
 
     // The response may be an array of plain strings or an array of objects
     // with a name/id field, depending on API version.
@@ -213,7 +213,7 @@ async Task<List<string>?> DiscoverWeaponsAsync()
             }
             else if (item is JsonObject obj)
             {
-                var weaponName = ExtractStringField(obj, ["name", "weapon_name", "id", "weapon_id"]);
+                var weaponName = ExtractStringField(obj, ["gun", "name", "weapon_name", "id", "weapon_id"]);
                 if (!string.IsNullOrWhiteSpace(weaponName))
                     discovered.Add(weaponName);
             }
@@ -232,7 +232,7 @@ async Task<List<string>?> DiscoverWeaponsAsync()
                         discovered.Add(name);
                     else if (item is JsonObject obj)
                     {
-                        var weaponName = ExtractStringField(obj, ["name", "weapon_name", "id", "weapon_id"]);
+                        var weaponName = ExtractStringField(obj, ["gun", "name", "weapon_name", "id", "weapon_id"]);
                         if (!string.IsNullOrWhiteSpace(weaponName))
                             discovered.Add(weaponName);
                     }
@@ -249,7 +249,7 @@ async Task<List<string>?> DiscoverWeaponsAsync()
     }
 
     Console.WriteLine($"  Discovered {discovered.Count} weapon(s) from API.\n");
-    return discovered;
+    return discovered.ToList();
 }
 
 string? ExtractStringField(JsonObject obj, string[] candidates)
