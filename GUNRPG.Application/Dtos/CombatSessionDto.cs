@@ -13,5 +13,7 @@ public sealed class CombatSessionDto
     public PetStateDto Pet { get; init; } = default!;
     public int EnemyLevel { get; init; }
     public int TurnNumber { get; init; }
+    public string BalanceSnapshotVersion { get; init; } = string.Empty;
+    public string BalanceSnapshotHash { get; init; } = string.Empty;
     public List<BattleLogEntryDto> BattleLog { get; init; } = new();
 }

@@ -2,6 +2,7 @@ using GUNRPG.Application.Combat;
 using GUNRPG.Application.Mapping;
 using GUNRPG.Application.Requests;
 using GUNRPG.Application.Sessions;
+using GUNRPG.Core;
 using GUNRPG.Core.Intents;
 
 namespace GUNRPG.Tests;
@@ -249,6 +250,55 @@ public sealed class CombatSessionReplayIntegrityTests
         session.AdvanceTurnCounter();
         Assert.Equal(initialTick + 1, session.CurrentTick);
         Assert.Equal(session.TurnNumber, session.CurrentTick);
+    }
+
+    [Fact]
+    public void Snapshot_CapturesBalanceSnapshotMetadata()
+    {
+        var session = CombatSession.CreateDefault(seed: 5);
+
+        var snapshot = SessionMapping.ToSnapshot(session);
+
+        Assert.Equal(WeaponFactory.CurrentBalanceVersion, snapshot.BalanceSnapshotVersion);
+        Assert.Equal(WeaponFactory.CurrentBalanceHash, snapshot.BalanceSnapshotHash);
+    }
+
+    [Fact]
+    public void ComputeStateHash_IncludesBalanceSnapshotHash()
+    {
+        var session = CombatSession.CreateDefault(seed: 6);
+        session.TransitionTo(SessionPhase.Completed);
+        var snapshot = SessionMapping.ToSnapshot(session);
+
+        var originalHash = CombatSessionHasher.ComputeStateHash(snapshot);
+        var modifiedSnapshot = new CombatSessionSnapshot
+        {
+            Id = snapshot.Id,
+            OperatorId = snapshot.OperatorId,
+            Phase = snapshot.Phase,
+            TurnNumber = snapshot.TurnNumber,
+            Combat = snapshot.Combat,
+            Player = snapshot.Player,
+            Enemy = snapshot.Enemy,
+            Pet = snapshot.Pet,
+            EnemyLevel = snapshot.EnemyLevel,
+            PlayerLevel = snapshot.PlayerLevel,
+            Seed = snapshot.Seed,
+            PostCombatResolved = snapshot.PostCombatResolved,
+            CreatedAt = snapshot.CreatedAt,
+            CompletedAt = snapshot.CompletedAt,
+            LastActionTimestamp = snapshot.LastActionTimestamp,
+            ReplayInitialSnapshotJson = snapshot.ReplayInitialSnapshotJson,
+            ReplayTurns = snapshot.ReplayTurns.ToList(),
+            BalanceSnapshotVersion = snapshot.BalanceSnapshotVersion,
+            BalanceSnapshotHash = "different-balance-hash",
+            Version = snapshot.Version,
+            FinalHash = snapshot.FinalHash
+        };
+
+        var modifiedHash = CombatSessionHasher.ComputeStateHash(modifiedSnapshot);
+
+        Assert.False(originalHash.AsSpan().SequenceEqual(modifiedHash));
     }
 
     // ──────────────────────────────────────────────────────────────────────

@@ -75,6 +75,8 @@ public sealed class InMemoryCombatSessionStore : ICombatSessionStore
             ReplayInitialSnapshotJson = snapshot.ReplayInitialSnapshotJson,
             // Shallow copy of the list is sufficient because IntentSnapshot is immutable.
             ReplayTurns = snapshot.ReplayTurns.ToList(),
+            BalanceSnapshotVersion = snapshot.BalanceSnapshotVersion,
+            BalanceSnapshotHash = snapshot.BalanceSnapshotHash,
             Version = snapshot.Version,
             FinalHash = snapshot.FinalHash != null ? (byte[])snapshot.FinalHash.Clone() : null,
         };
@@ -159,6 +161,8 @@ public sealed class InMemoryCombatSessionStore : ICombatSessionStore
             snapshot.Id,
             snapshot.Seed,
             snapshot.Version,
+            snapshot.BalanceSnapshotVersion,
+            snapshot.BalanceSnapshotHash,
             snapshot.TurnNumber,
             snapshot.ReplayTurns);
 

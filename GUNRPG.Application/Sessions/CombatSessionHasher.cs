@@ -40,6 +40,8 @@ public static class CombatSessionHasher
         WriteInt32(buffer, finalSnapshot.Seed);
         // Version is included so future algorithm changes can be distinguished.
         WriteInt32(buffer, finalSnapshot.Version);
+        WriteString(buffer, finalSnapshot.BalanceSnapshotVersion);
+        WriteString(buffer, finalSnapshot.BalanceSnapshotHash);
         // Simulation outcome: how many turns were played and how the session ended.
         WriteInt32(buffer, finalSnapshot.TurnNumber);
         WriteInt32(buffer, (int)finalSnapshot.Phase);
@@ -65,6 +67,8 @@ public static class CombatSessionHasher
         Guid sessionId,
         int seed,
         int version,
+        string? balanceSnapshotVersion,
+        string? balanceSnapshotHash,
         int turnCount,
         IReadOnlyList<IntentSnapshot> replayTurns)
     {
@@ -74,6 +78,8 @@ public static class CombatSessionHasher
         WriteGuid(buffer, sessionId);
         WriteInt32(buffer, seed);
         WriteInt32(buffer, version);
+        WriteString(buffer, balanceSnapshotVersion);
+        WriteString(buffer, balanceSnapshotHash);
         WriteInt32(buffer, turnCount);
         WriteInt32(buffer, replayTurns.Count);
 
@@ -121,6 +127,15 @@ public static class CombatSessionHasher
         var span = buffer.GetSpan(1);
         span[0] = value ? (byte)1 : (byte)0;
         buffer.Advance(1);
+    }
+
+    private static void WriteString(ArrayBufferWriter<byte> buffer, string? value)
+    {
+        var encoded = System.Text.Encoding.UTF8.GetBytes(value ?? string.Empty);
+        WriteInt32(buffer, encoded.Length);
+        var span = buffer.GetSpan(encoded.Length);
+        encoded.CopyTo(span);
+        buffer.Advance(encoded.Length);
     }
 
     private static void WriteSingle(ArrayBufferWriter<byte> buffer, float value)

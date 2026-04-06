@@ -25,9 +25,9 @@ public class WeaponTests
         var sokol = WeaponFactory.CreateSokol545();
         
         Assert.Equal("SOKOL 545", sokol.Name);
-        Assert.Equal(583, sokol.RoundsPerMinute);
+        Assert.Equal(550, sokol.RoundsPerMinute);
         Assert.Equal(102, sokol.MagazineSize); // LMG has large magazine
-        Assert.Equal(7333, sokol.ReloadTimeMs); // LMG has slow reload
+        Assert.Equal(6120, sokol.ReloadTimeMs); // Snapshot-backed reload time
         Assert.True(sokol.BaseDamage > 0);
     }
 
@@ -39,7 +39,7 @@ public class WeaponTests
         Assert.Equal("STURMWOLF 45", sturmwolf.Name);
         Assert.Equal(667, sturmwolf.RoundsPerMinute);
         Assert.Equal(32, sturmwolf.MagazineSize);
-        Assert.Equal(2730, sturmwolf.ReloadTimeMs);
+        Assert.Equal(1420, sturmwolf.ReloadTimeMs);
         Assert.True(sturmwolf.BaseDamage > 0);
     }
 
@@ -51,7 +51,7 @@ public class WeaponTests
         Assert.Equal("M15 MOD 0", m15.Name);
         Assert.Equal(769, m15.RoundsPerMinute);
         Assert.Equal(30, m15.MagazineSize);
-        Assert.Equal(3000, m15.ReloadTimeMs);
+        Assert.Equal(1850, m15.ReloadTimeMs);
         Assert.True(m15.BaseDamage > 0);
     }
 
@@ -67,10 +67,10 @@ public class WeaponTests
         
         // Test second range (51-71m): Head 37, Body 31
         Assert.Equal(37f, sokol.GetDamageAtDistance(60f, BodyPart.Head));
-        Assert.Equal(31f, sokol.GetDamageAtDistance(60f, BodyPart.Neck));
+        Assert.Equal(37f, sokol.GetDamageAtDistance(60f, BodyPart.Neck));
         
-        // Test third range (71m+): Head 29, Body 24
-        Assert.Equal(29f, sokol.GetDamageAtDistance(80f, BodyPart.Head));
+        // Test third range (71m+): Head 28, Body 24
+        Assert.Equal(28f, sokol.GetDamageAtDistance(80f, BodyPart.Head));
         Assert.Equal(24f, sokol.GetDamageAtDistance(100f, BodyPart.UpperArm));
     }
 
@@ -83,16 +83,16 @@ public class WeaponTests
         Assert.Equal(37f, sturmwolf.GetDamageAtDistance(5f, BodyPart.Head));
         Assert.Equal(30f, sturmwolf.GetDamageAtDistance(5f, BodyPart.LowerTorso));
         
-        // Test second range (11-18m): Head 28, Body 23
+        // Test second range (11.4-17.8m): Head 28, Body 23
         Assert.Equal(28f, sturmwolf.GetDamageAtDistance(15f, BodyPart.Head));
         Assert.Equal(23f, sturmwolf.GetDamageAtDistance(15f, BodyPart.UpperLeg));
         
-        // Test third range (18-26m): Head 23, Body 19
+        // Test third range (17.8-26.2m): Head 23, Body 19
         Assert.Equal(23f, sturmwolf.GetDamageAtDistance(22f, BodyPart.Head));
         Assert.Equal(19f, sturmwolf.GetDamageAtDistance(22f, BodyPart.LowerArm));
         
-        // Test fourth range (26m+): Head 19, Body 16
-        Assert.Equal(19f, sturmwolf.GetDamageAtDistance(30f, BodyPart.Head));
+        // Test fourth range (26.2m+): Head 20, Body 16
+        Assert.Equal(20f, sturmwolf.GetDamageAtDistance(30f, BodyPart.Head));
         Assert.Equal(16f, sturmwolf.GetDamageAtDistance(50f, BodyPart.UpperTorso));
     }
 
@@ -128,5 +128,15 @@ public class WeaponTests
         Assert.True(sokol.GetDamageAtDistance(25f, BodyPart.Head) > sokol.GetDamageAtDistance(25f, BodyPart.UpperTorso));
         Assert.True(sturmwolf.GetDamageAtDistance(15f, BodyPart.Head) > sturmwolf.GetDamageAtDistance(15f, BodyPart.Neck));
         Assert.True(m15.GetDamageAtDistance(40f, BodyPart.Head) > m15.GetDamageAtDistance(40f, BodyPart.LowerArm));
+    }
+
+    [Fact]
+    public void GetAvailableWeapons_UsesEmbeddedBalanceSnapshot()
+    {
+        var weapons = WeaponFactory.GetAvailableWeapons();
+
+        Assert.Contains(weapons, weapon => weapon.Name == "AK-27");
+        Assert.Contains(weapons, weapon => weapon.Name == "SOKOL 545");
+        Assert.True(weapons.Count >= 3);
     }
 }

@@ -17,12 +17,7 @@ namespace GUNRPG.Api.Controllers;
 public class WeaponsController : ControllerBase
 {
     private static readonly IReadOnlyList<ApiWeaponStatsDto> _weaponStats =
-        new[]
-        {
-            WeaponFactory.CreateSokol545(),
-            WeaponFactory.CreateSturmwolf45(),
-            WeaponFactory.CreateM15Mod0(),
-        }.Select(ToDto).ToList();
+        WeaponFactory.GetAvailableWeapons().Select(ToDto).ToList();
 
     /// <summary>
     /// Returns stats for all available weapons.

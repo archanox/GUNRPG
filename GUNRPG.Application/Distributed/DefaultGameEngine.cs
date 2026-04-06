@@ -266,6 +266,8 @@ public sealed class DefaultGameEngine : IDeterministicGameEngine
             LastActionTimestamp = deterministicCreatedAt,
             ReplayInitialSnapshotJson = string.Empty,
             ReplayTurns = snapshot.ReplayTurns.ToList(),
+            BalanceSnapshotVersion = snapshot.BalanceSnapshotVersion,
+            BalanceSnapshotHash = snapshot.BalanceSnapshotHash,
             Version = snapshot.Version,
             FinalHash = snapshot.FinalHash != null ? (byte[])snapshot.FinalHash.Clone() : null
         };
@@ -288,6 +290,8 @@ public sealed class DefaultGameEngine : IDeterministicGameEngine
             LastActionTimestamp = normalized.LastActionTimestamp,
             ReplayInitialSnapshotJson = OfflineCombatReplay.SerializeCombatSnapshot(normalized),
             ReplayTurns = normalized.ReplayTurns.ToList(),
+            BalanceSnapshotVersion = normalized.BalanceSnapshotVersion,
+            BalanceSnapshotHash = normalized.BalanceSnapshotHash,
             Version = normalized.Version,
             FinalHash = normalized.FinalHash != null ? (byte[])normalized.FinalHash.Clone() : null
         };

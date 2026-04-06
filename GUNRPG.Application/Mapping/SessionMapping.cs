@@ -31,6 +31,8 @@ public static class SessionMapping
             Pet = ToDto(session.PetState),
             EnemyLevel = session.EnemyLevel,
             TurnNumber = session.TurnNumber,
+            BalanceSnapshotVersion = session.BalanceSnapshotVersion,
+            BalanceSnapshotHash = session.BalanceSnapshotHash,
             BattleLog = battleLog
         };
     }
@@ -51,11 +53,13 @@ public static class SessionMapping
             OperatorId = snapshot.OperatorId,
             Phase = snapshot.Phase,
             CurrentTimeMs = snapshot.Combat.CurrentTimeMs,
-            Player = ToDtoFromSnapshot(snapshot.Player),
-            Enemy = ToDtoFromSnapshot(snapshot.Enemy),
+            Player = ToDtoFromSnapshot(snapshot.Player, snapshot.BalanceSnapshotHash),
+            Enemy = ToDtoFromSnapshot(snapshot.Enemy, snapshot.BalanceSnapshotHash),
             Pet = ToDtoFromSnapshot(snapshot.Pet),
             EnemyLevel = snapshot.EnemyLevel,
             TurnNumber = snapshot.TurnNumber,
+            BalanceSnapshotVersion = snapshot.BalanceSnapshotVersion,
+            BalanceSnapshotHash = snapshot.BalanceSnapshotHash,
             BattleLog = []
         };
     }
@@ -132,6 +136,8 @@ public static class SessionMapping
             LastActionTimestamp = session.LastActionTimestamp,
             ReplayInitialSnapshotJson = session.ReplayInitialSnapshotJson,
             ReplayTurns = session.ReplayTurns.Select(ToSnapshot).ToList(),
+            BalanceSnapshotVersion = session.BalanceSnapshotVersion,
+            BalanceSnapshotHash = session.BalanceSnapshotHash,
             Version = session.Version,
             FinalHash = session.FinalHash != null ? (byte[])session.FinalHash.Clone() : null,
             Combat = new CombatStateSnapshot
@@ -150,8 +156,8 @@ public static class SessionMapping
 
     public static CombatSession FromSnapshot(CombatSessionSnapshot snapshot)
     {
-        var player = ToOperator(snapshot.Player);
-        var enemy = ToOperator(snapshot.Enemy);
+        var player = ToOperator(snapshot.Player, snapshot.BalanceSnapshotHash);
+        var enemy = ToOperator(snapshot.Enemy, snapshot.BalanceSnapshotHash);
 
         var combat = CombatSystemV2.FromState(
             player,
@@ -197,6 +203,8 @@ public static class SessionMapping
             snapshot.LastActionTimestamp ?? snapshot.CreatedAt,
             snapshot.ReplayInitialSnapshotJson,
             snapshot.ReplayTurns,
+            snapshot.BalanceSnapshotVersion,
+            snapshot.BalanceSnapshotHash,
             snapshot.Version,
             finalHash: snapshot.FinalHash,
             playerLevel: snapshot.PlayerLevel)
@@ -269,7 +277,7 @@ public static class SessionMapping
         };
     }
 
-    private static Operator ToOperator(OperatorSnapshot snapshot)
+    private static Operator ToOperator(OperatorSnapshot snapshot, string? balanceSnapshotHash)
     {
         var op = new Operator(snapshot.Name, snapshot.Id)
         {
@@ -322,7 +330,7 @@ public static class SessionMapping
             WasTargetVisible = snapshot.WasTargetVisible
         };
 
-        var weapon = CreateWeapon(snapshot.EquippedWeaponName);
+        var weapon = CreateWeapon(snapshot.EquippedWeaponName, balanceSnapshotHash);
         if (weapon != null)
         {
             op.EquippedWeapon = weapon;
@@ -398,9 +406,9 @@ public static class SessionMapping
         };
     }
 
-    private static PlayerStateDto ToDtoFromSnapshot(OperatorSnapshot op)
+    private static PlayerStateDto ToDtoFromSnapshot(OperatorSnapshot op, string? balanceSnapshotHash)
     {
-        var weapon = CreateWeapon(op.EquippedWeaponName);
+        var weapon = CreateWeapon(op.EquippedWeaponName, balanceSnapshotHash);
         return new PlayerStateDto
         {
             Id = op.Id,
@@ -439,15 +447,8 @@ public static class SessionMapping
         };
     }
 
-    private static Weapon? CreateWeapon(string? name)
+    private static Weapon? CreateWeapon(string? name, string? balanceSnapshotHash)
     {
-        return name switch
-        {
-            "SOKOL 545" => WeaponFactory.CreateSokol545(),
-            "STURMWOLF 45" => WeaponFactory.CreateSturmwolf45(),
-            "M15 MOD 0" => WeaponFactory.CreateM15Mod0(),
-            null or "" => null,
-            _ => new Weapon(name)
-        };
+        return WeaponFactory.TryCreateWeapon(name, balanceSnapshotHash) ?? (string.IsNullOrWhiteSpace(name) ? null : new Weapon(name));
     }
 }
