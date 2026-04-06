@@ -19,7 +19,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Text.RegularExpressions;
 using System.Globalization;
 
 const string ApiBase = "https://www.truegamedata.com/api/weapons/api.php";
@@ -28,7 +27,6 @@ const int TimeoutSeconds = 30;
 const int MaxRetryAttempts = 3;
 const int RetryDelayMs = 2000;
 const string ApiUnavailableWarning = "WARNING: API unavailable — skipping snapshot. Nothing to commit.";
-var damageTableRegex = new Regex(@"\[[\s\S]*?\]", RegexOptions.Compiled, TimeSpan.FromSeconds(1));
 
 // Locate the repository root from the working directory; works reliably both
 // locally (run from the repo root) and in GitHub Actions (checkout sets CWD).
@@ -402,11 +400,17 @@ async Task<JsonObject?> PostApiAsync(string weapon, string action)
 
     if (node is JsonArray arr)
     {
-        var firstObject = arr.Count > 0 && arr[0] is JsonObject first ? first : null;
-        if (firstObject is not null)
-            return firstObject;
+        if (arr.Count > 0 && arr[0] is JsonObject first)
+            return first;
 
-        Console.Error.WriteLine($"WARNING: Unexpected empty array response for weapon={weapon} action={action}.");
+        if (arr.Count == 0)
+        {
+            Console.Error.WriteLine($"WARNING: Unexpected empty array response for weapon={weapon} action={action}.");
+            return null;
+        }
+
+        var firstElementType = arr[0]?.GetType().Name ?? "null";
+        Console.Error.WriteLine($"WARNING: Unexpected array response for weapon={weapon} action={action}: count={arr.Count}, first element type={firstElementType}.");
         return null;
     }
 
@@ -423,18 +427,30 @@ async Task<JsonObject?> FetchWeaponStatsAsync(string weapon)
 {
     Console.WriteLine($"  Fetching damage table for '{weapon}'…");
     var damageTable = await PostApiAsync(weapon, "calc_damage_table");
-    if (damageTable is not null)
+    JsonObject? fallbackBaseData = discoveredWeaponBaseData.TryGetValue(weapon, out var baseWeaponData)
+        ? baseWeaponData
+        : null;
+
+    if (damageTable is null)
     {
-        Console.WriteLine($"  Fetching stat summary for '{weapon}'…");
-        var summary = await PostApiAsync(weapon, "calc_stat_summary");
-        if (summary is not null)
-            return BuildWeaponStats(damageTable, summary);
+        if (fallbackBaseData is not null)
+        {
+            Console.WriteLine($"  Falling back to all_base_data for '{weapon}'…");
+            return BuildWeaponStatsFromBaseData(fallbackBaseData);
+        }
+
+        return null;
     }
 
-    if (discoveredWeaponBaseData.TryGetValue(weapon, out var baseWeaponData))
+    Console.WriteLine($"  Fetching stat summary for '{weapon}'…");
+    var summary = await PostApiAsync(weapon, "calc_stat_summary");
+    if (summary is not null)
+        return BuildWeaponStats(damageTable, summary);
+
+    if (fallbackBaseData is not null)
     {
-        Console.WriteLine($"  Falling back to all_base_data for '{weapon}'…");
-        return BuildWeaponStatsFromBaseData(baseWeaponData);
+        Console.WriteLine($"  Merging all_base_data summary fallback for '{weapon}'…");
+        return BuildWeaponStats(damageTable, fallbackBaseData);
     }
 
     return null;
@@ -579,24 +595,14 @@ JsonArray ParseDamageTables(JsonObject baseData)
     if (!baseData.TryGetPropertyValue("simple_damage_mp", out var node) || node is not JsonValue rawValue)
         return tables;
 
-    string? rawDamage = null;
-    try
-    {
-        rawDamage = rawValue.GetValue<string>();
-    }
-    catch
-    {
-        return tables;
-    }
-
-    if (string.IsNullOrWhiteSpace(rawDamage))
+    if (!rawValue.TryGetValue<string>(out var rawDamage) || string.IsNullOrWhiteSpace(rawDamage))
         return tables;
 
-    foreach (Match match in damageTableRegex.Matches(rawDamage))
+    foreach (var tableJson in ExtractTopLevelJsonArrays(rawDamage))
     {
         try
         {
-            if (JsonNode.Parse(match.Value) is JsonArray table)
+            if (JsonNode.Parse(tableJson) is JsonArray table)
                 tables.Add(table);
         }
         catch
@@ -606,6 +612,36 @@ JsonArray ParseDamageTables(JsonObject baseData)
     }
 
     return tables;
+}
+
+IEnumerable<string> ExtractTopLevelJsonArrays(string rawDamage)
+{
+    var depth = 0;
+    var segmentStart = -1;
+
+    for (var i = 0; i < rawDamage.Length; i++)
+    {
+        var c = rawDamage[i];
+        if (c == '[')
+        {
+            if (depth == 0)
+                segmentStart = i;
+
+            depth++;
+        }
+        else if (c == ']')
+        {
+            if (depth == 0)
+                continue;
+
+            depth--;
+            if (depth == 0 && segmentStart >= 0)
+            {
+                yield return rawDamage[segmentStart..(i + 1)];
+                segmentStart = -1;
+            }
+        }
+    }
 }
 
 // Returns the first list of damage entries from the "damage" outer array.
