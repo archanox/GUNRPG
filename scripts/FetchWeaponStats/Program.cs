@@ -28,6 +28,7 @@ const int TimeoutSeconds = 30;
 const int MaxRetryAttempts = 3;
 const int RetryDelayMs = 2000;
 const string ApiUnavailableWarning = "WARNING: API unavailable — skipping snapshot. Nothing to commit.";
+var damageTableRegex = new Regex(@"\[[\s\S]*?\]", RegexOptions.Compiled);
 
 // Locate the repository root from the working directory; works reliably both
 // locally (run from the repo root) and in GitHub Actions (checkout sets CWD).
@@ -238,7 +239,7 @@ async Task<List<string>?> DiscoverWeaponsAsync()
                 if (!string.IsNullOrWhiteSpace(weaponName))
                 {
                     discovered.Add(weaponName);
-                    discoveredWeaponBaseData[weaponName] = obj.DeepClone().AsObject();
+                    discoveredWeaponBaseData[weaponName] = obj;
                 }
             }
         }
@@ -260,7 +261,7 @@ async Task<List<string>?> DiscoverWeaponsAsync()
                         if (!string.IsNullOrWhiteSpace(weaponName))
                         {
                             discovered.Add(weaponName);
-                            discoveredWeaponBaseData[weaponName] = obj.DeepClone().AsObject();
+                            discoveredWeaponBaseData[weaponName] = obj;
                         }
                     }
                 }
@@ -538,6 +539,7 @@ void MergeSummaryStats(JsonObject stats, JsonObject summary)
 
 double ConvertToMillisecondsIfNeeded(double value, string? unit) =>
     string.Equals(unit, "s", StringComparison.OrdinalIgnoreCase)
+    // all_base_data omits units for timing fields; values under 10 are seconds.
     || (string.IsNullOrWhiteSpace(unit) && value > 0 && value < 10)
         ? value * 1000.0
         : value;
@@ -614,7 +616,7 @@ JsonArray ParseDamageTables(JsonObject baseData)
     if (string.IsNullOrWhiteSpace(rawDamage))
         return tables;
 
-    foreach (Match match in Regex.Matches(rawDamage, @"\[[\s\S]*?\]"))
+    foreach (Match match in damageTableRegex.Matches(rawDamage))
     {
         try
         {
