@@ -14,6 +14,7 @@ public static class CombatSessionHasher
     private const int Int32Size = 4;
     private const int Int64Size = 8;
     private const int SingleSize = 4;
+    private const int BalanceSnapshotHashVersion = 2;
 
     /// <summary>
     /// Computes a state-based FinalHash from the key deterministic simulation-output fields
@@ -40,8 +41,11 @@ public static class CombatSessionHasher
         WriteInt32(buffer, finalSnapshot.Seed);
         // Version is included so future algorithm changes can be distinguished.
         WriteInt32(buffer, finalSnapshot.Version);
-        WriteString(buffer, finalSnapshot.BalanceSnapshotVersion);
-        WriteString(buffer, finalSnapshot.BalanceSnapshotHash);
+        if (finalSnapshot.Version >= BalanceSnapshotHashVersion)
+        {
+            WriteString(buffer, finalSnapshot.BalanceSnapshotVersion);
+            WriteString(buffer, finalSnapshot.BalanceSnapshotHash);
+        }
         // Simulation outcome: how many turns were played and how the session ended.
         WriteInt32(buffer, finalSnapshot.TurnNumber);
         WriteInt32(buffer, (int)finalSnapshot.Phase);
@@ -78,8 +82,11 @@ public static class CombatSessionHasher
         WriteGuid(buffer, sessionId);
         WriteInt32(buffer, seed);
         WriteInt32(buffer, version);
-        WriteString(buffer, balanceSnapshotVersion);
-        WriteString(buffer, balanceSnapshotHash);
+        if (version >= BalanceSnapshotHashVersion)
+        {
+            WriteString(buffer, balanceSnapshotVersion);
+            WriteString(buffer, balanceSnapshotHash);
+        }
         WriteInt32(buffer, turnCount);
         WriteInt32(buffer, replayTurns.Count);
 

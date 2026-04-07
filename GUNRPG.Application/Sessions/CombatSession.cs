@@ -18,7 +18,7 @@ public sealed class CombatSession
     /// <summary>
     /// Schema version for FinalHash computation. Increment when the hash algorithm changes.
     /// </summary>
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     private readonly List<IntentSnapshot> _replayTurns = [];
 
@@ -101,8 +101,12 @@ public sealed class CombatSession
         CompletedAt = completedAt;
         LastActionTimestamp = lastActionTimestamp ?? createdAt;
         ReplayInitialSnapshotJson = replayInitialSnapshotJson ?? string.Empty;
-        BalanceSnapshotVersion = balanceSnapshotVersion ?? WeaponFactory.CurrentBalanceVersion;
-        BalanceSnapshotHash = balanceSnapshotHash ?? WeaponFactory.CurrentBalanceHash;
+        BalanceSnapshotVersion = string.IsNullOrWhiteSpace(balanceSnapshotVersion)
+            ? WeaponFactory.CurrentBalanceVersion
+            : balanceSnapshotVersion;
+        BalanceSnapshotHash = string.IsNullOrWhiteSpace(balanceSnapshotHash)
+            ? WeaponFactory.CurrentBalanceHash
+            : balanceSnapshotHash;
         if (replayTurns != null)
         {
             _replayTurns.AddRange(replayTurns.Select(CloneIntentSnapshot));
