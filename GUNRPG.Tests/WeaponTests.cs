@@ -65,7 +65,7 @@ public class WeaponTests
         Assert.Equal(32f, sokol.GetDamageAtDistance(25f, BodyPart.UpperTorso));
         Assert.Equal(32f, sokol.GetDamageAtDistance(25f, BodyPart.LowerLeg));
         
-        // Test second range (51-71m): Head 37, Neck 37, Chest 31
+        // Test second range (51-71m): Head 37, Neck 37, Torso 31
         Assert.Equal(37f, sokol.GetDamageAtDistance(60f, BodyPart.Head));
         Assert.Equal(37f, sokol.GetDamageAtDistance(60f, BodyPart.Neck));
         
