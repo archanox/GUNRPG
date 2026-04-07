@@ -120,7 +120,7 @@ public static class WeaponFactory
         var snapshot = GetBalanceSnapshot(snapshotHash);
         return snapshot.Weapons
             .OrderBy(entry => entry.Key, StringComparer.Ordinal)
-            .Select(entry => CreateWeapon(entry.Key, snapshotHash: snapshot.Hash))
+            .Select(entry => CreateWeapon(entry.Key, entry.Value))
             .ToList();
     }
 

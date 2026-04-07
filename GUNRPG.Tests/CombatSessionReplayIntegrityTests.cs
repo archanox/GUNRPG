@@ -301,6 +301,111 @@ public sealed class CombatSessionReplayIntegrityTests
         Assert.False(originalHash.AsSpan().SequenceEqual(modifiedHash));
     }
 
+    [Fact]
+    public void ComputeStateHash_Version1_IgnoresBalanceSnapshotMetadata()
+    {
+        var session = CombatSession.CreateDefault(seed: 16);
+        session.TransitionTo(SessionPhase.Completed);
+        var snapshot = SessionMapping.ToSnapshot(session);
+
+        var legacySnapshot = new CombatSessionSnapshot
+        {
+            Id = snapshot.Id,
+            OperatorId = snapshot.OperatorId,
+            Phase = snapshot.Phase,
+            TurnNumber = snapshot.TurnNumber,
+            Combat = snapshot.Combat,
+            Player = snapshot.Player,
+            Enemy = snapshot.Enemy,
+            Pet = snapshot.Pet,
+            EnemyLevel = snapshot.EnemyLevel,
+            PlayerLevel = snapshot.PlayerLevel,
+            Seed = snapshot.Seed,
+            PostCombatResolved = snapshot.PostCombatResolved,
+            CreatedAt = snapshot.CreatedAt,
+            CompletedAt = snapshot.CompletedAt,
+            LastActionTimestamp = snapshot.LastActionTimestamp,
+            ReplayInitialSnapshotJson = snapshot.ReplayInitialSnapshotJson,
+            ReplayTurns = snapshot.ReplayTurns.ToList(),
+            BalanceSnapshotVersion = "legacy-a",
+            BalanceSnapshotHash = "legacy-hash-a",
+            Version = 1,
+            FinalHash = snapshot.FinalHash
+        };
+        var changedLegacySnapshot = new CombatSessionSnapshot
+        {
+            Id = legacySnapshot.Id,
+            OperatorId = legacySnapshot.OperatorId,
+            Phase = legacySnapshot.Phase,
+            TurnNumber = legacySnapshot.TurnNumber,
+            Combat = legacySnapshot.Combat,
+            Player = legacySnapshot.Player,
+            Enemy = legacySnapshot.Enemy,
+            Pet = legacySnapshot.Pet,
+            EnemyLevel = legacySnapshot.EnemyLevel,
+            PlayerLevel = legacySnapshot.PlayerLevel,
+            Seed = legacySnapshot.Seed,
+            PostCombatResolved = legacySnapshot.PostCombatResolved,
+            CreatedAt = legacySnapshot.CreatedAt,
+            CompletedAt = legacySnapshot.CompletedAt,
+            LastActionTimestamp = legacySnapshot.LastActionTimestamp,
+            ReplayInitialSnapshotJson = legacySnapshot.ReplayInitialSnapshotJson,
+            ReplayTurns = legacySnapshot.ReplayTurns.ToList(),
+            BalanceSnapshotVersion = "legacy-b",
+            BalanceSnapshotHash = "legacy-hash-b",
+            Version = 1,
+            FinalHash = legacySnapshot.FinalHash
+        };
+
+        var hashA = CombatSessionHasher.ComputeStateHash(legacySnapshot);
+        var hashB = CombatSessionHasher.ComputeStateHash(changedLegacySnapshot);
+
+        Assert.True(hashA.AsSpan().SequenceEqual(hashB));
+    }
+
+    [Fact]
+    public void ComputeHash_Version1_IgnoresBalanceSnapshotMetadata()
+    {
+        var sessionId = Guid.NewGuid();
+        var operatorId = Guid.NewGuid();
+        var replayTurns = new List<IntentSnapshot>
+        {
+            new()
+            {
+                OperatorId = operatorId,
+                Primary = PrimaryAction.Fire
+            }
+        };
+
+        var hashA = CombatSessionHasher.ComputeHash(sessionId, 18, 1, "legacy-a", "legacy-hash-a", 2, replayTurns);
+        var hashB = CombatSessionHasher.ComputeHash(sessionId, 18, 1, "legacy-b", "legacy-hash-b", 2, replayTurns);
+
+        Assert.True(hashA.AsSpan().SequenceEqual(hashB));
+    }
+
+    [Fact]
+    public void Constructor_EmptyBalanceSnapshotMetadata_FallsBackToCurrentSnapshot()
+    {
+        var template = CombatSession.CreateDefault(seed: 17);
+        var session = new CombatSession(
+            template.Id,
+            template.OperatorId,
+            template.Combat,
+            template.Ai,
+            template.OperatorManager,
+            template.PetState,
+            enemyLevel: template.EnemyLevel,
+            seed: template.Seed,
+            phase: SessionPhase.Planning,
+            turnNumber: 1,
+            createdAt: DateTimeOffset.UtcNow,
+            balanceSnapshotVersion: "",
+            balanceSnapshotHash: "   ");
+
+        Assert.Equal(WeaponFactory.CurrentBalanceVersion, session.BalanceSnapshotVersion);
+        Assert.Equal(WeaponFactory.CurrentBalanceHash, session.BalanceSnapshotHash);
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // 8. RebuildStateAsync: replay turns only → rebuild state matches FinalHash
     // ──────────────────────────────────────────────────────────────────────
