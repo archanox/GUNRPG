@@ -386,6 +386,7 @@ public sealed class CombatSessionReplayIntegrityTests
     [Fact]
     public void Constructor_EmptyBalanceSnapshotMetadata_FallsBackToCurrentSnapshot()
     {
+        const string whitespaceOnlyHash = "   ";
         var template = CombatSession.CreateDefault(seed: 17);
         var session = new CombatSession(
             template.Id,
@@ -400,7 +401,7 @@ public sealed class CombatSessionReplayIntegrityTests
             turnNumber: 1,
             createdAt: DateTimeOffset.UtcNow,
             balanceSnapshotVersion: "",
-            balanceSnapshotHash: "   ");
+            balanceSnapshotHash: whitespaceOnlyHash);
 
         Assert.Equal(WeaponFactory.CurrentBalanceVersion, session.BalanceSnapshotVersion);
         Assert.Equal(WeaponFactory.CurrentBalanceHash, session.BalanceSnapshotHash);
